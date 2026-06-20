@@ -1,0 +1,812 @@
+---
+title: "The Random Effects Model"
+subtitle: "Treating unit heterogeneity as random"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write the unobserved-effects model $y_{it} = \mathbf{x}_{it}'\boldsymbol\beta + \alpha_i + \varepsilon_{it}$ and state the random-effects assumption that $\alpha_i$ is a random draw uncorrelated with the regressors
+- Explain why the composite error $u_{it} = \alpha_i + \varepsilon_{it}$ is serially correlated within a unit, so pooled OLS is unbiased but inefficient
+- Derive the quasi-demeaning parameter $\theta = 1 - \sqrt{\sigma_\varepsilon^2 / (\sigma_\varepsilon^2 + T\sigma_\alpha^2)}$ and recognize the RE estimator as feasible GLS
+- Show that random effects nests pooled OLS ($\theta = 0$) and fixed effects ($\theta = 1$) as the two endpoints of a single dial
+- Judge when the efficiency gain of random effects is real --- and when its uncorrelatedness assumption makes it inconsistent
+:::
+
+## When Heterogeneity Is Noise, Not Confounding
+
+Sweden's 21 *regioner* (regions) each run a network of *vårdcentraler* (primary care centers), and we observe each region over several years. On the previous panel pages we worried that the persistent, unmeasurable traits of a region --- its administrative culture, its capital stock, its baseline population health --- might be *correlated* with the policy variable we care about. That correlation is what makes pooled OLS biased, and it is what motivates the fixed-effects estimator: let each region be its own control.
+
+But there is a second, gentler view of unit heterogeneity. Suppose a national agency randomly rotates a quality-improvement coaching program across vårdcentraler, and we ask whether the program lowers the share of diabetes patients with poorly controlled HbA1c. The regions still differ from one another in ways we cannot fully measure --- but if the program was assigned without regard to those regional traits, then the region-specific intercept $\alpha_i$ is just *unexplained variation*, not a confounder. It raises or lowers a region's outcome, but it is unrelated to who got the program.
+
+In that world, throwing away the *between-region* variation --- as fixed effects does --- is wasteful. The between-region comparisons are perfectly clean, because nothing systematic is hiding in them. The **random effects** model is built for exactly this situation: it treats $\alpha_i$ not as a parameter to be swept out, but as a *random draw* from a distribution, and then uses both the within-region and the between-region variation to estimate $\boldsymbol\beta$ as efficiently as possible.
+
+This page is about that trade. Random effects buys precision by making a strong assumption --- that $\alpha_i$ is uncorrelated with the regressors. When the assumption holds, it is the most efficient linear estimator available. When it fails, it is biased, and you should be using fixed effects instead. The next page makes that choice formal; here we build the machinery and the intuition.
+
+
+## The Unobserved-Effects Model, Read Two Ways
+
+Let $y_{it}$ be the outcome for region $i$ in year $t$ --- say, the percentage-point share of a region's diabetes patients with HbA1c above the control threshold (lower is better). Let $\mathbf{x}_{it}$ be a vector of regressors (the coaching-program indicator, nurse staffing, mean patient age). The **unobserved-effects model** is
+
+$$
+y_{it} = \mathbf{x}_{it}'\boldsymbol\beta + \alpha_i + \varepsilon_{it}, \qquad i = 1,\dots,N, \quad t = 1,\dots,T.
+$$
+
+This is the *same* equation that underlies fixed effects. What changes is the story we tell about $\alpha_i$.
+
+::: {.glass-card .glass-card--definition}
+In the model $y_{it} = \mathbf{x}_{it}'\boldsymbol\beta + \alpha_i + \varepsilon_{it}$:
+
+- **Fixed effects** treats $\alpha_i$ as a *parameter* --- one unknown number per region, estimated alongside $\boldsymbol\beta$ (or differenced away). It makes **no** assumption about how $\alpha_i$ relates to $\mathbf{x}_{it}$, so it permits $\operatorname{Cov}(\alpha_i, \mathbf{x}_{it}) \neq 0$.
+- **Random effects** treats $\alpha_i$ as a *random variable* --- a single draw, for region $i$, from a distribution with mean zero and variance $\sigma_\alpha^2$. The defining assumption is
+
+$$
+\operatorname{Cov}(\alpha_i,\, \mathbf{x}_{it}) = 0 \quad\text{for all } t,
+$$
+
+i.e. the region-specific draw is **uncorrelated** with every regressor in every period.
+
+**Read this as**: "Each region's baseline is a lottery ticket drawn from a common urn; fixed effects estimates each ticket, random effects only estimates the *spread* of the urn and assumes the draw does not depend on the things we are studying."
+:::
+
+Under the random-effects assumption, $\alpha_i$ is no longer a confounder --- it is structured noise. We do not need to estimate one intercept per region. We only need to estimate one extra number, $\sigma_\alpha^2$, the variance of the urn. That economy of parameters is the source of the efficiency gain, and it is the whole reason to consider random effects at all.
+
+::: {.glass-card .glass-card--assumption}
+**The random-effects exogeneity assumption.** Beyond the usual idiosyncratic exogeneity $E[\varepsilon_{it}\mid \mathbf{x}_{i1},\dots,\mathbf{x}_{iT}, \alpha_i] = 0$, the random-effects estimator additionally requires
+
+$$
+E[\alpha_i \mid \mathbf{x}_{i1},\dots,\mathbf{x}_{iT}] = 0.
+$$
+
+**Read this as**: "Knowing a region's entire history of regressors tells you nothing about its random intercept." This is *much* stronger than what fixed effects needs. If high-$\alpha_i$ regions (better baseline systems) systematically staff more nurses, this assumption fails, $\hat{\boldsymbol\beta}_{\text{RE}}$ is biased, and fixed effects --- which never makes this assumption --- is the safe choice.
+:::
+
+
+## The Composite Error Has a Memory
+
+Why can we not just run pooled OLS and be done? Pooled OLS *is* unbiased under the random-effects assumption --- the regressors are uncorrelated with $\alpha_i$ and with $\varepsilon_{it}$, so there is no omitted-variable bias. The problem is **efficiency**, and to see it we collapse $\alpha_i$ and $\varepsilon_{it}$ into a single **composite error**:
+
+$$
+u_{it} = \alpha_i + \varepsilon_{it}.
+$$
+
+The pooled regression $y_{it} = \mathbf{x}_{it}'\boldsymbol\beta + u_{it}$ has an error that is *not* well-behaved. The region-specific component $\alpha_i$ appears in *every* period for region $i$, so two observations from the same region share it. That induces **within-unit serial correlation**. Assuming $\alpha_i$ and $\varepsilon_{it}$ are mutually independent with variances $\sigma_\alpha^2$ and $\sigma_\varepsilon^2$:
+
+$$
+\operatorname{Var}(u_{it}) = \sigma_\alpha^2 + \sigma_\varepsilon^2,
+$$
+$$
+\operatorname{Cov}(u_{it},\, u_{is}) = \sigma_\alpha^2 \quad \text{for } t \neq s \text{ (same region)}.
+$$
+
+**Read the second line aloud**: "Any two observations from the *same* region have a covariance equal to the variance of the region effect --- they are correlated simply because they share the same $\alpha_i$." The implied within-region correlation between any two time periods is the **intraclass correlation**
+
+$$
+\rho = \frac{\sigma_\alpha^2}{\sigma_\alpha^2 + \sigma_\varepsilon^2},
+$$
+
+read as "the share of total error variance that comes from the persistent region effect." When $\rho$ is large, most of the noise is the region's permanent level, and observations within a region are highly redundant.
+
+::: {.glass-card .glass-card--warning}
+Pooled OLS ignores this correlation. It is still **unbiased** under the RE assumption, but its conventional standard errors are **wrong** (they treat correlated region-years as independent) and it is **inefficient** (it weights redundant observations as if they carried independent information). The cure is generalized least squares (GLS): transform the data so the error becomes spherical again, then run OLS on the transformed data. The random-effects estimator *is* that GLS transform.
+:::
+
+
+## Random Effects Is Quasi-Demeaning
+
+Here is the elegant payoff. Fixed effects removes $\alpha_i$ by subtracting each region's *entire* time mean --- it demeans completely. Pooled OLS subtracts *nothing*. The GLS solution to the serially correlated error turns out to subtract a *fraction* of the unit mean:
+
+::: {.glass-card .glass-card--definition}
+The **random-effects (feasible GLS) estimator** is OLS applied to the **quasi-demeaned** data
+
+$$
+y_{it} - \theta\,\bar{y}_i = (\mathbf{x}_{it} - \theta\,\bar{\mathbf{x}}_i)'\boldsymbol\beta + (u_{it} - \theta\,\bar{u}_i),
+$$
+
+where $\bar{y}_i = \tfrac{1}{T}\sum_t y_{it}$ is the unit time-average and the **quasi-demeaning parameter** is
+
+$$
+\theta = 1 - \sqrt{\dfrac{\sigma_\varepsilon^2}{\sigma_\varepsilon^2 + T\,\sigma_\alpha^2}} \;\in\; [0,1].
+$$
+
+**Read this as**: "Instead of subtracting each region's full mean, subtract only the fraction $\theta$ of it --- and that fraction is dictated by how big the region effect is relative to the idiosyncratic noise, scaled by the number of periods $T$."
+:::
+
+The parameter $\theta$ is the single dial that controls everything. Look at its two endpoints:
+
+- **If $\sigma_\alpha^2 = 0$** (no region effect at all), then $\theta = 1 - \sqrt{\sigma_\varepsilon^2/\sigma_\varepsilon^2} = 1 - 1 = 0$. Quasi-demeaning subtracts nothing: **random effects collapses to pooled OLS.** There is no serial correlation to correct.
+
+- **As $\sigma_\alpha^2 \to \infty$** (the region effect dwarfs the noise), the fraction under the root $\to 0$, so $\theta \to 1$. Quasi-demeaning subtracts the *full* unit mean: **random effects collapses to fixed effects (the within estimator).** The persistent region level is so dominant that the only trustworthy variation is within-region.
+
+Between these poles, $\theta$ interpolates. The larger the intraclass correlation $\rho$ --- the more of the noise that is persistent region effect --- the closer $\theta$ is to 1 and the more random effects behaves like fixed effects. The more periods $T$ we observe, the more precisely each region's mean is pinned down, and again the closer $\theta$ moves toward 1.
+
+::: {.glass-card .glass-card--insight}
+Pooled OLS, random effects, and fixed effects are not three rival philosophies --- they are **one estimator at three settings of $\theta$**. Pooled OLS sets $\theta = 0$ and trusts all variation equally. Fixed effects sets $\theta = 1$ and trusts only within-unit variation. Random effects lets the *data* choose $\theta$ from the variance ratio, optimally blending the between-unit and within-unit comparisons. When its assumption holds, that optimal blend is more efficient than either extreme.
+:::
+
+In practice $\sigma_\alpha^2$ and $\sigma_\varepsilon^2$ are unknown, so we plug in consistent estimates (typically from the within and between residuals) to get $\hat\theta$. The two-step procedure --- estimate the variances, then run OLS on the quasi-demeaned data --- is **feasible GLS**, and it is what `plm(model="random")` and `linearmodels.RandomEffects` do under the hood.
+
+
+## See It: The Quasi-Demeaning Dial
+
+The interactive below simulates a panel of Sweden's 21 regioner observed over several years. There is a single regressor $x_{it}$ (think nurse staffing density, centered) and a true slope $\beta$. Each region gets its own random intercept $\alpha_i$, drawn *independently of $x$* --- so the random-effects assumption holds by construction, and all three estimators are unbiased. What differs is how they use the data.
+
+The left panel plots every region-year point, colored by region, with each region's cloud connected to its own mean. Three fitted lines are overlaid: **pooled OLS** (slate, $\theta=0$), **fixed effects / within** (ochre, $\theta=1$), and the **random-effects** fit (Uppsala red) at the current $\theta$. The right panel shows where $\theta$ sits on the $[0,1]$ dial and how the RE slope slides between the pooled and within slopes as you move it.
+
+Drag the **variance ratio** slider to change $\sigma_\alpha^2/\sigma_\varepsilon^2$ and watch $\theta$ --- and the red RE line --- travel from the pooled line toward the within line. Draw a fresh sample to confirm the pattern is not an artifact of one draw.
+
+::: {.interactive-container}
+
+#### Random Effects as a Dial Between Pooled OLS and Fixed Effects
+
+```{ojs}
+//| echo: false
+
+viewof remod_varRatio = Inputs.range([0, 6], {
+  value: 1.0,
+  step: 0.1,
+  label: "Variance ratio σ²α / σ²ε"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof remod_T = Inputs.range([2, 12], {
+  value: 6,
+  step: 1,
+  label: "Periods per region (T)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof remod_betweenStrength = Inputs.range([0, 4], {
+  value: 2.0,
+  step: 0.1,
+  label: "Spread of region intercepts (visual)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof remod_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Simulate a panel of 21 regioner. ──
+// True model:  y_it = beta0 + beta1 * x_it + alpha_i + eps_it
+// alpha_i is drawn INDEPENDENTLY of x_it, so the random-effects assumption
+// holds and all three estimators are unbiased. The slider only changes how
+// the variance is split, which changes theta and the EFFICIENCY of RE.
+remod_panel = {
+  const seedBump = remod_draw;      // re-run AND re-seed on button press
+  const N = 21;                     // Sweden's regioner
+  const T = remod_T;
+  const beta0 = 12;                 // baseline % poorly-controlled HbA1c
+  const beta1 = -0.8;               // true slope: more staffing -> lower share
+  // We keep sigma_eps fixed and let the slider scale sigma_alpha so the
+  // displayed variance RATIO equals remod_varRatio exactly.
+  const sigmaEps = 1.2;
+  const sigmaAlpha = sigmaEps * Math.sqrt(remod_varRatio);
+  // betweenStrength stretches the VISUAL spread of region means on the x-axis
+  // without touching the alpha/eps split (region means of x differ, alpha ⟂ x).
+  const xSpread = remod_betweenStrength;
+
+  // Seed depends on the draw counter so each "Draw new sample" press yields a
+  // genuinely different (but reproducible) panel; sliders alone keep the seed.
+  // d3.randomLcg requires a seed in [0, 1) — anything outside that range makes
+  // d3 silently fall back to Math.random() (non-reproducible). The golden-ratio
+  // increment spreads successive presses across [0, 1) without ever leaving it.
+  const seed = (0.137 + 0.6180339887 * seedBump) % 1;
+  const rNorm = d3.randomNormal.source(d3.randomLcg(seed))(0, 1);
+  const rows = [];
+  for (let i = 0; i < N; i++) {
+    const alpha_i = sigmaAlpha * rNorm();
+    // Each region has its own x-center, but alpha_i is drawn separately,
+    // so Cov(alpha, x) ≈ 0 in expectation.
+    const xCenter = xSpread * rNorm();
+    for (let t = 0; t < T; t++) {
+      const x = xCenter + 1.0 * rNorm();        // within-region x variation
+      const eps = sigmaEps * rNorm();
+      const y = beta0 + beta1 * x + alpha_i + eps;
+      rows.push({ region: i, t, x, y, alpha_i });
+    }
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Per-region means, used both for plotting and for the within/between split.
+remod_regionMeans = {
+  const byReg = d3.group(remod_panel, d => d.region);
+  const out = new Map();
+  for (const [r, rows] of byReg) {
+    out.set(r, {
+      xbar: d3.mean(rows, d => d.x),
+      ybar: d3.mean(rows, d => d.y)
+    });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Simple OLS slope+intercept helper on arrays of {x, y}.
+remod_ols = function(pts) {
+  const n = pts.length;
+  const mx = d3.mean(pts, d => d.x);
+  const my = d3.mean(pts, d => d.y);
+  let sxx = 0, sxy = 0;
+  for (const p of pts) {
+    sxx += (p.x - mx) * (p.x - mx);
+    sxy += (p.x - mx) * (p.y - my);
+  }
+  const b1 = sxy / sxx;
+  const b0 = my - b1 * mx;
+  return { b0, b1 };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// θ from the CURRENT slider values, using the same variance ratio fed to the
+// simulation, so the dial and the data agree exactly.
+remod_theta = {
+  const T = remod_T;
+  const ratio = remod_varRatio;            // = sigma_alpha^2 / sigma_eps^2
+  // theta = 1 - sqrt( sigma_eps^2 / (sigma_eps^2 + T sigma_alpha^2) )
+  //       = 1 - sqrt( 1 / (1 + T * ratio) )
+  return 1 - Math.sqrt(1 / (1 + T * ratio));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The three estimators.
+//  Pooled:  OLS on raw (x, y)                       -> theta = 0
+//  Within:  OLS on fully demeaned data             -> theta = 1
+//  RE:      OLS on quasi-demeaned data at theta     -> the dial
+remod_fits = {
+  const pooled = remod_ols(remod_panel.map(d => ({ x: d.x, y: d.y })));
+
+  const within = remod_ols(remod_panel.map(d => {
+    const m = remod_regionMeans.get(d.region);
+    return { x: d.x - m.xbar, y: d.y - m.ybar };
+  }));
+
+  const th = remod_theta;
+  const re = { b1: remod_reSlopeAt(th) };
+
+  return { pooled, within, re, theta: th };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// RE slope as a function of the quasi-demeaning parameter theta. This is the
+// OLS slope on the quasi-demeaned data z_it - theta * zbar_i. NOTE: this slope
+// is NOT a linear blend of the pooled (theta=0) and within (theta=1) slopes —
+// it is a ratio of theta-dependent sums, so it curves between the endpoints.
+// The right-panel track below samples THIS function, so the red RE marker
+// always lies exactly on the plotted curve.
+remod_reSlopeAt = function(th) {
+  return remod_ols(remod_panel.map(d => {
+    const m = remod_regionMeans.get(d.region);
+    return { x: d.x - th * m.xbar, y: d.y - th * m.ybar };
+  })).b1;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// LEFT panel: scatter of all region-years + the three fitted lines.
+// Lines are drawn on the RAW (x, y) scale. For the within and RE fits, which
+// were estimated on (quasi-)demeaned data, we recover a plotting intercept by
+// passing the fitted slope through the grand mean of (x, y), so all three lines
+// are directly comparable in slope on one axis.
+{
+  const pts = remod_panel;
+  const xs = pts.map(d => d.x);
+  const xMin = d3.min(xs) - 0.5, xMax = d3.max(xs) + 0.5;
+  const gx = d3.mean(pts, d => d.x);
+  const gy = d3.mean(pts, d => d.y);
+
+  const lineFor = (slope) => {
+    const intercept = gy - slope * gx;   // anchor at the grand mean
+    return [
+      { x: xMin, y: intercept + slope * xMin },
+      { x: xMax, y: intercept + slope * xMax }
+    ];
+  };
+
+  const pooledLine = lineFor(remod_fits.pooled.b1);
+  const withinLine = lineFor(remod_fits.within.b1);
+  const reLine     = lineFor(remod_fits.re.b1);
+
+  return Plot.plot({
+    width: 460,
+    height: 380,
+    marginLeft: 56,
+    marginBottom: 46,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px" },
+    x: { label: "Nurse staffing (centered)  →", grid: true },
+    y: { label: "% poorly-controlled HbA1c", grid: true },
+    color: { legend: false, range: ["#79766e"] },
+    marks: [
+      // faint region clouds
+      Plot.dot(pts, {
+        x: "x", y: "y",
+        r: 2.6, fill: "#79766e", fillOpacity: 0.35
+      }),
+      // the three fits
+      Plot.line(pooledLine, { x: "x", y: "y", stroke: "#3d5a6c", strokeWidth: 2.5, strokeDasharray: "6,4" }),
+      Plot.line(withinLine, { x: "x", y: "y", stroke: "#9c7a33", strokeWidth: 2.5, strokeDasharray: "2,3" }),
+      Plot.line(reLine,     { x: "x", y: "y", stroke: "#990000", strokeWidth: 3.5 }),
+      Plot.ruleY([d3.min(pts, d => d.y) - 0.5])
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// A compact legend + numeric slope readout for the three estimators.
+{
+  const row = (color, dash, name, slope) => html`<div style="
+      display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem;
+      font-family:'Inter', system-ui, sans-serif; font-size:0.82rem; color:#1c1c1a;">
+    <span style="display:inline-block; width:26px; height:0;
+        border-top:3px ${dash} ${color};"></span>
+    <span style="flex:1;">${name}</span>
+    <span style="font-family:'JetBrains Mono', monospace; font-weight:700; color:${color};">
+      β̂ = ${slope.toFixed(3)}</span>
+  </div>`;
+  return html`<div style="margin-top:0.6rem;">
+    ${row("#3d5a6c", "dashed", "Pooled OLS  (θ = 0)", remod_fits.pooled.b1)}
+    ${row("#990000", "solid",  `Random effects  (θ = ${remod_fits.theta.toFixed(2)})`, remod_fits.re.b1)}
+    ${row("#9c7a33", "dotted", "Fixed effects / within  (θ = 1)", remod_fits.within.b1)}
+    <div style="margin-top:0.4rem; font-family:'Inter', system-ui, sans-serif;
+        font-size:0.78rem; color:#79766e;">True β = −0.800</div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// RIGHT panel idea, rendered as a horizontal θ dial: the grey track is the
+// ACTUAL locus of RE slopes as θ sweeps 0→1 (sampled from remod_reSlopeAt), the
+// pooled slope is pinned at θ=0, the within slope at θ=1, and a red marker shows
+// where RE sits — both in θ-position AND in slope value. Because the track is the
+// true RE-slope curve (not a straight chord), the red dot always lies on it.
+{
+  const th = remod_fits.theta;
+  const bPool = remod_fits.pooled.b1;
+  const bWith = remod_fits.within.b1;
+  const bRE   = remod_fits.re.b1;
+
+  // Sample the true RE-slope curve across θ ∈ [0, 1] (41 points). The RE slope
+  // is a nonlinear function of θ, so this curve bows slightly off the straight
+  // chord joining the two endpoints — and the red marker rides exactly on it.
+  const track = d3.range(0, 41).map(k => {
+    const t = k / 40;
+    return { x: t, y: remod_reSlopeAt(t) };
+  });
+
+  // map slope -> a y in the chart by using slope directly on a value axis
+  return Plot.plot({
+    width: 460,
+    height: 200,
+    marginLeft: 58,
+    marginBottom: 46,
+    marginTop: 28,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px" },
+    x: {
+      label: "Quasi-demeaning parameter θ  →",
+      domain: [-0.04, 1.04],
+      ticks: [0, 0.25, 0.5, 0.75, 1],
+      grid: true
+    },
+    y: { label: "Estimated slope β̂", grid: true },
+    marks: [
+      // the true RE-slope curve from pooled (θ=0) to within (θ=1)
+      Plot.line(track, {
+        x: "x", y: "y", stroke: "#cfccc2", strokeWidth: 2, curve: "catmull-rom"
+      }),
+      // endpoints
+      Plot.dot([{ x: 0, y: bPool }], { x: "x", y: "y", r: 6, fill: "#3d5a6c" }),
+      Plot.dot([{ x: 1, y: bWith }], { x: "x", y: "y", r: 6, fill: "#9c7a33" }),
+      // the RE marker
+      Plot.ruleX([th], { stroke: "#990000", strokeWidth: 1, strokeDasharray: "3,3" }),
+      Plot.dot([{ x: th, y: bRE }], { x: "x", y: "y", r: 7, fill: "#990000" }),
+      Plot.text([{ x: th, y: bRE }], {
+        x: "x", y: "y",
+        text: [`θ = ${th.toFixed(2)}`],
+        dy: -14, fill: "#990000", fontWeight: 700, fontSize: 11
+      }),
+      Plot.text([{ x: 0, y: bPool }], {
+        x: "x", y: "y", text: ["Pooled"], dy: 16, dx: 4,
+        fill: "#3d5a6c", fontSize: 10, textAnchor: "start"
+      }),
+      Plot.text([{ x: 1, y: bWith }], {
+        x: "x", y: "y", text: ["Within"], dy: 16, dx: -4,
+        fill: "#9c7a33", fontSize: 10, textAnchor: "end"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line plain-language verdict that tracks the dial.
+{
+  const th = remod_fits.theta;
+  const rho = remod_varRatio / (1 + remod_varRatio);  // intraclass correlation
+  let msg, color;
+  if (th < 0.08) {
+    msg = `θ ≈ 0: almost no persistent region effect (intraclass ρ ≈ ${rho.toFixed(2)}). Random effects is barely distinguishable from pooled OLS — there is little serial correlation to correct.`;
+    color = "#3d5a6c";
+  } else if (th > 0.92) {
+    msg = `θ ≈ 1: the region effect dominates (intraclass ρ ≈ ${rho.toFixed(2)}). Random effects has slid almost all the way to the within (fixed-effects) estimator — it now trusts mainly within-region variation.`;
+    color = "#9c7a33";
+  } else {
+    msg = `θ = ${th.toFixed(2)} (intraclass ρ ≈ ${rho.toFixed(2)}): random effects is blending between-region and within-region variation. Its slope (${remod_fits.re.b1.toFixed(3)}) sits between the pooled (${remod_fits.pooled.b1.toFixed(3)}) and within (${remod_fits.within.b1.toFixed(3)}) slopes.`;
+    color = "#990000";
+  }
+  return html`<div style="
+      margin-top:0.75rem; padding:0.6rem 0.9rem;
+      border-radius:0.4rem; border-left:3px solid ${color};
+      background:#f6f5f1;
+      font-family:'Inter', system-ui, sans-serif;
+      font-size:0.86rem; line-height:1.5; color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Dial
+
+Work through these steps in order; each isolates one idea.
+
+**Step 1: Find the three lines.** In the left panel, the grey dots are all $N \times T$ region-year observations. Three lines run through them: the slate dashed line is **pooled OLS** ($\theta=0$), the ochre dotted line is **fixed effects / within** ($\theta=1$), and the solid Uppsala-red line is **random effects** at the current $\theta$. The legend below prints each slope and the true value, $\beta = -0.800$.
+
+**Step 2: Confirm all three are unbiased.** Because the simulation draws $\alpha_i$ *independently* of $x$, every estimator should land near $-0.8$. They differ a little from draw to draw (that is sampling noise, not bias) --- press **Draw new sample** a few times and watch all three scatter around the truth, never systematically off.
+
+**Step 3: Slide the variance ratio up.** Drag $\sigma_\alpha^2/\sigma_\varepsilon^2$ from 0 toward 6. In the right panel, the red RE marker climbs the track from the slate "Pooled" endpoint toward the ochre "Within" endpoint, and the printed $\theta$ rises from 0 toward 1. The intraclass correlation $\rho$ in the verdict line rises with it. The lesson: the more of the noise that is *persistent region effect*, the more random effects discounts the between-region comparisons and leans on the within-region ones.
+
+**Step 4: Slide it back to zero.** Set the variance ratio to 0. Now $\theta = 0$ exactly: the red RE line lies *on top of* the slate pooled line. With no region effect, there is no serial correlation to fix, and feasible GLS reduces to OLS.
+
+**Step 5: Add periods.** Push **Periods per region (T)** higher with the variance ratio fixed at a middling value. Watch $\theta$ creep upward even though the variance *ratio* did not change. More time periods pin down each region's mean more precisely, so $\theta = 1 - \sqrt{1/(1 + T\rho/(1-\rho))}$ rises toward 1 --- with long panels, random effects and fixed effects converge.
+
+**Step 6: Watch the RE slope ride the curve.** Keep one eye on the right panel as you sweep the variance ratio slowly. The grey track is the *true* path the RE slope follows as $\theta$ runs from 0 to 1 --- it bows gently between the slate "Pooled" endpoint and the ochre "Within" endpoint rather than running dead straight, because the quasi-demeaned slope is a *nonlinear* function of $\theta$ (a ratio of $\theta$-dependent sums), not a simple linear blend of the two extremes. The red dot always rides exactly on that curve: a smooth, single-parameter journey from pooled OLS to fixed effects governed entirely by $\theta$.
+
+
+## Why GLS Beats OLS Here
+
+Pooled OLS and random effects target the *same* $\boldsymbol\beta$ and, under the RE assumption, both are unbiased. The difference is variance. The Gauss--Markov theorem guarantees OLS is the best *linear* unbiased estimator only when the errors are homoskedastic and uncorrelated. Here the composite error $u_{it}$ has the block structure we computed --- a constant $\sigma_\alpha^2$ covariance between any two periods of the same region. Generalized least squares is the estimator that is BLUE under *that* error structure: it premultiplies by the inverse square root of the error covariance matrix $\boldsymbol\Omega$, which restores spherical errors. The quasi-demeaning transform is exactly that premultiplication written out for the random-effects $\boldsymbol\Omega$.
+
+::: {.glass-card .glass-card--insight}
+Random effects is not "fixed effects with an extra assumption." It is **GLS for a panel error that remembers its unit.** When the assumption $\operatorname{Cov}(\alpha_i, \mathbf{x}_{it}) = 0$ holds, RE is the efficient estimator --- it has smaller standard errors than both pooled OLS (which ignores the correlation) and fixed effects (which throws away clean between-unit information). The efficiency gain is largest when $T$ is small and the between-unit variation in $\mathbf{x}$ is large, because that is precisely the information fixed effects discards.
+:::
+
+
+<details>
+<summary>Math Details: Deriving θ and the GLS Transformation</summary>
+<div class="details-content">
+
+### The error covariance matrix for one unit
+
+Stack the $T$ observations of region $i$ into vectors $\mathbf{y}_i$, $\mathbf{X}_i$, and $\mathbf{u}_i = \alpha_i \boldsymbol\iota_T + \boldsymbol\varepsilon_i$, where $\boldsymbol\iota_T$ is a $T\times 1$ vector of ones. With $\alpha_i \perp \boldsymbol\varepsilon_i$, $\operatorname{Var}(\alpha_i) = \sigma_\alpha^2$, and $\operatorname{Var}(\boldsymbol\varepsilon_i) = \sigma_\varepsilon^2 \mathbf{I}_T$, the $T\times T$ covariance of the composite error within a unit is
+
+$$
+\boldsymbol\Omega = \operatorname{Var}(\mathbf{u}_i)
+= \sigma_\varepsilon^2 \mathbf{I}_T + \sigma_\alpha^2 \boldsymbol\iota_T \boldsymbol\iota_T'.
+$$
+
+**Read this as**: "a diagonal $\sigma_\varepsilon^2$ on every observation, plus a constant $\sigma_\alpha^2$ added to *every* entry --- the off-diagonal $\sigma_\alpha^2$ terms are the shared region effect." GLS needs $\boldsymbol\Omega^{-1/2}$.
+
+### Inverting the rank-one-plus-diagonal structure
+
+Use the projection decomposition. Let $\mathbf{P} = \tfrac{1}{T}\boldsymbol\iota_T\boldsymbol\iota_T'$ be the matrix that averages over time (so $\mathbf{P}\mathbf{z} = \bar{z}\,\boldsymbol\iota_T$), and let $\mathbf{Q} = \mathbf{I}_T - \mathbf{P}$ be the within (demeaning) projection. These are orthogonal idempotents: $\mathbf{P} + \mathbf{Q} = \mathbf{I}_T$, $\mathbf{P}\mathbf{Q} = \mathbf{0}$. Because $\boldsymbol\iota_T\boldsymbol\iota_T' = T\mathbf{P}$, we can write
+
+$$
+\boldsymbol\Omega = \sigma_\varepsilon^2(\mathbf{P} + \mathbf{Q}) + T\sigma_\alpha^2 \mathbf{P}
+= (\sigma_\varepsilon^2 + T\sigma_\alpha^2)\,\mathbf{P} + \sigma_\varepsilon^2\,\mathbf{Q}.
+$$
+
+Since $\mathbf{P}$ and $\mathbf{Q}$ project onto orthogonal subspaces, $\boldsymbol\Omega$ acts like the scalar $(\sigma_\varepsilon^2 + T\sigma_\alpha^2)$ on the "between" subspace and like $\sigma_\varepsilon^2$ on the "within" subspace. Any power of $\boldsymbol\Omega$ is therefore obtained by taking that power of each scalar:
+
+$$
+\boldsymbol\Omega^{-1/2}
+= (\sigma_\varepsilon^2 + T\sigma_\alpha^2)^{-1/2}\,\mathbf{P}
++ \sigma_\varepsilon^{-1}\,\mathbf{Q}.
+$$
+
+### Factor out a scalar to reveal θ
+
+Multiply through by $\sigma_\varepsilon$ (a harmless rescaling that does not change the GLS estimator):
+
+$$
+\sigma_\varepsilon\,\boldsymbol\Omega^{-1/2}
+= \sqrt{\dfrac{\sigma_\varepsilon^2}{\sigma_\varepsilon^2 + T\sigma_\alpha^2}}\;\mathbf{P} + \mathbf{Q}.
+$$
+
+Define
+
+$$
+\theta = 1 - \sqrt{\dfrac{\sigma_\varepsilon^2}{\sigma_\varepsilon^2 + T\sigma_\alpha^2}},
+$$
+
+so that the coefficient on $\mathbf{P}$ is $(1-\theta)$. Then
+
+$$
+\sigma_\varepsilon\,\boldsymbol\Omega^{-1/2}
+= (1-\theta)\mathbf{P} + \mathbf{Q}
+= (1-\theta)\mathbf{P} + (\mathbf{I}_T - \mathbf{P})
+= \mathbf{I}_T - \theta\mathbf{P}.
+$$
+
+### The transform is quasi-demeaning
+
+Apply this operator to a data vector $\mathbf{z}_i$. Because $\mathbf{P}\mathbf{z}_i = \bar{z}_i\,\boldsymbol\iota_T$,
+
+$$
+(\mathbf{I}_T - \theta\mathbf{P})\mathbf{z}_i = \mathbf{z}_i - \theta\,\bar{z}_i\,\boldsymbol\iota_T,
+$$
+
+which in scalar form is the **quasi-demeaning** $z_{it} - \theta\,\bar{z}_i$. Running OLS on the transformed $y_{it} - \theta\bar{y}_i$ and $\mathbf{x}_{it} - \theta\bar{\mathbf{x}}_i$ *is* the GLS estimator. $\blacksquare$
+
+### The two limits, algebraically
+
+- $\sigma_\alpha^2 = 0 \Rightarrow$ the fraction under the root is $1 \Rightarrow \theta = 0 \Rightarrow$ transform is $\mathbf{I}_T$ (pooled OLS).
+- $\sigma_\alpha^2 \to \infty \Rightarrow$ the fraction $\to 0 \Rightarrow \theta \to 1 \Rightarrow$ transform is $\mathbf{I}_T - \mathbf{P} = \mathbf{Q}$ (the within/FE projection).
+
+### Feasibility
+
+$\sigma_\varepsilon^2$ and $\sigma_\alpha^2$ are unknown. Consistent estimators: $\hat\sigma_\varepsilon^2$ from the within (fixed-effects) residual variance, and $\hat\sigma_\alpha^2 = \hat\sigma_{\text{between}}^2 - \hat\sigma_\varepsilon^2/T$ from the between regression of unit means. Plugging $\hat\theta$ in gives **feasible** GLS, which is asymptotically equivalent to the infeasible GLS that knows the true variances.
+
+</div>
+</details>
+
+
+## Estimating Random Effects in Practice
+
+Both implementations simulate the same panel of 21 regioner, fit pooled OLS, fixed effects, and random effects, and print $\hat\theta$ and the three slopes so you can see the interpolation in real estimator output.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(plm)      # panel estimators: pooling, within, random
+library(nlme)     # lme(): random effects as a mixed model (ML/REML)
+
+set.seed(2026)
+
+# --- Simulate a panel: 21 regioner over T = 6 years ---
+N <- 21; T <- 6
+beta0 <- 12; beta1 <- -0.8
+sigma_eps <- 1.2; sigma_alpha <- 1.2   # variance ratio = 1
+
+regions <- data.frame(region = 1:N,
+                      alpha  = rnorm(N, 0, sigma_alpha),
+                      xc     = rnorm(N, 0, 2))   # region x-center (⟂ alpha)
+
+panel <- expand.grid(region = 1:N, year = 1:T)
+panel <- merge(panel, regions, by = "region")
+panel$x <- panel$xc + rnorm(nrow(panel), 0, 1)
+panel$y <- beta0 + beta1 * panel$x + panel$alpha +
+           rnorm(nrow(panel), 0, sigma_eps)
+
+pdata <- pdata.frame(panel, index = c("region", "year"))
+
+# --- Three estimators on identical data ---
+m_pool <- plm(y ~ x, data = pdata, model = "pooling")  # theta = 0
+m_with <- plm(y ~ x, data = pdata, model = "within")   # theta = 1
+m_re   <- plm(y ~ x, data = pdata, model = "random")   # feasible GLS
+
+# Recover the estimated quasi-demeaning parameter theta-hat
+ercomp(m_re)              # variance components + theta
+theta_hat <- ercomp(m_re)$theta
+cat(sprintf("theta-hat = %.3f\n", as.numeric(theta_hat)))
+
+cat(sprintf("Pooled  beta = %+.3f\n", coef(m_pool)["x"]))
+cat(sprintf("Random  beta = %+.3f\n", coef(m_re)["x"]))
+cat(sprintf("Within  beta = %+.3f\n", coef(m_with)["x"]))
+# Random's slope lies between Pooled and Within, near the true -0.800.
+
+# --- Same model via the mixed-model route (random intercept per region) ---
+m_lme <- lme(y ~ x, random = ~ 1 | region, data = panel, method = "REML")
+summary(m_lme)$tTable        # fixed-effect slope for x
+VarCorr(m_lme)               # sigma_alpha (Intercept) and sigma_eps (Residual)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from linearmodels.panel import PooledOLS, PanelOLS, RandomEffects
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(2026)
+
+# --- Simulate a panel: 21 regioner over T = 6 years ---
+N, T = 21, 6
+beta0, beta1 = 12.0, -0.8
+sigma_eps, sigma_alpha = 1.2, 1.2          # variance ratio = 1
+
+reg = pd.DataFrame({
+    "region": np.arange(N),
+    "alpha":  rng.normal(0, sigma_alpha, N),
+    "xc":     rng.normal(0, 2, N),         # region x-center (independent of alpha)
+})
+
+panel = (pd.MultiIndex.from_product([range(N), range(T)],
+                                    names=["region", "year"])
+         .to_frame(index=False)
+         .merge(reg, on="region"))
+panel["x"] = panel["xc"] + rng.normal(0, 1, len(panel))
+panel["y"] = (beta0 + beta1 * panel["x"] + panel["alpha"]
+              + rng.normal(0, sigma_eps, len(panel)))
+
+# linearmodels wants a (entity, time) MultiIndex
+panel = panel.set_index(["region", "year"])
+
+# --- Three estimators on identical data ---
+m_pool = PooledOLS.from_formula("y ~ 1 + x", panel).fit()      # theta = 0
+m_with = PanelOLS.from_formula("y ~ 1 + x + EntityEffects",
+                               panel).fit()                    # theta = 1
+m_re   = RandomEffects.from_formula("y ~ 1 + x", panel).fit()  # feasible GLS
+
+# RandomEffects exposes the estimated theta and the variance decomposition
+print("theta-hat       =", round(float(m_re.theta.iloc[0, 0]), 3))
+print("variance comps  :\n", m_re.variance_decomposition)
+
+print(f"Pooled  beta = {m_pool.params['x']:+.3f}")
+print(f"Random  beta = {m_re.params['x']:+.3f}")
+print(f"Within  beta = {m_with.params['x']:+.3f}")
+# Random's slope lies between Pooled and Within, near the true -0.800.
+
+# --- Same model via statsmodels MixedLM (random intercept per region) ---
+flat = panel.reset_index()
+m_mix = smf.mixedlm("y ~ x", data=flat, groups=flat["region"]).fit(reml=True)
+print(m_mix.summary())   # fixed-effect slope for x + Group Var (sigma_alpha^2)
+```
+
+:::
+
+In both languages the random-effects slope falls *between* the pooled and within slopes, and the reported $\hat\theta$ matches the variance ratio you simulated. Change `sigma_alpha` and rerun: a larger region-effect variance pushes $\hat\theta$ toward 1 and the random-effects slope toward the within slope --- exactly the interactive's behavior, now in real estimator output.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A panel of vårdcentraler has idiosyncratic error variance $\sigma_\varepsilon^2 = 4$ and region-effect variance $\sigma_\alpha^2 = 1$, observed over $T = 5$ years.
+
+(a) Compute the intraclass correlation $\rho$. (b) Compute the quasi-demeaning parameter $\theta$. (c) If the agency extends the panel to $T = 20$ years, what happens to $\theta$, and what does that imply about how random effects starts to behave?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\rho = \dfrac{\sigma_\alpha^2}{\sigma_\alpha^2 + \sigma_\varepsilon^2} = \dfrac{1}{1 + 4} = 0.20$. Twenty percent of the error variance is the persistent region effect.
+
+**(b)** $\theta = 1 - \sqrt{\dfrac{\sigma_\varepsilon^2}{\sigma_\varepsilon^2 + T\sigma_\alpha^2}} = 1 - \sqrt{\dfrac{4}{4 + 5\cdot 1}} = 1 - \sqrt{4/9} = 1 - \tfrac{2}{3} = 0.333.$
+
+So random effects subtracts one-third of each region's mean.
+
+**(c)** At $T = 20$: $\theta = 1 - \sqrt{\dfrac{4}{4 + 20}} = 1 - \sqrt{4/24} = 1 - \sqrt{1/6} \approx 1 - 0.408 = 0.592.$
+
+$\theta$ rises from $0.333$ to $0.592$ even though the variance *ratio* is unchanged. With more periods, each region's mean is estimated more precisely, so GLS leans more heavily on within-region variation --- random effects drifts toward fixed effects as $T$ grows.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Show that pooled OLS is unbiased for $\boldsymbol\beta$ under the random-effects assumptions, yet its conventional (OLS) standard errors are wrong. Identify the two distinct problems with pooled OLS in this setting.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Unbiasedness.** Pooled OLS regresses $y_{it}$ on $\mathbf{x}_{it}$ with composite error $u_{it} = \alpha_i + \varepsilon_{it}$. Its bias depends on $\operatorname{Cov}(\mathbf{x}_{it}, u_{it})$. Under the RE assumptions, $\operatorname{Cov}(\mathbf{x}_{it}, \alpha_i) = 0$ and $\operatorname{Cov}(\mathbf{x}_{it}, \varepsilon_{it}) = 0$, so $\operatorname{Cov}(\mathbf{x}_{it}, u_{it}) = 0$. Hence $\hat{\boldsymbol\beta}_{\text{pooled}}$ is unbiased and consistent.
+
+**Two distinct problems.**
+
+1. *Wrong standard errors.* Conventional OLS variance formulas assume $\operatorname{Var}(\mathbf{u}) = \sigma^2 \mathbf{I}$. But here observations within a region share $\alpha_i$, so $\operatorname{Cov}(u_{it}, u_{is}) = \sigma_\alpha^2 \neq 0$ for $t \neq s$. The off-diagonal terms mean the textbook OLS standard errors are biased (typically *too small*), so $t$-statistics are overstated. (Clustering SEs by region fixes the *inference* but not the efficiency.)
+
+2. *Inefficiency.* Even with corrected SEs, OLS is not BLUE because the error is not spherical. It treats correlated region-years as independent draws, effectively double-counting redundant information. GLS (random effects) reweights to account for the within-region correlation and achieves smaller variance.
+
+So pooled OLS is *right on average* but *needlessly noisy and wrongly certain*. Random effects fixes both.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Starting from the GLS operator $\mathbf{I}_T - \theta\mathbf{P}$ derived in the Math Details, verify the two limiting cases *and* prove that the operator equals the within projection $\mathbf{Q}$ exactly when $\theta = 1$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Recall $\mathbf{P} = \tfrac{1}{T}\boldsymbol\iota_T\boldsymbol\iota_T'$ (time-averaging), $\mathbf{Q} = \mathbf{I}_T - \mathbf{P}$ (within/demeaning), and the GLS operator $\mathbf{A}(\theta) = \mathbf{I}_T - \theta\mathbf{P}$.
+
+**Limit $\theta = 0$** (pure pooled OLS): $\mathbf{A}(0) = \mathbf{I}_T - 0 \cdot \mathbf{P} = \mathbf{I}_T$. The operator leaves the data untouched, so GLS reduces to OLS on the raw data. This is the $\sigma_\alpha^2 = 0$ case: $\theta = 1 - \sqrt{\sigma_\varepsilon^2/\sigma_\varepsilon^2} = 0$.
+
+**Limit $\theta = 1$** (pure fixed effects):
+$$
+\mathbf{A}(1) = \mathbf{I}_T - 1\cdot \mathbf{P} = \mathbf{I}_T - \mathbf{P} = \mathbf{Q}.
+$$
+The operator *is* the within projection, so GLS demeans completely --- it is the within (fixed-effects) estimator. This is the $\sigma_\alpha^2 \to \infty$ case, where the fraction under the root $\to 0$ and $\theta \to 1$.
+
+**Applying $\mathbf{Q}$ to data** gives $\mathbf{Q}\mathbf{z}_i = \mathbf{z}_i - \bar{z}_i\boldsymbol\iota_T$, i.e. the full demeaning $z_{it} - \bar{z}_i$. So at $\theta = 1$ the quasi-demeaning $z_{it} - \theta\bar{z}_i$ becomes the exact demeaning of fixed effects. $\checkmark$
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A researcher studies whether a region's mean patient age (a *slowly changing, nearly time-invariant* regressor) affects the share of poorly-controlled HbA1c patients. A colleague insists on fixed effects "to be safe." Explain why fixed effects may be unable to estimate this coefficient at all, and why random effects can --- and state the price random effects pays for that ability.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Fixed effects cannot use a time-invariant regressor.** The within transformation subtracts each region's time mean: $\tilde{x}_{it} = x_{it} - \bar{x}_i$. If mean patient age is (nearly) constant within a region over the study window, then $x_{it} \approx \bar{x}_i$, so $\tilde{x}_{it} \approx 0$ for every observation. A regressor that is all zeros after demeaning carries no variation, and its coefficient is **not identified** (it is collinear with the demeaned constant / drops out). Fixed effects can only estimate effects of variables that move *within* a unit over time.
+
+**Random effects can.** Because $\theta < 1$, quasi-demeaning leaves a fraction $(1-\theta)$ of the between-region variation in $x$ intact. The cross-region differences in patient age survive the transformation, so the coefficient on a time-invariant (or slowly moving) regressor *is* identified. This is a genuine advantage of random effects: it exploits between-unit variation that fixed effects discards.
+
+**The price.** Random effects buys this only by assuming $\operatorname{Cov}(\alpha_i, \mathbf{x}_{it}) = 0$. If regions with older populations also differ systematically in unmeasured ways correlated with the outcome (high $\alpha_i$), then the age coefficient is *biased* --- it absorbs that correlation. Fixed effects is "safe" precisely because it never makes this assumption, but the safety costs you the ability to estimate time-invariant effects at all. The choice between them is the subject of the next page.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Random effects treats the unit effect $\alpha_i$ as a random draw uncorrelated with the regressors, $\operatorname{Cov}(\alpha_i, \mathbf{x}_{it}) = 0$ --- it is structured noise, not a confounder.
+- The composite error $u_{it} = \alpha_i + \varepsilon_{it}$ is serially correlated within a unit (covariance $\sigma_\alpha^2$), so pooled OLS is unbiased but inefficient with wrong standard errors.
+- The RE estimator is feasible GLS, implemented as quasi-demeaning $z_{it} - \theta\bar{z}_i$ with $\theta = 1 - \sqrt{\sigma_\varepsilon^2/(\sigma_\varepsilon^2 + T\sigma_\alpha^2)}$.
+- $\theta$ is a single dial: $\theta = 0$ is pooled OLS, $\theta = 1$ is fixed effects, and RE interpolates --- $\theta$ rises with the variance ratio and with $T$.
+- When its uncorrelatedness assumption holds, RE is efficient and can estimate time-invariant regressors; when it fails, RE is biased and fixed effects is the safe choice.
+:::
+
+## What Comes Next
+
+We have built the random-effects estimator as feasible GLS, derived its quasi-demeaning parameter $\theta$, and seen it interpolate between pooled OLS and fixed effects as the variance ratio and panel length change. But everything rested on one fragile pillar: $\operatorname{Cov}(\alpha_i, \mathbf{x}_{it}) = 0$. If that fails, random effects is the efficient estimator of the *wrong* number, while fixed effects --- which never assumes it --- stays consistent. The next page, [Fixed versus Random Effects](fe-vs-re.qmd), turns this trade-off into a decision: it develops the Hausman test that compares the two estimators directly, the Mundlak device that reconciles them, and a practical workflow for choosing between efficiency and robustness in real Swedish panel data.

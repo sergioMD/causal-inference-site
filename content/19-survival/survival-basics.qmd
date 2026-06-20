@@ -1,0 +1,807 @@
+---
+title: "Survival Analysis: Hazards and the Kaplan-Meier Curve"
+subtitle: "Modeling time-to-event with censoring"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Recognize a *time-to-event* (duration) outcome and explain why **right-censoring** makes OLS and logit the wrong tools
+- Define and connect the three core functions --- the survival function $S(t)$, the hazard $h(t)$, and the cumulative hazard $H(t)$ --- and read the identity $S(t)=\exp(-H(t))$ aloud
+- Construct the **Kaplan-Meier** product-limit estimator by hand from a risk set and an event count
+- Read a median survival time off a KM step curve and interpret two-group differences
+- Compare two survival curves with the **log-rank** test and fit a KM curve in R (`survival`) and Python (`lifelines`)
+:::
+
+## The Question Behind a Duration
+
+A *vårdcentral* (primary care center) in Region Uppsala discharges heart-failure patients and wants to know one thing: **how long until they come back?** The outcome is not "did the patient get readmitted, yes or no" --- it is *time to readmission*, measured in days. A new nurse-led follow-up program (*sjuksköterskeledd uppföljning*) is being piloted against standard care, and the *verksamhetschef* (clinic manager) needs to know whether the program keeps patients out of hospital *longer*.
+
+Two features make this outcome different from anything we have modeled so far. First, the response is a *duration* $T \ge 0$ --- strictly positive, right-skewed, never normally distributed. Second, and decisively, the study ends before every patient has the event. When the 18-month follow-up window closes, many patients still have not been readmitted. For them we do not know $T$. We know only that $T$ exceeds the time we observed them. This is **right-censoring**, and it is the defining problem of survival analysis.
+
+Throw away the censored patients and you bias the result toward the sickest, fastest-failing cases. Code a censored patient as "no event" and run a logit and you pretend a patient followed for 30 days is the same as one followed for 500. Run OLS on the observed times and the censored durations enter as if they were completed --- systematically too short. None of the tools from earlier modules handle a half-observed duration correctly. We need machinery built for it.
+
+::: {.glass-card .glass-card--definition}
+A subject is **right-censored** at time $c_i$ if the study ends, or the subject is lost to follow-up, *before* the event occurs. We then observe the pair
+
+$$
+\big(\tilde{T}_i,\ \delta_i\big), \qquad
+\tilde{T}_i = \min(T_i,\,c_i), \qquad
+\delta_i = \mathbb{1}\{T_i \le c_i\}.
+$$
+
+**Read this as**: "we observe the *follow-up time* $\tilde T_i$, which is the smaller of the true event time $T_i$ and the censoring time $c_i$, together with an *event indicator* $\delta_i$ that equals 1 if the event was observed and 0 if the subject was censored." A censored row ($\delta_i = 0$) is not missing data --- it carries real information: *this patient survived at least $\tilde T_i$ days.*
+:::
+
+## Three Functions, One Distribution
+
+Survival analysis describes the distribution of $T$ through three equivalent lenses. Each answers a different clinical question, and they convert into one another by calculus.
+
+### The survival function
+
+::: {.glass-card .glass-card--definition}
+The **survival function** is the probability of *not yet* having had the event by time $t$:
+
+$$
+S(t) = P(T > t) = 1 - F(t),
+$$
+
+where $F$ is the cumulative distribution function of $T$.
+
+**Read this as**: "$S$ of $t$ is the probability that the event time $T$ exceeds $t$." It starts at $S(0)=1$ (everyone is event-free at the start) and decreases monotonically toward 0. For our patients, $S(180)$ is the probability of *still being readmission-free* six months after discharge.
+:::
+
+### The hazard function
+
+::: {.glass-card .glass-card--definition}
+The **hazard function** is the instantaneous event rate at time $t$, *given survival up to $t$*:
+
+$$
+h(t) = \lim_{\Delta t \to 0} \frac{P(t \le T < t + \Delta t \mid T \ge t)}{\Delta t}
+     = \frac{f(t)}{S(t)},
+$$
+
+where $f(t) = -S'(t)$ is the density of $T$.
+
+**Read this as**: "the hazard at $t$ is the chance the event happens in the next instant, *conditional on having made it to $t$*, per unit of time." It is a *rate*, not a probability --- it can exceed 1. The conditioning on $T \ge t$ is what makes the hazard the natural object for censored data: at each moment we ask only about the patients still at risk.
+:::
+
+### The cumulative hazard
+
+::: {.glass-card .glass-card--definition}
+The **cumulative hazard** accumulates the hazard over time:
+
+$$
+H(t) = \int_0^t h(u)\,du.
+$$
+
+**Read this as**: "$H$ of $t$ is the total hazard experienced from 0 up to $t$." It is not a probability --- it rises without bound. Its slope at any point *is* the hazard $h(t)$, so a steepening cumulative-hazard curve signals a rising risk.
+:::
+
+### How they lock together
+
+These three functions are one distribution wearing three hats. The link is a short, beautiful identity. Because $h(u) = f(u)/S(u) = -S'(u)/S(u) = -\frac{d}{du}\log S(u)$, integrating from 0 to $t$ gives
+
+$$
+H(t) = \int_0^t h(u)\,du = -\log S(t)
+\qquad\Longleftrightarrow\qquad
+\boxed{\,S(t) = \exp\!\big(-H(t)\big)\,}.
+$$
+
+**Read the boxed identity as**: "the survival probability equals $e$ raised to the negative cumulative hazard." Know any one of $S$, $h$, $H$, and you know the other two. The derivation in full is in the [Math Details](#math-details) below.
+
+::: {.glass-card .glass-card--insight}
+**The hazard is the modeling workhorse.** We *describe* results with $S(t)$ (patients understand "60% are still readmission-free at one year"), but we *model* with $h(t)$. The reason is censoring: the hazard conditions on the risk set --- the patients still under observation and event-free --- so a censored subject simply leaves the risk set at $\tilde T_i$ without contaminating the estimate. The whole next page, the [Cox Proportional Hazards model](cox-proportional-hazards.qmd), is a regression *on the hazard* for exactly this reason.
+:::
+
+## The Kaplan-Meier Estimator
+
+We rarely want to assume a parametric shape for $S(t)$. The **Kaplan-Meier** (KM) estimator --- also called the *product-limit* estimator (Kaplan & Meier, 1958) --- is a nonparametric estimate of $S(t)$ that handles right-censoring exactly right.
+
+The idea is to chain together conditional survival probabilities. Order the *distinct event times* $t_1 < t_2 < \cdots < t_k$. At each event time $t_j$, let $n_j$ be the **risk set** (the number of subjects still under observation and event-free *just before* $t_j$) and $d_j$ the number of events *at* $t_j$. The probability of surviving *through* $t_j$ given survival up to it is $\big(1 - d_j/n_j\big)$. Surviving past $t$ means surviving every event time up to $t$, so we multiply:
+
+::: {.glass-card .glass-card--definition}
+The **Kaplan-Meier product-limit estimator** is
+
+$$
+\hat{S}(t) = \prod_{j:\,t_j \le t} \left(1 - \frac{d_j}{n_j}\right),
+$$
+
+where $d_j$ is the number of events at distinct event time $t_j$ and $n_j$ is the size of the risk set just before $t_j$.
+
+**Read this as**: "$\hat S(t)$ is the product, over all event times $t_j$ at or before $t$, of one minus the event-to-risk ratio at $t_j$." Each factor knocks the curve down by the fraction of the *current* risk set that had the event --- producing a **step function** that drops only at observed event times and stays flat in between.
+:::
+
+The genius is in how censoring enters. A censored subject is *not* an event, so it never creates a drop. But it *does* shrink the risk set $n_j$ for every later event time --- the subject silently leaves the pool at $\tilde T_i$. That is exactly the right bookkeeping: we never claim the censored patient had the event, but we stop counting them as "at risk" once we lose sight of them.
+
+::: {.glass-card .glass-card--assumption}
+**Kaplan-Meier requires non-informative (independent) censoring.** Why a censored patient leaves must be unrelated to their hazard. If sicker patients drop out of follow-up faster --- so censoring *predicts* the event --- the risk set is no longer representative of the survivors, and $\hat S(t)$ is biased. Administrative censoring (the study window simply closing) is the safe case; *informative* dropout (patients deteriorating and disappearing from the registry) is the dangerous one.
+:::
+
+## See It: Two Kaplan-Meier Curves
+
+The interactive below contrasts the nurse-led follow-up program against standard care for the heart-failure cohort. Each curve is a genuine KM step function computed from simulated patients; drag the **censoring-rate** slider to administratively censor more patients and watch how the curves --- and the median survival markers --- respond. The risk-set table beneath the chart shows the bookkeeping that produces each step.
+
+::: {.interactive-container}
+
+#### Kaplan-Meier survival curves: program vs. standard care
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls (the full guided tour is below).
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${svkm_pal.axis};
+    background: ${svkm_pal.fill};
+    border-left: 3px solid ${svkm_pal.program};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> the red curve is the nurse-led program, the slate
+  curve is standard care. Higher and to the right means patients stay
+  readmission-free longer. Drag <em>Censoring rate</em> and watch the curves,
+  the median markers, and the risk-set table update. Full tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof svkm_censRate = Inputs.range([0, 0.6], {
+  value: 0.25,
+  step: 0.05,
+  label: "Censoring rate (share lost / window closed)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof svkm_seed = Inputs.button("Resample cohort", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Uppsala-academic palette shared across this page's interactives. ──
+svkm_pal = ({
+  program:  "#990000",   // focal series — nurse-led program (Uppsala red)
+  standard: "#3d5a6c",   // comparison series — standard care (slate)
+  good:     "#2e6f40",   // on-target / no-difference (green)
+  ochre:    "#9c7a33",   // highlight / median annotation (ochre)
+  ink:      "#1c1c1a",   // ink text & reference lines
+  axis:     "#79766e",   // axis / muted label text (Uppsala muted ink)
+  hair:     "#e6e3db",   // gridlines / hairlines
+  muted:    "#79766e",   // muted ink
+  fill:     "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// A tiny seeded PRNG *factory* so "Resample cohort" gives fresh-but-reproducible
+// draws without ever reading+writing a mutable. mulberry32 is a standard 32-bit
+// generator. We build a NEW generator from an integer seed on each call, so the
+// cohort is a pure function of (seed, censoring rate): moving the censoring
+// slider re-censors the SAME patients rather than reshuffling them.
+svkm_makeRng = function (seed) {
+  let a = (seed * 2654435761 + 12345) >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Draw a censored cohort for one group. True event times T are exponential with
+// the group's hazard rate; administrative censoring time C is the smaller of a
+// uniform "lost to follow-up" draw (governed by svkm_censRate) and the study
+// horizon. We observe min(T, C) and the event indicator δ = 1{T ≤ C}.
+//
+// Each patient consumes EXACTLY three rng() draws in a fixed order (event-time,
+// loss-test, loss-time), regardless of censRate. So changing the censoring
+// slider re-censors the SAME underlying patients with the SAME event times T,
+// rather than reshuffling the whole stream — the behaviour the prose promises.
+svkm_drawGroup = function (rate, n, horizon, censRate, rng) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const uEvent = Math.max(1e-9, rng());   // 1) event-time uniform
+    const uLoss  = rng();                    // 2) loss-test uniform
+    const uWhen  = rng();                    // 3) loss-time uniform
+    // Inverse-CDF sample of an exponential event time (days).
+    const T = -Math.log(uEvent) / rate;
+    // With probability censRate the patient is lost early (uniform on the
+    // window); otherwise they are only censored if they outlive the horizon.
+    const C = uLoss < censRate ? uWhen * horizon : horizon;
+    const time  = Math.min(T, C);
+    const event = T <= C ? 1 : 0;
+    out.push({ time, event });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Cohort parameters. The program lowers the readmission hazard (longer times);
+// standard care has the higher hazard. Rates are per day; horizon is 540 days
+// (18-month pilot window). Each named value lives in its own OJS cell.
+svkm_horizon = 540
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+svkm_nPer = 80
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fresh generators seeded deterministically from the click count, one per group,
+// so the two cohorts are independent yet fully reproducible for a given seed.
+svkm_cohort = ({
+  program:  svkm_drawGroup(1 / 320, svkm_nPer, svkm_horizon, svkm_censRate, svkm_makeRng(svkm_seed * 2 + 1)),
+  standard: svkm_drawGroup(1 / 180, svkm_nPer, svkm_horizon, svkm_censRate, svkm_makeRng(svkm_seed * 2 + 2))
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The Kaplan-Meier product-limit estimator. ──
+// Returns the step points {t, S} plus, at each distinct EVENT time, the risk
+// set n_j and event count d_j — exactly the table the prose describes.
+svkm_km = function (data) {
+  // Distinct times sorted ascending; at each we count events and censorings.
+  const byTime = d3.rollups(
+    data,
+    rows => ({
+      d: d3.sum(rows, r => r.event),          // events at this time
+      c: d3.sum(rows, r => 1 - r.event)       // censorings at this time
+    }),
+    r => r.time
+  ).sort((a, b) => a[0] - b[0]);
+
+  let atRisk = data.length;
+  let S = 1;
+  const steps = [{ t: 0, S: 1, n: atRisk, d: 0 }];   // anchor at (0, 1)
+  const table = [];
+
+  for (const [t, { d, c }] of byTime) {
+    const n = atRisk;                          // risk set JUST BEFORE t
+    if (d > 0) {
+      S = S * (1 - d / n);                     // product-limit factor
+      steps.push({ t, S, n, d });
+      table.push({ t, n, d, c, factor: 1 - d / n, S });
+    }
+    atRisk -= (d + c);                          // events AND censorings leave
+  }
+  return { steps, table };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+svkm_kmProgram = svkm_km(svkm_cohort.program)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+svkm_kmStandard = svkm_km(svkm_cohort.standard)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Median survival = first time the KM curve drops to or below 0.5. Returns null
+// (undefined median) if the curve never reaches 0.5 within follow-up — a real
+// and common outcome the prose calls out. One named value per OJS cell.
+svkm_median = function (km) {
+  const hit = km.steps.find(s => s.S <= 0.5);
+  return hit ? hit.t : null;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+svkm_medProgram = svkm_median(svkm_kmProgram)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+svkm_medStandard = svkm_median(svkm_kmStandard)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build a single tidy series for plotting both step curves, tagged by group.
+svkm_plotData = [
+  ...svkm_kmProgram.steps.map(s  => ({ ...s, group: "Nurse-led program" })),
+  ...svkm_kmStandard.steps.map(s => ({ ...s, group: "Standard care" }))
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Censoring tick marks: place a small "+" on the curve at each censored time,
+// the survival-analysis convention. We read S off the relevant group's steps.
+svkm_censMarks = function (data, km, group) {
+  const cens = data.filter(r => r.event === 0);
+  return cens.map(r => {
+    // Find the curve height in force at this censoring time.
+    let S = 1;
+    for (const s of km.steps) { if (s.t <= r.time) S = s.S; }
+    return { t: r.time, S, group };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+svkm_allCens = [
+  ...svkm_censMarks(svkm_cohort.program,  svkm_kmProgram,  "Nurse-led program"),
+  ...svkm_censMarks(svkm_cohort.standard, svkm_kmStandard, "Standard care")
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(700, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginTop: 28,
+  marginRight: 24,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px", color: svkm_pal.axis },
+  x: {
+    label: "Days since discharge  t  →",
+    domain: [0, svkm_horizon],
+    grid: false
+  },
+  y: {
+    label: "↑ Survival  Ŝ(t) = P(no readmission past t)",
+    domain: [0, 1],
+    grid: true,
+    tickFormat: "%"
+  },
+  color: {
+    domain: ["Nurse-led program", "Standard care"],
+    range: [svkm_pal.program, svkm_pal.standard],
+    legend: true
+  },
+  marks: [
+    Plot.gridY({ stroke: svkm_pal.hair }),
+    // Median reference line at S = 0.5.
+    Plot.ruleY([0.5], { stroke: svkm_pal.muted, strokeWidth: 1, strokeDasharray: "3,3" }),
+    Plot.text([{ x: svkm_horizon, y: 0.5 }], {
+      x: "x", y: "y", text: () => "median",
+      fill: svkm_pal.muted, fontSize: 10, dy: -6, dx: -4, textAnchor: "end",
+      stroke: "white", strokeWidth: 2.5, paintOrder: "stroke"
+    }),
+    // The two KM step curves.
+    Plot.line(svkm_plotData, {
+      x: "t", y: "S", stroke: "group", strokeWidth: 2.5, curve: "step-after"
+    }),
+    // Censoring tick marks (+) on each curve.
+    Plot.dot(svkm_allCens, {
+      x: "t", y: "S", stroke: "group", symbol: "plus", strokeWidth: 1.5, r: 3.5
+    }),
+    // Median survival markers (vertical drop to the axis) for each group.
+    svkm_medProgram != null ? Plot.ruleX([svkm_medProgram], {
+      stroke: svkm_pal.program, strokeWidth: 1.5, strokeDasharray: "4,3"
+    }) : null,
+    svkm_medStandard != null ? Plot.ruleX([svkm_medStandard], {
+      stroke: svkm_pal.standard, strokeWidth: 1.5, strokeDasharray: "4,3"
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: median survival per group + the gap, driven straight from the
+// KM objects so the cards can never drift from the chart.
+{
+  const fmtMed = m => m == null ? "not reached" : `${Math.round(m)} d`;
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${svkm_pal.fill}; border: 1px solid ${svkm_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${svkm_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  const gap = (svkm_medProgram != null && svkm_medStandard != null)
+    ? `+${Math.round(svkm_medProgram - svkm_medStandard)} d`
+    : "n/a";
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Median — program",  fmtMed(svkm_medProgram),  svkm_pal.program)}
+    ${tile("Median — standard", fmtMed(svkm_medStandard), svkm_pal.standard)}
+    ${tile("Program advantage", gap, gap === "n/a" ? svkm_pal.muted : svkm_pal.good)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// The risk-set table for the PROGRAM group — the bookkeeping that produces each
+// downward step. Shows the first eight event times so the product-limit logic is
+// legible without scrolling.
+html`<div style="margin-top:1rem;">
+  <div style="font-family:'Inter',sans-serif; font-size:0.72rem; font-weight:700;
+      text-transform:uppercase; letter-spacing:0.05em; color:${svkm_pal.muted};
+      margin-bottom:0.4rem;">
+    Risk-set bookkeeping — nurse-led program (first 8 event times)
+  </div>
+  <table class="science-table">
+    <thead>
+      <tr>
+        <th>Event time t<sub>j</sub> (d)</th>
+        <th>Risk set n<sub>j</sub></th>
+        <th>Events d<sub>j</sub></th>
+        <th>Factor 1 − d<sub>j</sub>/n<sub>j</sub></th>
+        <th>Ŝ(t<sub>j</sub>)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${svkm_kmProgram.table.slice(0, 8).map(r => html`<tr>
+        <td>${Math.round(r.t)}</td>
+        <td>${r.n}</td>
+        <td>${r.d}</td>
+        <td>${r.factor.toFixed(4)}</td>
+        <td><strong>${r.S.toFixed(4)}</strong></td>
+      </tr>`)}
+    </tbody>
+  </table>
+</div>`
+```
+
+:::
+
+### How to Read the Kaplan-Meier Chart
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the step curves.** Each curve starts at $\hat S(0) = 1$ (top-left: everyone is readmission-free at discharge) and steps *down* at each observed readmission. It is flat between events --- nothing happened to change our estimate. The red curve (nurse-led program) sits *above* the slate curve (standard care): at any day $t$, a larger share of program patients are still readmission-free. Higher and farther-right is better.
+
+**Step 2: Find the medians.** The grey dashed line at $\hat S = 0.5$ is the median level. Where each curve first crosses below it, drop straight down to the $x$-axis (the colored dashed verticals): that is the **median survival time** --- the day by which half the group has been readmitted. With the defaults, the program's median is roughly 220 days versus about 125 for standard care, an advantage of around three months. The cards beneath the chart report the exact numbers.
+
+**Step 3: Spot the censoring ticks.** The small "+" marks on each curve are *censored* patients --- the study window closed, or they were lost to follow-up, before any readmission. Crucially, a "+" does **not** make the curve drop. Censoring removes a patient from the risk set without ever being counted as an event. This is the bookkeeping that OLS and logit get wrong.
+
+**Step 4: Turn up the censoring.** Drag **Censoring rate** toward 0.6. More "+" marks appear and the curves become *choppier* (each remaining event lands on a smaller risk set, so each drop is larger); at high censoring a median may read "not reached" --- the curve never falls to 0.5 within the window. The curve does not collapse, because KM uses the information censored patients *do* provide (they survived at least as long as their tick).
+
+**Step 5: Resample and read the table.** Click **Resample cohort** for a fresh sample, then read one table row left to right to replay the formula: at event time $t_j$, with $n_j$ at risk and $d_j$ readmissions, multiply the running $\hat S$ by $(1 - d_j/n_j)$. The bold last column *is* the height of the red curve at that step.
+
+## Why Not OLS or Logit?
+
+The familiar tools fail on a censored duration in three distinct ways:
+
+- **OLS on the observed times** treats every censored $\tilde T_i$ as a completed duration. Because censored times are systematically *shorter* than the true (unobserved) event times, the mean is biased downward, and the bias grows with the censoring rate.
+- **Logit on an "event happened" indicator** throws away *when* the event happened and pretends a patient followed for 30 days carries the same information as one followed for 500. Two cohorts with identical 18-month readmission *rates* can have wildly different *timing* --- exactly what a clinic cares about.
+- **Dropping censored patients** ("complete-case") keeps only the fast-failing subjects, biasing every estimate toward shorter survival.
+
+Kaplan-Meier sidesteps all three by working with the *risk set* at each event time, conditioning away the patients we can no longer see.
+
+## Comparing Two Groups: The Log-Rank Test
+
+The eye says the red curve is higher --- but is the gap real or sampling noise? The **log-rank test** is the standard nonparametric test of the null hypothesis $H_0:\ S_1(t) = S_2(t)$ for all $t$ (the two groups have identical survival).
+
+The logic is a stratified comparison. At each distinct event time $t_j$, build a $2\times 2$ table of (group $\times$ event). Under $H_0$, the $d_j$ events at $t_j$ should split between the groups *in proportion to their risk sets*. So the expected events in group 1 is
+
+$$
+e_{1j} = d_j\,\frac{n_{1j}}{n_j},
+$$
+
+**read as** "the events at $t_j$ times group 1's share of the total risk set." Summing observed-minus-expected across all event times and standardizing by the (hypergeometric) variance $v_j$ gives the log-rank statistic
+
+$$
+\chi^2_{\text{LR}} = \frac{\Big(\sum_j (d_{1j} - e_{1j})\Big)^2}{\sum_j v_j},
+\qquad
+v_j = \frac{n_{1j}\,n_{2j}\,d_j\,(n_j - d_j)}{n_j^2\,(n_j - 1)},
+$$
+
+which under $H_0$ is approximately $\chi^2$ with 1 degree of freedom. A large statistic (small $p$-value) says the curves differ by more than chance. The log-rank test is most powerful when the hazards are *proportional* --- the assumption that motivates the Cox model on the next page.
+
+::: {.glass-card .glass-card--warning}
+**The log-rank test detects a difference, not its size.** A small $p$ tells you the survival curves are not identical; it does not say *how much* longer the program keeps patients out of hospital. For that you need an effect measure --- a median difference, a survival difference at a fixed horizon, or a **hazard ratio** from the Cox model. And because the test pools across all event times, two curves that *cross* (program better early, worse late) can yield a non-significant log-rank statistic even when both groups differ sharply.
+:::
+
+<details id="math-details">
+<summary>Math Details: The S–h–H relationships and the product-limit formula</summary>
+<div class="details-content">
+
+### From hazard to survival
+
+Start from the definition of the hazard as a conditional density:
+
+$$
+h(t) = \frac{f(t)}{S(t)}.
+$$
+
+Since $f(t) = -S'(t)$ (the density is the negative slope of the survival function, because $S = 1 - F$ and $f = F'$),
+
+$$
+h(t) = \frac{-S'(t)}{S(t)} = -\frac{d}{dt}\log S(t).
+$$
+
+Integrate both sides from $0$ to $t$, using $S(0) = 1$ so $\log S(0) = 0$:
+
+$$
+\int_0^t h(u)\,du = -\big[\log S(t) - \log S(0)\big] = -\log S(t).
+$$
+
+The left side is the cumulative hazard $H(t)$, so $H(t) = -\log S(t)$, and exponentiating gives the central identity
+
+$$
+S(t) = \exp\!\big(-H(t)\big). \qquad \checkmark
+$$
+
+For a **constant hazard** $h(t) = \lambda$ (the exponential model used to simulate the interactive), $H(t) = \lambda t$ and $S(t) = e^{-\lambda t}$ --- the memoryless special case. The median solves $e^{-\lambda t} = 0.5$, i.e. $t_{\text{med}} = \log 2 / \lambda$.
+
+### The product-limit estimator as a discrete-hazard product
+
+Partition follow-up at the distinct event times $t_1 < \cdots < t_k$. Write survival past $t$ as a chain of conditional survivals:
+
+$$
+S(t) = P(T > t) = \prod_{j:\,t_j \le t} P(T > t_j \mid T > t_{j-1}).
+$$
+
+The discrete conditional hazard at $t_j$ --- the chance of failing *exactly* at $t_j$ given you reached it --- is estimated by the observed fraction $\hat h_j = d_j / n_j$, where $n_j$ is the risk set just before $t_j$ and $d_j$ the events at $t_j$. The conditional *survival* through $t_j$ is therefore $1 - \hat h_j = 1 - d_j/n_j$. Substituting,
+
+$$
+\hat S(t) = \prod_{j:\,t_j \le t} \left(1 - \frac{d_j}{n_j}\right).
+$$
+
+This is the Kaplan-Meier estimator. Censored observations enter only through $n_j$: a subject censored in the interval $[t_{j-1}, t_j)$ is counted in the risk set up to its censoring time and then removed, so it lowers every subsequent $n_{j'}$ but never contributes a $d_{j'}$. The variance of $\hat S(t)$ is given by **Greenwood's formula**,
+
+$$
+\widehat{\operatorname{Var}}\big(\hat S(t)\big) = \hat S(t)^2 \sum_{j:\,t_j \le t} \frac{d_j}{n_j\,(n_j - d_j)},
+$$
+
+which is what `survival` and `lifelines` use to draw the pointwise confidence bands around the step curve.
+
+### A tiny worked product-limit
+
+Five patients, times (days): $30, 60^{+}, 90, 120, 150^{+}$, where $^{+}$ marks a censored time. The two event times are 30, 90, 120.
+
+| $t_j$ | $n_j$ | $d_j$ | $1 - d_j/n_j$ | $\hat S(t_j)$ |
+|------:|------:|------:|--------------:|--------------:|
+| 30    | 5     | 1     | $4/5 = 0.800$ | 0.800         |
+| 90    | 3     | 1     | $2/3 = 0.667$ | 0.533         |
+| 120   | 2     | 1     | $1/2 = 0.500$ | 0.267         |
+
+At $t = 90$ the risk set is only 3, not 4: the patient censored at $60^{+}$ has already left the pool. The censoring lowered $n_j$ but caused no drop. $\checkmark$
+
+</div>
+</details>
+
+## Computing Kaplan-Meier and the Log-Rank Test
+
+Both panels fit KM curves for the two groups, report median survival, and run a log-rank test --- the idiomatic survival-analysis workflow in each language. R uses the `survival` package (`survfit`, `survdiff`); Python uses `lifelines` (`KaplanMeierFitter`, `logrank_test`).
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("survival")
+library(survival)
+
+# Heart-failure cohort: time = days to readmission (or censoring),
+# event = 1 if readmitted, 0 if censored; group = program vs standard.
+set.seed(2024)
+n <- 80
+sim <- function(rate, horizon = 540, cens = 0.25) {
+  T <- rexp(n, rate = rate)                       # true event times
+  C <- ifelse(runif(n) < cens, runif(n, 0, horizon), horizon)
+  data.frame(time = pmin(T, C), event = as.integer(T <= C))
+}
+prog <- transform(sim(1 / 320), group = "Program")
+stnd <- transform(sim(1 / 180), group = "Standard")
+hf   <- rbind(prog, stnd)
+
+# The survival OBJECT pairs the follow-up time with the event indicator.
+surv_obj <- Surv(hf$time, hf$event)
+
+# Kaplan-Meier estimate by group.
+fit <- survfit(surv_obj ~ group, data = hf)
+print(fit)                       # n, events, and MEDIAN survival per group
+summary(fit, times = c(180, 365))  # Ŝ(t) at 6 and 12 months, with 95% CI
+
+# Log-rank test of S_program(t) = S_standard(t) for all t.
+lr <- survdiff(surv_obj ~ group, data = hf)
+print(lr)                        # observed vs expected events + chi-square, p
+
+# Plot the step curves with censoring ticks and confidence bands.
+plot(fit, col = c("#990000", "#3d5a6c"), lwd = 2, mark.time = TRUE,
+     xlab = "Days since discharge", ylab = expression(hat(S)(t)))
+legend("topright", c("Program", "Standard"),
+       col = c("#990000", "#3d5a6c"), lwd = 2, bty = "n")
+```
+
+### Python
+
+```python
+# pip install lifelines
+import numpy as np
+import pandas as pd
+from lifelines import KaplanMeierFitter
+from lifelines.statistics import logrank_test
+
+rng = np.random.default_rng(2024)
+n, horizon, cens = 80, 540, 0.25
+
+def sim(rate):
+    T = rng.exponential(scale=1 / rate, size=n)            # true event times
+    C = np.where(rng.random(n) < cens, rng.uniform(0, horizon, n), horizon)
+    return pd.DataFrame({"time": np.minimum(T, C),
+                         "event": (T <= C).astype(int)})
+
+prog = sim(1 / 320).assign(group="Program")
+stnd = sim(1 / 180).assign(group="Standard")
+hf = pd.concat([prog, stnd], ignore_index=True)
+
+# Kaplan-Meier per group; print median survival and Ŝ at fixed horizons.
+import matplotlib.pyplot as plt
+ax = plt.subplot()
+for name, color in [("Program", "#990000"), ("Standard", "#3d5a6c")]:
+    sub = hf[hf.group == name]
+    kmf = KaplanMeierFitter(label=name)
+    kmf.fit(sub["time"], event_observed=sub["event"])
+    kmf.plot_survival_function(ax=ax, color=color, ci_show=True)
+    print(f"{name}: median survival = {kmf.median_survival_time_:.0f} d")
+    print(kmf.survival_function_at_times([180, 365]).to_string())
+
+# Log-rank test of S_program(t) == S_standard(t) for all t.
+res = logrank_test(prog["time"], stnd["time"],
+                   event_observed_A=prog["event"],
+                   event_observed_B=stnd["event"])
+print(f"log-rank chi2 = {res.test_statistic:.2f}, p = {res.p_value:.4f}")
+```
+
+:::
+
+In both languages the median survival is markedly higher for the program group, and the log-rank test returns a small $p$-value --- the curves differ by more than sampling noise. The next page replaces this two-group comparison with a *regression on the hazard* that adjusts for patient covariates.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A small relapse study at a *vårdcentral* follows six patients after a smoking-cessation program. Days to relapse (a $^{+}$ marks a right-censored time --- still abstinent when last seen): $40,\ 40,\ 90^{+},\ 120,\ 200^{+},\ 260$.
+
+(a) List the distinct *event* times and, for each, the risk set $n_j$ and event count $d_j$. (b) Compute the Kaplan-Meier estimate $\hat S(t)$ at each event time. (c) What is the estimated median time to relapse?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Order all six times: $40, 40, 90^{+}, 120, 200^{+}, 260$. The distinct *event* times (drop the censored $90^{+}$ and $200^{+}$) are 40, 120, 260.
+
+- $t_1 = 40$: just before $t=40$ all 6 are at risk, so $n_1 = 6$; two patients relapse, $d_1 = 2$.
+- $t_2 = 120$: patients used up so far are the two events at 40 and the censoring at $90^{+}$ (3 total), so $n_2 = 6 - 3 = 3$; one relapse, $d_2 = 1$.
+- $t_3 = 260$: by now we have lost the events at 40 and 120 and the censorings at $90^{+}$ and $200^{+}$ (5 total), so $n_3 = 6 - 5 = 1$; one relapse, $d_3 = 1$.
+
+**(b)** Apply the product-limit formula $\hat S(t) = \prod (1 - d_j/n_j)$:
+
+- $\hat S(40)  = 1 - 2/6 = 4/6 = 0.667$.
+- $\hat S(120) = 0.667 \times (1 - 1/3) = 0.667 \times 0.667 = 0.444$.
+- $\hat S(260) = 0.444 \times (1 - 1/1) = 0.444 \times 0 = 0$.
+
+**(c)** The median is the first time $\hat S(t) \le 0.5$. Since $\hat S(40)=0.667$ and $\hat S(120)=0.444$, the curve first drops to/below 0.5 at $t = 120$. The **estimated median time to relapse is 120 days.** Note the censored patient at $90^{+}$ never caused a drop but did shrink the risk set from 6 to 3 by $t=120$ --- exactly the KM bookkeeping.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague proposes analyzing time-to-readmission by (i) coding "readmitted within 18 months" as a 0/1 outcome and running a logistic regression, and (ii) for patients who *were* readmitted, running OLS of the readmission time on covariates. State one distinct problem with each approach and explain how Kaplan-Meier / survival methods avoid it.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(i) The logit on a binary "readmitted within 18 months" indicator discards the timing.** It treats a patient readmitted on day 20 and one readmitted on day 530 as identical "events," and a patient censored at day 60 (lost to follow-up) is coded the same as one genuinely event-free at 18 months. Two programs with the same 18-month readmission *rate* but very different *timing* look identical. Survival methods keep the full duration and condition on the risk set at each time, so *when* the event happens is the object of analysis.
+
+**(ii) The OLS-on-the-readmitted approach conditions on having the event, which is selection on the outcome.** It silently drops every censored patient, and the patients who *were* readmitted within the window are disproportionately the fast-failing ones --- so the regression describes a biased subsample and underestimates true survival. Kaplan-Meier (and Cox) instead *use* the censored observations: a censored patient contributes "survived at least $\tilde T_i$" to every risk set up to $\tilde T_i$, rather than being thrown away.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+For a constant-hazard (exponential) model with hazard $h(t) = \lambda$:
+
+(a) Write $H(t)$ and $S(t)$. (b) Derive the median survival time. (c) Standard care has $\lambda_S = 1/180$ per day and the program has $\lambda_P = 1/320$ per day. Compute and compare the two medians, and state the corresponding hazard ratio.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The cumulative hazard is $H(t) = \int_0^t \lambda\,du = \lambda t$, so by the identity $S(t) = e^{-H(t)} = e^{-\lambda t}$.
+
+**(b)** The median $t_{\text{med}}$ solves $S(t_{\text{med}}) = 0.5$:
+$$
+e^{-\lambda t_{\text{med}}} = 0.5 \;\Longrightarrow\; -\lambda t_{\text{med}} = \log 0.5 \;\Longrightarrow\; t_{\text{med}} = \frac{\log 2}{\lambda} \approx \frac{0.693}{\lambda}.
+$$
+
+**(c)** Standard care: $t_{\text{med}}^{S} = 0.693 \times 180 \approx 125$ days. Program: $t_{\text{med}}^{P} = 0.693 \times 320 \approx 222$ days. The program nearly **doubles** the median readmission-free time (an advantage of about 97 days, roughly three months). The hazard ratio is $\lambda_P / \lambda_S = (1/320)/(1/180) = 180/320 = 0.5625$ --- the program carries about 56% of the standard-care readmission hazard at every instant. (These are the population values the interactive simulates; the sampled medians fluctuate around them.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, push the **censoring rate** toward 0.6. (a) Why does each remaining step in the curve become *larger* as censoring rises? (b) Why might the median read "not reached"? (c) Explain why the curve nonetheless does not simply collapse to a biased estimate the way a complete-case analysis would.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Each downward step is the factor $1 - d_j/n_j$. As censoring removes patients from the risk set, $n_j$ shrinks, so a single event ($d_j = 1$) on a small risk set --- say $n_j = 4$ --- knocks the curve down by $1/4 = 25\%$, versus $1/40$ early on. Fewer at-risk patients means each event moves the estimate more, which is why high-censoring curves look choppy and their later steps are large.
+
+**(b)** The median is the first time $\hat S(t) \le 0.5$. With heavy early censoring, many patients leave the risk set before any event drives the curve down to 0.5; the curve can flatten out above 0.5 and simply end at the last follow-up time without ever crossing it. The median is then *undefined within the observed window* --- correctly reported as "not reached" rather than guessed.
+
+**(c)** Kaplan-Meier *uses* the censored observations: a patient censored at $\tilde T_i$ is counted in every risk set up to $\tilde T_i$, contributing the genuine information "this patient was event-free for at least $\tilde T_i$ days." A complete-case analysis instead deletes those patients entirely, keeping only the fast-failing ones and biasing survival downward. KM stays (approximately) unbiased under non-informative censoring precisely because the censored rows still shape the risk sets --- they are information, not missingness.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Time-to-event outcomes are durations $T \ge 0$ defined by **right-censoring**: for many subjects we observe only $\tilde T_i = \min(T_i, c_i)$ and an event indicator $\delta_i$, knowing only that the true duration exceeds the follow-up time.
+- The survival function $S(t)=P(T>t)$, hazard $h(t)=f(t)/S(t)$, and cumulative hazard $H(t)=\int_0^t h$ are one distribution; they lock together via $S(t)=\exp(-H(t))$.
+- The **Kaplan-Meier** estimator $\hat S(t)=\prod_{t_j\le t}(1 - d_j/n_j)$ is a nonparametric step curve that drops only at events and lets censored patients shrink the risk set without ever counting as events.
+- OLS, logit, and complete-case deletion all mishandle censored durations --- biasing toward shorter survival or discarding the timing entirely --- which is why we use survival-specific tools.
+- The **log-rank test** compares two survival curves under $H_0:\ S_1=S_2$ by accumulating observed-minus-expected events across the risk sets; it flags a difference but not its size.
+:::
+
+## What Comes Next
+
+Kaplan-Meier and the log-rank test answer a two-group question nonparametrically, but real cohorts differ in age, comorbidity, sex, and *vårdcentral* --- and we want to *adjust* for them and report a single effect measure. The next page, [The Cox Proportional Hazards Model](cox-proportional-hazards.qmd), regresses *on the hazard* you met here: it models $h(t \mid x) = h_0(t)\exp(x'\beta)$, leaving the baseline hazard $h_0(t)$ unspecified (semiparametric) while estimating covariate effects by **partial likelihood** --- a maximum-likelihood idea from [Module 11](../11-mle-gmm/likelihood.qmd). The result is the **hazard ratio**: how much the nurse-led program multiplies a patient's instantaneous readmission risk, holding everything else fixed.

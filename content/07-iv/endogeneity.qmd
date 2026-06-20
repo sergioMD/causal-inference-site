@@ -1,0 +1,1009 @@
+---
+title: "The Endogeneity Problem"
+subtitle: "Why OLS breaks when a regressor is correlated with the error"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State the exogeneity condition $\operatorname{Cov}(x, \varepsilon) = 0$ that OLS quietly relies on, and define **endogeneity** as its failure.
+- Name and recognize the three classic sources of endogeneity --- omitted-variable/confounding, simultaneity/reverse causality, and measurement error in a regressor.
+- Draw the confounding DAG ($U \to x$, $U \to y$) and connect it to the back-door logic of Module 2 and the omitted-variable bias of Module 4.
+- Explain why endogeneity makes OLS not just *biased* but *inconsistent* --- so collecting more data does not save you.
+- Motivate an **instrument** as a source of as-good-as-random variation in $x$ that affects $y$ *only through* $x$.
+:::
+
+## A Question That OLS Cannot Answer
+
+Sweden's *vårdcentraler* (primary care centers), run by the 21 *regioner* (regions), keep meticulous contact records. For every Type 2 diabetes patient we can count how many times they visited their GP (*allmänläkare*) over a year, and we can measure their HbA1c at year's end. A natural policy question follows: **does seeing your GP more often improve blood-sugar control?** If each extra visit shaves points off HbA1c, *Socialstyrelsen* (the National Board of Health and Welfare) might fund more appointment slots.
+
+So we run the obvious regression of HbA1c on the number of GP visits. The coefficient comes back *positive*: more visits, *higher* HbA1c. Read literally, GP visits make diabetes worse. No clinician believes that. The problem is not the arithmetic of least squares --- the arithmetic is impeccable. The problem is that the regressor "number of visits" is entangled with everything we left out of the model.
+
+Sicker patients visit more *because* they are sicker, and sicker patients have worse HbA1c regardless of how much care they receive. The visit count carries two signals at once: a (hoped-for) *causal* signal that care helps, and a *selection* signal that the people getting more care were worse off to begin with. OLS cannot tell these apart. It reports their sum.
+
+This page names that failure precisely. It is called **endogeneity**, and it is the single obstacle that the entire instrumental-variables toolkit exists to overcome.
+
+
+## The Exogeneity Condition OLS Relies On
+
+Write the relationship we *want* to estimate as a linear causal model:
+
+$$
+y_i = \beta_0 + \beta_1 x_i + \varepsilon_i .
+$$
+
+Here $y_i$ is patient $i$'s end-of-year HbA1c, $x_i$ is their number of GP visits, and $\varepsilon_i$ is the **error term** --- a single symbol standing in for *every other determinant of HbA1c we did not put in the model*: baseline disease severity, diet, genetics, medication adherence, comorbidities, social support. The coefficient $\beta_1$ is the object of desire: the causal effect on HbA1c of one additional GP visit, *holding everything else fixed*.
+
+The ordinary least squares estimator of $\beta_1$ is
+
+$$
+\hat{\beta}_1 = \frac{\operatorname{Cov}(x, y)}{\operatorname{Var}(x)} .
+$$
+
+**Read this as**: "the OLS slope is the sample covariance of the regressor and the outcome, divided by the variance of the regressor." It is a ratio of how much $x$ and $y$ move together to how much $x$ moves on its own.
+
+Substitute the model $y = \beta_0 + \beta_1 x + \varepsilon$ into that ratio and use the linearity of covariance:
+
+$$
+\hat{\beta}_1 = \frac{\operatorname{Cov}(x,\, \beta_0 + \beta_1 x + \varepsilon)}{\operatorname{Var}(x)}
+= \beta_1 + \frac{\operatorname{Cov}(x, \varepsilon)}{\operatorname{Var}(x)} .
+$$
+
+**Read this as**: "the OLS slope equals the true effect $\beta_1$, plus a contamination term equal to the covariance between the regressor and the error, scaled by the variance of the regressor." This one line is the whole story of the page. The estimator hits the truth *if and only if* the second term vanishes.
+
+::: {.glass-card .glass-card--assumption}
+**Exogeneity (the condition OLS needs).** The regressor must be uncorrelated with the error term:
+
+$$
+\operatorname{Cov}(x_i, \varepsilon_i) = 0 .
+$$
+
+When this holds, $x$ is called **exogenous**, the contamination term is zero, and OLS is unbiased and consistent for $\beta_1$. **Read this as**: "knowing how big $x$ is tells you nothing about how big the left-out determinants of $y$ are." The regressor must be "clean" --- pushed around by forces that have no separate channel into the outcome.
+:::
+
+::: {.glass-card .glass-card--definition}
+**Endogeneity** is the failure of exogeneity: a regressor $x$ is **endogenous** when
+
+$$
+\operatorname{Cov}(x_i, \varepsilon_i) \neq 0 .
+$$
+
+When $x$ is endogenous, the OLS slope is
+
+$$
+\hat{\beta}_1 = \beta_1 + \underbrace{\frac{\operatorname{Cov}(x, \varepsilon)}{\operatorname{Var}(x)}}_{\text{bias, does not vanish}} ,
+$$
+
+so OLS does **not** recover the causal effect. In the GP-visits example, sicker patients (high $\varepsilon$, since severity lives in the error) also visit more (high $x$), so $\operatorname{Cov}(x,\varepsilon) > 0$ and the estimated slope is pulled *upward* --- which is exactly how a helpful intervention can show up with the wrong sign.
+:::
+
+
+## The Three Classic Sources of Endogeneity
+
+Endogeneity is a single mathematical condition, $\operatorname{Cov}(x,\varepsilon)\neq 0$, but it arises through three recognizably different mechanisms. Learning to spot which one you face is half the battle, because the credible fix differs by source.
+
+### 1. Omitted variables / confounding
+
+Some common cause $U$ drives *both* $x$ and $y$, and because we never measured $U$ it is swept into the error. In our example $U$ is **baseline disease severity**: sicker patients book more GP visits ($U \to x$) *and* end the year with worse HbA1c through pathways unrelated to those visits ($U \to y$). Since $U$ lives inside $\varepsilon$, and $U$ moves $x$, we get $\operatorname{Cov}(x,\varepsilon)\neq 0$. This is the same machinery as **omitted-variable bias** (Module 4) and the **back-door path** of a confounder (Module 2) --- three names for one phenomenon.
+
+### 2. Simultaneity / reverse causality
+
+Here $y$ feeds back into $x$: the outcome partly *determines* the regressor. Imagine a region whose triage system books *more* nurse-led follow-ups precisely for patients whose recent labs look bad. Then poor HbA1c (high $y$) *causes* more visits (high $x$) at the same time that visits are supposed to lower HbA1c. The two variables are determined jointly, by a system of equations, and the single-equation OLS slope is a tangle of the forward effect and the feedback. Algebraically the feedback puts the outcome's own shock (a large $\varepsilon$ --- the part of $y$ not explained by $x$) back into $x$, so again $\operatorname{Cov}(x,\varepsilon)\neq 0$.
+
+```{ojs}
+//| echo: false
+
+// Simultaneity schematic: the clean one-way DAG (x → y) contrasted with the
+// two-way feedback loop (x ⇄ y) that makes the variables "jointly determined".
+// Two curved, offset edges between the same pair so both directions are visible.
+{
+  const w = Math.min(460, width), h = 170;
+  const svg = d3.create("svg")
+    .attr("width", w).attr("height", h)
+    .attr("viewBox", `0 0 ${w} ${h}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["ivend-sim-green", "#2e6f40"], ["ivend-sim-red", "#b3000b"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const r = 24;
+  const node = (cx, cy, label) => {
+    const g = svg.append("g");
+    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r)
+      .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    g.append("text").attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a").text(label);
+  };
+  const title = (cx, t) => svg.append("text")
+    .attr("x", cx).attr("y", 18).attr("text-anchor", "middle")
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", "#79766e").text(t);
+
+  // ── Left panel: clean one-way DAG x → y ──
+  const lx1 = 60, lx2 = 170, ly = 95;
+  title((lx1 + lx2) / 2, "Clean: one-way");
+  svg.append("line")
+    .attr("x1", lx1 + r).attr("y1", ly).attr("x2", lx2 - r - 4).attr("y2", ly)
+    .attr("stroke", "#2e6f40").attr("stroke-width", 3)
+    .attr("marker-end", "url(#ivend-sim-green)");
+  node(lx1, ly, "x"); node(lx2, ly, "y");
+
+  // ── Right panel: two-way feedback loop x ⇄ y (jointly determined) ──
+  const rx1 = 300, rx2 = 410, ry = 95;
+  title((rx1 + rx2) / 2, "Simultaneity: jointly determined");
+  // forward x → y (curve above)
+  svg.append("path")
+    .attr("d", `M ${rx1 + r} ${ry - 8} Q ${(rx1 + rx2) / 2} ${ry - 38} ${rx2 - r - 2} ${ry - 8}`)
+    .attr("fill", "none").attr("stroke", "#2e6f40").attr("stroke-width", 3)
+    .attr("marker-end", "url(#ivend-sim-green)");
+  // feedback y → x (curve below, red)
+  svg.append("path")
+    .attr("d", `M ${rx2 - r} ${ry + 8} Q ${(rx1 + rx2) / 2} ${ry + 38} ${rx1 + r + 2} ${ry + 8}`)
+    .attr("fill", "none").attr("stroke", "#b3000b").attr("stroke-width", 3)
+    .attr("marker-end", "url(#ivend-sim-red)");
+  node(rx1, ry, "x"); node(rx2, ry, "y");
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+Left: the clean structure we *wish* held --- $x$ affects $y$ and nothing comes back (<span style="color:#2e6f40; font-weight:700;">green</span>). Right: under simultaneity, $y$ also feeds back into $x$ (<span style="color:#b3000b; font-weight:700;">red</span>), so the two are *jointly determined* by a system of equations and the single-equation OLS slope mixes the forward effect with the feedback.
+:::
+
+### 3. Measurement error in the regressor
+
+Suppose true GP contact $x^\ast$ affects HbA1c, but our administrative extract miscounts visits --- phone consultations logged inconsistently, double-booked codes, missing locum entries. We observe $x = x^\ast + u$ where $u$ is **classical measurement error** (mean zero, independent of everything). Even though the *true* regressor is exogenous, regressing on the *mismeasured* $x$ induces a correlation between $x$ and the regression error, because the noise $u$ appears in both. The result is **attenuation bias**: the estimated slope is pulled *toward zero*, understating the true effect (derived in the Math Details).
+
+The three sources share one symptom ($\operatorname{Cov}(x,\varepsilon)\neq 0$) but differ in mechanism, in the *direction* the bias can take, and in the credible fix. The table consolidates the taxonomy:
+
+| Source | Why $\operatorname{Cov}(x,\varepsilon)\neq 0$ | Direction of bias | Typical fix |
+|:---|:---|:---|:---|
+| **Omitted variable / confounding** | A common cause $U$ sits in $\varepsilon$ and also moves $x$ (back-door $x \leftarrow U \to y$) | Either sign (up or down) | Measure & condition on $U$; failing that, an **instrument** |
+| **Simultaneity / reverse causality** | $y$ feeds back into $x$, so $y$'s own shock (in $\varepsilon$) re-enters $x$ | Either sign | An instrument that shifts $x$ but not $y$ |
+| **Measurement error in $x$** | Noise $u$ enters both the observed $x$ and the composite error $\varepsilon = e - \beta_1 u$ | **Always toward zero** (attenuation) | An independent second proxy used as an instrument |
+
+: Three classic sources of endogeneity, and why each defeats OLS. {.science-table}
+
+::: {.glass-card .glass-card--warning}
+**The error term is not "random noise" --- it is everything you left out.** The single most common misreading of regression is to treat $\varepsilon$ as harmless measurement static. It is not. It is a container holding every omitted determinant of the outcome. Endogeneity is simply the statement that *what you measured and what you left out are correlated*. Whenever you write down a regression, ask: "what big things are sitting in $\varepsilon$, and could any of them be driving my regressor?"
+:::
+
+
+## The Confounding DAG
+
+The omitted-variable case has a clean picture, and it ties this page back to the directed-acyclic-graph language of Module 2. Let $U$ be unmeasured baseline severity, $x$ the GP-visit count, $y$ the HbA1c outcome. The causal structure is:
+
+$$
+x \longrightarrow y, \qquad U \longrightarrow x, \qquad U \longrightarrow y .
+$$
+
+The arrow $x \to y$ is the causal effect we want, $\beta_1$. But $U \to x$ and $U \to y$ together open a **back-door path** $x \leftarrow U \to y$ (a non-causal route that links $x$ and $y$ but runs *backwards* into $x$ through a shared cause): a route along which $x$ and $y$ move together purely because they share the hidden parent $U$. OLS, blind to $U$, cannot block this path. It absorbs the back-door association into its slope.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG drawing component for this page (page-tag-prefixed). ──
+// Pure function of d3 only; builds an SVG via d3.create and returns the node.
+//   nodes:  [{id, x, y, label, caption}]  x,y normalized in [0,1] (padded).
+//   edges:  [{source, target, kind}]  kind ∈
+//             "causal"        → green  (#2e6f40)  the wanted causal arrow
+//             "biasing"       → red    (#b3000b)  an open back-door / biasing arrow
+//             "blocked"       → grey   (#79766e, dashed)
+//   conditioned: [id, ...]  nodes drawn as rounded SQUARES (adjusted-for)
+//   dashedNodes: [id, ...]  nodes drawn with a dashed outline ("unobserved")
+ivend_drawDAG = function ({ nodes, edges, width = 460, height = 230,
+                            conditioned = [], dashedNodes = [] }) {
+  const pad = 50;                      // keep nodes + captions clear of edges
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+  const dashSet = new Set(dashedNodes);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "biasing" ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "ivend-arrow-green" :
+    k === "biasing" ? "ivend-arrow-red" : "ivend-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["ivend-arrow-green", "#2e6f40"],
+    ["ivend-arrow-red", "#b3000b"],
+    ["ivend-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  // Edges underneath
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  // Nodes on top
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const boxed = condSet.has(n.id);
+    const dashed = dashSet.has(n.id);
+    const g = ng.append("g");
+    if (boxed) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a")
+        .attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a")
+        .attr("stroke-width", dashed ? 2 : 2)
+        .attr("stroke-dasharray", dashed ? "4,3" : null);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700)
+      .attr("fill", "#1c1c1a").text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600)
+        .attr("fill", "#79766e").text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Confounding DAG: x → y (causal, green) with U → x and U → y the two red
+// biasing arrows that open the back-door path x ← U → y. U is drawn with a
+// dashed outline to signal that it is UNOBSERVED — the defining feature here.
+ivend_drawDAG({
+  width: Math.min(460, width),
+  height: 210,
+  dashedNodes: ["U"],
+  nodes: [
+    { id: "U", x: 0.50, y: 0.12, label: "U", caption: "severity (unobserved)" },
+    { id: "x", x: 0.10, y: 0.82, label: "x", caption: "GP visits" },
+    { id: "y", x: 0.90, y: 0.82, label: "y", caption: "HbA1c" }
+  ],
+  edges: [
+    { source: "x", target: "y", kind: "causal" },
+    { source: "U", target: "x", kind: "biasing" },
+    { source: "U", target: "y", kind: "biasing" }
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = the causal effect we want ($x \to y$, the slope $\beta_1$); <span style="color:#b3000b; font-weight:700;">red</span> = the two arrows out of the hidden confounder that open the back-door path $x \leftarrow U \to y$. $U$ is drawn with a **dashed** outline because it is *unobserved* --- so OLS cannot condition on it, and the back door stays open.
+:::
+
+Module 2 told us the cure is to **condition on $U$** --- close the back door by adjusting for the confounder. That is exactly what you would do *if you could measure $U$*. The defining feature of an endogeneity problem is that you **cannot**: severity is partly unobservable, scattered across notes, comorbidities, and things patients never report. When the confounder is unmeasured, the back door stays open, and no regression on the variables you *do* have will close it.
+
+::: {.glass-card .glass-card--insight}
+**Endogeneity is an unmeasured-confounder problem wearing an econometrics costume.** The DAG $x \leftarrow U \to y$ with $U$ unobserved is *the* canonical endogenous regression. Module 2 says "close the back door by conditioning"; Module 4 says "include the omitted variable." Both require *seeing* the confounder. Instrumental variables, the subject of this chapter, is what you reach for when you *cannot* see it --- it closes the back door from the other side, by finding clean variation in $x$ that the confounder does not touch.
+:::
+
+
+## No Amount of Data Fixes It: Bias vs. Inconsistency
+
+A tempting hope: maybe endogeneity is a small-sample nuisance that averages out as the data grow. It does not. Endogeneity makes OLS **inconsistent**, which is far worse than merely biased.
+
+::: {.glass-card .glass-card--definition}
+**Bias** concerns the average of the estimator over repeated samples of a fixed size: $\operatorname{Bias}(\hat\beta_1) = E[\hat\beta_1] - \beta_1$.
+
+**Consistency** concerns what happens as the sample size $n \to \infty$: an estimator is consistent if it converges in probability to the truth, $\hat\beta_1 \xrightarrow{p} \beta_1$. **Read the squiggly arrow $\xrightarrow{p}$ as**: "as $n$ grows, the estimate piles up ever more tightly around this number." **Inconsistency** means it converges to the *wrong* number no matter how much data you collect.
+:::
+
+Take probability limits of the OLS slope. By the law of large numbers the sample covariance and variance converge to their population counterparts, so
+
+$$
+\hat\beta_1 \;\xrightarrow{p}\; \beta_1 + \frac{\operatorname{Cov}(x, \varepsilon)}{\operatorname{Var}(x)} .
+$$
+
+**Read this as**: "as the sample grows without bound, the OLS slope settles down --- but it settles on the truth *plus* a permanent contamination term." If $\operatorname{Cov}(x,\varepsilon)\neq 0$, that term is a fixed nonzero number. More data shrinks the *sampling noise* around this limit but cannot move the limit itself. You end up *more and more confident about the wrong answer* --- a tight confidence interval centered on a biased point. This is the deepest reason to take endogeneity seriously: it is not a precision problem that money and sample size can buy away.
+
+The interactive below lets you watch this happen. Crank up the confounding strength and the OLS line tilts away from the true line; add more data points and the OLS line gets *sharper* but stays tilted.
+
+
+## See It: Confounding Pulls the OLS Slope Off the Truth
+
+The lab below simulates GP-visit data for a panel of patients. A hidden confounder --- baseline disease severity $U$ --- raises both the number of visits and HbA1c. You control how strongly $U$ loads onto visits with the **confounding strength** slider, and you set the **true causal effect** of a visit directly. The chart draws the cloud of points, the **true causal line** (the slope you set), and the **OLS line** that a naive analyst would fit. As confounding grows, watch the OLS line peel away from the truth --- and use the sample-size slider to confirm that more data does not rescue it.
+
+::: {.interactive-container}
+
+#### Endogeneity Lab: the OLS slope vs. the true causal slope
+
+::: {.start-here}
+**Start here.** Drag **Confounding strength** from 0 upward and watch the red **OLS** line peel away from the slate **true** line. This lab shows the *diagnosis* (endogeneity); the IV *cure* arrives on the next page.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof ivend_confound = Inputs.range([0, 2.5], {
+  value: 1.4,
+  step: 0.05,
+  label: "Confounding strength (how hard severity U loads onto visits)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivend_trueEffect = Inputs.range([-0.6, 0.1], {
+  value: -0.25,
+  step: 0.01,
+  label: "True causal effect of one GP visit on HbA1c (β₁)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivend_n = Inputs.range([40, 1200], {
+  value: 300,
+  step: 20,
+  label: "Sample size (n patients)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivend_showTrue = Inputs.toggle({
+  label: "Show true causal line (slope β₁)",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivend_draw = Inputs.button("Draw a new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-size: 0.8rem; color: #79766e; margin: -0.2rem 0 0.4rem;
+                 font-family: 'Inter', sans-serif;">
+  Each press redraws a fresh random sample of the same size. At large <em>n</em> the OLS
+  line barely flickers — that is the point: it is locked onto a biased limit.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Data-generating process ───────────────────────────────────────────────
+// Hidden confounder U = baseline severity ~ N(0,1).
+//   visits x = 6 + α·U + ν        (sicker patients book more; α = confound strength)
+//   HbA1c  y = 7.6 + β·x + 1.1·U + e   (severity worsens HbA1c directly, OUTSIDE x)
+// Because U is omitted from the analyst's regression, it lives in the error,
+// and since U also moves x we get Cov(x, ε) ≠ 0  →  endogeneity.
+// `ivend_draw` is referenced (never written) so each button press reseeds.
+ivend_data = {
+  ivend_draw;                                  // re-run on button press
+  const n   = ivend_n;
+  const a   = ivend_confound;                  // α: U → x loading
+  const b   = ivend_trueEffect;               // β₁: true x → y effect
+  const gamma = 1.1;                           // U → y direct effect (in the error)
+  const rN  = d3.randomNormal.source(d3.randomLcg(0.20260619 + ivend_draw * 0.001));
+  const nu  = rN(0, 1.6);                       // idiosyncratic visit noise
+  const ee  = rN(0, 0.45);                      // idiosyncratic HbA1c noise
+  const uN  = rN(0, 1);
+
+  const rows = d3.range(n).map(() => {
+    const U = uN();
+    const x = 6 + a * U + nu();
+    const y = 7.6 + b * x + gamma * U + ee();
+    return { x, y, U };
+  });
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Closed-form OLS slope and intercept on the OBSERVED (x, y), ignoring U.
+ivend_ols = {
+  const d  = ivend_data;
+  const mx = d3.mean(d, r => r.x);
+  const my = d3.mean(d, r => r.y);
+  const sxy = d3.mean(d, r => (r.x - mx) * (r.y - my));
+  const sxx = d3.mean(d, r => (r.x - mx) * (r.x - mx));
+  const slope = sxy / sxx;
+  const intercept = my - slope * mx;
+  // Sample Cov(x, ε): ε here is the analyst's residual relative to the TRUE
+  // line, i.e. the part of y not explained by the causal channel β₁·x.
+  const me = d3.mean(d, r => (r.y - (7.6 + ivend_trueEffect * r.x)));
+  const covXeps = d3.mean(d, r =>
+    (r.x - mx) * ((r.y - (7.6 + ivend_trueEffect * r.x)) - me));
+  return { slope, intercept, covXeps, mx };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Endpoints for the two reference lines across the visible x-range.
+ivend_xExtent = d3.extent(ivend_data, r => r.x)
+
+ivend_trueLine = [
+  { x: ivend_xExtent[0], y: 7.6 + ivend_trueEffect * ivend_xExtent[0] },
+  { x: ivend_xExtent[1], y: 7.6 + ivend_trueEffect * ivend_xExtent[1] }
+]
+
+ivend_olsLine = [
+  { x: ivend_xExtent[0], y: ivend_ols.intercept + ivend_ols.slope * ivend_xExtent[0] },
+  { x: ivend_xExtent[1], y: ivend_ols.intercept + ivend_ols.slope * ivend_xExtent[1] }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(660, width),
+  height: 420,
+  marginLeft: 66,
+  marginTop: 30,
+  marginRight: 24,
+  marginBottom: 46,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: { label: "GP visits over the year →", grid: true },
+  y: { label: "HbA1c (%, lower = better)", grid: true },
+  color: {
+    type: "linear",
+    range: ["#3d5a6c", "#f6f5f1", "#990000"],
+    label: "Hidden severity U (red = sicker)",
+    legend: true
+  },
+  marks: [
+    // Scatter, colored by the HIDDEN confounder so the reader can see that
+    // the upper-right (many visits) points are the high-severity points.
+    Plot.dot(ivend_data, {
+      x: "x", y: "y", fill: "U", r: 3, fillOpacity: 0.75, stroke: "#1c1c1a", strokeOpacity: 0.12,
+      title: d => `visits ${d.x.toFixed(1)}\nHbA1c ${d.y.toFixed(2)}\nseverity U ${d.U.toFixed(2)}`
+    }),
+
+    // OLS line — what the naive analyst fits (Uppsala red = focal estimate).
+    Plot.line(ivend_olsLine, { x: "x", y: "y", stroke: "#990000", strokeWidth: 3 }),
+    // Fixed-frame label, halo'd, top-right, so it never clips or hits the legend.
+    Plot.text([`OLS = ${ivend_ols.slope.toFixed(3)}`], {
+      frameAnchor: "top-right", dx: -6, dy: 6, textAnchor: "end",
+      fill: "#990000", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // True causal line — the slope you set with the slider (slate = comparison).
+    ivend_showTrue ? Plot.line(ivend_trueLine, {
+      x: "x", y: "y", stroke: "#3d5a6c", strokeWidth: 3, strokeDasharray: "6,4"
+    }) : null,
+    // Fixed-frame label, halo'd, bottom-left, staggered from the OLS label.
+    ivend_showTrue ? Plot.text([`true β₁ = ${ivend_trueEffect.toFixed(3)}`], {
+      frameAnchor: "bottom-left", dx: 6, dy: -6, textAnchor: "start",
+      fill: "#3d5a6c", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: true effect, OLS estimate, the gap, and the sample Cov(x,ε)
+// that drives the gap. The bias tile turns green only when |bias| is tiny.
+{
+  const bias = ivend_ols.slope - ivend_trueEffect;
+  const biasClean = Math.abs(bias) < 0.02;
+  const tile = (label, value, color, bg, border) => html`
+    <div style="padding: 0.55rem 0.75rem; border-radius: 0.5rem; background: ${bg};
+                border: 1px solid ${border}; min-height: 3.4rem;">
+      <div style="font-weight: 600; color: #79766e; font-size: 0.64rem;
+                  text-transform: uppercase; letter-spacing: 0.04em;">${label}</div>
+      <div style="font-size: 1.2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+                  color: ${color};">${value}</div>
+    </div>`;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  // Color the Cov(x,ε) tile by the SAME clean condition as Bias so the two
+  // tiles never visually contradict the Step-5 "bias tracks covariance" lesson.
+  return html`<div style="display: grid;
+                          grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+                          gap: 0.5rem; margin-top: 0.6rem;
+                          font-family: 'Inter', sans-serif;">
+    ${tile("True effect β₁", ivend_trueEffect.toFixed(3),
+        "#3d5a6c", "rgba(61,90,108,0.06)", "rgba(61,90,108,0.18)")}
+    ${tile("OLS estimate", ivend_ols.slope.toFixed(3),
+        "#990000", "rgba(153,0,0,0.06)", "rgba(153,0,0,0.18)")}
+    ${tile("Bias (OLS − true)", fmt(bias),
+        biasClean ? "#2e6f40" : "#b3000b",
+        biasClean ? "rgba(46,111,64,0.08)" : "rgba(179,0,11,0.06)",
+        biasClean ? "rgba(46,111,64,0.22)" : "rgba(179,0,11,0.18)")}
+    ${tile("Sample Cov(x, ε)", fmt(ivend_ols.covXeps),
+        biasClean ? "#2e6f40" : "#9c7a33",
+        biasClean ? "rgba(46,111,64,0.08)" : "rgba(156,122,51,0.08)",
+        biasClean ? "rgba(46,111,64,0.22)" : "rgba(156,122,51,0.2)")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Dynamic verdict reading the SAME reactive values the tiles use (no new DGP,
+// no new controls). It narrates the WHY behind the live bias: clean vs.
+// confounded, and — when confounding flips the sign — the opening-paradox case.
+ivend_verdict = {
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  const bias = ivend_ols.slope - ivend_trueEffect;
+  const cov = ivend_ols.covXeps;
+  if (Math.abs(bias) < 0.02) {
+    return { text: "Exogenous world: Cov(x, ε) ≈ 0, so OLS sits on the truth. This is the only case where the naive slope is the causal effect.",
+             color: "#2e6f40", bg: "rgba(46,111,64,0.06)", border: "#2e6f40" };
+  }
+  const dir = cov > 0 ? "upward" : "downward";
+  const flipped = (ivend_trueEffect < 0 && ivend_ols.slope > 0);
+  const tail = flipped
+    ? " Here the confound is strong enough to FLIP the sign — a visit that truly helps looks harmful. That is the opening paradox."
+    : "";
+  return { text: `Endogenous: Cov(x, ε) = ${fmt(cov)} ≠ 0 pulls OLS ${dir} by ${fmt(bias)} relative to the truth.${tail} More data tightens this estimate around the WRONG value — it does not move it.`,
+           color: "#b3000b", bg: "rgba(179,0,11,0.06)", border: "#b3000b" };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem; line-height:1.45;
+                 font-weight:600; color:${ivend_verdict.color}; background:${ivend_verdict.bg};
+                 border-left:3px solid ${ivend_verdict.border}; border-radius:0 0.35rem 0.35rem 0;
+                 padding:0.55rem 0.8rem; margin-top:0.6rem;">${ivend_verdict.text}</div>`
+```
+
+:::
+
+### How to Read the Endogeneity Lab
+
+Work through these steps in order; each isolates one idea from the text above.
+
+**Step 1: Start clean and trust OLS.** Drag **Confounding strength** all the way to $0$. Now severity $U$ no longer pushes the visit count, so $\operatorname{Cov}(x,\varepsilon)=0$ and the regressor is exogenous. The red **OLS line** lies right on top of the slate dashed **true line**; the *Bias* tile is near $0.00$ and turns green; the *Sample Cov(x, ε)* tile is near zero. This is the world where OLS works: the slope you fit is the causal effect.
+
+**Step 2: Introduce a confounder.** Push **Confounding strength** up toward $1.5$. Watch the scatter develop a color gradient --- the high-severity (red) points migrate to the upper right, because sicker patients both visit more *and* have higher HbA1c. The red OLS line rotates *upward*, away from the slate truth, and the *Bias* tile turns red. The *Cov(x, ε)* tile is now clearly positive: the regressor has become correlated with the omitted severity sitting in the error. You are watching $\hat\beta_1 = \beta_1 + \operatorname{Cov}(x,\varepsilon)/\operatorname{Var}(x)$ in real time.
+
+**Step 3: Flip the sign of the truth.** Set **True causal effect** to a clearly negative value such as $-0.30$ (visits genuinely help) while keeping confounding high. The slate line slopes *down* --- the program works --- yet the red OLS line can still slope *up*. This is precisely the paradox from the opening: a beneficial intervention that OLS reports as harmful, because the confound overwhelms the true effect.
+
+**Step 4: Prove that data does not save you.** Hold confounding fixed at a high value and drag **Sample size** from 40 up to 1200. The point cloud fills in and the OLS line stops jittering --- it becomes *sharp and stable* --- but it does **not** move toward the slate truth. Press **Draw a new sample** a few times at large $n$: the OLS line barely flickers, yet it is locked onto the wrong slope. This is inconsistency: more data buys precision around a biased limit, never the truth.
+
+**Step 5: Read the four tiles together.** The identity to keep in your eye is *Bias = OLS − truth*, and that bias tracks the *Sample Cov(x, ε)* tile almost perfectly. When the covariance is zero, the bias is zero; when the covariance grows, so does the bias. That single covariance is the whole disease --- and the instrument we meet next is the cure.
+
+> **Why we can even show $\operatorname{Cov}(x,\varepsilon)$ here.** The *Sample Cov(x, ε)* tile is computable only because this is a simulation where we *know* the true line. With real data, $\varepsilon$ is hidden --- it contains the unobserved confounder $U$ --- which is exactly why endogeneity is undetectable from the regression output alone, and why you must argue for exogeneity from subject knowledge rather than read it off the data.
+
+
+## The Instrument: As-Good-As-Random Variation in x
+
+If the trouble is that *all* of $x$'s variation is partly contaminated by the confounder, the way out is to find a *slice* of $x$'s variation that is clean --- variation in GP visits that is pushed around by something having nothing to do with patient severity. Such a variable is called an **instrument**, written $z$.
+
+The classic Swedish-flavored instrument here is **distance to the nearest vårdcentral** (or local appointment-slot capacity). A patient who happens to live two kilometers from a clinic visits more often than an otherwise-identical patient who lives twenty kilometers away --- not because they are sicker, but because going is easier. If, conditional on observables, residential distance is unrelated to a patient's underlying disease severity, then distance generates variation in visits that is *as good as randomly assigned*, and it changes HbA1c *only* through its effect on visits.
+
+::: {.glass-card .glass-card--assumption}
+**What makes $z$ a valid instrument.** A variable $z$ is an instrument for an endogenous regressor $x$ if it satisfies two conditions:
+
+1. **Relevance.** $z$ actually moves the regressor: $\operatorname{Cov}(z, x) \neq 0$. (Distance really does change how often people visit.)
+2. **Exclusion / exogeneity.** $z$ affects $y$ *only through* $x$, and is uncorrelated with the error: $\operatorname{Cov}(z, \varepsilon) = 0$. (Distance influences HbA1c *only* by changing visit frequency, not through any other pathway, and is unrelated to baseline severity.)
+
+In DAG terms, a valid instrument looks like $z \to x \to y$ with **no** arrow from $z$ to $y$ and **no** common cause of $z$ and $y$ --- $z$ enters the causal graph through a single door, $x$.
+:::
+
+```{ojs}
+//| echo: false
+
+// Valid-instrument DAG: z → x → y (the legal single-door path), with the
+// confounder U still opening x ← U → y. The exclusion restriction shows up
+// as the ABSENT arrows z → y and U → z (drawn faint, dashed, in grey, with a
+// strike-through "no" marker) so the reader sees what is forbidden.
+{
+  const w = Math.min(500, width), h = 250;
+  const svg = d3.create("svg")
+    .attr("width", w).attr("height", h)
+    .attr("viewBox", `0 0 ${w} ${h}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["ivend-iv-green", "#2e6f40"], ["ivend-iv-red", "#b3000b"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const pad = 54, r = 24;
+  const sx = v => pad + v * (w - 2 * pad);
+  const sy = v => pad + v * (h - 2 * pad);
+  const P = {
+    z: { x: 0.04, y: 0.62 },
+    x: { x: 0.42, y: 0.62 },
+    y: { x: 0.96, y: 0.62 },
+    U: { x: 0.69, y: 0.08 }
+  };
+
+  const drawEdge = (a, b, col, marker, { dash = null, trim = r } = {}) => {
+    const x1 = sx(a.x), y1 = sy(a.y), x2 = sx(b.x), y2 = sy(b.y);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    svg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (trim + 4)).attr("y2", y2 - uy * (trim + 4))
+      .attr("stroke", col).attr("stroke-width", dash ? 2 : 3)
+      .attr("stroke-dasharray", dash)
+      .attr("marker-end", `url(#${marker})`);
+  };
+
+  // Legal causal edges: z → x → y (green)
+  drawEdge(P.z, P.x, "#2e6f40", "ivend-iv-green");
+  drawEdge(P.x, P.y, "#2e6f40", "ivend-iv-green");
+  // Confounder still biases x and y (red)
+  drawEdge(P.U, P.x, "#b3000b", "ivend-iv-red");
+  drawEdge(P.U, P.y, "#b3000b", "ivend-iv-red");
+
+  // FORBIDDEN (absent) arrows shown faint+dashed in grey with a "✗" so the
+  // exclusion restriction is visible as what z is NOT allowed to do.
+  const forbid = (a, b, labelX, labelY) => {
+    const x1 = sx(a.x), y1 = sy(a.y), x2 = sx(b.x), y2 = sy(b.y);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    svg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", "#79766e").attr("stroke-width", 1.6)
+      .attr("stroke-dasharray", "3,4").attr("opacity", 0.65);
+    svg.append("text")
+      .attr("x", labelX).attr("y", labelY).attr("text-anchor", "middle")
+      .attr("dominant-baseline", "central")
+      .attr("font-size", 14).attr("font-weight", 700).attr("fill", "#b3000b")
+      .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+      .text("✗");
+  };
+  // z → y forbidden (the exclusion restriction)
+  forbid(P.z, P.y, (sx(P.z.x) + sx(P.y.x)) / 2, sy(0.92));
+  // U → z forbidden (z unrelated to the confounder)
+  forbid(P.U, P.z, (sx(P.U.x) + sx(P.z.x)) / 2 - 6, (sy(P.U.y) + sy(P.z.y)) / 2 - 4);
+
+  // Nodes
+  const node = (p, label, caption, dashed = false) => {
+    const cx = sx(p.x), cy = sy(p.y), g = svg.append("g");
+    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r)
+      .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2)
+      .attr("stroke-dasharray", dashed ? "4,3" : null);
+    g.append("text").attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a").text(label);
+    g.append("text").attr("x", cx).attr("y", cy + r + 15)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e").text(caption);
+  };
+  node(P.z, "z", "distance to clinic");
+  node(P.x, "x", "GP visits");
+  node(P.y, "y", "HbA1c");
+  node(P.U, "U", "severity (unobs.)", true);
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+A valid instrument enters through a *single door*: <span style="color:#2e6f40; font-weight:700;">green</span> $z \to x \to y$ is the only path $z$ may take to the outcome. The confounder $U$ (dashed = unobserved) still opens the back door $x \leftarrow U \to y$ in <span style="color:#b3000b; font-weight:700;">red</span> --- but IV routes around it. The two grey **✗** edges are the *forbidden* arrows: $z \to y$ (a direct effect of distance on HbA1c would violate **exclusion**) and $U \to z$ (distance must be unrelated to hidden severity). Relevance is the green $z \to x$ arrow; exclusion is the absence of the two ✗ arrows.
+:::
+
+The payoff, derived in full on the next page, is a beautifully simple estimator: scale the effect of the instrument on the outcome by the effect of the instrument on the regressor,
+
+$$
+\hat\beta_1^{\,\text{IV}} = \frac{\operatorname{Cov}(z, y)}{\operatorname{Cov}(z, x)} .
+$$
+
+**Read this as**: "the instrumental-variables slope is the covariance of the instrument with the outcome, divided by the covariance of the instrument with the regressor." The numerator is the *reduced form* --- the regression of the outcome directly on the instrument, i.e. distance's total effect on HbA1c; the denominator is the *first stage* --- the regression of the endogenous regressor on the instrument, i.e. distance's effect on visits; their ratio strips out everything except the causal channel $x \to y$. We do not eliminate the confounder --- we *route around* it, using only the clean variation $z$ injects into $x$.
+
+::: {.glass-card .glass-card--insight}
+**Instruments trade one assumption for another.** OLS needs the strong, usually-false assumption that *the regressor itself* is exogenous. IV replaces it with the assumption that *the instrument* is exogenous --- relevant to $x$ but excluded from $y$. This is not a free lunch: exclusion is itself untestable and must be defended with subject knowledge. But it is often far more plausible to argue that *distance to a clinic* is unrelated to a patient's hidden severity than to argue that *the visit count itself* is. That swap --- from an indefensible assumption to a merely demanding one --- is the entire move of instrumental variables.
+:::
+
+
+<details>
+<summary>Math Details: Attenuation bias from measurement error in x</summary>
+<div class="details-content">
+
+We promised that classical measurement error in the regressor pulls the OLS slope *toward zero*. Here is the derivation.
+
+Let the true model be $y = \beta_0 + \beta_1 x^\ast + e$, where the *true* regressor $x^\ast$ is exogenous: $\operatorname{Cov}(x^\ast, e) = 0$. We do not observe $x^\ast$; we observe a noisy proxy
+
+$$
+x = x^\ast + u, \qquad E[u] = 0,\quad \operatorname{Cov}(u, x^\ast) = 0,\quad \operatorname{Cov}(u, e) = 0 .
+$$
+
+This is **classical measurement error**: the noise $u$ is mean-zero and independent of the true regressor and of the structural error. Substitute $x^\ast = x - u$ into the true model to express $y$ in terms of the *observed* regressor:
+
+$$
+y = \beta_0 + \beta_1 (x - u) + e = \beta_0 + \beta_1 x + \underbrace{(e - \beta_1 u)}_{\displaystyle \varepsilon} .
+$$
+
+The regression we actually run has composite error $\varepsilon = e - \beta_1 u$. Now compute its covariance with the observed regressor $x = x^\ast + u$:
+
+$$
+\operatorname{Cov}(x, \varepsilon)
+= \operatorname{Cov}(x^\ast + u,\; e - \beta_1 u)
+= \underbrace{\operatorname{Cov}(x^\ast, e)}_{0}
+- \beta_1\underbrace{\operatorname{Cov}(x^\ast, u)}_{0}
++ \underbrace{\operatorname{Cov}(u, e)}_{0}
+- \beta_1 \operatorname{Var}(u) .
+$$
+
+So $\operatorname{Cov}(x, \varepsilon) = -\beta_1\, \sigma_u^2 \neq 0$: **measurement error makes $x$ endogenous**, even though the true regressor was clean. Plug this into the probability limit of OLS, using $\operatorname{Var}(x) = \operatorname{Var}(x^\ast) + \sigma_u^2 = \sigma_{x^\ast}^2 + \sigma_u^2$:
+
+$$
+\hat\beta_1 \;\xrightarrow{p}\; \beta_1 + \frac{-\beta_1 \sigma_u^2}{\sigma_{x^\ast}^2 + \sigma_u^2}
+= \beta_1 \cdot \frac{\sigma_{x^\ast}^2}{\sigma_{x^\ast}^2 + \sigma_u^2} .
+$$
+
+The multiplier
+
+$$
+\lambda = \frac{\sigma_{x^\ast}^2}{\sigma_{x^\ast}^2 + \sigma_u^2} \in (0, 1)
+$$
+
+is the **reliability ratio**. Since $0 < \lambda < 1$, the OLS slope converges to a *shrunken* version of $\beta_1$ --- this is **attenuation bias**, a bias toward zero. The noisier the measurement (larger $\sigma_u^2$), the smaller $\lambda$, and the more the estimated effect is dragged toward nothing. Note the direction is predictable here (always toward zero), unlike confounding or simultaneity, where the bias can go either way. An instrument for the *mismeasured* regressor --- a second, independently mismeasured proxy, for instance --- restores consistency.
+
+</div>
+</details>
+
+
+## Code: Watch OLS Break, Then See the IV Fix
+
+Both implementations simulate the GP-visits world with a hidden severity confounder, show that OLS is biased, and confirm that an instrument (distance to clinic) recovers the true effect. The IV estimator itself is the subject of the next page; here it is a preview that the diagnosis on this page has a cure.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(AER)        # ivreg()
+library(fixest)     # feols() with IV syntax
+
+set.seed(20260619)
+n <- 4000
+beta_true <- -0.25                       # true effect of one GP visit on HbA1c
+
+# Hidden confounder: baseline severity U (unobserved by the analyst)
+U <- rnorm(n)
+
+# Instrument: (negative) distance to nearest vårdcentral — closer => more visits.
+# Independent of severity U  =>  exogenous instrument.
+z <- rnorm(n)                            # standardized "closeness" to a clinic
+
+# First stage: visits driven by closeness z AND by severity U (the confound)
+visits <- 6 + 1.2 * z + 1.4 * U + rnorm(n, 0, 1.4)
+
+# Outcome: visits help (beta_true), but severity U directly worsens HbA1c
+# and sits in the error because U is unobserved.
+hba1c  <- 7.6 + beta_true * visits + 1.1 * U + rnorm(n, 0, 0.45)
+
+df <- data.frame(hba1c, visits, z)
+
+# --- Naive OLS: biased upward because Cov(visits, error) > 0 ---
+ols <- lm(hba1c ~ visits, data = df)
+cat("OLS slope (biased):   ", round(coef(ols)["visits"], 3), "\n")
+
+# --- IV / 2SLS using closeness as the instrument ---
+iv <- ivreg(hba1c ~ visits | z, data = df)
+cat("IV  slope (consistent):", round(coef(iv)["visits"], 3), "\n")
+
+# Same via fixest:  y ~ exog | fe | endog ~ instrument
+iv2 <- feols(hba1c ~ 1 | visits ~ z, data = df)
+cat("Truth was:            ", beta_true, "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from linearmodels.iv import IV2SLS
+
+rng = np.random.default_rng(20260619)
+n = 4000
+beta_true = -0.25                         # true effect of one GP visit on HbA1c
+
+# Hidden confounder: baseline severity U (unobserved by the analyst)
+U = rng.normal(size=n)
+
+# Instrument: standardized "closeness" to nearest vårdcentral, independent of U
+z = rng.normal(size=n)
+
+# First stage: visits driven by closeness z AND by severity U (the confound)
+visits = 6 + 1.2 * z + 1.4 * U + rng.normal(0, 1.4, n)
+
+# Outcome: visits help, but severity U directly worsens HbA1c and is unobserved
+hba1c = 7.6 + beta_true * visits + 1.1 * U + rng.normal(0, 0.45, n)
+
+df = pd.DataFrame({"hba1c": hba1c, "visits": visits, "z": z})
+
+# --- Naive OLS: biased upward because Cov(visits, error) > 0 ---
+ols = sm.OLS(df["hba1c"], sm.add_constant(df["visits"])).fit()
+print(f"OLS slope (biased):    {ols.params['visits']:.3f}")
+
+# --- IV / 2SLS using closeness as the instrument ---
+iv = IV2SLS(dependent=df["hba1c"],
+            exog=sm.add_constant(df[[]]),     # intercept only among exogenous
+            endog=df["visits"],
+            instruments=df["z"]).fit()
+print(f"IV  slope (consistent): {iv.params['visits']:.3f}")
+print(f"Truth was:             {beta_true}")
+```
+
+:::
+
+In both languages the OLS slope comes back near $0$ or even positive --- the visit count is endogenous, so least squares is pulled toward the confounder --- while the IV estimate lands close to the true $-0.25$. The next page explains *why* the IV estimator works and *how* two-stage least squares computes it.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region regresses patient HbA1c on the number of *distriktssköterska* (district-nurse) home visits and finds a slope of $+0.18$ (more visits, worse control). Suppose the *true* causal effect of a home visit is $\beta_1 = -0.20$, the variance of visits is $\operatorname{Var}(x) = 4.0$, and the analyst suspects an omitted confounder (frailty) drives both.
+
+(a) Using $\hat\beta_1 = \beta_1 + \operatorname{Cov}(x,\varepsilon)/\operatorname{Var}(x)$, solve for the implied $\operatorname{Cov}(x,\varepsilon)$. (b) Is the sign of the implied covariance consistent with "frailer patients receive more home visits and have worse HbA1c"? (c) If the region quadruples its sample, what happens to this $+0.18$ estimate?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Rearrange the identity: $\operatorname{Cov}(x,\varepsilon) = (\hat\beta_1 - \beta_1)\cdot\operatorname{Var}(x) = (0.18 - (-0.20)) \times 4.0 = 0.38 \times 4.0 = 1.52$.
+
+**(b)** Yes. The implied covariance is **positive** ($+1.52$). Frailty sits in the error term $\varepsilon$ (it is omitted), and the story says frailer patients (high $\varepsilon$, worse HbA1c) also get more visits (high $x$). Higher $x$ accompanies higher $\varepsilon$, so $\operatorname{Cov}(x,\varepsilon)>0$, which is exactly the positive value we backed out. A positive contamination term pushes the estimate up from the true $-0.20$ to the observed $+0.18$ --- enough to flip the sign.
+
+**(c)** Essentially nothing changes in expectation. Endogeneity makes OLS *inconsistent*: the slope converges to $\beta_1 + \operatorname{Cov}(x,\varepsilon)/\operatorname{Var}(x) = -0.20 + 1.52/4.0 = +0.18$ regardless of $n$. Quadrupling the sample tightens the confidence interval around $+0.18$ but does not move it toward $-0.20$. More data makes the wrong answer look *more* certain.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+For each scenario, name which of the three classic sources of endogeneity is at work (omitted variable/confounding, simultaneity/reverse causality, or measurement error in $x$), and state why $\operatorname{Cov}(x,\varepsilon)\neq 0$.
+
+(a) HbA1c is regressed on GP visits, but a region's triage protocol books extra visits *for patients whose latest labs were poor*. (b) HbA1c is regressed on "self-reported number of GP visits," which patients recall imperfectly. (c) HbA1c is regressed on GP visits, with no measure of patients' diet quality, which independently raises both visits and HbA1c.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Simultaneity / reverse causality.** Poor HbA1c (high $y$, hence high $\varepsilon$) *causes* more visits ($x$) through the triage rule, at the same time visits are meant to lower HbA1c. The feedback puts the outcome's error back into the regressor, so $\operatorname{Cov}(x,\varepsilon)\neq 0$. $x$ and $y$ are determined jointly.
+
+**(b) Measurement error in $x$.** The recalled count is $x = x^\ast + u$ with classical noise $u$. As derived in the Math Details, the regression error becomes $\varepsilon = e - \beta_1 u$, and $\operatorname{Cov}(x,\varepsilon) = -\beta_1\sigma_u^2 \neq 0$. This produces *attenuation* --- the estimated effect is biased toward zero.
+
+**(c) Omitted variable / confounding.** Diet quality $U$ is unmeasured, so it lives in $\varepsilon$. Since $U$ raises both visits ($U\to x$) and HbA1c directly ($U\to y$), the regressor is correlated with the error: $\operatorname{Cov}(x,\varepsilon)\neq 0$. This is the back-door path $x \leftarrow U \to y$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher worries about measurement error in the visit count. The true regressor has variance $\sigma_{x^\ast}^2 = 9$, and the recording noise has variance $\sigma_u^2 = 3$. The true effect of a visit is $\beta_1 = -0.30$.
+
+(a) Compute the reliability ratio $\lambda$. (b) What value does the OLS slope converge to? (c) By what percentage is the magnitude of the effect understated, and which direction is this bias guaranteed to go?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\lambda = \dfrac{\sigma_{x^\ast}^2}{\sigma_{x^\ast}^2 + \sigma_u^2} = \dfrac{9}{9 + 3} = \dfrac{9}{12} = 0.75$.
+
+**(b)** The OLS slope converges to $\lambda\,\beta_1 = 0.75 \times (-0.30) = -0.225$.
+
+**(c)** The magnitude falls from $0.30$ to $0.225$, an understatement of $\dfrac{0.30 - 0.225}{0.30} = 0.25 = 25\%$ --- exactly $1 - \lambda$. Classical measurement error in the regressor *always* attenuates: it pulls the estimate toward zero, never away from it. This predictable direction distinguishes it from confounding and simultaneity, where the bias can have either sign.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A health economist proposes **distance to the nearest vårdcentral** as an instrument for GP-visit frequency in the HbA1c regression.
+
+(a) State the two conditions the instrument must satisfy, in words specific to this example. (b) Give one concrete real-world story under which the **exclusion** restriction would *fail* --- a way distance could affect HbA1c other than through visit frequency. (c) Explain in one sentence why, if the instrument is valid, the IV estimator $\operatorname{Cov}(z,y)/\operatorname{Cov}(z,x)$ is immune to the severity confounder that wrecks OLS.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** *Relevance*: distance must actually change how often patients visit --- closer patients visit more, $\operatorname{Cov}(z, x)\neq 0$. *Exclusion/exogeneity*: distance must affect HbA1c **only** by changing visit frequency, and must be uncorrelated with baseline severity and other omitted determinants, $\operatorname{Cov}(z,\varepsilon)=0$.
+
+**(b)** Exclusion could fail if living far from a clinic correlates with **rurality**, and rural areas have different diets, more physical labor, worse access to pharmacies, or different food environments --- all of which affect HbA1c directly, not through GP visits. Then distance opens a second pathway to the outcome ($z \to \text{rural lifestyle} \to y$), violating exclusion. (Researchers try to defend exclusion by conditioning on urbanicity, income, etc., but the restriction remains an argument, not a proof.)
+
+**(c)** Because the IV estimator uses *only* the slice of visit variation generated by distance --- variation that, by the exclusion restriction, is unrelated to severity --- the confounder never enters either the numerator $\operatorname{Cov}(z,y)$ or the denominator $\operatorname{Cov}(z,x)$, so it cannot contaminate the ratio the way it contaminates the all-variation OLS slope.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- OLS is unbiased and consistent only under **exogeneity**, $\operatorname{Cov}(x,\varepsilon)=0$; **endogeneity** ($\operatorname{Cov}(x,\varepsilon)\neq 0$) makes the slope $\hat\beta_1 = \beta_1 + \operatorname{Cov}(x,\varepsilon)/\operatorname{Var}(x)$ miss the truth.
+- Three classic sources create endogeneity: **omitted variables/confounding**, **simultaneity/reverse causality**, and **measurement error in the regressor** (which attenuates toward zero).
+- The confounding case is the DAG $x \leftarrow U \to y$ with $U$ unobserved --- the same back-door problem as Modules 2 and 4, but with a confounder you cannot measure or condition on.
+- Endogeneity causes **inconsistency**, not just bias: more data makes you *more confident about the wrong answer*, because the OLS slope converges to $\beta_1 + \operatorname{Cov}(x,\varepsilon)/\operatorname{Var}(x)$.
+- An **instrument** $z$ supplies as-good-as-random variation in $x$ --- it must be **relevant** ($\operatorname{Cov}(z,x)\neq 0$) and satisfy **exclusion** ($z$ affects $y$ only through $x$, $\operatorname{Cov}(z,\varepsilon)=0$).
+:::
+
+
+## What Comes Next
+
+We have diagnosed the disease: when a regressor is correlated with the error, OLS is biased, inconsistent, and beyond rescue by sample size. We have also named the cure --- an instrument that injects clean, as-good-as-random variation into the endogenous regressor and touches the outcome through no other door. The next page, [Two-Stage Least Squares](two-stage-least-squares.qmd), turns that idea into a working estimator: it shows how to isolate the instrument-driven slice of $x$ in a *first stage*, plug the fitted values into the structural equation in a *second stage*, and recover a consistent estimate of $\beta_1$ --- proving along the way that 2SLS is exactly the ratio $\operatorname{Cov}(z,y)/\operatorname{Cov}(z,x)$ we previewed here.

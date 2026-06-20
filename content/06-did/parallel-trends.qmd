@@ -1,0 +1,1366 @@
+---
+title: "Parallel Trends"
+subtitle: "Testing, assessing, and defending the key assumption"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State the parallel-trends assumption as a claim about untreated potential outcomes, and explain why it concerns parallel motion, not parallel position
+- Argue why parallel trends is fundamentally untestable, and why parallel pre-trends are suggestive but neither necessary nor sufficient
+- Specify and interpret an event-study (dynamic DiD) regression, reading lead coefficients as pre-trend tests and lags as dynamic effects
+- Diagnose four ways the pre-trend test misleads: low power, pre-test bias, functional-form (levels vs. logs) dependence, and compositional change
+- Defend a conditional parallel-trends assumption with covariates while avoiding bad controls
+:::
+
+## The Assumption That Does All the Work
+
+On the previous page we built a difference-in-differences (DiD) estimator and ran it through a regression. The arithmetic was easy. But every DiD estimate --- in fact, the entire credibility of the design --- rests on a single assumption that *cannot be checked against the data*. This page is about that assumption: what it says, why it is untestable, what evidence we can muster *in its favor*, and the ways that evidence can mislead us.
+
+The setting throughout this page: in 2018, a subset of Sweden's 21 *regioner* (regions) rolled out a *diabetessamordningsprogram* --- a structured diabetes coordination program --- across their *vårdcentraler* (primary care centers). The remaining regions did not. We observe each region's average HbA1c (a marker of long-run blood sugar control, where lower is better) once per year, for several years before and after 2018. We want the causal effect of the program on HbA1c.
+
+DiD answers this by comparing the *change* in HbA1c among adopting ("treated") regions to the *change* among non-adopting ("control") regions. The logic is: control regions tell us what would have happened to the treated regions *in the absence of the program*. But that substitution is legitimate only if the two groups would have evolved the same way without the program. That "would have" is the parallel-trends assumption --- and it is a statement about a counterfactual world we never observe.
+
+::: {.glass-card .glass-card--assumption}
+**Parallel Trends.** Let $Y_{it}(0)$ be the potential HbA1c of region $i$ in year $t$ *under no program*. Parallel trends requires that, between any pre-period $s$ and post-period $t$, the average untreated trajectory is the same for treated and control regions:
+
+$$
+\underbrace{E[Y_{it}(0) - Y_{is}(0) \mid D_i = 1]}_{\text{treated group's change, had it not adopted}} = \underbrace{E[Y_{it}(0) - Y_{is}(0) \mid D_i = 0]}_{\text{control group's change}}
+$$
+
+**How to read this.** "Among regions that adopted the program ($D_i = 1$), the change in HbA1c they *would have experienced without it* equals the change actually experienced by the non-adopting regions ($D_i = 0$)." It is a statement about $Y(0)$ --- the untreated potential outcome --- for the *treated* group. Because the treated group did adopt, that quantity is counterfactual and never observed. (Throughout, $E[\,\cdot \mid D_i = g]$ just means "the **average** over the regions in group $g$," and the vertical bar "$\mid$" reads "given" or "among.")
+:::
+
+Notice what parallel trends does **not** require. It does not require that the two groups have the same *level* of HbA1c --- treated regions can be sicker at baseline. It does not require that there are no confounders --- there can be many, as long as their *combined effect on the trend* is common to both groups. It is an assumption about parallel *motion*, not about parallel *position*.
+
+::: {.glass-card .glass-card--insight}
+A confounder breaks DiD only if it makes the groups' untreated outcomes diverge *over the study window*. A region being permanently richer, older, or sicker is fine --- DiD differences that away. What is fatal is a region getting richer, older, or sicker *at a different rate* than its comparison group right when the program arrives.
+:::
+
+
+## Why It Is Fundamentally Untestable
+
+The right-hand side of the parallel-trends equation --- the control group's change --- is observed. The left-hand side --- the treated group's change *had they not adopted* --- is not. After 2018 the treated regions *did* adopt, so their $Y(0)$ in those years is the missing counterfactual from the Fundamental Problem of Causal Inference. No amount of data from the post-period can reveal it.
+
+This is worth stating bluntly because it shapes everything that follows. We will never *prove* parallel trends. The best we can do is gather circumstantial evidence and argue that the assumption is *plausible*. The single most important piece of that evidence is the behavior of the two groups *before* treatment, when both groups are untreated and both $Y(0)$ trajectories are observable.
+
+
+## Pre-Trends: Suggestive, Not Dispositive
+
+If, in the years *before* 2018, the treated and control regions' HbA1c moved in lockstep, it is more believable that they *would have continued* to move in lockstep afterward. Parallel pre-trends are reassuring. But they are evidence, not proof, and the gap between the two matters enormously.
+
+::: {.glass-card .glass-card--warning}
+Parallel *pre*-trends are neither necessary nor sufficient for parallel *post*-trends.
+
+- **Not sufficient:** Two groups can move identically for years and then diverge for a reason unrelated to the program --- a regional hospital merger, a change in referral patterns, a new national guideline that hits one group harder. The pre-period cannot rule this out.
+- **Not necessary:** Strictly, the assumption could hold post-treatment even if pre-trends differed (though this is a hard story to tell). Parallel pre-trends make the assumption credible; they do not make it true.
+:::
+
+The two pictures below make this logical asymmetry concrete. The dashed vertical line marks adoption; the treated line is red, the control line slate.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Tiny illustrative trajectories for the "not sufficient / not necessary" pair.
+// Pure constants — these are schematic thumbnails, not simulated data.
+p2_notSufficient = [
+  // parallel BEFORE adoption, then the treated line diverges AFTER for a non-program reason
+  ...d3.range(-3, 1).map(k => ({ g: "Control", k, y: 7.2 - 0.04 * k })),
+  ...d3.range(1, 4).map(k => ({ g: "Control", k, y: 7.2 - 0.04 * k })),
+  ...d3.range(-3, 1).map(k => ({ g: "Treated", k, y: 7.6 - 0.04 * k })),
+  ...d3.range(1, 4).map(k => ({ g: "Treated", k, y: 7.6 - 0.04 * k - 0.14 * (k - 0) }))
+]
+
+p2_notNecessary = [
+  // NON-parallel before adoption, but parallel AFTER
+  ...d3.range(-3, 1).map(k => ({ g: "Control", k, y: 7.2 - 0.03 * k })),
+  ...d3.range(1, 4).map(k => ({ g: "Control", k, y: 7.2 - 0.03 * k })),
+  ...d3.range(-3, 1).map(k => ({ g: "Treated", k, y: 7.85 + 0.10 * k })),
+  ...d3.range(1, 4).map(k => ({ g: "Treated", k, y: 7.85 + 0.10 * 0 - 0.03 * (k - 0) }))
+]
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;margin:1rem 0;">
+  <div>${p2_thumb(p2_notSufficient, "Parallel pre, diverge post", "NOT sufficient")}</div>
+  <div>${p2_thumb(p2_notNecessary, "Non-parallel pre, parallel post", "NOT necessary")}</div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Small reusable thumbnail plotter for the pre/post sparkline pair.
+p2_thumb = function (data, subtitle, badge) {
+  return Plot.plot({
+    width: 320,
+    height: 170,
+    marginLeft: 22,
+    marginRight: 12,
+    marginTop: 34,
+    marginBottom: 28,
+    style: { fontFamily: "Inter", color: "#1c1c1a", fontSize: "10px" },
+    x: { label: null, domain: [-3, 3], ticks: [] },
+    y: { label: null, ticks: [], domain: [6.9, 8.3] },
+    color: { domain: ["Treated", "Control"], range: ["#990000", "#3d5a6c"] },
+    marks: [
+      Plot.ruleX([0], { stroke: "#79766e", strokeDasharray: "3,3" }),
+      Plot.line(data, { x: "k", y: "y", stroke: "g", strokeWidth: 2.5 }),
+      Plot.text([{ x: 0, y: 8.27, t: badge }],
+        { x: "x", y: "y", text: "t", fill: "#b3000b", fontSize: 11, fontWeight: 700, fontFamily: "Inter" }),
+      Plot.text([{ x: 0, y: 8.12, t: subtitle }],
+        { x: "x", y: "y", text: "t", fill: "#79766e", fontSize: 9.5, fontFamily: "Inter" }),
+      Plot.text([{ x: 0, y: 6.95, t: "← pre  |  post →" }],
+        { x: "x", y: "y", text: "t", fill: "#79766e", fontSize: 9, fontFamily: "Inter" })
+    ]
+  });
+}
+```
+
+::: {.aside}
+**Left ("not sufficient"):** the two lines move in perfect lockstep *before* adoption, then split *after* for a reason unrelated to the program --- a clean pre-trend that nonetheless certifies nothing. **Right ("not necessary"):** the lines are clearly *non-parallel before* adoption yet become parallel *after* --- a failed pre-test that does not, by itself, doom the design. Pre-trends are evidence, not proof.
+:::
+
+The richer the pre-period, the stronger the argument. A single pre-period gives us nothing to check --- with one "before" measurement per group, *any* difference can be absorbed into the level, and parallelism is untestable. Two pre-periods let us see one pre-treatment *change* for each group. Several pre-periods let us see a whole *trajectory*, and that is what we want: many opportunities for the two groups to reveal that they march to different drummers.
+
+
+## The Event-Study Specification
+
+The disciplined way to inspect pre-trends (and to display dynamic post-treatment effects) is the **event-study** --- also called the dynamic DiD specification. Instead of one treatment dummy, we interact group membership with a full set of indicators for time *relative to* the adoption year.
+
+Let event time be $k = t - 2018$, so $k = -1$ is 2017, $k = 0$ is 2018 (the first treated year), $k = +2$ is 2020, and so on. The regression is:
+
+$$
+Y_{it} = \alpha_i + \lambda_t + \sum_{k \ne -1} \beta_k \cdot \big(D_i \cdot \mathbb{1}\{t - 2018 = k\}\big) + \varepsilon_{it}
+$$
+
+**How to read this.** "$Y_{it}$ is region $i$'s HbA1c in year $t$. The $\alpha_i$ are region fixed effects (each region's permanent level); the $\lambda_t$ are year fixed effects (shocks common to all regions in a given year). For each event time $k$, the coefficient $\beta_k$ is the treated-minus-control gap in that year, *relative to the omitted reference year* $k = -1$. We drop $k = -1$ so that all $\beta_k$ are measured as deviations from the year just before treatment."
+
+::: {.aside}
+A **fixed effect** is just a separate intercept for each region (and each year) that silently soaks up everything constant about it --- a region's permanent sickness level, a nationwide bad-flu year --- so it never has to be modelled. The $\alpha_i$ erase level differences between regions; the $\lambda_t$ erase shocks that hit every region the same way in a given year. What is left for the $\beta_k$ to explain is precisely the *treated-only, year-specific* movement.
+:::
+
+The coefficients split cleanly into two families:
+
+- **Leads** ($k < 0$, the pre-treatment years): if pre-trends are parallel, these should be statistically and economically **indistinguishable from zero**. They are the formal pre-trend test.
+- **Lags** ($k \ge 0$, the post-treatment years): these are the dynamic treatment effects --- how the program's impact builds, plateaus, or fades over time.
+
+::: {.glass-card .glass-card--definition}
+**The event-study coefficient.** $\beta_k$ estimates
+
+$$
+\beta_k = \big(E[Y_{i,\,2018+k} \mid D=1] - E[Y_{i,\,2017} \mid D=1]\big) - \big(E[Y_{i,\,2018+k} \mid D=0] - E[Y_{i,\,2017} \mid D=0]\big).
+$$
+
+It is a DiD between event-year $k$ and the reference year $k=-1$. **Read it as:** "How much more did the treated group's HbA1c change from 2017 to year $k$, compared with how much the control group's HbA1c changed over the same span?" For pre-periods, the truth is zero under parallel trends; a nonzero $\hat\beta_k$ for $k<0$ is a *detected* differential pre-trend.
+:::
+
+Plotting $\hat\beta_k$ against $k$ with confidence bands is the single most informative diagnostic in all of DiD. A reader can see, at a glance, whether the leads hug zero and whether the lags tell a sensible story.
+
+Before you meet the live version below, here is the anatomy of that plot --- what to look for and where.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Idealised event-study coefficients used ONLY for the static anatomy figure.
+// Leads sit on zero; lags trace a phase-in. This is a labelled mock-up, not data.
+p2_anatomy = [
+  { k: -4, beta: 0.01, lo: -0.06, hi: 0.08, kind: "Lead" },
+  { k: -3, beta: -0.02, lo: -0.09, hi: 0.05, kind: "Lead" },
+  { k: -2, beta: 0.02, lo: -0.05, hi: 0.09, kind: "Lead" },
+  { k: -1, beta: 0.00, lo: 0.00, hi: 0.00, kind: "Reference" },
+  { k: 0, beta: -0.20, lo: -0.29, hi: -0.11, kind: "Lag" },
+  { k: 1, beta: -0.35, lo: -0.45, hi: -0.25, kind: "Lag" },
+  { k: 2, beta: -0.40, lo: -0.51, hi: -0.29, kind: "Lag" },
+  { k: 3, beta: -0.41, lo: -0.53, hi: -0.29, kind: "Lag" }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 300,
+  marginLeft: 64,
+  marginRight: 20,
+  marginTop: 28,
+  marginBottom: 45,
+  grid: true,
+  style: { fontFamily: "Inter", color: "#1c1c1a" },
+  x: { label: "Event time k (years from 2018 adoption)", domain: [-4.4, 3.4], ticks: p2_anatomy.map(d => d.k) },
+  y: { label: "Coefficient β_k (vs k = -1)", domain: [-0.62, 0.22] },
+  color: { domain: ["Lead", "Reference", "Lag"], range: ["#79766e", "#9c7a33", "#990000"] },
+  marks: [
+    // pre / post shading to make the lead-vs-lag split visible without relying on color alone
+    Plot.rect([{ x1: -4.4, x2: -0.5 }], { x1: "x1", x2: "x2", y1: -0.62, y2: 0.22, fill: "#3d5a6c", fillOpacity: 0.05 }),
+    Plot.ruleY([0], { stroke: "#1c1c1a" }),
+    Plot.ruleX([-0.5], { stroke: "#79766e", strokeDasharray: "3,3" }),
+    Plot.ruleX(p2_anatomy, { x: "k", y1: "lo", y2: "hi", stroke: "kind", strokeWidth: 1.5 }),
+    Plot.dot(p2_anatomy, { x: "k", y: "beta", fill: "kind", r: 4.5 }),
+    // Annotations
+    Plot.text([{ x: -3, y: 0.17, t: "LEADS (k < 0): pre-trend test" }],
+      { x: "x", y: "y", text: "t", fill: "#3d5a6c", fontSize: 11, fontWeight: 700, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: -3, y: 0.115, t: "should hug zero" }],
+      { x: "x", y: "y", text: "t", fill: "#3d5a6c", fontSize: 10, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: 1.6, y: 0.17, t: "LAGS (k ≥ 0): dynamic effect" }],
+      { x: "x", y: "y", text: "t", fill: "#990000", fontSize: 11, fontWeight: 700, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: 2.05, y: -0.52, t: "effect builds, then plateaus" }],
+      { x: "x", y: "y", text: "t", fill: "#990000", fontSize: 10, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: -1, y: 0.00, t: "ref" }],
+      { x: "x", y: "y", text: "t", dy: 14, fill: "#9c7a33", fontSize: 10, fontWeight: 700, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: -1, y: 0.00, t: "k = -1 normalized to 0" }],
+      { x: "x", y: "y", dx: 6, textAnchor: "start", text: "t", fill: "#9c7a33", fontSize: 9.5, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: -0.5, y: 0.205, t: "adoption" }],
+      { x: "x", y: "y", dx: 4, textAnchor: "start", text: "t", fill: "#79766e", fontSize: 9.5, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+::: {.aside}
+**How to read an event-study plot.** The shaded left band holds the **leads** (pre-treatment, $k<0$): under parallel trends these sit on the zero line, so a *slope* or *drift* among them is the warning sign. The ochre point at $k=-1$ is the **reference** year, mechanically fixed to zero (no band). The points to the right of adoption are the **lags** ($k\ge 0$) --- the program's effect as it builds and plateaus. This is an idealised mock-up; the live, controllable version is just below.
+:::
+
+
+## See It: Inject a Pre-Trend and Watch the Damage
+
+The interactive below simulates our 21-region setup. Twelve "treated" regions adopt the diabetes program in 2018 (event time $k=0$); nine "control" regions never adopt. You observe four pre-periods ($k=-4,\dots,-1$) and four post-periods ($k=0,\dots,3$). The program's **true** effect is a genuine $-0.40$ percentage-point reduction in HbA1c that phases in after adoption. (A *percentage point* is an *additive* change on the HbA1c scale --- "fell by 0.40 points" --- not a *percent*, which would be a proportional change like "fell by 5%"; the distinction returns with force in the levels-vs-logs section.)
+
+The danger you control is a **differential pre-trend**: a slope difference between the groups that exists *before and continues through* the post-period. When you dial it up, the treated group is already drifting relative to controls --- and a naive DiD will mistake that drift for a program effect.
+
+::: {.interactive-container}
+
+#### Differential Pre-Trends and DiD Bias
+
+::: {.callout-note appearance="minimal"}
+**Start here:** leave both sliders at their defaults to see a clean parallel-trends case, then follow the 5-step tour just below the chart. Watch how the two plots and the bias card move together.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof pt_preTrend = Inputs.range([-0.30, 0.30], {
+  value: 0,
+  step: 0.01,
+  label: "Differential pre-trend (Δ HbA1c per year, treated minus control)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pt_noise = Inputs.range([0, 0.20], {
+  value: 0.06,
+  step: 0.01,
+  label: "Measurement noise (SD of regional shocks)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pt_showCounterfactual = Inputs.toggle({
+  label: "Show treated group's counterfactual Y(0) trajectory",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pt_reseed = Inputs.button("Draw new sample (re-randomize)", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size:0.78rem;color:#79766e;margin:0.1rem 0 0.4rem;">Re-randomizing has a visible effect only when measurement noise is high (Step 5) — at low noise the sample barely moves.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// --- Fixed design constants ---
+pt_eventTimes = d3.range(-4, 4)            // k = -4 ... +3
+pt_nTreated = 12
+pt_nControl = 9
+pt_baseTreated = 7.6                       // treated regions sicker at baseline (level diff is OK)
+pt_baseControl = 7.1
+pt_commonSlope = -0.03                     // both groups gently improving over time
+pt_trueEffectFull = -0.40                  // genuine program effect once fully phased in
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// True post-treatment dose by event time (phase-in over 2 years)
+pt_truePost = function (k) {
+  if (k < 0) return 0;
+  if (k === 0) return 0.5 * pt_trueEffectFull;   // half effect in adoption year
+  return pt_trueEffectFull;                        // full effect from k=1 onward
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// --- Simulate the panel given the user's controls ---
+pt_panel = {
+  pt_reseed;  // re-run when the button is pressed
+  const rnd = d3.randomNormal(0, 1);
+  const rows = [];
+
+  for (let g of ["Treated", "Control"]) {
+    const isT = g === "Treated";
+    const n = isT ? pt_nTreated : pt_nControl;
+    const base = isT ? pt_baseTreated : pt_baseControl;
+    for (let r = 0; r < n; r++) {
+      const regionShock = rnd() * 0.08;            // permanent region level (differenced away)
+      for (let k of pt_eventTimes) {
+        // Common secular trend, shared by both groups:
+        let y = base + regionShock + pt_commonSlope * k;
+        // Differential pre-trend: treated group drifts at extra slope in EVERY period:
+        if (isT) y += pt_preTrend * k;
+        // Genuine program effect (treated, post only):
+        if (isT) y += pt_truePost(k);
+        // Idiosyncratic measurement noise:
+        y += rnd() * pt_noise;
+        rows.push({ group: g, region: (isT ? "T" : "C") + r, k, y });
+      }
+    }
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Group means by event time (what the eye sees)
+pt_groupMeans = {
+  const byGroup = d3.group(pt_panel, d => d.group, d => d.k);
+  const out = [];
+  for (let [g, kmap] of byGroup) {
+    for (let [k, arr] of kmap) {
+      out.push({ group: g, k: +k, y: d3.mean(arr, d => d.y) });
+    }
+  }
+  return out.sort((a, b) => a.k - b.k);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Counterfactual treated Y(0): treated means minus the genuine effect we injected
+pt_counterfactual = pt_groupMeans
+  .filter(d => d.group === "Treated")
+  .map(d => ({ group: "Treated Y(0)", k: d.k, y: d.y - pt_truePost(d.k) }))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Event-study coefficients beta_k = (treated_k - treated_{-1}) - (control_k - control_{-1})
+pt_eventStudy = {
+  const mT = new Map(pt_groupMeans.filter(d => d.group === "Treated").map(d => [d.k, d.y]));
+  const mC = new Map(pt_groupMeans.filter(d => d.group === "Control").map(d => [d.k, d.y]));
+  const ref = -1;
+  const tRef = mT.get(ref), cRef = mC.get(ref);
+
+  // Approximate SE from cross-region dispersion (illustrative bands, not exact clustered SE)
+  const byGroupK = d3.group(pt_panel, d => d.group, d => d.k);
+  const seAt = (g, k) => {
+    const arr = byGroupK.get(g).get(k);
+    return (d3.deviation(arr, d => d.y) || 0) / Math.sqrt(arr.length);
+  };
+
+  return pt_eventTimes.map(k => {
+    const beta = (mT.get(k) - tRef) - (mC.get(k) - cRef);
+    // The reference period (k = -1) is the omitted category: it is normalized
+    // to exactly zero with NO sampling uncertainty. Drawing a band there would
+    // be a mistake, so force its SE to zero.
+    const se = k === ref ? 0 : Math.sqrt(
+      seAt("Treated", k) ** 2 + seAt("Control", k) ** 2 +
+      seAt("Treated", ref) ** 2 + seAt("Control", ref) ** 2);
+    return { k, beta, lo: beta - 1.96 * se, hi: beta + 1.96 * se, kind: k < 0 ? "Lead" : "Lag" };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two-period DiD using the pre-period mean (k<0) vs post-period mean (k>=0)
+pt_didEstimate = {
+  const meanOf = (g, pred) => d3.mean(pt_groupMeans.filter(d => d.group === g && pred(d.k)), d => d.y);
+  const post = k => k >= 0, pre = k => k < 0;
+  const tPost = meanOf("Treated", post), tPre = meanOf("Treated", pre);
+  const cPost = meanOf("Control", post), cPre = meanOf("Control", pre);
+  const did = (tPost - tPre) - (cPost - cPre);
+  const truth = d3.mean(pt_eventTimes.filter(post), pt_truePost);
+  return { did, truth, bias: did - truth };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Plot 1: the trajectories
+Plot.plot({
+  width: Math.min(680, width),
+  height: 300,
+  marginLeft: 64,
+  marginRight: 20,
+  marginBottom: 40,
+  grid: true,
+  style: { fontFamily: "Inter", color: "#1c1c1a" },
+  x: { label: "Event time k (years from 2018 adoption)", domain: [-4, 3], ticks: pt_eventTimes },
+  y: { label: "Mean HbA1c (%)" },
+  color: {
+    legend: true,
+    domain: pt_showCounterfactual
+      ? ["Treated", "Control", "Treated Y(0)"]
+      : ["Treated", "Control"],
+    range: pt_showCounterfactual
+      ? ["#990000", "#3d5a6c", "#9c7a33"]
+      : ["#990000", "#3d5a6c"]
+  },
+  marks: [
+    Plot.ruleX([-0.5], { stroke: "#79766e", strokeDasharray: "3,3" }),
+    Plot.line(pt_groupMeans, { x: "k", y: "y", stroke: "group", strokeWidth: 2.5 }),
+    Plot.dot(pt_groupMeans, { x: "k", y: "y", fill: "group", r: 3.5 }),
+    pt_showCounterfactual ? Plot.line(pt_counterfactual, {
+      x: "k", y: "y", stroke: "group", strokeWidth: 2.5, strokeDasharray: "5,4"
+    }) : null,
+    pt_showCounterfactual ? Plot.dot(pt_counterfactual, {
+      x: "k", y: "y", stroke: "group", fill: "white", r: 3
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size:0.8rem;color:#79766e;margin:0.6rem 0 0.2rem;text-align:center;">Below: the same data re-expressed as event-study coefficients (each point is the treated-minus-control gap relative to the reference year <em>k</em> = &minus;1).</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Plot 2: the event-study coefficients
+// Leads (pre-period diagnostic, should be ~0) -> neutral muted grey
+// Lags (the dynamic treatment effect) -> Uppsala red (the effect, consistent with Plot 1)
+Plot.plot({
+  width: Math.min(680, width),
+  height: 260,
+  marginLeft: 64,
+  marginRight: 20,
+  marginBottom: 40,
+  grid: true,
+  style: { fontFamily: "Inter", color: "#1c1c1a" },
+  x: { label: "Event time k", domain: [-4, 3], ticks: pt_eventTimes },
+  y: { label: "Coefficient (vs k = -1)" },
+  color: { legend: true, domain: ["Lead", "Lag"], range: ["#79766e", "#990000"] },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a" }),
+    Plot.ruleX([-1], { stroke: "#e6e3db", strokeDasharray: "3,3" }),
+    Plot.ruleX(pt_eventStudy, { x: "k", y1: "lo", y2: "hi", stroke: "kind", strokeWidth: 1.5 }),
+    Plot.dot(pt_eventStudy, { x: "k", y: "beta", fill: "kind", r: 4.5,
+      title: d => `k=${d.k}\nβ_k = ${d.beta.toFixed(3)}\n95% CI [${d.lo.toFixed(2)}, ${d.hi.toFixed(2)}]` }),
+    Plot.text([{ k: -1, y: 0 }], { x: "k", y: "y", text: ["ref"], dy: 14, fill: "#79766e", fontSize: 10, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size:0.74rem;color:#79766e;margin:0.2rem 0 0;text-align:center;">Confidence bands here are illustrative (cross-region dispersion), not the clustered standard errors computed in the code tab.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Readout: estimate vs truth
+html`
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:0.5rem;margin-top:0.5rem;font-family:'Inter',sans-serif;font-size:0.82rem;">
+  <div style="padding:0.6rem 0.8rem;border-radius:0.5rem;min-height:3.2rem;background:rgba(153,0,0,0.05);border:1px solid rgba(153,0,0,0.18);">
+    <div style="font-weight:600;color:#79766e;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em;">DiD estimate</div>
+    <div style="font-size:1.25rem;font-weight:700;color:#990000;">${pt_didEstimate.did.toFixed(3)}</div>
+  </div>
+  <div style="padding:0.6rem 0.8rem;border-radius:0.5rem;min-height:3.2rem;background:#f6f5f1;border:1px solid #e6e3db;">
+    <div style="font-weight:600;color:#79766e;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em;">True effect</div>
+    <div style="font-size:1.25rem;font-weight:700;color:#1c1c1a;">${pt_didEstimate.truth.toFixed(3)}</div>
+  </div>
+  <div style="padding:0.6rem 0.8rem;border-radius:0.5rem;min-height:3.2rem;background:${Math.abs(pt_didEstimate.bias) > 0.1 ? 'rgba(179,0,11,0.07)' : 'rgba(46,111,64,0.08)'};border:1px solid ${Math.abs(pt_didEstimate.bias) > 0.1 ? 'rgba(179,0,11,0.22)' : 'rgba(46,111,64,0.22)'};">
+    <div style="font-weight:600;color:#79766e;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em;">Bias</div>
+    <div style="font-size:1.25rem;font-weight:700;color:${Math.abs(pt_didEstimate.bias) > 0.1 ? '#b3000b' : '#2e6f40'};">${pt_didEstimate.bias >= 0 ? "+" : ""}${pt_didEstimate.bias.toFixed(3)}</div>
+  </div>
+</div>
+<div style="font-size:0.74rem;color:#79766e;margin-top:0.35rem;">Bias = estimate &minus; true effect; the card turns red when |bias| exceeds 0.1 percentage points.</div>
+`
+```
+
+:::
+
+### How to Read These Plots
+
+Follow this 5-step tour with the interactive above; work through the controls in order, as each step isolates one idea.
+
+**Step 1: Start clean.** Leave the differential pre-trend at **0**. The top plot shows the treated (red) and control (slate) HbA1c trajectories. Before $k=0$ they descend in parallel --- the red line sits *higher* (treated regions are sicker at baseline) but the two slopes match. At adoption the red line bends downward as the program kicks in. In the bottom plot, all three **lead** coefficients ($k=-4, -3, -2$, grey) sit on the zero line with confidence intervals straddling it: the pre-trend test passes. The **lag** coefficients ($k\ge 0$, red) drop to about $-0.2$ then $-0.4$, tracing the phase-in. The readout shows the DiD estimate landing on the truth, bias near zero.
+
+**Step 2: Reveal the counterfactual.** Toggle **Show treated group's counterfactual Y(0)**. The ochre dashed line is where the treated group *would have been* without the program. Post-2018 it runs parallel to the control line --- that is parallel trends holding by construction. The vertical gap between the red solid line and the ochre dashed line *is* the treatment effect.
+
+**Step 3: Inject a pre-trend.** Slide the differential pre-trend to about **−0.15**. Now the treated group was *already improving faster* than controls before the program. Watch three things move together: (a) in the top plot the red line tilts downward even before $k=0$, no longer parallel to the slate control line; (b) in the event-study, the **lead coefficients march away from zero** --- they slope, signalling the violation; (c) the readout's **bias turns red** --- the DiD now over-credits the program, because it extrapolates the pre-existing downward drift into the post-period and counts it as effect.
+
+**Step 4: Flip the sign.** Set the pre-trend to **+0.15**. The treated group was *deteriorating* relative to controls pre-2018. DiD now *understates* the program (bias goes the other way), and the leads slope upward. The lesson: a differential pre-trend biases DiD in the direction of the trend, and the event-study leads are your early-warning system.
+
+**Step 5: Crank the noise.** Return the pre-trend to a small nonzero value like **−0.08** and raise **measurement noise** toward 0.20. The lead coefficients still slope on average, but their confidence intervals balloon --- now they may *cover zero* even though a real pre-trend exists. Press **Draw new sample** a few times. You will sometimes "pass" the pre-trend test purely because the study is underpowered. This is the low-power trap, which we turn to next.
+
+To turn that anecdote into a number, the panel below quietly re-runs the *same* simulation 300 times at your current slider settings and reports how often a per-lead pre-trend test would "pass" (every individual lead insignificant) even though the pre-trend you dialled in is real. As you raise the noise, watch the pass rate climb toward (and past) 50% --- the test is failing to see a violation that is genuinely there.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Independent power Monte Carlo. ADDITIVE: reuses the page's published DGP
+// constants and reads the live pt_preTrend / pt_noise, but runs its OWN draws
+// and never touches pt_panel or any existing mutable. One verdict object out. ──
+p2_powerStudy = {
+  const reps = 300;
+  const ref = -1;
+  let passes = 0;          // # of replications where EVERY lead is individually insignificant
+  let leadSlopeSum = 0;    // average detected pre-trend slope (sanity check)
+
+  // Standard normal via Box–Muller (self-contained, independent of page RNG).
+  const rn = () => {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+
+  for (let rep = 0; rep < reps; rep++) {
+    // Simulate one panel with the SAME structure as pt_panel.
+    const rows = [];
+    for (const g of ["Treated", "Control"]) {
+      const isT = g === "Treated";
+      const n = isT ? pt_nTreated : pt_nControl;
+      const base = isT ? pt_baseTreated : pt_baseControl;
+      for (let r = 0; r < n; r++) {
+        const regionShock = rn() * 0.08;
+        for (const k of pt_eventTimes) {
+          let y = base + regionShock + pt_commonSlope * k;
+          if (isT) y += pt_preTrend * k + pt_truePost(k);
+          y += rn() * pt_noise;
+          rows.push({ g, k, y });
+        }
+      }
+    }
+    // Group means and per-k cross-region SE.
+    const grp = d3.group(rows, d => d.g, d => d.k);
+    const meanAt = (g, k) => d3.mean(grp.get(g).get(k), d => d.y);
+    const seAt = (g, k) => {
+      const arr = grp.get(g).get(k);
+      return (d3.deviation(arr, d => d.y) || 0) / Math.sqrt(arr.length);
+    };
+    const tRef = meanAt("Treated", ref), cRef = meanAt("Control", ref);
+
+    let allInsig = true;
+    const leads = pt_eventTimes.filter(k => k < 0 && k !== ref);
+    for (const k of leads) {
+      const beta = (meanAt("Treated", k) - tRef) - (meanAt("Control", k) - cRef);
+      const se = Math.sqrt(
+        seAt("Treated", k) ** 2 + seAt("Control", k) ** 2 +
+        seAt("Treated", ref) ** 2 + seAt("Control", ref) ** 2) || 1e-9;
+      if (Math.abs(beta / se) > 1.96) allInsig = false;     // this lead is "significant"
+    }
+    if (allInsig) passes++;
+  }
+
+  const passRate = passes / reps;
+  const realTrend = Math.abs(pt_preTrend) > 0.0049;
+  return { passRate, reps, realTrend, preTrend: pt_preTrend, noise: pt_noise };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif;font-size:0.82rem;line-height:1.5;color:#1c1c1a;background:${
+  p2_powerStudy.realTrend
+    ? (p2_powerStudy.passRate > 0.3 ? 'rgba(179,0,11,0.06)' : 'rgba(46,111,64,0.06)')
+    : '#f6f5f1'
+};border-left:3px solid ${
+  p2_powerStudy.realTrend
+    ? (p2_powerStudy.passRate > 0.3 ? '#b3000b' : '#2e6f40')
+    : '#79766e'
+};border-radius:0 0.35rem 0.35rem 0;padding:0.6rem 0.85rem;margin:0.75rem 0;">
+  <strong style="color:#79766e;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em;">Low-power readout — ${p2_powerStudy.reps} simulated studies at your current settings</strong><br>
+  ${
+    p2_powerStudy.realTrend
+      ? html`A real differential pre-trend of <strong>${p2_powerStudy.preTrend.toFixed(2)}</strong>/yr exists, yet the per-lead test
+        <strong style="color:${p2_powerStudy.passRate > 0.3 ? '#b3000b' : '#2e6f40'};">"passed" (saw nothing) in ${(p2_powerStudy.passRate * 100).toFixed(0)}%</strong>
+        of the ${p2_powerStudy.reps} studies. ${p2_powerStudy.passRate > 0.3
+          ? 'That high pass rate is the low-power trap: a true violation slips through far too often.'
+          : 'At this noise level the test usually catches it — try raising measurement noise and watch the pass rate climb.'}`
+      : html`No pre-trend is set (slider at 0), so "passing" is correct here.
+        Dial the differential pre-trend to a small value like <strong>−0.08</strong> and raise the noise to see how often a <em>real</em> violation goes undetected.`
+  }
+</div>`
+```
+
+::: {.aside}
+This readout uses its own independent 300-draw Monte Carlo (recomputed whenever you move a slider); it is a power demonstration, not the single-sample plot above. "Passed" means every individual lead came back insignificant at the 5% level --- exactly the (misleading) "we found no pre-trend" verdict.
+:::
+
+
+## Four Ways the Pre-Trend Test Misleads
+
+The event-study plot is indispensable, but it is routinely over-interpreted. Four pitfalls deserve their own treatment.
+
+### (a) Low power: failing to reject is not proof
+
+A pre-trend test is a hypothesis test, and like any test it can fail to reject a false null simply because it lacks power. With few units, few pre-periods, or noisy outcomes, the lead coefficients can be visually flat and statistically "insignificant" while a substantively important differential trend lurks underneath. **A clean pre-trend plot is consistent with both "no pre-trend" and "a real pre-trend the test was too weak to see."** Roth (2022) shows that conventional pre-tests often have *low* power against exactly the trend shapes that would most bias DiD --- precisely the worst case.
+
+The remedy is not to stare harder at the leads. It is to (i) report the *power* of the pre-test against economically meaningful trends, and (ii) report how robust the post-treatment estimate is to plausible violations --- the approach of Rambachan & Roth (2023), who replace the "test then assume" ritual with explicit sensitivity bounds. We develop that framework in full on the [Diagnostics](diagnostics.qmd) page.
+
+### (b) Pre-test bias: don't condition on passing
+
+A tempting workflow is: run the pre-trend test; if it passes, proceed with DiD; if it fails, abandon the design or change specifications. This *conditioning on a pre-test* induces a subtle distortion called **pre-test bias**. By keeping only the samples in which the leads happened to look flat, you select on noise that is correlated with the post-period error, and the *conditional* distribution of the DiD estimator is distorted --- often with worse coverage and bias than if you had never pre-tested at all.
+
+::: {.glass-card .glass-card--warning}
+"We checked for parallel pre-trends and found none, so DiD is valid" is one of the most common --- and most misleading --- sentences in applied work. The pre-test can *fail to detect* a violation (low power), and *conditioning your analysis on its passing* can itself inject bias. Treat the event-study as a diagnostic to be *reported transparently*, not a gate that, once passed, certifies the design.
+:::
+
+To *see* the distortion, the figure below runs its own independent Monte Carlo in a world where parallel trends genuinely **holds** (no real pre-trend, true effect $-0.40$). It draws many studies, keeps the DiD estimate from each, and overlays two **sampling distributions** --- the spread of estimates you would get across repeated samples. The grey curve is *all* studies (no pre-testing); the red curve keeps only the studies that "passed" the pre-trend test. If the pre-test were harmless, the two would coincide. They do not: filtering on a noisy pre-test that shares error with the post-period shifts and reshapes the kept distribution, so its centre drifts off the truth and its spread no longer delivers honest coverage (the share of intervals that actually trap the true value).
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Independent pre-test-bias Monte Carlo. ADDITIVE: a self-contained study in a
+// world where parallel trends TRULY holds (zero differential pre-trend, true
+// effect = -0.40). For each simulated study we record (i) the DiD estimate and
+// (ii) whether a per-lead pre-test "passed". Comparing the unconditional vs the
+// conditioned-on-passing distribution makes pre-test bias visible. Own RNG; never
+// reads pt_panel or any page mutable; own p2b_ prefix. ──
+p2b_ptbias = {
+  const reps = 4000;
+  const eventTimes = d3.range(-4, 4);
+  const nT = 12, nC = 9;
+  const baseT = 7.6, baseC = 7.1;
+  const slope = -0.03;
+  const effFull = -0.40;
+  const noise = 0.11;          // fixed, moderate noise so the pre-test has bite but isn't trivial
+  const ref = -1;
+  const truePost = k => (k < 0 ? 0 : (k === 0 ? 0.5 * effFull : effFull));
+  const truthAvg = d3.mean(eventTimes.filter(k => k >= 0), truePost);
+
+  // Self-contained standard normal (Box–Muller), independent of the page RNG.
+  const rn = () => {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+
+  const all = [];      // every study's DiD estimate
+  const passed = [];   // only studies whose pre-test "passed"
+
+  for (let rep = 0; rep < reps; rep++) {
+    const rows = [];
+    for (const g of ["Treated", "Control"]) {
+      const isT = g === "Treated";
+      const n = isT ? nT : nC;
+      const base = isT ? baseT : baseC;
+      for (let r = 0; r < n; r++) {
+        const regionShock = rn() * 0.08;
+        for (const k of eventTimes) {
+          // Parallel trends HOLDS: no differential pre-trend term at all.
+          let y = base + regionShock + slope * k + (isT ? truePost(k) : 0) + rn() * noise;
+          rows.push({ g, k, y });
+        }
+      }
+    }
+    const grp = d3.group(rows, d => d.g, d => d.k);
+    const meanAt = (g, k) => d3.mean(grp.get(g).get(k), d => d.y);
+    const seAt = (g, k) => {
+      const arr = grp.get(g).get(k);
+      return (d3.deviation(arr, d => d.y) || 0) / Math.sqrt(arr.length);
+    };
+
+    // Two-period DiD estimate (pre mean vs post mean), same recipe as the page.
+    const meanGrp = (g, pred) => d3.mean(eventTimes.filter(pred).map(k => meanAt(g, k)));
+    const did = (meanGrp("Treated", k => k >= 0) - meanGrp("Treated", k => k < 0)) -
+                (meanGrp("Control", k => k >= 0) - meanGrp("Control", k => k < 0));
+    all.push(did);
+
+    // Per-lead pre-test: "passes" iff EVERY lead is individually insignificant.
+    const tRef = meanAt("Treated", ref), cRef = meanAt("Control", ref);
+    let pass = true;
+    for (const k of eventTimes.filter(k => k < 0 && k !== ref)) {
+      const beta = (meanAt("Treated", k) - tRef) - (meanAt("Control", k) - cRef);
+      const se = Math.sqrt(
+        seAt("Treated", k) ** 2 + seAt("Control", k) ** 2 +
+        seAt("Treated", ref) ** 2 + seAt("Control", ref) ** 2) || 1e-9;
+      if (Math.abs(beta / se) > 1.96) { pass = false; break; }
+    }
+    if (pass) passed.push(did);
+  }
+
+  return ({
+    all, passed, truthAvg,
+    meanAll: d3.mean(all), sdAll: d3.deviation(all),
+    meanPassed: d3.mean(passed), sdPassed: d3.deviation(passed),
+    passShare: passed.length / reps
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Bin both distributions on a SHARED set of thresholds so the two histograms
+// are directly comparable. Returns tidy rows for Plot.rectY.
+p2b_hist = {
+  const lo = -0.95, hi = 0.15, nb = 34;
+  const w = (hi - lo) / nb;
+  const counts = (arr) => {
+    const c = new Array(nb).fill(0);
+    for (const v of arr) {
+      let b = Math.floor((v - lo) / w);
+      if (b < 0) b = 0; if (b >= nb) b = nb - 1;
+      c[b]++;
+    }
+    return c.map((n, i) => ({ x0: lo + i * w, x1: lo + (i + 1) * w, density: n / (arr.length * w) }));
+  };
+  const a = counts(p2b_ptbias.all).map(d => ({ ...d, set: "All studies (no pre-testing)" }));
+  const p = counts(p2b_ptbias.passed).map(d => ({ ...d, set: "Only studies that “passed” the pre-test" }));
+  return a.concat(p);
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 320,
+  marginLeft: 62,
+  marginRight: 20,
+  marginTop: 30,
+  marginBottom: 48,
+  style: { fontFamily: "Inter", color: "#1c1c1a" },
+  x: { label: "DiD estimate across repeated samples (truth = -0.40)", domain: [-0.95, 0.15] },
+  y: { label: "Density", grid: true },
+  color: {
+    legend: true,
+    domain: ["All studies (no pre-testing)", "Only studies that “passed” the pre-test"],
+    range: ["#79766e", "#990000"]
+  },
+  marks: [
+    Plot.rectY(p2b_hist, {
+      x1: "x0", x2: "x1", y: "density", fill: "set", fillOpacity: 0.45,
+      stroke: "set", strokeOpacity: 0.6
+    }),
+    // truth line
+    Plot.ruleX([-0.40], { stroke: "#1c1c1a", strokeWidth: 1.5 }),
+    Plot.text([{ x: -0.40 }], {
+      x: "x", text: ["truth = -0.40"], frameAnchor: "top", dy: 6, dx: 4, textAnchor: "start",
+      fill: "#1c1c1a", fontSize: 10.5, fontWeight: 700, fontFamily: "Inter",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // mean of the conditioned (passed) distribution
+    Plot.ruleX([p2b_ptbias.meanPassed], { stroke: "#990000", strokeWidth: 1.5, strokeDasharray: "4,3" }),
+    Plot.text([{ x: p2b_ptbias.meanPassed }], {
+      x: "x", text: ["mean if you keep only “passers”"], frameAnchor: "top", dy: 22, dx: -4, textAnchor: "end",
+      fill: "#990000", fontSize: 10, fontWeight: 700, fontFamily: "Inter",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif;font-size:0.82rem;line-height:1.5;color:#1c1c1a;background:rgba(179,0,11,0.06);border-left:3px solid #b3000b;border-radius:0 0.35rem 0.35rem 0;padding:0.6rem 0.85rem;margin:0.4rem 0 0.2rem;">
+  <strong style="color:#79766e;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.04em;">What the two curves say</strong><br>
+  Across <strong>${p2b_ptbias.all.length.toLocaleString()}</strong> simulated studies in a world where parallel trends <em>truly holds</em>, the full set of DiD estimates centres on the truth (mean <strong>${p2b_ptbias.meanAll.toFixed(3)}</strong>, SD ${p2b_ptbias.sdAll.toFixed(3)}). The pre-test "passed" in only <strong>${(p2b_ptbias.passShare * 100).toFixed(0)}%</strong> of them, and keeping <em>just those</em> shifts the mean to <strong style="color:#990000;">${p2b_ptbias.meanPassed.toFixed(3)}</strong> (SD ${p2b_ptbias.sdPassed.toFixed(3)}). The estimator was unbiased <em>before</em> you pre-tested; the act of conditioning on a noisy "pass" is what moved it.
+</div>`
+```
+
+::: {.aside}
+This is its own self-contained 4,000-draw Monte Carlo, distinct from every other figure on the page. Crucially, the data-generating world has **zero** differential pre-trend --- parallel trends holds exactly --- so the only thing that can distort the estimator is the *act of selecting on the pre-test*. Because the pre-period leads and the post-period DiD are computed from the same noisy sample, they are correlated; discarding the samples whose leads happened to look non-flat is therefore not innocuous, and the surviving "clean-looking" studies are a biased subset. The lesson of Exercise 4 made visible.
+:::
+
+### (c) Functional-form dependence: levels vs. logs
+
+Parallel trends is **not invariant to how you scale the outcome**. Suppose HbA1c trends are parallel in *levels* (percentage points --- the *additive* gap, e.g. "fell by 0.5 points"; distinct from *percent*, the *proportional* change, "fell by 7%"). Then in general they are *not* parallel in *logs* (proportional changes), and vice versa. The two assumptions are mathematically incompatible except in trivial cases, so a researcher who reports "the result is robust --- it holds in levels and in logs" has, strictly, assumed two contradictory things. The Math Details block below proves the non-equivalence. The practical upshot: the choice of levels vs. logs is a *substantive economic assumption*, and you should justify it (does the program plausibly shift HbA1c by a fixed amount, or by a fixed percentage?), not treat it as a robustness checkbox.
+
+The figure below shows the *same two untreated trajectories* twice. On the left they are exactly parallel in **levels** (equal additive drops); on the right, that very same data plotted on a **log** axis visibly *fans apart* --- because the higher-baseline treated group's identical absolute drop is a *smaller percentage*. Parallel in levels has become non-parallel in logs.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Same two untreated trajectories, built once. Parallel-in-LEVELS by construction:
+// both groups drop by the same additive delta each year. The log panel re-expresses
+// the identical numbers, where the equal additive drops are UNequal percentage drops.
+p2_scaleData = {
+  const deltaPerYear = -0.25;      // common ADDITIVE drop per period (levels-parallel)
+  const ks = d3.range(0, 4);       // four periods
+  const rows = [];
+  for (const k of ks) {
+    rows.push({ g: "Control (baseline 7.0)", k, y: 7.0 + deltaPerYear * k });
+    rows.push({ g: "Treated (baseline 9.0)", k, y: 9.0 + deltaPerYear * k });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin:1rem 0;align-items:start;">
+  <div>${p2_levelsPanel}</div>
+  <div>${p2_logsPanel}</div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+p2_levelsPanel = Plot.plot({
+  width: 340,
+  height: 240,
+  marginLeft: 50,
+  marginRight: 14,
+  marginTop: 30,
+  marginBottom: 40,
+  grid: true,
+  style: { fontFamily: "Inter", color: "#1c1c1a", fontSize: "11px" },
+  x: { label: "Period", domain: [0, 3], ticks: [0, 1, 2, 3] },
+  y: { label: "HbA1c (%) — levels", domain: [5.8, 9.3] },
+  color: { domain: ["Treated (baseline 9.0)", "Control (baseline 7.0)"], range: ["#990000", "#3d5a6c"] },
+  marks: [
+    Plot.line(p2_scaleData, { x: "k", y: "y", stroke: "g", strokeWidth: 2.5 }),
+    Plot.dot(p2_scaleData, { x: "k", y: "y", fill: "g", r: 3.5 }),
+    Plot.text([{ x: 1.5, y: 9.15, t: "PARALLEL in levels" }],
+      { x: "x", y: "y", text: "t", fill: "#2e6f40", fontSize: 12, fontWeight: 700, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+p2_logsPanel = Plot.plot({
+  width: 340,
+  height: 240,
+  marginLeft: 50,
+  marginRight: 14,
+  marginTop: 30,
+  marginBottom: 40,
+  grid: true,
+  style: { fontFamily: "Inter", color: "#1c1c1a", fontSize: "11px" },
+  x: { label: "Period", domain: [0, 3], ticks: [0, 1, 2, 3] },
+  y: { type: "log", label: "HbA1c (%) — log axis", domain: [5.8, 9.3], ticks: [6, 7, 8, 9] },
+  color: { domain: ["Treated (baseline 9.0)", "Control (baseline 7.0)"], range: ["#990000", "#3d5a6c"] },
+  marks: [
+    Plot.line(p2_scaleData, { x: "k", y: "y", stroke: "g", strokeWidth: 2.5 }),
+    Plot.dot(p2_scaleData, { x: "k", y: "y", fill: "g", r: 3.5 }),
+    Plot.text([{ x: 1.5, y: 9.15, t: "FANS APART in logs" }],
+      { x: "x", y: "y", text: "t", fill: "#b3000b", fontSize: 12, fontWeight: 700, fontFamily: "Inter", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+::: {.aside}
+Both panels plot the *identical numbers*: each group falls by exactly 0.25 points per period, so the gap is a constant 2.0 points throughout --- perfectly parallel on the **left** (linear axis). On the **right** (log axis) the lines pull apart, because a 0.25-point drop is a larger *fraction* of the lower-baseline control group than of the higher-baseline treated group. You cannot have parallel trends in both scales at once unless the baselines coincide --- the algebra is in the Math Details block below.
+:::
+
+### (d) Compositional change
+
+Parallel trends concerns the *same* underlying population followed over time. If the *composition* of the treated group's patients changes around adoption --- say the program attracts newly diagnosed, healthier patients into the treated regions' registries, or sicker patients are referred out --- then the treated group's average outcome moves for reasons that have nothing to do with the treatment's effect on any individual. The mean shifts because the *people* changed, not because the *program* worked. Event-study leads may even look fine if the compositional shift is concentrated at adoption. Guard against this by checking that group composition (patient age, comorbidity mix, panel size) is stable across the window, or by analyzing a balanced panel of patients present throughout.
+
+The schematic below makes the trap vivid. Each square is a patient, shaded by their *individual* HbA1c (darker = sicker); **no single patient's value changes**. Yet the group average drops from before to after --- purely because two sicker patients were referred out and two healthier ones enrolled. A naive DiD would credit the program for a shift that is entirely compositional.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static compositional-change schematic. Each cell is a patient with a fixed
+// HbA1c value; the "after" panel swaps two sick patients for two healthy ones.
+// NO individual value changes — only WHO is in the group changes.
+p2_comp = function (vals, title) {
+  const cols = 4, cell = 38, gap = 7, pad = 8;
+  const top = 52;
+  const w = pad * 2 + cols * cell + (cols - 1) * gap;
+  const rows = Math.ceil(vals.length / cols);
+  const h = top + pad + rows * cell + (rows - 1) * gap + 30;
+  // color ramp: healthy (light) -> sick (uppsala red)
+  const lo = 6.5, hi = 9.0;
+  const shade = v => {
+    const t = Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+    const r = Math.round(246 + t * (153 - 246));
+    const g = Math.round(245 + t * (0 - 245));
+    const b = Math.round(241 + t * (0 - 241));
+    return `rgb(${r},${g},${b})`;
+  };
+  const mean = d3.mean(vals);
+  const svg = d3.create("svg")
+    .attr("width", w).attr("height", h)
+    .attr("viewBox", `0 0 ${w} ${h}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+  svg.append("text").attr("x", w / 2).attr("y", 20)
+    .attr("text-anchor", "middle").attr("font-size", 13).attr("font-weight", 700)
+    .attr("fill", "#1c1c1a").text(title);
+  svg.append("text").attr("x", w / 2).attr("y", 39)
+    .attr("text-anchor", "middle").attr("font-size", 12).attr("font-weight", 700)
+    .attr("fill", "#990000").text("group mean = " + mean.toFixed(2));
+  vals.forEach((v, i) => {
+    const r = Math.floor(i / cols), c = i % cols;
+    const x = pad + c * (cell + gap), y = top + r * (cell + gap);
+    const g = svg.append("g");
+    g.append("rect").attr("x", x).attr("y", y)
+      .attr("width", cell).attr("height", cell).attr("rx", 6)
+      .attr("fill", shade(v))
+      .attr("stroke", v === null ? "#79766e" : "#cfccc2").attr("stroke-width", 1);
+    g.append("text").attr("x", x + cell / 2).attr("y", y + cell / 2)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 10).attr("font-weight", 600)
+      .attr("fill", v > 8 ? "#fff" : "#1c1c1a").text(v.toFixed(1));
+  });
+  return svg.node();
+}
+
+// Before: includes two sicker patients (8.6, 8.9). After: those two leave, two
+// healthier ones (6.8, 6.9) join. Every RETAINED patient keeps the same value.
+p2_compBefore = [7.0, 7.2, 7.4, 7.6, 7.1, 7.3, 8.6, 8.9]
+p2_compAfter  = [7.0, 7.2, 7.4, 7.6, 7.1, 7.3, 6.8, 6.9]
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:1rem;margin:1rem 0;justify-items:center;align-items:start;">
+  <div>${p2_comp(p2_compBefore, "Before adoption")}</div>
+  <div>${p2_comp(p2_compAfter, "After adoption")}</div>
+</div>`
+```
+
+::: {.aside}
+Darker squares are sicker patients (higher HbA1c). Six patients (top rows) are present throughout and **never change value**. Between panels, the two sickest patients (8.6, 8.9) are referred out and two healthier ones (6.8, 6.9) enrol --- so the group mean falls from 7.64 to 7.16 with *zero* treatment effect on anyone. This is compositional bias: the average moved because the *people* changed.
+:::
+
+
+## Conditional Parallel Trends
+
+Sometimes unconditional parallel trends is implausible but a *conditional* version is defensible: the untreated trajectories are parallel **once we adjust for covariates** $X_i$.
+
+::: {.glass-card .glass-card--assumption}
+**Conditional Parallel Trends.**
+
+$$
+E[Y_{it}(0) - Y_{is}(0) \mid D_i = 1,\, X_i] = E[Y_{it}(0) - Y_{is}(0) \mid D_i = 0,\, X_i]
+$$
+
+**How to read this.** "Within strata defined by covariates $X_i$, the treated group's counterfactual change equals the control group's change." Parallelism is required to hold *group by group at each value of $X$*, not merely on average across all regions.
+:::
+
+(Here $E[\,\cdot \mid D_i, X_i]$ is again "the average, taken within regions that share the same covariate values $X_i$.")
+
+Concretely, suppose adopting regions were disproportionately rural, and rural regions' HbA1c was improving faster anyway (more aggressive recent investment in *distriktssköterskor*, district nurses). Unconditional parallel trends fails. But *among regions with the same rurality and the same baseline staffing*, the trends might genuinely be parallel. The picture below shows why: rurality $X$ is a common cause of *both* who adopts ($D$) *and* the underlying HbA1c trend ($\Delta Y$) --- so $X$ confounds the program's effect on that trend, opening a back-door path that would, *unconditionally*, make the raw trends diverge. Boxing $X$ (conditioning on it) blocks that path --- drawn grey and dashed --- while leaving the program's own effect on the trend (green) intact.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG component for this page (figures only, pure function). ──
+// nodes: [{id,x,y,label}] with x,y normalized in [0,1]. conditioned ids draw as
+// rounded squares. edges: kind 'causal'=green, 'biasing'/'backdoor-open'=red,
+// 'blocked'=gray dashed.
+p2_drawDAG = function ({ nodes, edges, width = 460, height = 210, conditioned = [] }) {
+  const pad = 52, r = 26;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "p2-arr-green" :
+    (k === "biasing" || k === "backdoor-open") ? "p2-arr-red" : "p2-arr-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2-arr-green", "#2e6f40"], ["p2-arr-red", "#b3000b"], ["p2-arr-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 14).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex;flex-direction:column;align-items:center;gap:0.35rem;margin:1rem 0;">
+  ${p2_drawDAG({
+    width: Math.min(480, width),
+    height: 210,
+    conditioned: ["X"],
+    nodes: [
+      { id: "X", x: 0.5,  y: 0.12, label: "X", caption: "Rurality" },
+      { id: "D", x: 0.08, y: 0.80, label: "D", caption: "Adoption" },
+      { id: "Y", x: 0.92, y: 0.80, label: "ΔY", caption: "HbA1c trend" }
+    ],
+    edges: [
+      { source: "X", target: "D", kind: "blocked" },
+      { source: "X", target: "Y", kind: "blocked" },
+      { source: "D", target: "Y", kind: "causal" }
+    ]
+  })}
+  <div style="display:flex;flex-wrap:wrap;gap:0.75rem;justify-content:center;font-family:'Inter',sans-serif;font-size:0.68rem;color:#79766e;">
+    <span style="color:#2e6f40;font-weight:700;white-space:nowrap;">━ program's effect on the trend (keep open)</span>
+    <span style="color:#79766e;font-weight:700;white-space:nowrap;">┄ back-door via rurality, blocked by conditioning on X (boxed)</span>
+  </div>
+</div>`
+```
+
+::: {.aside}
+$X$ (rurality) is a common cause of adoption $D$ and of the HbA1c trend $\Delta Y$, so it confounds the program's effect on that trend --- a back-door path that would, *unconditionally*, make the groups' trends diverge. Drawn **boxed**, $X$ is being conditioned on, which closes that path (grey dashed) and recovers a clean comparison --- the conditional parallel-trends assumption. Adjust only for pre-treatment $X$: a covariate the program itself moves would be a *bad control* (see below).
+:::
+
+Implementations include adding covariate-by-time interactions to the regression, or --- more robustly --- the doubly-robust DiD estimators of Sant'Anna & Zhao (2020) and Callaway & Sant'Anna (2021), which combine an outcome-trend model with a propensity model so that the estimate is consistent if *either* is correctly specified. A caution: conditioning on covariates that are themselves *affected* by the treatment ("bad controls") reintroduces bias, so condition only on pre-treatment characteristics.
+
+::: {.aside}
+*Advanced (optional).* The "doubly-robust" estimators above blend two models and stay consistent ("converge to the right answer in large samples") if *either* is right; a **propensity model** predicts each region's probability of adopting from its covariates. Basic-stats readers can take these as a more defensible black box and move on --- the conceptual point is just that covariates can rescue parallel trends when the unconditional version fails.
+:::
+
+
+<details>
+<summary>Math Details: Why Parallel Trends in Levels and in Logs Cannot Both Hold</summary>
+<div class="details-content">
+
+### Set-up
+
+Consider the simplest two-group, two-period case. Let the (counterfactual, untreated) mean HbA1c be $\mu_{g,t} = E[Y_{it}(0) \mid D_i = g]$ for group $g \in \{T, C\}$ and period $t \in \{0, 1\}$ (pre, post).
+
+**Parallel trends in levels** says the *additive* change is common:
+
+$$
+\mu_{T,1} - \mu_{T,0} = \mu_{C,1} - \mu_{C,0}. \tag{L}
+$$
+
+**Parallel trends in logs** says the *log* (approximately, proportional) change is common:
+
+$$
+\log \mu_{T,1} - \log \mu_{T,0} = \log \mu_{C,1} - \log \mu_{C,0}. \tag{G}
+$$
+
+Read (L) as "both groups move by the same number of percentage points," and (G) as "both groups move by the same *percentage* of their own baseline."
+
+### The non-equivalence
+
+Rewrite (G) by exponentiating:
+
+$$
+\frac{\mu_{T,1}}{\mu_{T,0}} = \frac{\mu_{C,1}}{\mu_{C,0}}. \tag{G$'$}
+$$
+
+So logs-parallel means equal *growth factors* (multiplicative), while levels-parallel means equal *increments* (additive). Suppose both (L) and (G$'$) held, and denote the common additive increment by $\delta = \mu_{T,1} - \mu_{T,0} = \mu_{C,1} - \mu_{C,0}$ and the common growth factor by $\rho = \mu_{T,1}/\mu_{T,0} = \mu_{C,1}/\mu_{C,0}$. Then for each group,
+
+$$
+\mu_{g,1} = \mu_{g,0} + \delta \quad\text{and}\quad \mu_{g,1} = \rho\,\mu_{g,0},
+$$
+
+so $\rho\,\mu_{g,0} = \mu_{g,0} + \delta$, which gives $\mu_{g,0} = \dfrac{\delta}{\rho - 1}$ for **both** groups. That forces $\mu_{T,0} = \mu_{C,0}$ --- the two groups must have *identical baseline levels* (and hence identical everything). Unless the groups start at the same place, the two assumptions are mutually exclusive. The exceptions are exactly the degenerate ones: $\delta = 0$ (no trend at all) or $\rho = 1$ (the same thing).
+
+### A numerical illustration
+
+| | Pre ($\mu_{g,0}$) | Post under (L) | Post under (G$'$) |
+|:--|:--:|:--:|:--:|
+| Control | 7.0 | $7.0 + \delta$ | $7.0 \cdot \rho$ |
+| Treated | 8.0 | $8.0 + \delta$ | $8.0 \cdot \rho$ |
+
+Take a common *additive* drop of $\delta = -0.5$. Levels: control $7.0 \to 6.5$, treated $8.0 \to 7.5$. The *proportional* changes differ: control fell $7.1\%$, treated only $6.25\%$ --- so logs-parallel is **violated**. Conversely take a common *growth factor* $\rho = 0.93$ (a $7\%$ drop): control $7.0 \to 6.51$ (a $-0.49$ change), treated $8.0 \to 7.44$ (a $-0.56$ change). Now the *additive* changes differ, so levels-parallel is **violated**. You cannot have both unless $\mu_{T,0} = \mu_{C,0}$.
+
+### Implication
+
+The DiD estimand itself is scale-dependent: a program that lowers everyone's HbA1c by a fixed *percentage* will show up as a *non-parallel* trend in levels (because the sicker, higher-baseline treated group has more absolute room to fall), and a program with a fixed *additive* effect will look non-parallel in logs. Choosing the scale is choosing an economic model of how the treatment operates. It is not a neutral robustness check, and "it holds in both" is not a coherent claim when baseline levels differ.
+
+</div>
+</details>
+
+
+## Code: Estimating the Event Study
+
+Both implementations fit the dynamic specification with region and year fixed effects, cluster standard errors by region, and recover the leads and lags. The reference period is the year before adoption ($k = -1$).
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(fixest)
+library(ggplot2)
+
+# Panel: region-by-year, 21 regions, years 2014-2021, adoption in 2018.
+# Variables: region, year, hba1c, treated (1 if region ever adopts), event_time = year - 2018.
+# For never-treated controls, treated = 0, so their interaction terms are all zero;
+# i(event_time, treated, ref = -1) builds treated x event-time dummies and omits k = -1.
+
+es <- feols(
+  hba1c ~ i(event_time, treated, ref = -1) | region + year,
+  data    = panel,
+  cluster = ~region
+)
+
+# Coefficient plot: leads (k < 0) should hug zero; lags (k >= 0) are dynamic effects.
+iplot(es,
+      ref.line = TRUE,
+      xlab = "Event time (years relative to 2018 adoption)",
+      main = "Diabetes program: event-study estimates on HbA1c")
+
+# Formal joint pre-trend test: are ALL lead coefficients jointly zero?
+# Wald test on the k = -4, -3, -2 interaction terms.
+wald(es, "event_time::-[234]:treated")
+
+# A static (single-coefficient) DiD for comparison. The treated:post
+# interaction is the DiD term; the `treated` and `post` main effects are
+# absorbed by the region and year fixed effects, so only the product enters.
+did_static <- feols(hba1c ~ treated:post | region + year,
+                    data = panel, cluster = ~region)
+summary(did_static)
+
+# Doubly-robust, staggered-safe alternative (Callaway & Sant'Anna),
+# which also supports CONDITIONAL parallel trends via covariates in xformla:
+library(did)
+cs <- att_gt(
+  yname   = "hba1c",
+  tname   = "year",
+  idname  = "region_id",
+  gname   = "first_treat_year",            # 0 for never-treated controls
+  xformla = ~ rurality + baseline_nurses,  # conditional parallel trends
+  data    = panel,
+  control_group = "nevertreated",
+  est_method = "dr"                        # doubly robust
+)
+agg_dyn <- aggte(cs, type = "dynamic")     # event-study aggregation
+ggdid(agg_dyn)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import pyfixest as pf
+import statsmodels.formula.api as smf
+
+# panel: columns region, year, hba1c, treated (ever-adopter), event_time = year - 2018.
+# Build the event-study with treated x relative-time interactions, dropping k = -1.
+
+# pyfixest mirrors fixest's i() syntax: i(event_time, treated, ref = -1)
+es = pf.feols(
+    "hba1c ~ i(event_time, treated, ref=-1) | region + year",
+    data=panel,
+    vcov={"CRV1": "region"},          # cluster by region
+)
+es.summary()
+es.iplot()                            # leads should sit on zero; lags are dynamic effects
+
+# Equivalent with statsmodels: construct lead/lag dummies by hand.
+panel = panel.copy()
+for k in range(-4, 4):
+    if k == -1:                       # omit reference period
+        continue
+    panel[f"d{'m' if k < 0 else 'p'}{abs(k)}"] = (
+        (panel["event_time"] == k) & (panel["treated"] == 1)
+    ).astype(int)
+
+terms = " + ".join(c for c in panel.columns if c.startswith(("dm", "dp")))
+m = smf.ols(f"hba1c ~ {terms} + C(region) + C(year)", data=panel).fit(
+    cov_type="cluster", cov_kwds={"groups": panel["region"]}
+)
+print(m.summary())
+
+# Doubly-robust, staggered-safe estimator with CONDITIONAL parallel trends.
+# Covariates go on the right-hand side of the formula; never-treated controls
+# are coded 0 in first_treat_year and selected via control_group.
+from differences import ATTgt          # pip install differences
+att = ATTgt(data=panel.set_index(["region_id", "year"]),
+            cohort_name="first_treat_year")
+att.fit(formula="hba1c ~ rurality + baseline_nurses",
+        control_group="never_treated", est_method="dr")
+att.aggregate("event")                 # dynamic / event-study aggregation
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region observes average HbA1c in two years only: 2017 (pre) and 2019 (post). Adopting regions go from 7.8 to 7.1; non-adopting regions go from 7.0 to 6.8. (a) Compute the DiD estimate. (b) The analyst writes: "Because adopting regions were sicker at baseline (7.8 vs 7.0), parallel trends is violated." Is this reasoning correct? (c) With only these two years, can you test parallel trends at all?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Treated change $= 7.1 - 7.8 = -0.7$. Control change $= 6.8 - 7.0 = -0.2$. DiD $= (-0.7) - (-0.2) = -0.5$ percentage points. The program is associated with an extra $0.5$-point reduction in HbA1c.
+
+**(b)** Incorrect. Parallel trends is about the *change*, not the *level*. A baseline difference of $7.8$ vs $7.0$ is exactly what DiD is designed to net out via the region fixed effect. The assumption would be violated only if the treated group's *trajectory* would have differed from the control group's absent the program --- which the baseline gap alone does not tell us.
+
+**(c)** No. With one pre-period and one post-period there is exactly one pre-treatment level per group and no pre-treatment *change* to inspect. Any difference can be absorbed into the level, so parallel pre-trends is untestable. You need at least two pre-periods (to observe one pre-trend per group) before the assumption leaves any empirical footprint.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+An event-study on HbA1c yields lead coefficients (with the year before adoption as reference): $\hat\beta_{-3} = -0.04$, $\hat\beta_{-2} = -0.08$, and the lag coefficients $\hat\beta_{0} = -0.18$, $\hat\beta_{1} = -0.31$, $\hat\beta_{2} = -0.44$. All leads are statistically insignificant individually. The author concludes parallel trends holds and the program lowers HbA1c. Critique this, and estimate the bias if the pre-trend continued linearly.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**The pattern in the leads is not random scatter --- it is a downward slope.** Going from $k=-3$ to $k=-2$, the lead drops by $-0.04$ per year. Even though each lead is individually insignificant (low power against a gentle trend), they line up monotonically downward, exactly the signature of a differential pre-trend in which the treated group was already improving faster. Statistical insignificance of each coefficient does not license "no pre-trend"; the *joint* pattern (and a *joint* Wald test) matter more than individual t-stats.
+
+**Bias from linear extrapolation.** If the treated group drifts at about $-0.04$ per year relative to controls and that drift continues into the post-period, then the differential drift accumulated by event time $k$ (measured from the $k=-1$ reference) is roughly $-0.04 \times (k+1)$. At $k=0,1,2$ that is about $-0.04, -0.08, -0.12$. Subtracting this drift from the lags gives a *de-trended* effect of about $-0.18-(-0.04)=-0.14$, $-0.31-(-0.08)=-0.23$, $-0.44-(-0.12)=-0.32$. So perhaps a quarter to a third of the apparent late effect is pre-existing trend, not program. The honest conclusion: the program likely helped, but the naive event study *overstates* it, and a sensitivity analysis (Rambachan & Roth) should bound the effect under plausible continuations of the pre-trend.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Two regions have *counterfactual* (untreated) mean HbA1c as follows. Control: 7.0 (pre) and 6.3 (post). Treated: 8.0 (pre). (a) If parallel trends holds *in levels*, what is the treated group's counterfactual post mean? (b) If instead it holds *in logs*, what is it? (c) Reconcile your answers with the claim that the two assumptions cannot both hold.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Levels.** The control group's additive change is $6.3 - 7.0 = -0.7$. Parallel-in-levels assigns the treated group the *same additive* change: $8.0 + (-0.7) = \mathbf{7.3}$.
+
+**(b) Logs.** The control group's growth factor is $6.3 / 7.0 = 0.90$ (a $10\%$ drop). Parallel-in-logs assigns the treated group the *same proportional* change: $8.0 \times 0.90 = \mathbf{7.2}$.
+
+**(c)** The two counterfactuals differ: $7.3$ (levels) versus $7.2$ (logs). They coincide only if the baseline levels were equal, which they are not ($8.0 \ne 7.0$). This is the non-equivalence in action: the same observed control trajectory implies *different* treated counterfactuals depending on the scale, so DiD's answer depends on a substantive choice about whether the program acts additively or multiplicatively. A difference of $0.1$ percentage points in the counterfactual flows directly into a $0.1$-point difference in the estimated treatment effect --- comparable in size to the effects programs like this typically deliver.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A researcher runs the following workflow on 200 candidate program evaluations: for each, test parallel pre-trends at $\alpha = 0.05$; *discard* any evaluation whose pre-trend test rejects; report DiD only for the survivors. Explain (a) why this can produce biased estimates even when each individual DiD is valid in expectation, and (b) what they should do instead.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Pre-test bias.** Discarding evaluations that "fail" the pre-trend test is *conditioning on the outcome of a noisy test*. The pre-trend test statistic and the post-period DiD estimator are computed from the same data and are correlated through their shared error. By keeping only samples where the leads happened to look flat, the researcher selects on realizations of noise that are also correlated with the post-period error, distorting the *conditional* sampling distribution of the surviving DiD estimates. The result is biased point estimates and confidence intervals with incorrect coverage --- even though, *unconditionally*, each DiD was unbiased. The selection, not any single estimator, creates the problem. Worse, the cases that *survive* are disproportionately those where a real pre-trend was masked by low power, so the kept sample is enriched for exactly the violations the test was meant to catch.
+
+**(b) Better practice.** Do not use the pre-test as a gate. Instead: (i) report the full event study transparently regardless of significance; (ii) report the *power* of the pre-test against economically meaningful trend magnitudes, so readers know what a "pass" actually rules out; and (iii) conduct a sensitivity analysis (Rambachan & Roth, 2023) that reports how large a pre-trend violation would have to be to overturn the conclusion, rather than a binary verdict. The goal is to characterize *robustness to plausible violations*, not to certify the assumption as true.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Parallel trends is about equality of untreated *trends* across groups, not equality of levels; a confounder is fatal only if it makes the groups' untreated outcomes diverge over the study window.
+- It is fundamentally untestable --- the treated group's post-period $Y(0)$ is the missing counterfactual. Parallel pre-trends make it credible but never prove it.
+- The event-study plot is the single most informative DiD diagnostic: leads should hug zero, lags trace the dynamic effect, and the slope of the leads is your early-warning system for violations.
+- "We checked pre-trends and found none, so DiD is valid" is misleading: pre-tests have low power against exactly the trends that bias most, and conditioning on passing injects pre-test bias.
+- Parallel trends is not scale-invariant: it cannot hold in both levels and logs unless baseline levels are equal, so the scale choice is a substantive economic assumption, not a robustness checkbox.
+:::
+
+## What Comes Next
+
+We have treated adoption as a single, shared event --- all treated regions started the diabetes program in 2018. Real reforms almost never roll out so tidily: regions adopt in different years, in waves. That *staggered adoption* breaks the simple two-way fixed-effects estimator in surprising ways --- already-treated units can act as "controls" for newly-treated ones, contaminating the comparison and even flipping the sign of an effect. The next page, **[Staggered Adoption](staggered.qmd)**, dissects this pathology via the Goodman-Bacon decomposition and sets up the modern estimators (Callaway--Sant'Anna, Sun--Abraham, and others) built to survive it --- the same `did` and `differences` code you met above.

@@ -1,0 +1,1085 @@
+---
+title: "Interactions"
+subtitle: "Heterogeneous effects and how to model them"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Build an interaction model $y = \beta_0 + \beta_1 x + \beta_2 g + \beta_3(x g) + \varepsilon$ and read each coefficient correctly, recognizing $\beta_1$ as a conditional slope (the effect at $g = 0$), not "the effect of $x$"
+- Interpret interactions across the three canonical cases: continuous-by-binary (two fanning lines), binary-by-binary (a $2\times2$ difference-in-differences), and continuous-by-continuous (the marginal-effect line $\beta_1 + \beta_3 g$)
+- Center regressors before interacting so main effects refer to the average moderator value where you actually have data
+- Compute a marginal effect and its correct standard error using the full coefficient covariance, including the $2g\operatorname{Cov}(\hat\beta_1,\hat\beta_3)$ term that produces the bow-tie confidence band
+- Diagnose the most common interaction error: reporting a main effect as if it were an average effect when an interaction is present
+:::
+
+## When One Number Is Not Enough
+
+A Swedish *region* is reviewing a long-standing policy question: does staffing a *vårdcentral* (primary care center) with more general practitioners actually improve the quality of chronic disease care? The natural way to phrase this is as a slope. For every additional *läkare* (GP) per 1000 listed patients, how many percentage points (a percentage point is an *additive* move in a share --- 58% to 61% is +3 percentage points, not "+3 percent") does the share of well-controlled diabetes patients --- those with HbA1c below 52 mmol/mol --- rise?
+
+A straightforward regression returns a single number, say "+3 percentage points per extra GP per 1000 patients," and the region is tempted to print it on a slide and move on. But a sharper analyst at *Socialstyrelsen* (the National Board of Health and Welfare) asks an uncomfortable question: **does that slope hold everywhere?** An extra GP in a wealthy suburb of Stockholm, where most patients are already well-controlled and self-managing, may do very little. The same extra GP in a deprived municipality, where patients face language barriers, lower health literacy, and more comorbidity, may do a great deal --- or, if the deeper problem is social rather than clinical, perhaps even less.
+
+If the answer is "it depends on the area," then a single slope is a lie of omission. It averages together a large effect in deprived areas and a small effect in affluent ones, reporting a middling number that describes *no actual vårdcentral*. The effect of GP staffing on quality is **heterogeneous** --- it varies with a third variable --- and the tool for modeling heterogeneity inside a regression is the **interaction term**.
+
+This is the regression-era return of an idea we met in Module 1. There, treatment effects $\tau_i = Y_i(1) - Y_i(0)$ differed across patients, and the ATE, ATT, and ATU could all disagree precisely *because* effects were heterogeneous. An interaction is how we let a regression speak about that heterogeneity directly: instead of one effect, we estimate how the effect *changes* as a moderator changes.
+
+
+## The Interaction Model
+
+Let $y$ be a quality outcome (the share of well-controlled diabetes patients at a vårdcentral), let $x$ be GP staffing (läkare per 1000 listed patients), and let $g$ be a **moderator** --- the variable along which the effect of $x$ might change. We start with $g$ binary: $g = 1$ if the vårdcentral sits in a *deprived* area (high on the *Care Need Index*), and $g = 0$ otherwise.
+
+The interaction model adds one term --- the product $x \cdot g$ --- to the additive model:
+
+$$
+y = \beta_0 + \beta_1 x + \beta_2 g + \beta_3 (x \cdot g) + \varepsilon
+$$
+
+**How to read this**: "The outcome equals an intercept, plus a slope on staffing, plus a shift for deprived areas, plus a term that lets the staffing slope itself differ between deprived and affluent areas, plus noise." That last term is the whole point. Without $\beta_3 (x \cdot g)$, the model forces $x$ to have the *same* slope in both groups; with it, the slope is allowed to bend.
+
+The cleanest way to understand the coefficients is to substitute the two values of $g$ and read off the resulting lines.
+
+::: {.glass-card .glass-card--definition}
+**The two regression lines.** Plug in $g = 0$ (affluent areas):
+
+$$
+y = \beta_0 + \beta_1 x + \varepsilon
+$$
+
+so the intercept is $\beta_0$ and the slope is $\beta_1$.
+
+Plug in $g = 1$ (deprived areas):
+
+$$
+y = (\beta_0 + \beta_2) + (\beta_1 + \beta_3)\, x + \varepsilon
+$$
+
+so the intercept is $\beta_0 + \beta_2$ and the slope is $\beta_1 + \beta_3$.
+
+This gives the careful reading of **each** coefficient:
+
+- $\beta_1$ is the slope of $x$ **when $g = 0$** --- the effect of an extra GP in *affluent* areas. It is **not** "the effect of $x$."
+- $\beta_3$ is **how much the slope changes** per unit of $g$ --- the *difference in slopes* between deprived and affluent areas. It is the interaction effect.
+- $\beta_2$ is the **gap between groups at $x = 0$** --- the vertical distance between the two lines where staffing is zero. With binary $g$ it shifts the whole deprived line up or down.
+- $\beta_0$ is the predicted outcome for an affluent vårdcentral with $x = 0$.
+:::
+
+The figure below makes that four-coefficient reading geometric *before* you touch any slider: each $\beta$ is one visible feature of the two lines. $\beta_0$ is where the affluent line starts; $\beta_2$ is the vertical gap between the lines at $x = 0$; $\beta_1$ is the slope of the affluent (lower) line; and the deprived (upper) line is steeper by exactly $\beta_3$, so its slope is $\beta_1 + \beta_3$.
+
+```{ojs}
+//| echo: false
+
+p2_anatomy = {
+  const W = Math.min(560, width), H = 320;
+  const m = { l: 58, r: 18, t: 26, b: 46 };
+  // Illustrative coefficient values for the labelled figure (fixed, static).
+  const b0 = 14, b1 = 6, b2 = 10, b3 = 9;
+  const xmin = 0, xmax = 6;
+  const xs = v => m.l + (v - xmin) / (xmax - xmin) * (W - m.l - m.r);
+  const ymin = 0, ymax = 80;
+  const ys = v => H - m.b - (v - ymin) / (ymax - ymin) * (H - m.t - m.b);
+
+  const aff = x => b0 + b1 * x;                 // affluent line (g = 0)
+  const dep = x => (b0 + b2) + (b1 + b3) * x;   // deprived line (g = 1)
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  defs.append("marker")
+    .attr("id", "p2-arr-ink").attr("viewBox", "0 -5 10 10")
+    .attr("refX", 8).attr("refY", 0).attr("markerWidth", 6).attr("markerHeight", 6)
+    .attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#1c1c1a");
+
+  // axes
+  svg.append("line").attr("x1", m.l).attr("y1", ys(0)).attr("x2", W - m.r).attr("y2", ys(0))
+    .attr("stroke", "#1c1c1a").attr("stroke-width", 1.2);
+  svg.append("line").attr("x1", xs(0)).attr("y1", m.t).attr("x2", xs(0)).attr("y2", ys(0))
+    .attr("stroke", "#1c1c1a").attr("stroke-width", 1.2);
+  svg.append("text").attr("x", (m.l + W - m.r) / 2).attr("y", H - 10)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .text("GP staffing  x  →");
+  svg.append("text").attr("transform", `translate(16,${(m.t + ys(0)) / 2}) rotate(-90)`)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .text("↑ quality y");
+
+  // the two lines
+  svg.append("line")
+    .attr("x1", xs(0)).attr("y1", ys(aff(0))).attr("x2", xs(xmax)).attr("y2", ys(aff(xmax)))
+    .attr("stroke", "#3d5a6c").attr("stroke-width", 3);
+  svg.append("line")
+    .attr("x1", xs(0)).attr("y1", ys(dep(0))).attr("x2", xs(xmax)).attr("y2", ys(dep(xmax)))
+    .attr("stroke", "#990000").attr("stroke-width", 3);
+
+  // β₂: vertical gap at x = 0
+  svg.append("line")
+    .attr("x1", xs(0)).attr("y1", ys(aff(0))).attr("x2", xs(0)).attr("y2", ys(dep(0)))
+    .attr("stroke", "#9c7a33").attr("stroke-width", 2.5)
+    .attr("marker-start", "url(#p2-arr-ink)").attr("marker-end", "url(#p2-arr-ink)");
+
+  const lab = (x, y, t, col, anchor = "start") =>
+    svg.append("text").attr("x", x).attr("y", y).attr("text-anchor", anchor)
+      .attr("font-size", 12).attr("font-weight", 700).attr("fill", col)
+      .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+      .text(t);
+
+  // β₀ dot + label at the affluent intercept
+  svg.append("circle").attr("cx", xs(0)).attr("cy", ys(aff(0))).attr("r", 4).attr("fill", "#3d5a6c");
+  lab(xs(0) + 8, ys(aff(0)) + 16, "β₀ = intercept (affluent at x=0)", "#3d5a6c");
+  lab(xs(0) + 8, ys((aff(0) + dep(0)) / 2), "β₂ = gap at x=0", "#9c7a33");
+  lab(xs(xmax) - 4, ys(aff(xmax)) + 18, "slope = β₁", "#3d5a6c", "end");
+  lab(xs(xmax) - 4, ys(dep(xmax)) - 10, "slope = β₁ + β₃", "#990000", "end");
+  // β₃ note: how much steeper
+  lab(xs(4.1), ys(dep(4.1)) + 4, "steeper by β₃", "#990000", "start");
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+A static map of the four coefficients onto the two lines. <span style="color:#3d5a6c; font-weight:700;">Slate</span> = affluent ($g=0$); <span style="color:#990000; font-weight:700;">red</span> = deprived ($g=1$); the <span style="color:#9c7a33; font-weight:700;">ochre</span> double-arrow is $\beta_2$, the between-group gap measured at $x=0$. Once an interaction is present, $\beta_1$ governs only the slate line; the red line is steeper by exactly $\beta_3$.
+:::
+
+The single most common error in all of applied regression lives in that list: reading $\beta_1$ as "the effect of $x$." Once an interaction is in the model, $\beta_1$ is a *conditional* slope --- the effect of $x$ at the specific value $g = 0$. If you want "the effect of $x$ for a deprived vårdcentral," you must add $\beta_1 + \beta_3$. We will return to this mistake, because it is everywhere.
+
+
+## Three Canonical Cases
+
+Interactions come in three flavors depending on the types of $x$ and $g$. The algebra above is identical in all three; only the interpretation of "per unit of $g$" changes.
+
+### Case 1: Continuous $x$ by binary $g$ --- two lines, different slopes
+
+This is the GP-staffing example. The model produces literally two lines on a shared scatter: one for affluent areas (slope $\beta_1$), one for deprived areas (slope $\beta_1 + \beta_3$). A non-zero $\beta_3$ makes the lines **fan out** --- they are no longer parallel. This is the case the interactive below brings to life, and the one you will meet most often in policy work.
+
+### Case 2: Binary $x$ by binary $g$ --- a $2 \times 2$ table of means
+
+Now both regressors are 0/1. Suppose $x$ is enrollment in a structured *diabetessamordning* (diabetes coordination program), and $g$ is whether the patient is *young* (under 60) or *older*. The regression $y = \beta_0 + \beta_1 x + \beta_2 g + \beta_3 (x g) + \varepsilon$ is then exactly a saturated model (one with enough parameters to fit every group mean exactly, leaving no functional-form assumption to test) of four cell means:
+
+| | $x = 0$ (no program) | $x = 1$ (program) |
+|:---|:---:|:---:|
+| **$g = 0$ (older)** | $\beta_0$ | $\beta_0 + \beta_1$ |
+| **$g = 1$ (younger)** | $\beta_0 + \beta_2$ | $\beta_0 + \beta_1 + \beta_2 + \beta_3$ |
+
+The interaction $\beta_3$ is the **difference-in-differences of the cell means**:
+
+$$
+\beta_3 = \underbrace{\big[(\beta_0 + \beta_1 + \beta_2 + \beta_3) - (\beta_0 + \beta_2)\big]}_{\text{program effect for the young}} - \underbrace{\big[(\beta_0 + \beta_1) - \beta_0\big]}_{\text{program effect for the old}}
+$$
+
+**How to read this**: "The interaction equals the program's effect among the young minus the program's effect among the old." If $\beta_3 \neq 0$, the program helps one age group more than the other. This is not an accident of phrasing --- it is the *exact* algebraic skeleton of the **difference-in-differences** estimator we build in Module 6, where the two "groups" become treated vs. control units and the two "values of $x$" become before vs. after. An interaction in a $2 \times 2$ regression *is* a difference-in-differences.
+
+The four cell means and the two within-group "gaps" they define are easier to see than to read off a table. In the figure, each pair of bars is one age group going from *no program* to *program*; the bracket above each pair is that group's program effect. The interaction $\beta_3$ is simply how much *taller* the young bracket is than the old one --- the difference of the two differences.
+
+```{ojs}
+//| echo: false
+
+p2_did2x2 = {
+  const W = Math.min(560, width), H = 320;
+  const m = { l: 56, r: 18, t: 30, b: 58 };
+  // Cell means matching the Case-2 worked exercise (share reaching HbA1c target, %).
+  const cells = [
+    { grp: "Older",   x: "No program", val: 40, col: "#3d5a6c", gx: 0 },
+    { grp: "Older",   x: "Program",    val: 52, col: "#3d5a6c", gx: 1 },
+    { grp: "Younger", x: "No program", val: 50, col: "#990000", gx: 2.6 },
+    { grp: "Younger", x: "Program",    val: 74, col: "#990000", gx: 3.6 }
+  ];
+  const xmax = 4.6, ymax = 90;
+  const bw = (W - m.l - m.r) / xmax * 0.7;
+  const xs = v => m.l + v / xmax * (W - m.l - m.r);
+  const ys = v => H - m.b - v / ymax * (H - m.t - m.b);
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // baseline + y label
+  svg.append("line").attr("x1", m.l).attr("y1", ys(0)).attr("x2", W - m.r).attr("y2", ys(0))
+    .attr("stroke", "#1c1c1a").attr("stroke-width", 1.2);
+  svg.append("text").attr("transform", `translate(15,${(m.t + ys(0)) / 2}) rotate(-90)`)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .text("↑ % reaching HbA1c target");
+
+  // bars + value labels + x tick labels
+  for (const c of cells) {
+    const bx = xs(c.gx);
+    svg.append("rect")
+      .attr("x", bx).attr("y", ys(c.val)).attr("width", bw).attr("height", ys(0) - ys(c.val))
+      .attr("fill", c.col).attr("fill-opacity", c.x === "Program" ? 0.85 : 0.45)
+      .attr("stroke", c.col).attr("stroke-width", 1);
+    svg.append("text").attr("x", bx + bw / 2).attr("y", ys(c.val) - 6)
+      .attr("text-anchor", "middle").attr("font-size", 11).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(c.val);
+    svg.append("text").attr("x", bx + bw / 2).attr("y", ys(0) + 14)
+      .attr("text-anchor", "middle").attr("font-size", 9.5).attr("fill", "#79766e")
+      .text(c.x);
+  }
+  // group labels
+  svg.append("text").attr("x", (xs(0) + xs(1) + bw) / 2).attr("y", ys(0) + 30)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("font-weight", 700).attr("fill", "#3d5a6c")
+    .text("Older (g=0)");
+  svg.append("text").attr("x", (xs(2.6) + xs(3.6) + bw) / 2).attr("y", ys(0) + 30)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("font-weight", 700).attr("fill", "#990000")
+    .text("Younger (g=1)");
+
+  // brackets showing the within-group program effect
+  const bracket = (x0, x1, y, txt, col) => {
+    const yb = ys(y) - 18;
+    svg.append("path")
+      .attr("d", `M${x0},${ys(y)} L${x0},${yb} L${x1},${yb} L${x1},${ys(y)}`)
+      .attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.5);
+    svg.append("text").attr("x", (x0 + x1) / 2).attr("y", yb - 5)
+      .attr("text-anchor", "middle").attr("font-size", 10.5).attr("font-weight", 700).attr("fill", col)
+      .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+      .text(txt);
+  };
+  bracket(xs(0) + bw / 2, xs(1) + bw / 2, 56, "+12  (β₁)", "#3d5a6c");
+  bracket(xs(2.6) + bw / 2, xs(3.6) + bw / 2, 78, "+24  (β₁+β₃)", "#990000");
+
+  // β₃ caption
+  svg.append("text").attr("x", (m.l + W - m.r) / 2).attr("y", m.t - 6)
+    .attr("text-anchor", "middle").attr("font-size", 11.5).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("β₃ = 24 − 12 = 12  (difference of the two program effects)");
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+The four cell means as bars. Each bracket is one group's program effect (a *difference*); the interaction $\beta_3$ is the difference *between* the two brackets, $24 - 12 = 12$. That "difference of differences" is exactly the difference-in-differences estimator --- here visible as two unequal step-ups. (Cell means match the Case 2 exercise below.)
+:::
+
+### Case 3: Continuous $x$ by continuous $g$ --- the marginal-effect formula
+
+When $g$ is also continuous (say, the area's deprivation *score* rather than a deprived/affluent label), there are no longer two lines but a continuum of slopes. The effect of $x$ is found by partial differentiation:
+
+$$
+\frac{\partial\, E[y \mid x, g]}{\partial x} = \beta_1 + \beta_3\, g
+$$
+
+**How to read this**: "The marginal effect of $x$ on $y$ is not a constant --- it is a straight line in $g$." At $g = 0$ the marginal effect is $\beta_1$; each one-unit increase in the moderator $g$ adds $\beta_3$ to it. This single equation unifies all three cases: in Case 1, $g$ takes only the values 0 and 1, so the marginal effect takes only the values $\beta_1$ and $\beta_1 + \beta_3$ --- the two slopes. The interactive's second view plots exactly this line.
+
+
+## Centering: Making Main Effects Mean Something
+
+Here is a subtle but practical point that trips up nearly everyone. Recall $\beta_1$ is "the slope of $x$ when $g = 0$" and $\beta_2$ is "the gap between groups at $x = 0$." Those interpretations are only useful if $g = 0$ and $x = 0$ are *meaningful, in-sample* values.
+
+For binary $g$, $g = 0$ is a real category (affluent), so $\beta_1$ is interpretable. But $x = 0$ means "a vårdcentral with **zero** GPs," which is absurd --- no real center has zero staffing, and the data carry no information there. So $\beta_2$, the between-group gap *at zero staffing*, is an extrapolation far outside the data. Worse, in a continuous-by-continuous model, $\beta_1$ (the slope of $x$ at $g = 0$) may also refer to a deprivation score of exactly zero that no area attains.
+
+::: {.glass-card .glass-card--insight}
+**Center your regressors before interacting them.** Replace $x$ with $\tilde{x} = x - \bar{x}$ and (if continuous) $g$ with $\tilde{g} = g - \bar{g}$, then fit
+
+$$
+y = \gamma_0 + \gamma_1 \tilde{x} + \gamma_2 \tilde{g} + \gamma_3 (\tilde{x}\,\tilde{g}) + \varepsilon.
+$$
+
+Centering does **not** change $\gamma_3$ --- the interaction is invariant to shifts of the regressors. What it changes is the *meaning* of the main effects: $\gamma_1$ becomes the slope of $x$ at the **average** moderator value, and $\gamma_2$ becomes the group gap at the **average** staffing level. Both are now evaluated at the center of the data, where you actually have evidence, instead of at an arbitrary --- often impossible --- zero.
+:::
+
+Centering also tames a cosmetic-but-real nuisance: the raw $x$ and the product $x g$ are mechanically correlated, which inflates the standard errors and the variance inflation factors (a VIF measures how much a regressor's collinearity with the others swells its standard error) of the *main* effects (though never of the interaction itself). Centering largely removes that correlation and makes the main-effect estimates more stable and more readable. It is close to a free lunch; the only cost is remembering that coefficients now refer to deviations from the mean.
+
+The whole case for centering is geometric: $\beta_2$ and $\beta_1$ are *defined at $x = 0$*, and for real vårdcentraler $x = 0$ (zero GPs) sits far outside the data. The two panels below make that visible. On the left, raw staffing: the lines must be extended a long way left to reach $x = 0$, so the gap $\beta_2$ read there is an extrapolation into empty space. On the right, centered staffing ($\tilde x = x - \bar x$): the new zero is the mean, which sits *inside* the data cloud, so $\gamma_2$ is the gap measured where you actually have evidence.
+
+```{ojs}
+//| echo: false
+
+p2_centering = {
+  const W = Math.min(620, width), H = 250;
+  const panelW = (W - 24) / 2;          // two side-by-side panels
+  const m = { l: 40, r: 12, t: 24, b: 38 };
+  const b0 = 60, b1 = 6, b2 = -14, b3 = 0;   // illustrative; parallel-ish lines
+  const xbar = 0.85;
+  const dataLo = 0.35, dataHi = 1.40;
+
+  const mk = (offset, mode) => {
+    const g = d3.create("svg:g").attr("transform", `translate(${offset},0)`);
+    const xmin = mode === "raw" ? 0 : (dataLo - xbar) - 0.05;
+    const xmax = mode === "raw" ? 1.55 : (dataHi - xbar) + 0.05;
+    const xs = v => m.l + (v - xmin) / (xmax - xmin) * (panelW - m.l - m.r);
+    const ymin = 30, ymax = 80;
+    const ys = v => H - m.b - (v - ymin) / (ymax - ymin) * (H - m.t - m.b);
+    const toRaw = v => mode === "raw" ? v : v + xbar;  // model is in raw x
+    const aff = v => b0 + b1 * (toRaw(v) - xbar);
+    const dep = v => (b0 + b2) + (b1 + b3) * (toRaw(v) - xbar);
+
+    // frame
+    g.append("rect").attr("x", m.l).attr("y", m.t)
+      .attr("width", panelW - m.l - m.r).attr("height", H - m.t - m.b)
+      .attr("fill", "#fff").attr("stroke", "#e6e3db");
+    // x=0 marker
+    if (xmin <= 0 && xmax >= 0) {
+      g.append("line").attr("x1", xs(0)).attr("y1", m.t).attr("x2", xs(0)).attr("y2", H - m.b)
+        .attr("stroke", mode === "raw" ? "#79766e" : "#9c7a33")
+        .attr("stroke-width", mode === "raw" ? 1 : 2).attr("stroke-dasharray", "3,3");
+      g.append("text").attr("x", xs(0)).attr("y", m.t - 6).attr("text-anchor", "middle")
+        .attr("font-size", 9.5).attr("font-weight", 700)
+        .attr("fill", mode === "raw" ? "#79766e" : "#9c7a33")
+        .text(mode === "raw" ? "x = 0 (no GPs!)" : "x̃ = 0 (mean)");
+    }
+    // data span shading
+    const dLoC = mode === "raw" ? dataLo : dataLo - xbar;
+    const dHiC = mode === "raw" ? dataHi : dataHi - xbar;
+    g.append("rect").attr("x", xs(dLoC)).attr("y", m.t)
+      .attr("width", xs(dHiC) - xs(dLoC)).attr("height", H - m.t - m.b)
+      .attr("fill", "#3d5a6c").attr("fill-opacity", 0.05);
+    // lines (over full panel range, extrapolated outside data)
+    g.append("line").attr("x1", xs(xmin)).attr("y1", ys(aff(xmin)))
+      .attr("x2", xs(xmax)).attr("y2", ys(aff(xmax)))
+      .attr("stroke", "#3d5a6c").attr("stroke-width", 2.5);
+    g.append("line").attr("x1", xs(xmin)).attr("y1", ys(dep(xmin)))
+      .attr("x2", xs(xmax)).attr("y2", ys(dep(xmax)))
+      .attr("stroke", "#990000").attr("stroke-width", 2.5);
+    // gap arrow at the relevant zero
+    const zRaw = 0;
+    if (xmin <= 0 && xmax >= 0) {
+      g.append("line").attr("x1", xs(zRaw)).attr("y1", ys(aff(zRaw)))
+        .attr("x2", xs(zRaw)).attr("y2", ys(dep(zRaw)))
+        .attr("stroke", "#9c7a33").attr("stroke-width", 2.5);
+      g.append("text").attr("x", xs(zRaw) + 5).attr("y", ys((aff(zRaw) + dep(zRaw)) / 2))
+        .attr("font-size", 10).attr("font-weight", 700).attr("fill", "#9c7a33")
+        .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+        .text(mode === "raw" ? "β₂ (far outside data)" : "γ₂ (inside data)");
+    }
+    // panel title
+    g.append("text").attr("x", m.l + (panelW - m.l - m.r) / 2).attr("y", H - 8)
+      .attr("text-anchor", "middle").attr("font-size", 10.5).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(mode === "raw" ? "Raw x  (zero = no staffing)" : "Centered x̃  (zero = mean staffing)");
+    return g.node();
+  };
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H).attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+  svg.node().appendChild(mk(0, "raw"));
+  svg.node().appendChild(mk(panelW + 24, "centered"));
+  return svg.node();
+}
+```
+
+::: {.aside}
+Same two fitted lines, two parameterizations. The faint slate band marks where the data actually live. <strong>Left:</strong> with raw $x$, the gap is read at $x=0$ (zero GPs) --- far left of any data, a pure extrapolation. <strong>Right:</strong> after centering, the gap $\gamma_2$ is read at the mean (<span style="color:#9c7a33; font-weight:700;">ochre</span> line), squarely inside the cloud. The lines, and the interaction, are identical; only the *meaning* of the main effects moved.
+:::
+
+
+## See It: The Interaction Slider
+
+The interactive below puts you in the analyst's chair. Two groups of vårdcentraler --- affluent ($g=0$, slate) and deprived ($g=1$, red) --- are scattered by GP staffing against the share of well-controlled diabetes patients. You control the interaction strength $\beta_3$ (how much steeper the deprived-area slope is) and the group gap $\beta_2$. Watch the two fitted lines move, and read the per-group slopes off the annotations.
+
+::: {.interactive-container}
+
+#### Two Group Slopes Fanning Out with the Interaction
+
+::: {.start-here}
+**Start here:** drag the **β₃** slider and watch the two fitted lines fan apart. Then flip the **View** toggle to see the same effect as a single marginal-effect line.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof intx_b3 = Inputs.range([-6, 12], {
+  value: 6,
+  step: 0.5,
+  label: "Interaction β₃ (extra slope in deprived areas)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof intx_b2 = Inputs.range([-20, 20], {
+  value: -8,
+  step: 1,
+  label: "Group gap β₂ (deprived shift at mean staffing)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof intx_view = Inputs.radio(
+  ["Two regression lines", "Marginal effect of staffing"],
+  { label: "View", value: "Two regression lines" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof intx_showband = Inputs.toggle({
+  label: "Show 95% confidence band (active only in the marginal-effect view)",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed "true" structure used only to generate a believable scatter.
+// One definition per cell (Observable requirement).
+intx_b0 = 58;     // % well-controlled, affluent center at mean staffing
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+intx_b1 = 2.5;    // affluent slope (pp per GP/1000)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+intx_xbar = 0.85; // mean GP per 1000 patients (staffing centered here)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+intx_sigma = 5.5; // residual SD (percentage points)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Deterministic pseudo-random generator so the scatter is stable across redraws
+intx_makeRng = function (s) {
+  let seed = s;
+  return function () {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Generate 70 vårdcentraler: 35 affluent (g=0), 35 deprived (g=1).
+// The cloud is built around the user-chosen b2/b3 so it matches the fitted lines.
+intx_data = {
+  const rng = intx_makeRng(20240617);
+  const randn = function () {
+    const u1 = Math.max(rng(), 1e-12);
+    const u2 = rng();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  };
+  const n = 35;
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const x = 0.35 + 1.05 * rng();           // affluent staffing 0.35–1.40
+    const mu = intx_b0 + intx_b1 * (x - intx_xbar);
+    rows.push({ x, g: 0, group: "Affluent (g=0)", y: mu + intx_sigma * randn() });
+  }
+  for (let i = 0; i < n; i++) {
+    const x = 0.30 + 1.10 * rng();           // deprived staffing 0.30–1.40
+    const mu = (intx_b0 + intx_b2) + (intx_b1 + intx_b3) * (x - intx_xbar);
+    rows.push({ x, g: 1, group: "Deprived (g=1)", y: mu + intx_sigma * randn() });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Endpoints for the two fitted lines (centered model evaluated at raw x)
+intx_lines = {
+  const xs = [0.3, 1.45];
+  const affluent = xs.map(x => ({
+    x, group: "Affluent (g=0)",
+    y: intx_b0 + intx_b1 * (x - intx_xbar)
+  }));
+  const deprived = xs.map(x => ({
+    x, group: "Deprived (g=1)",
+    y: (intx_b0 + intx_b2) + (intx_b1 + intx_b3) * (x - intx_xbar)
+  }));
+  return [...affluent, ...deprived];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Plausible variance–covariance pieces for the marginal-effect band.
+// These mimic what a fit on ~70 points would return. The covariance is set so
+// the variance-minimizing moderator value g* = -Cov/Var(b3) sits at g* = 0.5,
+// putting the bow-tie waist in the middle of the displayed g range.
+// One definition per cell (Observable requirement).
+intx_varB1 = 0.55 * 0.55;   // Var(b1)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+intx_varB3 = 0.95 * 0.95;   // Var(b3)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+intx_covB1B3 = -0.45125;    // Cov(b1, b3): gives g* = 0.5 (corr ≈ -0.86)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+intx_gstar = -intx_covB1B3 / intx_varB3;  // variance-minimizing moderator (bow-tie waist)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Marginal effect of x at moderator value g, plus its SE.
+// dE[y]/dx = b1 + b3 * g ; Var = Var(b1) + g^2 Var(b3) + 2 g Cov(b1,b3)
+intx_marg = {
+  const gs = d3.range(0, 1.01, 0.02);
+  return gs.map(g => {
+    const me = intx_b1 + intx_b3 * g;
+    const v = intx_varB1 + g * g * intx_varB3 + 2 * g * intx_covB1B3;
+    const se = Math.sqrt(Math.max(v, 0));
+    return { g, me, lo: me - 1.96 * se, hi: me + 1.96 * se };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+intx_view === "Two regression lines"
+  ? Plot.plot({
+      width: Math.min(660, width),
+      height: 380,
+      marginLeft: 64,
+      marginRight: 18,
+      marginTop: 28,
+      marginBottom: 54,
+      style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+      grid: true,
+      x: { label: "GP staffing (läkare per 1000 patients) →", domain: [0.3, 1.45] },
+      y: { label: "↑ % well-controlled (HbA1c < 52)", domain: [25, 88] },
+      color: {
+        domain: ["Affluent (g=0)", "Deprived (g=1)"],
+        range: ["#3d5a6c", "#990000"],
+        legend: true
+      },
+      marks: [
+        Plot.dot(intx_data, { x: "x", y: "y", fill: "group", r: 4, fillOpacity: 0.55 }),
+        Plot.line(intx_lines, { x: "x", y: "y", stroke: "group", strokeWidth: 3 }),
+        Plot.ruleX([intx_xbar], { stroke: "#79766e", strokeDasharray: "3,3" }),
+        Plot.text(
+          [{ x: 1.42, y: intx_b0 + intx_b1 * (1.42 - intx_xbar) }],
+          { x: "x", y: "y", text: [`slope = ${intx_b1.toFixed(1)}`], fill: "#3d5a6c",
+            textAnchor: "end", dy: -10, fontWeight: 600,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+        ),
+        Plot.text(
+          [{ x: 1.42, y: (intx_b0 + intx_b2) + (intx_b1 + intx_b3) * (1.42 - intx_xbar) }],
+          { x: "x", y: "y", text: [`slope = ${(intx_b1 + intx_b3).toFixed(1)}`], fill: "#990000",
+            textAnchor: "end", dy: 16, fontWeight: 600,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+        ),
+        Plot.text(
+          [{ x: intx_xbar, y: 86 }],
+          { x: "x", y: "y", textAnchor: "start", dx: 4, dy: 0,
+            text: ["mean staffing x̄"], fill: "#79766e", fontSize: 10,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+        )
+      ]
+    })
+  : Plot.plot({
+      width: Math.min(660, width),
+      height: 380,
+      marginLeft: 64,
+      marginRight: 18,
+      marginTop: 28,
+      marginBottom: 54,
+      style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+      grid: true,
+      caption: "Marginal effect ∂y/∂x in percentage points per GP/1000; band = illustrative 95% CI showing the bow-tie shape.",
+      x: { label: "Moderator g  (0 = affluent  →  1 = deprived)", domain: [0, 1] },
+      y: { label: "↑ Marginal effect ∂y/∂x (pp per GP)", domain: [-6, 16] },
+      marks: [
+        intx_showband
+          ? Plot.areaY(intx_marg, { x: "g", y1: "lo", y2: "hi", fill: "#990000", fillOpacity: 0.12 })
+          : null,
+        Plot.ruleX([intx_gstar], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "2,3" }),
+        Plot.line(intx_marg, { x: "g", y: "me", stroke: "#990000", strokeWidth: 3 }),
+        Plot.ruleY([0], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+        Plot.dot(
+          [{ g: 0, me: intx_b1 }, { g: 1, me: intx_b1 + intx_b3 }],
+          { x: "g", y: "me", fill: "#1c1c1a", r: 5 }
+        ),
+        Plot.text(
+          [intx_gstar],
+          { x: (d) => d, frameAnchor: "top", dy: 6, textAnchor: "middle",
+            text: [`g* = ${intx_gstar.toFixed(2)} (most precise)`], fill: "#9c7a33",
+            fontSize: 10, fontWeight: 600,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+        ),
+        Plot.text(
+          ["β₁ = " + intx_b1.toFixed(1)],
+          { frameAnchor: "bottom-left", dx: 8, dy: -8, textAnchor: "start",
+            text: (d) => d, fill: "#3d5a6c", fontWeight: 600,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+        ),
+        Plot.text(
+          ["β₁+β₃ = " + (intx_b1 + intx_b3).toFixed(1)],
+          { frameAnchor: "top-right", dx: -8, dy: 8, textAnchor: "end",
+            text: (d) => d, fill: "#990000", fontWeight: 600,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+        )
+      ]
+    })
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="margin-top:0.4rem; font-family:Inter, sans-serif; font-size:0.78rem; color:#79766e;">${
+  intx_view === "Marginal effect of staffing"
+    ? "Note: β₂ moves line levels, not the staffing slope — switch to “Two regression lines” to see it act. The ochre rule marks g* (the bow-tie waist, most precise estimate)."
+    : "Tip: drag β₃ to fan the lines apart; slide β₂ to shift the deprived line up or down without changing either slope."
+}</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap:0.5rem; margin-top:0.75rem; font-family:Inter, sans-serif; font-size:0.82rem;">
+  <div style="padding:0.5rem 0.75rem; border-radius:0.5rem; background:rgba(61,90,108,0.06); border:1px solid rgba(61,90,108,0.18); min-height:3.4rem;">
+    <div style="font-weight:600; color:#79766e; font-size:0.68rem; letter-spacing:0.02em;">Affluent slope β₁</div>
+    <div style="font-size:1.15rem; font-weight:700; color:#3d5a6c;">${intx_b1.toFixed(1)} pp</div>
+  </div>
+  <div style="padding:0.5rem 0.75rem; border-radius:0.5rem; background:rgba(153,0,0,0.06); border:1px solid rgba(153,0,0,0.18); min-height:3.4rem;">
+    <div style="font-weight:600; color:#79766e; font-size:0.68rem; letter-spacing:0.02em;">Deprived slope β₁+β₃</div>
+    <div style="font-size:1.15rem; font-weight:700; color:#990000;">${(intx_b1 + intx_b3).toFixed(1)} pp</div>
+  </div>
+  <div style="padding:0.5rem 0.75rem; border-radius:0.5rem; background:#f6f5f1; border:1px solid #e6e3db; min-height:3.4rem;">
+    <div style="font-weight:600; color:#79766e; font-size:0.68rem; letter-spacing:0.02em;">Interaction β₃</div>
+    <div style="font-size:1.15rem; font-weight:700; color:#1c1c1a;">${intx_b3 >= 0 ? "+" : ""}${intx_b3.toFixed(1)} pp</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Dynamic verdict: turns the current slider state into the sentence an analyst
+// would say. Reads existing reactive values only; adds no control, no new DGP.
+intx_verdict = {
+  const ratio = intx_b1 !== 0 ? (intx_b1 + intx_b3) / intx_b1 : Infinity;
+  if (Math.abs(intx_b3) < 0.4)
+    return {
+      text: "β₃ ≈ 0: no heterogeneity. An extra GP buys the same " + intx_b1.toFixed(1) +
+            " pp everywhere — the two lines are parallel, and the single “average” slope is honest.",
+      color: "#79766e", bg: "#f6f5f1", border: "#79766e"
+    };
+  if (intx_b3 > 0)
+    return {
+      text: "β₃ > 0: staffing is a STRONGER lever in deprived areas (" + (intx_b1 + intx_b3).toFixed(1) +
+            " pp vs " + intx_b1.toFixed(1) + " pp). Reporting only β₁ would understate the deprived-area effect by β₃ = +" +
+            intx_b3.toFixed(1) + " pp.",
+      color: "#2e6f40", bg: "rgba(46,111,64,0.06)", border: "#2e6f40"
+    };
+  return {
+    text: "β₃ < 0: staffing does LESS in deprived areas (" + (intx_b1 + intx_b3).toFixed(1) +
+          " pp vs " + intx_b1.toFixed(1) + " pp) — push it far enough and the deprived slope can go negative, the case where the marginal-effect band crosses zero.",
+    color: "#b3000b", bg: "rgba(179,0,11,0.06)", border: "#b3000b"
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem; line-height:1.45; font-weight:600; color:${intx_verdict.color}; background:${intx_verdict.bg}; border-left:3px solid ${intx_verdict.border}; border-radius:0 0.35rem 0.35rem 0; padding:0.55rem 0.8rem; margin-top:0.75rem;">${intx_verdict.text}</div>`
+```
+
+:::
+
+### How to Read the Interaction Visualizer
+
+**Step 1: Start with no interaction.** Drag $\beta_3$ to **0**. The two fitted lines become exactly **parallel** --- both have slope $2.5$. An extra GP buys the same +2.5 percentage points whether the vårdcentral is affluent or deprived. The vertical distance between the lines is governed entirely by $\beta_2$; the *effect of staffing* is identical across groups. This is the additive model, with no heterogeneity.
+
+**Step 2: Turn on the interaction.** Drag $\beta_3$ up to **+6**. The red (deprived) line now tilts upward to a slope of $2.5 + 6 = 8.5$, while the slate (affluent) line is unchanged at $2.5$. The lines **fan out**: an extra GP does far more in deprived areas. This is exactly the policy story Socialstyrelsen suspected --- staffing is a stronger lever where clinical need is concentrated. Notice that $\beta_1 = 2.5$ has *not* moved; it was, and remains, the slope *for affluent areas only*.
+
+**Step 3: Watch the gap separate from the slopes.** Now slide $\beta_2$ from $-8$ up to $+10$. The whole red line slides vertically, but the two **slopes never change**. This visually proves that $\beta_2$ (the group gap) and $\beta_3$ (the slope difference) are *separate* parameters: one moves the line up and down, the other tilts it. Confusing the two --- "deprived areas score lower, so staffing must matter less there" --- is a classic error. Level and slope are independent.
+
+**Step 4: Switch to the marginal-effect view.** Choose **Marginal effect of staffing**. Now the horizontal axis is the moderator $g$ and the vertical axis is the marginal effect $\partial y / \partial x = \beta_1 + \beta_3 g$ --- a single straight line. Its height at $g = 0$ is $\beta_1$ (the dark dot, affluent); its height at $g = 1$ is $\beta_1 + \beta_3$ (deprived). The shaded band is the 95% confidence interval for the marginal effect. Note its **bow-tie shape**: it is narrowest near the middle and widest at the ends, because the variance $\mathrm{Var}(\beta_1) + g^2\mathrm{Var}(\beta_3) + 2g\,\mathrm{Cov}(\beta_1,\beta_3)$ is a quadratic in $g$. Where the band crosses the dashed zero line, the effect of staffing is no longer statistically distinguishable from zero --- the interaction lets you say *for which areas the policy demonstrably works*. To see this happen, **drag $\beta_3$ to a strong negative value (e.g. $-6$)**: the marginal-effect line tilts down until its band actually crosses zero at high $g$, marking the deprivation level beyond which the policy stops demonstrably working.
+
+
+## The Mistake Everyone Makes
+
+It is worth stating the central pitfall as a standalone warning, because it survives in published papers, policy briefs, and conference talks.
+
+::: {.glass-card .glass-card--warning}
+**Do not interpret a main effect as an average effect when an interaction is present.** In the model $y = \beta_0 + \beta_1 x + \beta_2 g + \beta_3 (x g) + \varepsilon$, the coefficient $\beta_1$ is the effect of $x$ **at $g = 0$**, not the average effect of $x$ across the population. If you report "an extra GP raises quality by 2.5 points" while $\beta_3 = 6$, you have described affluent areas and silently ignored that the effect is $8.5$ in deprived ones.
+
+The mirror-image mistake is **forgetting the interaction term when computing a marginal effect**. The effect of $x$ for a deprived vårdcentral is $\beta_1 + \beta_3 = 8.5$, not $\beta_1 = 2.5$. Analysts who pull a single coefficient off a regression table and call it "the effect" --- without checking whether that variable also appears inside an interaction --- routinely report numbers that are off by the entire $\beta_3$.
+:::
+
+A useful discipline: whenever a variable appears in an interaction, never speak of "its effect" without naming the value of the moderator at which you are evaluating it. "The effect of staffing *in affluent areas* is 2.5; *in deprived areas* it is 8.5; *at the average area* it is..." --- and if you centered, the centered main effect gives you that last number directly.
+
+
+<details>
+<summary>Math Details: The Marginal Effect and Its Standard Error</summary>
+<div class="details-content">
+
+### The marginal effect is a linear combination of coefficients
+
+For the model $E[y \mid x, g] = \beta_0 + \beta_1 x + \beta_2 g + \beta_3 x g$, differentiate with respect to $x$:
+
+$$
+\theta(g) \;\equiv\; \frac{\partial\, E[y \mid x, g]}{\partial x} \;=\; \beta_1 + \beta_3\, g .
+$$
+
+This is a *linear combination* of the estimated coefficients with weights that depend on $g$: weight 1 on $\hat\beta_1$ and weight $g$ on $\hat\beta_3$. We can write it as $\theta(g) = \mathbf{a}(g)^\top \boldsymbol\beta$ with $\mathbf{a}(g) = (0,\, 1,\, 0,\, g)^\top$.
+
+### Variance of a linear combination
+
+For any fixed weight vector $\mathbf{a}$, the variance of $\mathbf{a}^\top \hat{\boldsymbol\beta}$ is $\mathbf{a}^\top \mathbf{V} \mathbf{a}$, where $\mathbf{V} = \widehat{\mathrm{Var}}(\hat{\boldsymbol\beta})$ is the estimated coefficient covariance matrix. Expanding for our two non-zero weights:
+
+$$
+\mathrm{Var}\big(\hat\theta(g)\big) \;=\; \mathrm{Var}(\hat\beta_1) \;+\; g^2\, \mathrm{Var}(\hat\beta_3) \;+\; 2g\, \mathrm{Cov}(\hat\beta_1, \hat\beta_3).
+$$
+
+**How to read this**: "The variance of the marginal effect equals the variance of the main slope, plus $g$-squared times the variance of the interaction, plus twice $g$ times the covariance between them." The third term is the one analysts forget: $\hat\beta_1$ and $\hat\beta_3$ are *estimated from the same data* and are almost always correlated, so you **cannot** get the marginal-effect SE by combining the two reported standard errors independently. You need the full covariance, which is why dedicated marginal-effects routines exist.
+
+### Why the confidence band has a bow-tie shape
+
+The variance is a quadratic function of $g$: $\mathrm{Var}(\hat\theta(g)) = A + Bg + Cg^2$ with $A = \mathrm{Var}(\hat\beta_1)$, $B = 2\,\mathrm{Cov}(\hat\beta_1,\hat\beta_3)$, $C = \mathrm{Var}(\hat\beta_3)$. Because $C > 0$, this parabola opens upward and is minimized at
+
+$$
+g^\star = -\frac{B}{2C} = -\frac{\mathrm{Cov}(\hat\beta_1,\hat\beta_3)}{\mathrm{Var}(\hat\beta_3)} .
+$$
+
+The marginal effect is estimated **most precisely** at $g^\star$ and less precisely as $g$ moves away in either direction --- the bow-tie. When the regressors are centered, $\mathrm{Cov}(\hat\beta_1,\hat\beta_3) \approx 0$, so $g^\star \approx 0$ and the band is narrowest at the *mean* moderator value, which is usually exactly where you have the most data. Centering thus aligns "most precise" with "most representative."
+
+The bow-tie band is just the square root of an upward parabola. Plotting $\mathrm{Var}(\hat\theta(g))$ directly --- with the same illustrative variances used by the interactive above --- shows where the precision is best: at the bottom of the parabola, $g^\star = -B/2C$. The band's waist sits exactly above that vertex.
+
+```{ojs}
+//| echo: false
+
+p2_varParabola = Plot.plot({
+  width: Math.min(560, width),
+  height: 300,
+  marginLeft: 64,
+  marginBottom: 46,
+  marginTop: 24,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+  grid: true,
+  caption: "Var(θ̂(g)) = A + Bg + Cg² with A=Var(β̂₁), B=2·Cov(β̂₁,β̂₃), C=Var(β̂₃). The minimum at g* is where the bow-tie band is narrowest.",
+  x: { label: "Moderator g →", domain: [-0.6, 1.6] },
+  y: { label: "↑ Var(θ̂(g))", domain: [0, 2.2] },
+  marks: [
+    Plot.areaY(
+      d3.range(-0.6, 1.61, 0.02).map(g => {
+        const A = 0.55 * 0.55, C = 0.95 * 0.95, B = 2 * (-0.45125);
+        return { g, v: A + B * g + C * g * g };
+      }),
+      { x: "g", y: "v", fill: "#3d5a6c", fillOpacity: 0.10 }
+    ),
+    Plot.line(
+      d3.range(-0.6, 1.61, 0.02).map(g => {
+        const A = 0.55 * 0.55, C = 0.95 * 0.95, B = 2 * (-0.45125);
+        return { g, v: A + B * g + C * g * g };
+      }),
+      { x: "g", y: "v", stroke: "#3d5a6c", strokeWidth: 3 }
+    ),
+    Plot.ruleX([0.5], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "2,3" }),
+    Plot.dot([{ g: 0.5, v: 0.55 * 0.55 + 2 * (-0.45125) * 0.5 + 0.95 * 0.95 * 0.25 }],
+      { x: "g", y: "v", fill: "#9c7a33", r: 5 }),
+    Plot.text(
+      [{ g: 0.5, v: 0.05 }],
+      { x: "g", y: "v", text: ["g* = −B/2C (minimum variance)"], fill: "#9c7a33",
+        fontSize: 10.5, fontWeight: 700, textAnchor: "middle", dy: 0,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    ),
+    Plot.text(
+      [{ g: -0.45, v: 1.95 }, { g: 1.5, v: 1.5 }],
+      { x: "g", y: "v", text: ["less precise", "less precise"], fill: "#79766e",
+        fontSize: 10, fontStyle: "italic", textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    )
+  ]
+})
+```
+
+::: {.aside}
+The variance is a quadratic in $g$ (it opens upward because $C = \mathrm{Var}(\hat\beta_3) > 0$). Its vertex $g^\star = -B/2C$ --- the <span style="color:#9c7a33; font-weight:700;">ochre</span> point --- is the moderator value where the marginal effect is pinned down most tightly. Take the square root of this curve and reflect it about the marginal-effect line and you get the bow-tie band of the interactive above.
+:::
+
+### The pointwise confidence interval
+
+A $95\%$ pointwise confidence interval for the marginal effect at moderator value $g$ is
+
+$$
+\hat\theta(g) \;\pm\; t_{0.975,\, n-k}\,\sqrt{\mathrm{Var}\big(\hat\theta(g)\big)} ,
+$$
+
+where $k$ is the number of estimated coefficients. The set of $g$ for which this interval excludes zero is the region of moderator values where the effect of $x$ is statistically significant --- a far more honest summary than a single asterisk on $\hat\beta_1$.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+We fit the continuous-by-binary model on a small set of vårdcentraler, recover the per-group slopes, and compute the marginal effect of staffing in deprived areas *with the correct standard error* using the full coefficient covariance.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+# 12 vårdcentraler: staffing (GP per 1000), deprived (0/1), % well-controlled
+vc <- tibble(
+  staffing  = c(0.6, 0.7, 0.9, 1.1, 1.3, 0.8,
+                0.4, 0.6, 0.8, 1.0, 1.2, 0.5),
+  deprived  = c(  0,   0,   0,   0,   0,   0,
+                  1,   1,   1,   1,   1,   1),
+  quality   = c( 59,  59,  60,  60,  61,  59,
+                 47,  49,  50,  52,  54,  48)
+)
+
+# --- Centered interaction model (main effects interpretable at the mean) ---
+xbar <- mean(vc$staffing)
+vc   <- vc |> mutate(staffing_c = staffing - xbar)
+
+fit <- lm(quality ~ staffing_c * deprived, data = vc)
+summary(fit)
+
+b <- coef(fit)   # (Intercept), staffing_c, deprived, staffing_c:deprived
+V <- vcov(fit)   # full coefficient covariance matrix
+
+# Per-group slopes of staffing
+slope_affluent <- b["staffing_c"]
+slope_deprived <- b["staffing_c"] + b["staffing_c:deprived"]
+cat("Slope, affluent (g=0):", round(slope_affluent, 2), "pp per GP/1000\n")
+cat("Slope, deprived (g=1):", round(slope_deprived, 2), "pp per GP/1000\n")
+
+# --- Marginal effect of staffing in deprived areas, with correct SE ---
+# theta = b1 + b3 ; weight vector a = (0, 1, 0, 1)
+a  <- c(0, 1, 0, 1)
+me <- as.numeric(t(a) %*% b)
+se <- sqrt(as.numeric(t(a) %*% V %*% a))   # uses Var(b1), Var(b3), 2*Cov(b1,b3)
+cat(sprintf("Marginal effect (deprived): %.2f  (SE %.2f)\n", me, se))
+cat(sprintf("95%% CI: [%.2f, %.2f]\n", me - 1.96 * se, me + 1.96 * se))
+
+# Predicted quality at staffing = 1.0 GP/1000 for each group
+newdata <- expand.grid(staffing_c = 1.0 - xbar, deprived = c(0, 1))
+newdata$pred <- predict(fit, newdata)
+print(newdata)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+vc = pd.DataFrame({
+    "staffing": [0.6, 0.7, 0.9, 1.1, 1.3, 0.8,
+                 0.4, 0.6, 0.8, 1.0, 1.2, 0.5],
+    "deprived": [0, 0, 0, 0, 0, 0,
+                 1, 1, 1, 1, 1, 1],
+    "quality":  [59, 59, 60, 60, 61, 59,
+                 47, 49, 50, 52, 54, 48],
+})
+
+# --- Centered interaction model ---
+xbar = vc["staffing"].mean()
+vc["staffing_c"] = vc["staffing"] - xbar
+
+fit = smf.ols("quality ~ staffing_c * deprived", data=vc).fit()
+print(fit.summary())
+
+b = fit.params       # Intercept, staffing_c, deprived, staffing_c:deprived
+V = fit.cov_params() # full coefficient covariance matrix
+
+# Per-group slopes
+slope_affluent = b["staffing_c"]
+slope_deprived = b["staffing_c"] + b["staffing_c:deprived"]
+print(f"Slope, affluent (g=0): {slope_affluent:.2f} pp per GP/1000")
+print(f"Slope, deprived (g=1): {slope_deprived:.2f} pp per GP/1000")
+
+# --- Marginal effect of staffing in deprived areas, with correct SE ---
+# theta = b1 + b3 ; a = (0, 1, 0, 1) in coefficient order
+a  = np.array([0.0, 1.0, 0.0, 1.0])
+me = a @ b.values
+se = np.sqrt(a @ V.values @ a)       # Var(b1) + Var(b3) + 2*Cov(b1, b3)
+print(f"Marginal effect (deprived): {me:.2f}  (SE {se:.2f})")
+print(f"95% CI: [{me - 1.96*se:.2f}, {me + 1.96*se:.2f}]")
+
+# Predicted quality at staffing = 1.0 GP/1000 for each group
+newdata = pd.DataFrame({"staffing_c": [1.0 - xbar, 1.0 - xbar], "deprived": [0, 1]})
+newdata["pred"] = fit.predict(newdata)
+print(newdata)
+```
+
+:::
+
+Both implementations recover the same structure: a modest staffing slope in affluent areas (about $2.9$ percentage points per GP/1000) and a markedly steeper one in deprived areas (about $8.4$). The marginal effect for deprived vårdcentraler is therefore roughly $8.4$ pp, with a standard error near $0.4$ that correctly folds in the covariance between $\hat\beta_1$ and $\hat\beta_3$ --- a number you cannot reconstruct from the two reported standard errors alone. Notice how closely these recovered slopes track the illustrative values ($\beta_1 \approx 2.5$, $\beta_1 + \beta_3 \approx 8.5$) used in the interactive above.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region fits the model (quality in percentage points, staffing in GPs per 1000 patients):
+
+$$
+\widehat{\text{quality}} = 55 + 3\,(\text{staffing}) - 6\,(\text{deprived}) + 5\,(\text{staffing} \times \text{deprived})
+$$
+
+(a) What is the effect of one more GP per 1000 patients in an *affluent* area?
+(b) What is the effect of one more GP per 1000 patients in a *deprived* area?
+(c) Predict quality for an affluent vårdcentral with staffing $= 1.0$ and for a deprived one with staffing $= 1.0$.
+(d) An analyst reports "staffing raises quality by 3 points." What is wrong with that statement?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** In an affluent area, $\text{deprived} = 0$, so the interaction term vanishes and the slope of staffing is $\beta_1 = 3$ percentage points per GP/1000.
+
+**(b)** In a deprived area, $\text{deprived} = 1$, so the slope is $\beta_1 + \beta_3 = 3 + 5 = 8$ percentage points per GP/1000.
+
+**(c)** Affluent ($\text{deprived}=0$, staffing $=1.0$): $55 + 3(1.0) - 6(0) + 5(1.0 \times 0) = 58$.
+Deprived ($\text{deprived}=1$, staffing $=1.0$): $55 + 3(1.0) - 6(1) + 5(1.0 \times 1) = 55 + 3 - 6 + 5 = 57$.
+
+**(d)** The statement reads the main effect $\beta_1 = 3$ as if it were *the* effect of staffing for everyone. But $\beta_1 = 3$ is the slope **only in affluent areas** ($\text{deprived}=0$). In deprived areas the effect is $8$. Because $\beta_3 = 5 \neq 0$, no single number describes the staffing effect; the analyst has reported the affluent-area effect and mislabeled it as universal.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A diabetes coordination program is evaluated with a binary $\times$ binary model: $x = 1$ if enrolled, $g = 1$ if the patient is younger than 60. The fitted cell means of the outcome (share reaching their HbA1c target, in percent) are:
+
+| | Not enrolled ($x=0$) | Enrolled ($x=1$) |
+|:---|:---:|:---:|
+| **Older ($g=0$)** | 40 | 52 |
+| **Younger ($g=1$)** | 50 | 74 |
+
+(a) Recover $\beta_0, \beta_1, \beta_2, \beta_3$ from the table.
+(b) Interpret $\beta_3$. Does the program help younger or older patients more?
+(c) Show that $\beta_3$ equals the difference-in-differences of the cell means.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Using the saturated mapping (older / not-enrolled is the reference cell):
+
+**(a)**
+- $\beta_0 = $ older, not enrolled $= 40$.
+- $\beta_1 = $ (older, enrolled) $- \beta_0 = 52 - 40 = 12$.
+- $\beta_2 = $ (younger, not enrolled) $- \beta_0 = 50 - 40 = 10$.
+- $\beta_3 = $ (younger, enrolled) $- \beta_0 - \beta_1 - \beta_2 = 74 - 40 - 12 - 10 = 12$.
+
+**(b)** $\beta_3 = 12 > 0$. The program's effect is larger for younger patients. Concretely, the program raises the target-reaching share by $\beta_1 = 12$ points among the old and by $\beta_1 + \beta_3 = 24$ points among the young --- twice as much.
+
+**(c)** Difference-in-differences (program effect within each age group, then differenced):
+
+$$
+\underbrace{(74 - 50)}_{\text{program effect, young} \,=\, 24} - \underbrace{(52 - 40)}_{\text{program effect, old} \,=\, 12} = 24 - 12 = 12 = \beta_3. \;\checkmark
+$$
+
+Equivalently, differencing across age within each enrollment status: $(74 - 52) - (50 - 40) = 22 - 10 = 12$. The diff-in-diff is symmetric --- it does not matter which variable you difference first.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In a *continuous*-by-continuous model, $g$ is a deprivation score and the fit is $\hat y = \beta_1 x + \beta_3 (x g) + \cdots$ with $\hat\beta_1 = 2.0$, $\hat\beta_3 = 4.0$, and estimated variances/covariance $\mathrm{Var}(\hat\beta_1) = 0.25$, $\mathrm{Var}(\hat\beta_3) = 1.00$, $\mathrm{Cov}(\hat\beta_1, \hat\beta_3) = -0.20$.
+
+(a) Compute the marginal effect of $x$ at $g = 1.5$.
+(b) Compute the standard error of that marginal effect.
+(c) Is the marginal effect at $g = 1.5$ significantly different from zero at the 5% level (use a critical value of 1.96)?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Marginal effect:
+
+$$
+\hat\theta(1.5) = \hat\beta_1 + \hat\beta_3 (1.5) = 2.0 + 4.0(1.5) = 2.0 + 6.0 = 8.0 .
+$$
+
+**(b)** Using $\mathrm{Var}(\hat\theta(g)) = \mathrm{Var}(\hat\beta_1) + g^2\mathrm{Var}(\hat\beta_3) + 2g\,\mathrm{Cov}(\hat\beta_1,\hat\beta_3)$ at $g = 1.5$:
+
+$$
+\mathrm{Var} = 0.25 + (1.5)^2(1.00) + 2(1.5)(-0.20) = 0.25 + 2.25 - 0.60 = 1.90 .
+$$
+
+$$
+\mathrm{SE} = \sqrt{1.90} \approx 1.378 .
+$$
+
+**(c)** The test statistic is $z = \hat\theta / \mathrm{SE} = 8.0 / 1.378 \approx 5.80$, far above $1.96$. The 95% CI is $8.0 \pm 1.96(1.378) = [5.30, 10.70]$, which excludes zero. So **yes**, the marginal effect at $g = 1.5$ is significantly different from zero. Note that ignoring the covariance term would have given $\mathrm{Var} = 0.25 + 2.25 = 2.50$ and $\mathrm{SE} \approx 1.58$ --- an *overstatement* here, because the negative covariance actually *reduces* the variance. This is exactly why you must use the full covariance matrix rather than combining standard errors independently.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive visualizer, set $\beta_3 = 0$ and any value of $\beta_2$, then switch to the **Marginal effect of staffing** view. Describe the shape of the marginal-effect line and explain it. Then set $\beta_3 = 10$ and explain what changes and why the confidence band still bows outward.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**With $\beta_3 = 0$:** the marginal-effect line is **flat (horizontal)** at height $\beta_1 = 2.5$. Since $\partial y/\partial x = \beta_1 + \beta_3 g = 2.5 + 0\cdot g = 2.5$ for every $g$, the effect of staffing does not depend on the moderator at all --- this is the no-heterogeneity case. The two regression lines in the other view are parallel, consistent with a constant marginal effect. Changing $\beta_2$ does nothing to this view, because $\beta_2$ governs the group *level*, not the staffing *slope*.
+
+**With $\beta_3 = 10$:** the marginal-effect line now **slopes steeply upward**, from $\beta_1 = 2.5$ at $g = 0$ to $\beta_1 + \beta_3 = 12.5$ at $g = 1$. The effect of an extra GP grows as we move toward deprived areas.
+
+**Why the band still bows:** the band's half-width is $1.96\sqrt{\mathrm{Var}(\hat\beta_1) + g^2\mathrm{Var}(\hat\beta_3) + 2g\,\mathrm{Cov}(\hat\beta_1,\hat\beta_3)}$, a quadratic in $g$ that does not depend on the *value* of $\hat\beta_3$ --- only on its *variance*. So regardless of whether $\beta_3 = 0$ or $\beta_3 = 10$, the band is narrowest near the variance-minimizing moderator value and widens toward the extremes. The interaction strength tilts the *line*; the precision of the estimates shapes the *band*, and the two are governed by different quantities.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- An interaction term $\beta_3(x g)$ lets the slope on $x$ depend on a moderator; without it, the model forces a single effect across all groups and silently averages away heterogeneity.
+- Once an interaction is in the model, $\beta_1$ is the slope of $x$ only at $g = 0$; the effect in the other group is $\beta_1 + \beta_3$, and $\beta_2$ (the group gap) is a separate parameter from $\beta_3$ (the slope difference) — level and slope move independently.
+- A binary-by-binary interaction is exactly a difference-in-differences of four cell means — the algebraic skeleton of the DiD estimator built later.
+- Centering regressors leaves $\beta_3$ unchanged but makes the main effects refer to the average moderator and average $x$, where the data actually live, and stabilizes the estimates.
+- The marginal-effect standard error needs the full covariance — $\operatorname{Var}(\hat\beta_1) + g^2\operatorname{Var}(\hat\beta_3) + 2g\operatorname{Cov}(\hat\beta_1,\hat\beta_3)$ — which you cannot reconstruct from two reported standard errors, and which gives the band its bow-tie shape.
+:::
+
+## What Comes Next
+
+Interactions let a slope *bend* with a moderator, but they keep the relationship between $x$ and $y$ fundamentally **linear** within each group --- straight lines, just different ones. Many real dose-response curves are not straight at all: the benefit of an extra GP may flatten out (diminishing returns), and the effect of age on risk may curve sharply. The next page, [Functional Form](functional-form.qmd), takes up polynomials, logarithms, and splines --- the tools for modeling curvature directly, and the close cousin of the interaction term that lets a variable interact with *itself*.

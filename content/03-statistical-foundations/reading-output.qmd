@@ -1,0 +1,1373 @@
+---
+title: "Reading Regression Output"
+subtitle: "Coefficients, standard errors, t-statistics, and R-squared"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Interpret every cell of a regression table: coefficient, standard error, t-statistic, p-value, confidence interval, and significance stars
+- Explain what drives the standard error of a slope --- residual variance, spread in $X$, and sample size --- and why it shrinks like $1/\sqrt{n}$
+- Distinguish $R^2$ (and adjusted $R^2$), the residual standard error, and the F-statistic, and state what each does and does not measure
+- Diagnose the "R-squared trap": why a high $R^2$ does not imply causation and a low $R^2$ does not invalidate a precisely estimated effect
+- Read multi-column published tables and recognize how omitted variable bias shifts a coefficient across specifications
+:::
+
+## A Table That Drives Policy
+
+In 2019, researchers using Sweden's *kvalitetsregister* (quality registries) published a study examining whether higher statin doses lowered LDL cholesterol among patients treated at *vårdcentraler* (primary care centers). The main result was a regression table --- four columns, a couple of rows, and a handful of asterisks. From that table, a reader had to extract: the estimated effect size, its precision, whether it was distinguishable from zero, and how much of the variation in LDL the model explained.
+
+Every empirical paper you will read in health economics, epidemiology, and medical research communicates its findings through regression tables. If you cannot read one fluently, you cannot evaluate the evidence. This page teaches you to read regression output the way a musician reads a score --- every symbol means something, and nothing is there by accident.
+
+That statin study is the running example we will use throughout this page: the effect of statin therapy (a cholesterol-lowering medication) on LDL cholesterol levels, using data from Swedish *kvalitetsregister* (quality registries) linked across *regioner* (regions).
+
+
+## Anatomy of a Regression Table
+
+Consider the simplest possible regression: a single predictor. A researcher at Socialstyrelsen (the National Board of Health and Welfare) estimates the relationship between statin dose (in mg/day) and LDL cholesterol (in mmol/L) using registry data from 500 patients:
+
+$$
+\text{LDL}_i = \beta_0 + \beta_1 \cdot \text{Dose}_i + \varepsilon_i
+$$
+
+The software produces something like this:
+
+| | Estimate | Std. Error | t value | Pr(>\|t\|) | |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| (Intercept) | 4.20 | 0.12 | 35.00 | < 0.001 | *** |
+| Dose (mg/day) | -0.031 | 0.005 | -6.20 | < 0.001 | *** |
+
+| Residual standard error: 0.82 on 498 df |
+|:---|
+| Multiple R-squared: 0.072, Adjusted R-squared: 0.070 |
+| F-statistic: 38.44 on 1 and 498 DF, p-value: < 0.001 |
+
+Every number in this output has a meaning. We will now work through each one systematically.
+
+
+## The Coefficient ($\hat{\beta}$)
+
+::: {.glass-card .glass-card--definition}
+The **estimated coefficient** $\hat{\beta}_1$ is the estimated change in the outcome variable $Y$ associated with a one-unit increase in the predictor $X$, holding all other variables in the model constant.
+
+$$
+\hat{\beta}_1 = \frac{\sum_{i=1}^{n} (X_i - \bar{X})(Y_i - \bar{Y})}{\sum_{i=1}^{n} (X_i - \bar{X})^2}
+$$
+
+**How to read this formula.** The numerator is the sample covariance of $X$ and $Y$ (how they move together). The denominator is the sample variance of $X$ (how spread out $X$ is). The ratio tells you: for each unit of $X$-variation, how much does $Y$ change on average?
+:::
+
+In our statin example, $\hat{\beta}_1 = -0.031$. **How to read this**: "Each additional milligram per day of statin is associated with a 0.031 mmol/L decrease in LDL cholesterol." The negative sign indicates that higher doses are associated with lower LDL.
+
+The intercept $\hat{\beta}_0 = 4.20$ is the predicted LDL when dose equals zero --- the baseline LDL for a patient not on statins. It anchors the regression line.
+
+### A Critical Caveat
+
+The word "associated" is doing important work. The coefficient $\hat{\beta}_1$ estimates the *causal* effect of Dose on LDL **only if** the regression satisfies the conditions for causal identification (no omitted variable bias, no reverse causality, no measurement error). We return to this point at the end of this page. For now, we focus on reading the *statistical* output correctly, and defer the *causal* question to [Module 4](../04-regression/index.qmd).
+
+
+## The Standard Error (SE)
+
+::: {.glass-card .glass-card--definition}
+The **standard error** of $\hat{\beta}_1$ measures the precision of the estimate. It is the estimated standard deviation of $\hat{\beta}_1$ across hypothetical repeated samples from the same population.
+
+$$
+\text{SE}(\hat{\beta}_1) = \sqrt{\frac{\hat{\sigma}^2}{\sum_{i=1}^{n}(X_i - \bar{X})^2}}
+$$
+
+**How to read this formula.** Three things shrink the standard error (increase precision):
+
+1. **Smaller residual variance** ($\hat{\sigma}^2$): less unexplained noise in $Y$.
+2. **More variation in $X$** ($\sum (X_i - \bar{X})^2$): a wider spread of doses gives us more information about the dose-response relationship.
+3. **Larger sample size** ($n$): the residual variance $\hat{\sigma}^2$ estimates a fixed population quantity $\sigma^2$ and does *not* grow with $n$. What grows is the denominator: $\sum(X_i - \bar{X})^2$ accumulates roughly proportionally to $n$. So the ratio $\hat{\sigma}^2 / \sum(X_i - \bar{X})^2$ shrinks like $1/n$, and the standard error (its square root) shrinks like $1/\sqrt{n}$.
+:::
+
+In our example, $\text{SE}(\hat{\beta}_1) = 0.005$. This tells us that if we could re-run the study many times --- drawing new samples of 500 patients from Swedish registries each time --- the estimate $\hat{\beta}_1$ would fluctuate with a standard deviation of about 0.005 mmol/L per mg/day.
+
+The three drivers are easier to *see* than to read from the formula. Each panel below shows the same true dose-LDL line; only one ingredient changes between them. Watch how the fitted line (red) sits relative to the cloud and how wide a band of plausible lines the data permit.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Seeded RNG (self-contained: this static figure does not touch the live lab).
+p2_rng = function (a) {
+  return function () {
+    a |= 0; a = a + 0x9e3779b9 | 0;
+    let t = a ^ a >>> 16; t = Math.imul(t, 0x21f0aaad);
+    t = t ^ t >>> 15; t = Math.imul(t, 0x735a2d97);
+    return ((t = t ^ t >>> 15) >>> 0) / 4294967296;
+  };
+}
+
+p2_randNormal = function (rng) {
+  const u1 = rng(), u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// Build one panel's worth of (dose, ldl) data with a given noise SD and
+// dose spread. Same TRUE slope (-0.03) everywhere so only precision moves.
+p2_sePanel = function (label, noiseSD, doseLo, doseHi, seed) {
+  const rng = p2_rng(seed);
+  const rows = [];
+  for (let i = 0; i < 90; i++) {
+    const dose = doseLo + rng() * (doseHi - doseLo);
+    const ldl = 4.2 - 0.03 * dose + p2_randNormal(rng) * noiseSD;
+    rows.push({ dose, ldl, panel: label });
+  }
+  return rows;
+}
+
+p2_seData = [].concat(
+  p2_sePanel("(a) Low noise", 0.4, 0, 80, 11),
+  p2_sePanel("(b) High noise", 1.4, 0, 80, 11),
+  p2_sePanel("(c) Narrow X spread", 0.4, 30, 50, 11)
+)
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 240,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 24,
+  insetTop: 6,
+  grid: true,
+  style: { fontSize: "12px", fontFamily: "Inter, sans-serif" },
+  fx: { label: null, domain: ["(a) Low noise", "(b) High noise", "(c) Narrow X spread"] },
+  x: { label: "Dose (mg/day) →", domain: [0, 80], ticks: 3 },
+  y: { label: "↑ LDL (mmol/L)", domain: [1.5, 5.5] },
+  marks: [
+    Plot.frame({ stroke: "#e6e3db" }),
+    Plot.dot(p2_seData, { fx: "panel", x: "dose", y: "ldl", fill: "#3d5a6c", fillOpacity: 0.45, r: 2.6 }),
+    Plot.linearRegressionY(p2_seData, { fx: "panel", x: "dose", y: "ldl", stroke: "#990000", strokeWidth: 2.5, ci: 0.95, fillOpacity: 0.12, fill: "#990000" })
+  ]
+})
+```
+
+::: {.aside}
+The shaded ribbon around each red line is the 95% confidence band for the fitted line --- a visual stand-in for the standard error. **(a)** Low noise → tight cloud, narrow band, small SE. **(b)** High noise → fat cloud, wide band, large SE. **(c)** The doses are squeezed into 30--50 mg/day, so even with low noise the band fans out: a narrow spread in $X$ gives the data little leverage to pin down the slope. Same true slope of $-0.03$ in all three.
+:::
+
+**Why it matters for practice.** Two studies might both report $\hat{\beta} = -0.03$. But if one has $\text{SE} = 0.005$ and the other has $\text{SE} = 0.025$, the first estimate is five times more precise. The standard error tells you how seriously to take the point estimate.
+
+
+## The t-Statistic
+
+::: {.glass-card .glass-card--definition}
+The **t-statistic** measures how many standard errors the estimated coefficient is from zero:
+
+$$
+t = \frac{\hat{\beta}_1}{\text{SE}(\hat{\beta}_1)}
+$$
+
+**How to read this formula.** "The t-statistic equals the estimated coefficient divided by its standard error." It is a signal-to-noise ratio: how large is the estimate (signal) relative to the uncertainty in the estimate (noise)?
+:::
+
+In our example: $t = -0.031 / 0.005 = -6.20$. The estimate is 6.2 standard errors below zero. Under the null hypothesis that the true coefficient is zero, observing a $t$-statistic this extreme would be extraordinarily unlikely.
+
+### Rules of Thumb
+
+With moderate to large sample sizes (as is typical in Swedish registry studies, where $n$ often exceeds 10,000):
+
+- $|t| > 1.96$ corresponds roughly to $p < 0.05$
+- $|t| > 2.58$ corresponds roughly to $p < 0.01$
+- $|t| > 3.29$ corresponds roughly to $p < 0.001$
+
+These thresholds come from the standard normal distribution. For smaller samples, the $t$-distribution has heavier tails and requires larger $|t|$ values for the same significance level.
+
+The figure below plots the standard-normal density with the three two-sided cutoffs shaded, and marks where our statin $t = -6.20$ falls. The point is visual: a $|t|$ of 6.2 sits so far into the tail that the probability mass beyond it is invisible --- which is exactly what "$p < 0.001$" means.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standard-normal density sampled on a grid (self-contained static figure).
+p2_normPdf = function (z) { return Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI); }
+
+p2_normCurve = Array.from({ length: 241 }, (_, i) => {
+  const z = -6.6 + i * (13.2 / 240);
+  return { z, d: p2_normPdf(z) };
+})
+
+// Tail region beyond the |t|>1.96 cutoff (the 5% rejection region, both tails).
+// Tag each side so the area mark does not bridge the gap across the middle.
+p2_tail = p2_normCurve
+  .filter(p => Math.abs(p.z) >= 1.96)
+  .map(p => ({ ...p, side: p.z < 0 ? "L" : "R" }))
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 250,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 24,
+  style: { fontSize: "12px", fontFamily: "Inter, sans-serif" },
+  x: { label: "t-statistic (standard errors from zero) →", domain: [-6.8, 6.8] },
+  y: { label: "↑ density", domain: [0, 0.46], ticks: 4 },
+  marks: [
+    // 5% two-sided rejection region shaded (z = the side grouping keeps the
+    // two tails from being bridged into one area across the middle).
+    Plot.areaY(p2_tail, { x: "z", y: "d", z: "side", fill: "#990000", fillOpacity: 0.12 }),
+    Plot.lineY(p2_normCurve, { x: "z", y: "d", stroke: "#1c1c1a", strokeWidth: 2 }),
+    // The three positive cutoffs (mirror on the negative side implied).
+    Plot.ruleX([1.96, 2.58, 3.29], { stroke: "#9c7a33", strokeWidth: 1, strokeDasharray: "4,3" }),
+    Plot.ruleX([-1.96, -2.58, -3.29], { stroke: "#9c7a33", strokeWidth: 1, strokeDasharray: "4,3" }),
+    Plot.text(
+      [{ z: 1.96, t: "1.96" }, { z: 2.58, t: "2.58" }, { z: 3.29, t: "3.29" }],
+      { x: "z", y: 0.43, text: "t", fill: "#9c7a33", fontSize: 10, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    ),
+    // Observed statin t = -6.20, far in the tail.
+    Plot.ruleX([-6.2], { stroke: "#b3000b", strokeWidth: 2.5 }),
+    Plot.dot([{ z: -6.2, d: 0 }], { x: "z", y: "d", fill: "#b3000b", r: 4 }),
+    Plot.text(
+      [{ z: -6.2, t: "observed t = −6.20" }],
+      { x: "z", y: 0.16, dx: 4, textAnchor: "start", text: "t", fill: "#b3000b", fontSize: 11, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    ),
+    Plot.ruleY([0])
+  ]
+})
+```
+
+::: {.aside}
+The ochre dashed lines are the $|t| = 1.96 / 2.58 / 3.29$ cutoffs (the $p < 0.05 / 0.01 / 0.001$ thresholds); the faint red shading is the 5% two-sided rejection region. Our statin estimate's $t = -6.20$ (solid red) lands far past every cutoff. At small $n$ the $t$-distribution's tails are heavier, so these cutoffs shift *outward* --- the live lab below reports the exact small-$n$ critical value next to 1.96 so you can watch them converge as $n$ grows.
+:::
+
+
+## The p-Value
+
+::: {.glass-card .glass-card--definition}
+The **p-value** is the probability of observing a test statistic at least as extreme as the one calculated, assuming the null hypothesis ($H_0: \beta_1 = 0$) is true.
+
+$$
+p = P(|T| \geq |t_{\text{obs}}| \mid H_0)
+$$
+
+**How to read this formula.** "$p$ equals the probability that the absolute value of the random variable $T$ exceeds the absolute value of the observed $t$-statistic, given that the null hypothesis is true." It is a statement about the *data*, not about the hypothesis.
+:::
+
+In our example, $p < 0.001$. This means: if statin dose truly had zero effect on LDL ($\beta_1 = 0$), the probability of observing a coefficient of $-0.031$ or more extreme (in either direction) --- purely from sampling variation --- is less than one in a thousand.
+
+### What the p-Value Is NOT
+
+This is worth stating explicitly, because misinterpretation is rampant:
+
+- The p-value is **not** the probability that $H_0$ is true. It does not tell you "there is a 0.1% chance the drug does nothing."
+- The p-value is **not** the probability that the result occurred by chance.
+- A small p-value does **not** guarantee a large effect. With $n = 200{,}000$ patients in a Swedish registry, even a clinically trivial effect can produce $p < 0.001$.
+- A large p-value does **not** prove the null hypothesis. It may simply reflect low statistical power.
+
+
+## The Confidence Interval
+
+::: {.glass-card .glass-card--definition}
+The **95% confidence interval** for $\hat{\beta}_1$ is the range of values that would not be rejected by a two-sided test at the 5% level. It is constructed from the estimate and its standard error:
+
+$$
+\hat{\beta}_1 \pm t_{0.975,\, n-k-1} \cdot \text{SE}(\hat{\beta}_1)
+$$
+
+**How to read this formula.** "Take the estimate, then step out by the critical $t$-value times the standard error in each direction." The critical value $t_{0.975,\,n-k-1}$ comes from the $t$-distribution with $n-k-1$ degrees of freedom; for large samples it is approximately 1.96. The width of the interval is driven entirely by the standard error: a precise estimate gives a tight interval, a noisy one gives a wide interval.
+:::
+
+In our statin example, $\hat{\beta}_1 = -0.031$ with $\text{SE} = 0.005$ and 498 degrees of freedom (so $t_{0.975,\,498} \approx 1.965$). The 95% CI is $-0.031 \pm 1.965 \times 0.005 = [-0.041,\ -0.021]$. **How to read this**: "We can be 95% confident --- in the long-run-coverage sense (if we repeated the study endlessly, 95% of the intervals built this way would contain the true slope) --- that the true dose-response slope lies between $-0.041$ and $-0.021$ mmol/L per mg/day."
+
+There is a tight link between the confidence interval and the p-value: **a 95% CI that excludes zero is equivalent to $p < 0.05$**. Because our interval $[-0.041, -0.021]$ lies entirely below zero, we know without computing it that $p < 0.05$. The CI is often more informative than the p-value alone because it reports the *range* of effect sizes compatible with the data, in the units of the outcome --- which is exactly why we urge readers to focus on it. The live table in the Regression Lab below reports this 95% CI as its own column.
+
+The figure below puts that equivalence on a number line. The dot is the point estimate $\hat{\beta}_1$; the whiskers span the 95% CI. The dashed line at zero is the "no effect" reference. The whole interval sits to the *left* of zero --- it never touches it --- so the result is distinguishable from zero, i.e. $p < 0.05$. A second, hypothetical estimate is drawn whose interval *straddles* zero, to show what a non-significant result looks like.
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 150,
+  marginLeft: 150,
+  marginBottom: 46,
+  marginTop: 16,
+  marginRight: 24,
+  style: { fontSize: "12px", fontFamily: "Inter, sans-serif" },
+  x: { label: "Coefficient (mmol/L per mg/day) →", domain: [-0.06, 0.03], grid: true },
+  y: { label: null, domain: ["Hypothetical (p ≥ 0.05)", "Statin study (p < 0.001)"] },
+  color: { domain: ["sig", "ns"], range: ["#2e6f40", "#79766e"], legend: false },
+  marks: [
+    // Zero reference: the "no effect" line.
+    Plot.ruleX([0], { stroke: "#b3000b", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+    // 95% CI whiskers.
+    Plot.ruleY(
+      [
+        { y: "Statin study (p < 0.001)", lo: -0.041, hi: -0.021, c: "sig" },
+        { y: "Hypothetical (p ≥ 0.05)", lo: -0.030, hi: 0.010, c: "ns" }
+      ],
+      { y: "y", x1: "lo", x2: "hi", stroke: "c", strokeWidth: 3 }
+    ),
+    // Point estimates.
+    Plot.dot(
+      [
+        { y: "Statin study (p < 0.001)", b: -0.031, c: "sig" },
+        { y: "Hypothetical (p ≥ 0.05)", b: -0.010, c: "ns" }
+      ],
+      { y: "y", x: "b", fill: "c", r: 5, stroke: "white", strokeWidth: 1.5 }
+    ),
+    Plot.text([{ x: 0, t: "zero (no effect)" }], { x: "x", frameAnchor: "top", dy: 2, dx: 28, text: "t", fill: "#b3000b", fontSize: 10, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+::: {.aside}
+Green = CI excludes zero (distinguishable from zero, $p < 0.05$); grey = CI straddles zero (not distinguishable, $p \geq 0.05$). The rule to memorize: **a 95% CI that clears the dashed zero line $\Leftrightarrow p < 0.05$**. The live table below colors its CI column by exactly this test.
+:::
+
+
+## Significance Stars
+
+Regression output typically appends stars to coefficients:
+
+| Code | Meaning |
+|:---:|:---|
+| `***` | $p < 0.001$ |
+| `**` | $p < 0.01$ |
+| `*` | $p < 0.05$ |
+| `.` | $p < 0.10$ |
+| (blank) | $p \geq 0.10$ |
+
+::: {.glass-card .glass-card--warning}
+Stars are a convenience, not a scientific standard. Do not fall into the trap of treating $p = 0.049$ (one star) as fundamentally different from $p = 0.051$ (no star). Nature does not have a cliff at $\alpha = 0.05$. In Swedish registry research, where sample sizes often exceed 100,000, nearly every coefficient will earn three stars. This makes the stars *less* informative, not more. Focus on the magnitude and clinical relevance of $\hat{\beta}$, the precision captured by SE, and the confidence interval --- not the star count.
+:::
+
+
+## R-Squared ($R^2$)
+
+::: {.glass-card .glass-card--definition}
+**R-squared** (the coefficient of determination) is the proportion of variance in $Y$ explained by the model:
+
+$$
+R^2 = 1 - \frac{\text{SS}_{\text{res}}}{\text{SS}_{\text{tot}}} = 1 - \frac{\sum_{i=1}^{n}(Y_i - \hat{Y}_i)^2}{\sum_{i=1}^{n}(Y_i - \bar{Y})^2}
+$$
+
+**How to read this formula.** The numerator of the fraction ($\text{SS}_{\text{res}}$) is the sum of squared residuals --- the variance left unexplained after fitting the model. The denominator ($\text{SS}_{\text{tot}}$) is the total variance in $Y$. Subtracting the ratio from 1 gives the share of variance that *is* explained. $R^2 = 0$ means the model explains nothing; $R^2 = 1$ means the model predicts $Y$ perfectly.
+:::
+
+In our statin example, $R^2 = 0.072$. Statin dose explains about 7.2% of the variation in LDL levels. The remaining 92.8% is driven by genetics, diet, exercise, comorbidities, and other factors not in the model.
+
+### Adjusted R-Squared
+
+Every additional predictor added to a regression mechanically increases $R^2$, even if the predictor is pure noise. **Adjusted R-squared** penalizes for the number of predictors:
+
+$$
+R^2_{\text{adj}} = 1 - \frac{(1 - R^2)(n - 1)}{n - k - 1}
+$$
+
+where $k$ is the number of predictors and $n$ is the sample size. **How to read this**: when $k$ is large relative to $n$, the penalty term is substantial, and $R^2_{\text{adj}}$ can be much lower than $R^2$. In our example, with $k = 1$ and $n = 500$, the adjustment is negligible: $R^2_{\text{adj}} = 0.070$.
+
+Adjusted $R^2$ is useful for comparing models with different numbers of predictors. If adding a variable increases $R^2$ but decreases $R^2_{\text{adj}}$, the variable is not contributing enough explanatory power to justify its inclusion.
+
+
+## Residual Standard Error (Root MSE)
+
+The **residual standard error** (RSE) --- sometimes called the root mean squared error (RMSE) --- estimates the standard deviation of the residuals:
+
+$$
+\text{RSE} = \hat{\sigma} = \sqrt{\frac{\sum_{i=1}^{n}(Y_i - \hat{Y}_i)^2}{n - k - 1}}
+$$
+
+**How to read this**: "The typical prediction error of the model." In our example, $\text{RSE} = 0.82$ mmol/L. The model's predictions of LDL are off by about 0.82 mmol/L on average. The denominator uses $n - k - 1$ (degrees of freedom) rather than $n$ to correct for the fact that we used $k + 1$ parameters to fit the data.
+
+
+## The F-Statistic
+
+The **F-statistic** tests whether *all* predictors in the model are jointly equal to zero:
+
+$$
+F = \frac{(R^2 / k)}{(1 - R^2) / (n - k - 1)}
+$$
+
+**How to read this**: "The ratio of the average explained variance per predictor to the average unexplained variance per residual degree of freedom." A large $F$ means the model as a whole explains significantly more variance than a model with no predictors (just the intercept).
+
+**Worked example.** Plugging our statin output into the formula, with $R^2 = 0.072$, $k = 1$, and $n - k - 1 = 498$:
+
+$$
+F = \frac{R^2 / 1}{(1 - R^2) / (n - 2)} = \frac{0.072 / 1}{(1 - 0.072) / 498} = \frac{0.072}{0.928 / 498} \approx 38.6
+$$
+
+In a simple regression with one predictor, $F = t^2$. In our example, $(-6.20)^2 = 38.44$, which matches the F reported in the table up to rounding (the small gap comes from rounding $R^2$ to three decimals in the plug-in above). The $F$-test becomes more interesting in multiple regression, where individual coefficients might be insignificant but the model as a whole is significant (or vice versa).
+
+
+## The R-Squared Trap
+
+This point is so important that it merits its own section.
+
+::: {.glass-card .glass-card--warning}
+**A high $R^2$ does NOT mean the regression is causal.** You can regress ice cream sales on drowning deaths and get a high $R^2$ --- because both are driven by temperature. The model predicts well, but the coefficient on ice cream sales has no causal meaning.
+
+**A low $R^2$ does NOT mean the treatment effect is unreliable.** In our statin example, $R^2 = 0.072$, yet the coefficient on Dose is estimated with great precision ($t = -6.20$). Many factors influence LDL beyond statins. The model does not predict LDL well, but it *does* isolate the statin-LDL relationship precisely. In randomized controlled trials, $R^2$ values of 0.01--0.05 are common and perfectly fine --- because the goal is to estimate a causal effect, not to predict the outcome.
+
+$R^2$ measures **prediction**, not **identification**. These are different tasks with different criteria.
+:::
+
+The two pictures below make the split visible. On the **left**, ice-cream sales and drowning deaths share a hidden common cause --- summer temperature --- so a regression of one on the other predicts well (high $R^2$) yet the arrow between them is *not* causal (there is none). On the **right**, an RCT randomizes treatment, so no backdoor arrow into treatment exists: the slope is causal even though many other things move the outcome, leaving $R^2$ low.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG component for this page (figures, not interactives). ──
+// Pure function of d3; circles for plain nodes, rounded squares for
+// "conditioned" nodes, colored arrows by edge kind. Returns svg.node().
+p2_drawDAG = function ({ nodes, edges, width = 440, height = 200, conditioned = [] }) {
+  const pad = 40;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "p2-arrow-green" :
+    (k === "biasing" || k === "backdoor-open") ? "p2-arrow-red" : "p2-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2-arrow-green", "#2e6f40"], ["p2-arrow-red", "#b3000b"], ["p2-arrow-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; align-items:flex-start;">
+  <figure style="margin:0; flex:1 1 280px; max-width:340px;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#79766e; text-align:center; margin-bottom:0.25rem;">High R², no causal link</figcaption>
+    ${p2_drawDAG({
+      width: 320, height: 190,
+      nodes: [
+        { id: "T", x: 0.5,  y: 0.10, label: "Temp", caption: "summer heat" },
+        { id: "I", x: 0.08, y: 0.78, label: "Ice", caption: "ice-cream sales" },
+        { id: "D", x: 0.92, y: 0.78, label: "Drwn", caption: "drownings" }
+      ],
+      edges: [
+        { source: "T", target: "I", kind: "biasing" },
+        { source: "T", target: "D", kind: "biasing" }
+      ]
+    })}
+  </figure>
+  <figure style="margin:0; flex:1 1 280px; max-width:340px;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#79766e; text-align:center; margin-bottom:0.25rem;">Low R², causal slope (RCT)</figcaption>
+    ${p2_drawDAG({
+      width: 320, height: 190,
+      nodes: [
+        { id: "R", x: 0.06, y: 0.20, label: "Rand", caption: "coin flip" },
+        { id: "D", x: 0.42, y: 0.55, label: "D", caption: "treatment" },
+        { id: "Y", x: 0.90, y: 0.55, label: "Y", caption: "outcome" },
+        { id: "U", x: 0.55, y: 0.92, label: "U", caption: "everything else" }
+      ],
+      edges: [
+        { source: "R", target: "D", kind: "causal" },
+        { source: "D", target: "Y", kind: "causal" },
+        { source: "U", target: "Y", kind: "blocked" }
+      ]
+    })}
+  </figure>
+</div>`
+```
+
+::: {.aside}
+**Left:** ice-cream sales and drownings have *no* arrow between them; their correlation (and a high regression $R^2$) is manufactured entirely by the red fork through temperature. Predicting one from the other works; the coefficient means nothing causally. **Right:** randomization (the coin flip) severs any backdoor into treatment, so $D \rightarrow Y$ is the only open path and the slope is causal. The grey arrow ("everything else" $\rightarrow Y$) keeps $R^2$ low without harming identification --- it adds noise, not bias. Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = causal, <span style="color:#b3000b; font-weight:700;">red</span> = non-causal/back-door, <span style="color:#79766e; font-weight:700;">grey</span> = noise into the outcome.
+:::
+
+
+## Explore It: The Live Regression Lab
+
+The interactive below lets you see how the regression output table responds to changes in the data-generating process. Adjust the true slope, the noise level, and the sample size. Toggle a confounder to see how omitting a relevant variable distorts the coefficient --- a preview of omitted variable bias from [Module 4](../04-regression/omitted-variable-bias.qmd).
+
+When you flip the confounder on, this is the causal picture the simulator switches to: age sits *behind* both dose and LDL. Because age is left out of the regression (drawn shaded/boxed), its influence has nowhere to go but into the Dose coefficient.
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; justify-content:center;">${p2_drawDAG({
+  width: Math.min(420, width), height: 180,
+  conditioned: ["A"],
+  nodes: [
+    { id: "A", x: 0.5,  y: 0.14, label: "Age", caption: "omitted (not controlled)" },
+    { id: "D", x: 0.10, y: 0.80, label: "D", caption: "dose" },
+    { id: "Y", x: 0.90, y: 0.80, label: "Y", caption: "LDL" }
+  ],
+  edges: [
+    { source: "A", target: "D", kind: "biasing" },
+    { source: "A", target: "Y", kind: "biasing" },
+    { source: "D", target: "Y", kind: "causal" }
+  ]
+})}</div>`
+```
+
+::: {.aside}
+The green arrow $D \rightarrow Y$ is the real dose effect we want. The two red arrows form an open back-door path $D \leftarrow \text{Age} \rightarrow Y$ that contaminates the estimate when age is omitted (shown boxed = left out). **OVB sign rule:** the bias in $\hat{\beta}_1$ has the sign of (Age→Dose association) $\times$ (Age→LDL effect). Here older patients get *higher* doses (positive) and have *higher* LDL (positive), so the product is positive --- the bias pushes $\hat{\beta}_1$ *upward* (toward zero or positive), which is exactly what you see when you toggle the confounder on. Predict the sign before you toggle.
+:::
+
+::: {.interactive-container}
+
+#### Regression Output Explorer
+
+::: {.callout-note appearance="simple"}
+**Start here.** Drag the noise slider up and watch the standard error grow; drag the sample size up and watch it shrink (~$1/\sqrt{n}$); toggle the confounder and compare the estimated $\hat{\beta}_1$ to the true $\beta_1$.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof trueSlope = Inputs.range([-0.08, 0.00], {
+  value: -0.03,
+  step: 0.005,
+  label: "True slope (β₁)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof noiseSD = Inputs.range([0.3, 2.0], {
+  value: 0.8,
+  step: 0.1,
+  label: "Residual noise (σ)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof sampleN = Inputs.range([30, 500], {
+  value: 200,
+  step: 10,
+  label: "Sample size (n)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof addConfounder = Inputs.toggle({
+  label: "Add a hidden cause (age) the model does NOT control for",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Seeded RNG for reproducibility
+function splitmix32(a) {
+  return function() {
+    a |= 0; a = a + 0x9e3779b9 | 0;
+    let t = a ^ a >>> 16; t = Math.imul(t, 0x21f0aaad);
+    t = t ^ t >>> 15; t = Math.imul(t, 0x735a2d97);
+    return ((t = t ^ t >>> 15) >>> 0) / 4294967296;
+  }
+}
+
+// Box-Muller transform for normal RNG
+function randNormal(rng) {
+  const u1 = rng();
+  const u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// Generate data
+regData = {
+  const rng = splitmix32(12345);
+  const n = sampleN;
+  const data = [];
+
+  for (let i = 0; i < n; i++) {
+    // Age: 40-80, centered at 60
+    const age = 40 + rng() * 40;
+
+    // Dose: 0-80 mg/day; if confounder active, older patients get higher doses
+    let dose;
+    if (addConfounder) {
+      dose = Math.max(0, Math.min(80, (age - 40) * 1.5 + randNormal(rng) * 15));
+    } else {
+      dose = rng() * 80;
+    }
+
+    // True LDL: intercept + slope*dose + age effect + noise
+    const ageEffect = addConfounder ? 0.03 * (age - 60) : 0;
+    const ldl = 4.2 + trueSlope * dose + ageEffect + randNormal(rng) * noiseSD;
+
+    data.push({ dose, ldl, age });
+  }
+  return data;
+}
+
+// Compute OLS estimates (simple regression of LDL on Dose only)
+regResults = {
+  const n = regData.length;
+  const xbar = d3.mean(regData, d => d.dose);
+  const ybar = d3.mean(regData, d => d.ldl);
+
+  let ssxy = 0, ssxx = 0, ssyy = 0;
+  for (const d of regData) {
+    ssxy += (d.dose - xbar) * (d.ldl - ybar);
+    ssxx += (d.dose - xbar) ** 2;
+    ssyy += (d.ldl - ybar) ** 2;
+  }
+
+  const b1 = ssxy / ssxx;
+  const b0 = ybar - b1 * xbar;
+
+  // Residuals
+  let ssRes = 0;
+  for (const d of regData) {
+    ssRes += (d.ldl - (b0 + b1 * d.dose)) ** 2;
+  }
+
+  const df = n - 2;
+  const sigmaHat2 = ssRes / df;
+  const rse = Math.sqrt(sigmaHat2);
+  const seB1 = Math.sqrt(sigmaHat2 / ssxx);
+  const seB0 = Math.sqrt(sigmaHat2 * (1/n + xbar**2 / ssxx));
+
+  const tB1 = b1 / seB1;
+  const tB0 = b0 / seB0;
+
+  // Exact two-tailed p-value from the Student-t distribution.
+  // Uses the regularized incomplete beta function I_x(a,b) via a
+  // Lentz continued-fraction expansion (Numerical Recipes), so the
+  // tail is correct for ALL degrees of freedom — no fabricated values.
+  function pFromT(t, df) {
+    const absT = Math.abs(t);
+    // Two-sided tail: P(|T| >= |t|) = I_{df/(df+t^2)}(df/2, 1/2)
+    const x = df / (df + absT * absT);
+    const p = regIncBeta(x, df / 2, 0.5);
+    return Math.max(Math.min(p, 1), 1e-16);
+  }
+
+  // Natural log of the gamma function (Lanczos approximation).
+  function logGamma(z) {
+    const g = [
+      676.5203681218851, -1259.1392167224028, 771.32342877765313,
+      -176.61502916214059, 12.507343278686905, -0.13857109526572012,
+      9.9843695780195716e-6, 1.5056327351493116e-7
+    ];
+    if (z < 0.5) {
+      return Math.log(Math.PI / Math.sin(Math.PI * z)) - logGamma(1 - z);
+    }
+    z -= 1;
+    let a = 0.99999999999980993;
+    const tt = z + 7.5;
+    for (let i = 0; i < g.length; i++) a += g[i] / (z + i + 1);
+    return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(tt) - tt + Math.log(a);
+  }
+
+  // Continued fraction for the incomplete beta (Lentz's method,
+  // Numerical Recipes "betacf"). Converges when x < (a+1)/(a+b+2).
+  function betacf(a, b, x) {
+    const tiny = 1e-30;
+    const qab = a + b, qap = a + 1, qam = a - 1;
+    let c = 1;
+    let d = 1 - qab * x / qap;
+    if (Math.abs(d) < tiny) d = tiny;
+    d = 1 / d;
+    let h = d;
+    for (let m = 1; m <= 300; m++) {
+      const m2 = 2 * m;
+      let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+      d = 1 + aa * d; if (Math.abs(d) < tiny) d = tiny;
+      c = 1 + aa / c; if (Math.abs(c) < tiny) c = tiny;
+      d = 1 / d; h *= d * c;
+      aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+      d = 1 + aa * d; if (Math.abs(d) < tiny) d = tiny;
+      c = 1 + aa / c; if (Math.abs(c) < tiny) c = tiny;
+      d = 1 / d;
+      const del = d * c; h *= del;
+      if (Math.abs(del - 1) < 1e-12) break;
+    }
+    return h;
+  }
+
+  // Regularized incomplete beta function I_x(a, b). Uses the
+  // symmetry I_x(a,b) = 1 - I_{1-x}(b,a) to keep the continued
+  // fraction in its convergent regime (no infinite recursion).
+  function regIncBeta(x, a, b) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    const lbeta = logGamma(a) + logGamma(b) - logGamma(a + b);
+    const bt = Math.exp(a * Math.log(x) + b * Math.log(1 - x) - lbeta);
+    if (x < (a + 1) / (a + b + 2)) {
+      return bt * betacf(a, b, x) / a;
+    } else {
+      return 1 - bt * betacf(b, a, 1 - x) / b;
+    }
+  }
+
+  const r2 = 1 - ssRes / ssyy;
+  const r2adj = 1 - (1 - r2) * (n - 1) / (n - 2);
+  const fStat = (r2 / 1) / ((1 - r2) / (n - 2));
+
+  // Critical t-value for a two-sided 95% CI: invert the exact t-tail
+  // by bisection (pFromT is monotone decreasing in |t|).
+  function tCritical(df, alpha = 0.05) {
+    let lo = 0, hi = 1000;
+    for (let i = 0; i < 80; i++) {
+      const mid = (lo + hi) / 2;
+      if (pFromT(mid, df) > alpha) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+  const tc = tCritical(df, 0.05);
+
+  return {
+    b0, b1, seB0, seB1, tB0, tB1,
+    pB0: pFromT(tB0, df), pB1: pFromT(tB1, df),
+    r2, r2adj, rse, fStat, df, n, tCrit: tc,
+    ciB0lo: b0 - tc * seB0, ciB0hi: b0 + tc * seB0,
+    ciB1lo: b1 - tc * seB1, ciB1hi: b1 + tc * seB1,
+    pF: pFromT(Math.sqrt(fStat), df)
+  };
+}
+
+// Format p-value for display
+function fmtP(p) {
+  if (p < 0.001) return "< 0.001";
+  if (p < 0.01) return p.toFixed(4);
+  return p.toFixed(3);
+}
+
+function stars(p) {
+  if (p < 0.001) return "***";
+  if (p < 0.01) return "**";
+  if (p < 0.05) return "*";
+  if (p < 0.10) return ".";
+  return "";
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Scatter plot with regression line
+Plot.plot({
+  width: Math.min(680, width),
+  height: 280,
+  marginLeft: 64,
+  marginBottom: 46,
+  marginTop: 20,
+  marginRight: 16,
+  grid: true,
+  style: { fontSize: "12px", fontFamily: "Inter, sans-serif" },
+  x: {
+    label: "Statin dose (mg/day) →",
+    domain: [0, 85]
+  },
+  y: {
+    label: "↑ LDL (mmol/L)"
+  },
+  color: {
+    domain: addConfounder ? [40, 80] : [0, 1],
+    range: addConfounder ? ["#e6e3db", "#990000"] : ["#3d5a6c"],
+    legend: addConfounder,
+    label: addConfounder ? "Age" : undefined
+  },
+  marks: [
+    Plot.dot(regData, {
+      x: "dose",
+      y: "ldl",
+      fill: addConfounder ? "age" : () => 0,
+      r: 3,
+      opacity: 0.5
+    }),
+    Plot.line(
+      [
+        { dose: 0, ldl: regResults.b0 },
+        { dose: 80, ldl: regResults.b0 + regResults.b1 * 80 }
+      ],
+      {
+        x: "dose",
+        y: "ldl",
+        stroke: "#990000",
+        strokeWidth: 2.5
+      }
+    ),
+    Plot.text(
+      [`β̂₁ = ${regResults.b1.toFixed(4)}`],
+      {
+        frameAnchor: "top-right",
+        dx: -6,
+        dy: 6,
+        text: d => d,
+        fill: "#990000",
+        stroke: "white",
+        strokeWidth: 3,
+        paintOrder: "stroke",
+        fontWeight: 700,
+        fontSize: 12
+      }
+    )
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live regression output table
+html`
+<table class="science-table" style="font-size: 0.88rem; max-width: 680px;">
+  <thead>
+    <tr>
+      <th style="text-align:left;">Term</th>
+      <th>Estimate</th>
+      <th>Std. Error</th>
+      <th>t value</th>
+      <th>Pr(>|t|)</th>
+      <th>95% CI</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align:left; font-weight:600;">(Intercept)</td>
+      <td>${regResults.b0.toFixed(3)}</td>
+      <td>${regResults.seB0.toFixed(3)}</td>
+      <td>${regResults.tB0.toFixed(2)}</td>
+      <td>${fmtP(regResults.pB0)}</td>
+      <td>[${regResults.ciB0lo.toFixed(3)}, ${regResults.ciB0hi.toFixed(3)}]</td>
+      <td>${stars(regResults.pB0)}</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">Dose (mg/day)</td>
+      <td style="color: ${Math.abs(regResults.tB1) > 1.96 ? '#2e6f40' : '#79766e'}; font-weight:700;">
+        ${regResults.b1.toFixed(4)}
+      </td>
+      <td>${regResults.seB1.toFixed(4)}</td>
+      <td>${regResults.tB1.toFixed(2)}</td>
+      <td>${fmtP(regResults.pB1)}</td>
+      <td style="color: ${regResults.ciB1lo * regResults.ciB1hi > 0 ? '#2e6f40' : '#79766e'};">[${regResults.ciB1lo.toFixed(4)}, ${regResults.ciB1hi.toFixed(4)}]</td>
+      <td>${stars(regResults.pB1)}</td>
+    </tr>
+  </tbody>
+</table>
+<div style="font-family: 'Inter', sans-serif; font-size: 0.82rem; color: #79766e; margin-top: 0.5rem; line-height: 1.6;">
+  <div style="display:flex; flex-wrap:wrap; gap:0.35rem 0.9rem;">
+    <span>Residual SE: <strong>${regResults.rse.toFixed(3)}</strong> on ${regResults.df} df</span>
+    <span>R²: <strong>${regResults.r2.toFixed(3)}</strong></span>
+    <span>Adj. R²: <strong>${regResults.r2adj.toFixed(3)}</strong></span>
+    <span>F: <strong>${regResults.fStat.toFixed(1)}</strong></span>
+  </div>
+  ${addConfounder ? html`<div style="margin-top:0.5rem; padding:0.5rem 0.7rem; border-left:3px solid #9c7a33; background:#f6f5f1; color:#1c1c1a; border-radius:0 0.25rem 0.25rem 0;">
+    <span style="color:#9c7a33; font-weight:700;">⚠ Hidden cause (age) is present but the model does not control for it — the Dose coefficient is biased.</span>
+    <span style="display:inline-block; margin-top:0.25rem;">True β₁ = <strong>${trueSlope.toFixed(3)}</strong> &nbsp;·&nbsp; Estimated β̂₁ = <strong>${regResults.b1.toFixed(4)}</strong> &nbsp;·&nbsp; Bias ≈ <strong>${(regResults.b1 - trueSlope).toFixed(4)}</strong></span>
+  </div>` : ''}
+  <div style="margin-top:0.5rem; color:#79766e;">
+    <span style="color:#2e6f40; font-weight:700;">Green</span> = distinguishable from zero (|t| &gt; 1.96 / CI excludes 0); <span style="color:#79766e; font-weight:700;">grey</span> = not. We highlight only the Dose row because it is the coefficient of interest; the intercept is just the baseline.
+  </div>
+  <div style="margin-top:0.4rem; color:#79766e;">95% CI = β̂ ± t<sub>0.975, ${regResults.df}</sub> × SE, with t<sub>0.975, ${regResults.df}</sub> = ${regResults.tCrit.toFixed(3)}. A CI that excludes 0 corresponds to p &lt; 0.05. p-values and the critical value use the exact Student-t distribution (no normal approximation).</div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+
+// Additive "why" overlay: surface the exact small-n critical t beside the
+// large-sample 1.96, so the t-vs-normal gap (heavier tails at small n) is
+// shown, not just told. Reads the existing regResults — no change to the
+// widget's data-generating process or controls.
+html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem; line-height:1.5; color:#1c1c1a; background:rgba(61,90,108,0.06); border-left:3px solid #3d5a6c; border-radius:0 0.35rem 0.35rem 0; padding:0.55rem 0.8rem; margin-top:0.6rem;">
+  <strong style="color:#3d5a6c;">t vs. normal at this sample size.</strong>
+  With ${regResults.df} degrees of freedom the exact 95% critical value is
+  <strong>${regResults.tCrit.toFixed(3)}</strong>, versus the large-sample shortcut of
+  <strong>1.960</strong> — a gap of
+  <strong>${(regResults.tCrit - 1.96).toFixed(3)}</strong>.
+  ${regResults.n < 60
+    ? html`At this small <em>n</em> the t-distribution's heavier tails push the cutoff visibly past 1.96, so using 1.96 would make intervals <em>too narrow</em>. Drag the sample-size slider up and watch this gap shrink toward zero.`
+    : html`The gap is already tiny here, which is why the 1.96 shortcut is safe in large registry samples. Drag <em>n</em> down toward 30 to make the t-correction reappear.`}
+</div>`
+```
+
+:::
+
+### What to Notice in the Interactive
+
+**Noise and precision.** Increase the residual noise slider. Watch the standard error grow, the $|t|$-statistic shrink, and $R^2$ fall. The coefficient estimate also becomes more volatile. High noise does not bias the estimate --- it reduces precision.
+
+**Sample size and precision.** Increase $n$ while holding noise constant. The standard error shrinks roughly as $1/\sqrt{n}$, and the $|t|$-statistic grows. With large Swedish registry samples, even small effects become statistically significant.
+
+**The confounder.** Toggle "Add confounder" on. Now age drives both statin dose (older patients receive higher doses) and LDL (LDL rises with age). Because age is omitted from the regression, its effect is absorbed by the Dose coefficient, biasing $\hat{\beta}_1$ upward (toward zero or even positive). Compare the estimated $\hat{\beta}_1$ to the true $\beta_1$ shown below the table. This is **omitted variable bias** in action, and it is the subject of [Module 4](../04-regression/omitted-variable-bias.qmd).
+
+
+::: {.glass-card .glass-card--insight}
+The regression table compresses a great deal of information into a small space. The coefficient tells you the direction and magnitude. The standard error tells you the precision. The $t$-statistic tells you whether you can distinguish the estimate from zero. The $R^2$ tells you about prediction, not causation. And none of these numbers, no matter how impressive, tell you whether the estimated association is causal. That question requires a research design argument that lives outside the regression table entirely.
+:::
+
+
+## Reading Published Regression Tables
+
+Medical journals and health economics papers present regression tables in a standardized format. Understanding the conventions will help you read the literature efficiently.
+
+### The "Table 1 vs. Table 2" Pattern
+
+In Swedish healthcare research (and empirical research more broadly), papers typically contain two key tables:
+
+**Table 1: Descriptive statistics.** This table shows means, standard deviations, and sample sizes separately for treatment and control groups (or by exposure categories). Its purpose is to assess *balance* --- whether the groups are comparable at baseline. In a registry study of statin therapy, Table 1 might show that statin users are older, have higher baseline LDL, and have more comorbidities than non-users. These baseline differences foreshadow potential confounding.
+
+**Table 2 (or 3): Regression results.** This table shows regression coefficients across multiple specifications --- typically starting with a bivariate regression (just the treatment variable) and progressively adding controls. A common layout:
+
+| | (1) | (2) | (3) |
+|:---|:---:|:---:|:---:|
+| Statin use | -0.42*** | -0.31*** | -0.28** |
+| | (0.08) | (0.09) | (0.10) |
+| Age | | 0.02*** | 0.02*** |
+| | | (0.003) | (0.003) |
+| Female | | -0.15* | -0.14* |
+| | | (0.07) | (0.07) |
+| BMI | | | 0.04** |
+| | | | (0.01) |
+| N | 5,000 | 5,000 | 5,000 |
+| R² | 0.04 | 0.09 | 0.11 |
+
+**How to read this table:**
+
+- **Each column** is a separate regression. Column (1) includes only the treatment variable. Column (2) adds demographic controls. Column (3) adds clinical controls.
+- **Numbers in parentheses** below each coefficient are standard errors.
+- **Stars** indicate statistical significance (see the key conventions above).
+- **The coefficient changes across columns.** In column (1), the statin coefficient is $-0.42$; by column (3), it is $-0.28$. The shrinkage occurs because the added controls absorb confounding variation. If the coefficient is stable across specifications, this is reassuring (though not proof of causality). If it changes dramatically, the early specification was confounded.
+- **$R^2$ increases** from 0.04 to 0.11 as controls are added, but remains low. This is typical and not a problem --- the goal is to estimate the statin effect, not to predict LDL perfectly.
+
+Reading "the coefficient moves toward zero across columns" off a table is mental arithmetic; the same story is immediate as a picture. Below, each dot is the statin coefficient in one specification, with its 95% CI; watch the estimate drift toward (but not across) the zero line as controls are added.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Coefficients + SEs from the Table 2 above. 95% CI ≈ estimate ± 1.96·SE.
+p2_specData = [
+  { spec: "(1) treatment only", b: -0.42, se: 0.08 },
+  { spec: "(2) + demographics", b: -0.31, se: 0.09 },
+  { spec: "(3) + clinical", b: -0.28, se: 0.10 }
+].map(d => ({ ...d, lo: d.b - 1.96 * d.se, hi: d.b + 1.96 * d.se }))
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 200,
+  marginLeft: 150,
+  marginBottom: 46,
+  marginTop: 16,
+  marginRight: 24,
+  style: { fontSize: "12px", fontFamily: "Inter, sans-serif" },
+  x: { label: "Statin coefficient (mmol/L) →", domain: [-0.6, 0.05], grid: true },
+  y: { label: null, domain: ["(3) + clinical", "(2) + demographics", "(1) treatment only"] },
+  marks: [
+    Plot.ruleX([0], { stroke: "#b3000b", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+    // Connect the point estimates to show the drift toward zero.
+    Plot.line(p2_specData, { x: "b", y: "spec", stroke: "#79766e", strokeWidth: 1, strokeDasharray: "2,3" }),
+    Plot.ruleY(p2_specData, { y: "spec", x1: "lo", x2: "hi", stroke: "#3d5a6c", strokeWidth: 3 }),
+    Plot.dot(p2_specData, { y: "spec", x: "b", fill: "#3d5a6c", r: 5, stroke: "white", strokeWidth: 1.5 }),
+    Plot.text(p2_specData, { y: "spec", x: "b", text: d => d.b.toFixed(2), dy: -12, fill: "#1c1c1a", fontSize: 11, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: 0, t: "zero" }], { x: "x", frameAnchor: "bottom", dy: -2, dx: 16, text: "t", fill: "#b3000b", fontSize: 10, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+::: {.aside}
+The estimate shrinks from $-0.42$ to $-0.28$ as confounders (demographics, then clinical controls) are absorbed, but every interval still clears the zero line, so the effect stays significant throughout. Shrinkage that *stops* (columns 2 and 3 barely differ) is the reassuring pattern; an estimate that kept sliding toward zero with each new control would warn that the design is still confounded. Stability is reassuring --- but, as the next section stresses, never proof of causality.
+:::
+
+
+## Connecting to Causal Inference
+
+Everything in this page has been about *reading* regression output --- a statistical skill. But in a causal inference textbook, we must close the loop.
+
+The coefficient $\hat{\beta}_1$ on a treatment variable $D$ in a regression estimates the causal effect of $D$ on $Y$ **if and only if** the regression satisfies the conditions for causal identification. In the language of [Module 2](../02-dags/index.qmd), this means:
+
+1. The control variables in the regression block all backdoor paths from $D$ to $Y$.
+2. The control variables do not open new non-causal paths (no "bad controls").
+3. There is no reverse causality ($Y$ does not cause $D$).
+
+When these conditions hold, the regression coefficient has a causal interpretation. When they do not --- as in most observational studies of statin therapy, where unobserved health behaviors confound the dose-response relationship --- the coefficient is a *descriptive* association, potentially contaminated by omitted variable bias.
+
+The statistical machinery ($t$-statistics, $p$-values, $R^2$) operates regardless of whether the causal conditions hold. Software does not warn you when a coefficient is biased. This is why reading regression output is necessary but not sufficient for causal inference --- you also need the conceptual tools from Modules 1 and 2, and the design-based strategies from Modules 4 through 6.
+
+
+<details>
+<summary>Math Details: Deriving the SE Formula and the R-Squared Decomposition</summary>
+<div class="details-content">
+
+### Standard Error Derivation
+
+Under the classical linear model assumptions ($\varepsilon_i \overset{iid}{\sim} (0, \sigma^2)$ --- the errors are *independent and identically distributed*: drawn separately, each with mean zero and the same variance $\sigma^2$ --- and $X$ fixed or independent of $\varepsilon$), the OLS estimator is:
+
+$$
+\hat{\beta}_1 = \beta_1 + \frac{\sum_{i=1}^{n}(X_i - \bar{X})\varepsilon_i}{\sum_{i=1}^{n}(X_i - \bar{X})^2}
+$$
+
+**How to read this**: the estimator equals the true parameter plus a noise term. The noise term is a weighted sum of the errors $\varepsilon_i$, with weights $(X_i - \bar{X}) / \sum(X_j - \bar{X})^2$. Because the $\varepsilon_i$ are independent with variance $\sigma^2$:
+
+$$
+\text{Var}(\hat{\beta}_1) = \frac{\sigma^2}{\sum_{i=1}^{n}(X_i - \bar{X})^2}
+$$
+
+Taking the square root gives $\text{SE}(\hat{\beta}_1) = \sigma / \sqrt{\sum(X_i - \bar{X})^2}$. Since $\sigma$ is unknown, we replace it with $\hat{\sigma} = \text{RSE}$ (the residual standard error), which uses $n - k - 1$ in the denominator for an unbiased estimate.
+
+### The R-Squared Decomposition
+
+Total variance in $Y$ can be partitioned:
+
+$$
+\underbrace{\sum_{i=1}^{n}(Y_i - \bar{Y})^2}_{\text{SS}_\text{tot}} = \underbrace{\sum_{i=1}^{n}(\hat{Y}_i - \bar{Y})^2}_{\text{SS}_\text{reg}} + \underbrace{\sum_{i=1}^{n}(Y_i - \hat{Y}_i)^2}_{\text{SS}_\text{res}}
+$$
+
+This reads: "Total sum of squares equals regression (explained) sum of squares plus residual (unexplained) sum of squares." Dividing both sides by $\text{SS}_\text{tot}$:
+
+$$
+1 = \frac{\text{SS}_\text{reg}}{\text{SS}_\text{tot}} + \frac{\text{SS}_\text{res}}{\text{SS}_\text{tot}}
+$$
+
+Rearranging: $R^2 = \text{SS}_\text{reg} / \text{SS}_\text{tot} = 1 - \text{SS}_\text{res} / \text{SS}_\text{tot}$.
+
+### Why Adjusted $R^2$ Penalizes
+
+Adding a predictor always reduces $\text{SS}_\text{res}$ (or at worst leaves it unchanged), because OLS minimizes $\text{SS}_\text{res}$ and an extra variable provides at least as much flexibility. But $\text{SS}_\text{res} / (n - k - 1)$ can *increase* if the reduction in $\text{SS}_\text{res}$ is smaller than the loss of one degree of freedom. The adjusted $R^2$ tracks $\text{SS}_\text{res}/(n - k - 1)$ rather than $\text{SS}_\text{res}$ alone, so it penalizes adding variables that do not reduce residual variance enough to offset the lost degree of freedom.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+# ── Simulate Swedish registry data ──
+set.seed(2024)
+n <- 500
+
+registry <- tibble(
+  patient_id = 1:n,
+  age        = round(rnorm(n, mean = 65, sd = 10)),
+  dose_mg    = round(runif(n, min = 0, max = 80)),
+  # True model: LDL = 4.2 - 0.03*dose + 0.02*(age-65) + noise
+  ldl        = 4.2 - 0.03 * dose_mg + 0.02 * (age - 65) + rnorm(n, sd = 0.8)
+)
+
+# ── Fit the regression ──
+fit <- lm(ldl ~ dose_mg, data = registry)
+
+# ── Examine the full output ──
+summary(fit)
+
+# Coefficients:
+#              Estimate Std. Error t value Pr(>|t|)
+# (Intercept)  4.XXXXX    0.XXXXX  XX.XX  < 2e-16 ***
+# dose_mg     -0.XXXXX    0.XXXXX  -X.XX  X.XXe-XX ***
+#
+# Residual standard error: 0.XXX on 498 degrees of freedom
+# Multiple R-squared:  0.XXX, Adjusted R-squared:  0.XXX
+# F-statistic: XX.XX on 1 and 498 DF,  p-value: X.XXe-XX
+
+# ── Extract individual components ──
+coef(fit)                    # Coefficients
+confint(fit, level = 0.95)   # 95% confidence intervals
+summary(fit)$r.squared       # R-squared
+summary(fit)$adj.r.squared   # Adjusted R-squared
+summary(fit)$sigma           # Residual standard error
+
+# ── Walk through the output ──
+beta_hat <- coef(fit)["dose_mg"]
+se_hat   <- summary(fit)$coefficients["dose_mg", "Std. Error"]
+t_stat   <- beta_hat / se_hat
+p_val    <- 2 * pt(abs(t_stat), df = fit$df.residual, lower.tail = FALSE)
+
+cat("Coefficient:  ", round(beta_hat, 4), "\n")
+cat("Std. Error:   ", round(se_hat, 4), "\n")
+cat("t-statistic:  ", round(t_stat, 2), "\n")
+cat("p-value:      ", format.pval(p_val), "\n")
+cat("R-squared:    ", round(summary(fit)$r.squared, 3), "\n")
+
+# ── Multiple regression (adding the confounder) ──
+fit_full <- lm(ldl ~ dose_mg + age, data = registry)
+summary(fit_full)
+
+# Compare: does the dose coefficient change when we control for age?
+cat("\nDose coefficient (without age): ", round(coef(fit)["dose_mg"], 4), "\n")
+cat("Dose coefficient (with age):    ", round(coef(fit_full)["dose_mg"], 4), "\n")
+cat("Difference (approx. OVB):       ",
+    round(coef(fit)["dose_mg"] - coef(fit_full)["dose_mg"], 4), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# ── Simulate Swedish registry data ──
+np.random.seed(2024)
+n = 500
+
+registry = pd.DataFrame({
+    "patient_id": range(1, n + 1),
+    "age":        np.round(np.random.normal(65, 10, n)).astype(int),
+    "dose_mg":    np.round(np.random.uniform(0, 80, n)).astype(int),
+})
+# True model: LDL = 4.2 - 0.03*dose + 0.02*(age - 65) + noise
+registry["ldl"] = (
+    4.2
+    - 0.03 * registry["dose_mg"]
+    + 0.02 * (registry["age"] - 65)
+    + np.random.normal(0, 0.8, n)
+)
+
+# ── Fit the regression ──
+fit = smf.ols("ldl ~ dose_mg", data=registry).fit()
+
+# ── Full summary ──
+print(fit.summary())
+# ==============================================================================
+#                  coef    std err          t      P>|t|      [0.025      0.975]
+# ------------------------------------------------------------------------------
+# Intercept      4.XXXX      0.XXX     XX.XXX      0.000       X.XXX       X.XXX
+# dose_mg       -0.XXXX      0.XXX     -X.XXX      0.000      -X.XXX      -X.XXX
+# ==============================================================================
+# R-squared:                       0.XXX
+# Adj. R-squared:                  0.XXX
+# F-statistic:                     XX.XX
+# ==============================================================================
+
+# ── Extract individual components ──
+beta_hat = fit.params["dose_mg"]
+se_hat   = fit.bse["dose_mg"]
+t_stat   = fit.tvalues["dose_mg"]
+p_val    = fit.pvalues["dose_mg"]
+
+print(f"Coefficient:  {beta_hat:.4f}")
+print(f"Std. Error:   {se_hat:.4f}")
+print(f"t-statistic:  {t_stat:.2f}")
+print(f"p-value:      {p_val:.2e}")
+print(f"R-squared:    {fit.rsquared:.3f}")
+print(f"Adj. R-sq:    {fit.rsquared_adj:.3f}")
+print(f"Residual SE:  {np.sqrt(fit.mse_resid):.3f}")
+
+# ── Confidence intervals ──
+print("\n95% Confidence Intervals:")
+print(fit.conf_int(alpha=0.05))
+
+# ── Multiple regression (adding the confounder) ──
+fit_full = smf.ols("ldl ~ dose_mg + age", data=registry).fit()
+print("\n--- With age control ---")
+print(fit_full.summary())
+
+# Compare coefficients
+print(f"\nDose coef (without age): {fit.params['dose_mg']:.4f}")
+print(f"Dose coef (with age):    {fit_full.params['dose_mg']:.4f}")
+print(f"Difference (approx OVB): "
+      f"{fit.params['dose_mg'] - fit_full.params['dose_mg']:.4f}")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A researcher at Socialstyrelsen studies the effect of nurse staffing levels on patient satisfaction at Swedish hospitals. The regression output is:
+
+| | Estimate | Std. Error | t value | Pr(>\|t\|) |
+|:---|:---:|:---:|:---:|:---:|
+| (Intercept) | 52.3 | 3.1 | 16.87 | < 0.001 |
+| Nurses per 100 beds | 2.8 | 1.2 | 2.33 | 0.021 |
+
+$R^2 = 0.04$, $n = 280$ hospitals.
+
+(a) Interpret the coefficient on "Nurses per 100 beds" in one sentence.
+(b) Is the coefficient statistically significant at the 5% level? At the 1% level?
+(c) A policy analyst dismisses the result because $R^2 = 0.04$. Write a two-sentence response explaining why this dismissal is misguided.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Each additional nurse per 100 beds is associated with a 2.8-point increase in patient satisfaction, on average, holding all else in the model constant.
+
+**(b)** The $t$-statistic is 2.33, which exceeds 1.96, so the coefficient is statistically significant at $\alpha = 0.05$ ($p = 0.021 < 0.05$). However, it does not reach the $\alpha = 0.01$ threshold, which requires $|t| > 2.58$. So: significant at 5%, not at 1%.
+
+**(c)** An $R^2$ of 0.04 means that nurse staffing explains 4% of the variation in patient satisfaction. Many factors influence satisfaction (wait times, facility quality, physician communication, patient expectations), so we should not expect staffing alone to explain most of the variance. What matters for policy is whether the staffing coefficient is precisely estimated and meaningfully large --- not whether the model predicts satisfaction well. $R^2$ measures prediction; the coefficient and its standard error measure the staffing-satisfaction relationship.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the interactive above, set the true slope to $-0.03$, noise to $0.8$, and sample size to $n = 50$. Record the estimated coefficient, SE, and $R^2$. Now increase $n$ to 500 without changing anything else. Answer:
+
+(a) What happened to the standard error? By roughly what factor did it shrink?
+(b) What happened to $R^2$?
+(c) Explain why the SE changed but $R^2$ did not (much). What does each quantity depend on?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The standard error shrank by roughly a factor of $\sqrt{500/50} = \sqrt{10} \approx 3.2$. If the SE at $n=50$ was around 0.014, at $n=500$ it should be around 0.0044. You should observe something close to this ratio.
+
+**(b)** $R^2$ barely changed. It might fluctuate slightly due to sampling variation, but it stays near 0.07 in both cases.
+
+**(c)** The SE depends on $\sigma^2 / \sum(X_i - \bar{X})^2$. When $n$ increases, $\sum(X_i - \bar{X})^2$ grows proportionally (more observations spread over the same $X$ range), so $\text{SE} \propto 1/\sqrt{n}$. In contrast, $R^2 = 1 - \text{SS}_{\text{res}} / \text{SS}_{\text{tot}}$ is a ratio of *sums* of squares. Both numerator and denominator scale with $n$, so their ratio is roughly constant. $R^2$ depends on the signal-to-noise ratio in the population ($\beta_1^2 \text{Var}(X) / \text{Var}(Y)$), not on the sample size. Adding data makes the estimate more precise but does not change how much of the outcome the predictor explains.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A study from the Swedish Hip Arthroplasty Register reports the following (simplified) regression table:
+
+| | (1) | (2) | (3) |
+|:---|:---:|:---:|:---:|
+| Cemented prosthesis | -0.8** | -0.5* | -0.5* |
+| | (0.3) | (0.3) | (0.3) |
+| Age | | 0.04*** | 0.04*** |
+| | | (0.01) | (0.01) |
+| Female | | -0.3 | -0.2 |
+| | | (0.2) | (0.2) |
+| BMI | | | 0.02 |
+| | | | (0.02) |
+| N | 12,000 | 12,000 | 12,000 |
+| R² | 0.005 | 0.018 | 0.019 |
+
+The outcome is revision risk (a score where higher = worse). Interpret the progression from column (1) to column (3). What does the change in the prosthesis coefficient suggest about confounding?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Column (1) shows the unadjusted association: cemented prostheses are associated with 0.8 fewer revision-risk points than uncemented prostheses. In column (2), controlling for age and sex, the coefficient shrinks to $-0.5$. This suggests that part of the raw association was confounded by age: older patients are more likely to receive cemented prostheses *and* may have different revision risk. The coefficient drops by 0.3 points (from $-0.8$ to $-0.5$) when age is added, indicating that the column (1) estimate overstated the prosthesis effect.
+
+From column (2) to column (3), adding BMI barely changes the prosthesis coefficient ($-0.5$ in both), and BMI itself is insignificant ($t = 0.02/0.02 = 1.0$). This suggests BMI is not a confounder in this context.
+
+The stability of the coefficient from column (2) to (3) provides some reassurance, but this does not prove causality. Unobserved confounders (surgeon skill, bone quality, patient frailty) could still bias the estimate. The extremely low $R^2$ values (0.005 to 0.019) indicate that the model explains almost none of the variation in revision risk --- but as discussed in this page, that is irrelevant to the question of whether the prosthesis coefficient is well-estimated.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A colleague shows you a regression of patient survival (in months) on treatment intensity (an index from 0 to 10) using data from a Swedish cancer quality registry. The output shows: $\hat{\beta}_1 = 1.3$, $\text{SE} = 0.4$, $t = 3.25$, $p = 0.001$, $R^2 = 0.42$. They claim: "This proves that more intensive treatment causes patients to live 1.3 months longer per unit of intensity, and the model is good because $R^2 = 0.42$."
+
+Identify two distinct errors in this interpretation. For each, explain what the statistic actually means and why the causal claim does not follow.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Error 1: Confusing association with causation.** The coefficient $\hat{\beta}_1 = 1.3$ means that a one-unit increase in treatment intensity is *associated* with 1.3 additional months of survival, on average, in this sample. It does not prove causation because treatment intensity is almost certainly endogenous: physicians assign more intensive treatment to patients they believe can tolerate it --- typically younger, healthier patients who would have survived longer *regardless* of treatment intensity. This is classic confounding by indication. Without a research design that addresses this selection (randomization, instrumental variables, etc.), the coefficient conflates the treatment effect with the baseline health advantage of intensively treated patients.
+
+**Error 2: Misinterpreting $R^2$ as evidence for the model.** The claim that "the model is good because $R^2 = 0.42$" confuses prediction with identification. An $R^2$ of 0.42 means the model explains 42% of the variance in survival --- but this says nothing about whether the treatment coefficient is causal. In fact, a high $R^2$ can arise from confounders: if treatment intensity is correlated with baseline health (which strongly predicts survival), the model may predict well precisely *because* the treatment variable proxies for health status, not because it captures a causal effect. High $R^2$ can coexist with severely biased coefficients. Conversely, a low $R^2$ with a credible identification strategy would be far more informative about the causal effect.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The coefficient gives direction and magnitude, the standard error gives precision, and the t-statistic is their signal-to-noise ratio; a CI that excludes zero is equivalent to $p < 0.05$.
+- Significance stars are a convenience, not a standard --- in large registry samples almost every coefficient earns three stars, which makes the stars less informative, not more.
+- $R^2$ measures prediction, not identification: a high $R^2$ can hide a confounded coefficient, and a low $R^2$ (common in RCTs) can accompany a precisely estimated causal effect.
+- Watching a coefficient shift across specifications as controls are added is omitted variable bias in action; stability is reassuring but never proves causality.
+- Software computes t-statistics, p-values, and $R^2$ whether or not the causal assumptions hold --- it never warns you that a coefficient is biased, so identification must come from research design.
+:::
+
+## What Comes Next
+
+You now have the statistical vocabulary to read any regression table you encounter: coefficients, standard errors, $t$-statistics, $p$-values, $R^2$, and their proper interpretations. Equally important, you know what these quantities *cannot* tell you --- whether the coefficient deserves a causal interpretation. The next module develops regression as a tool for causal inference, beginning with the mechanics of OLS and building toward the conditions under which a regression coefficient identifies a causal effect.

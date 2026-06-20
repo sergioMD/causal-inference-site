@@ -1,0 +1,943 @@
+---
+title: "Frisch-Waugh-Lovell"
+subtitle: "Partialling out and the anatomy of multivariate regression"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define "controlling for $x_2$" precisely as partialling it out: residualize both the regressor of interest and the outcome on the other covariates, then regress the leftovers
+- Apply the three-step Frisch-Waugh-Lovell recipe and verify that the residual-on-residual slope reproduces the multivariate coefficient exactly
+- Explain why a multiple-regression coefficient uses only the variation in a regressor that is uncorrelated with the other covariates, and why this seeds multicollinearity
+- Distinguish which residualization is mandatory (the regressor) from which is optional (the outcome), and prove the difference with the annihilator matrix $M_2$
+- Connect FWL to the omitted-variable-bias decomposition $\hat{b} = \hat\beta_1 + \hat\beta_2\hat\delta$ and to the within transformation behind fixed effects
+:::
+
+## What "Controlling For" Actually Means
+
+On the previous page we treated ordinary least squares as a machine: feed it a $y$ and a matrix of regressors $X$, turn the crank, and out come the coefficients $\hat{\beta} = (X'X)^{-1}X'y$. That formula is correct, but it is a black box. It does not tell us *what each coefficient means*. When a Swedish *region* reports that "after controlling for area deprivation, each additional physician per 1,000 listed patients raises the share of well-controlled diabetes patients by 35 percentage points," what is that number, really?
+
+The **Frisch-Waugh-Lovell theorem** (FWL) opens the black box. It says, with surgical precision, that a coefficient in a multiple regression is the slope of a *simple* regression --- but a simple regression run on the parts of the variables that have been scrubbed clean of every other regressor. "Controlling for $x_2$" is not a vague gesture. It is a concrete operation: **partial $x_2$ out of both the outcome and the regressor of interest, then look at what is left.**
+
+This theorem is one of the most useful results in all of econometrics. It demystifies the word "control," it is the engine behind fixed-effects estimators (which we meet later in the book), and --- as we will see on the *next* page --- it gives us the cleanest possible account of omitted variable bias. Ragnar Frisch and Frederick Waugh proved the original version in 1933; Michael Lovell generalized it in 1963. Almost a century later it remains the right way to think about every multivariate regression you will ever run.
+
+
+## The Setting: Staffing, Deprivation, and Diabetes Control
+
+Throughout this page we work with data on $N = 12$ *vårdcentraler* (primary care centers) in a single Swedish *region*. For each center we observe three numbers:
+
+- $y$ --- the **quality outcome**: the percentage of the center's listed Type 2 diabetes patients who reach the HbA1c target ($< 52$ mmol/mol). Higher is better.
+- $x_1$ --- the **treatment of interest**: GP staffing, measured as *läkare* (physician) full-time equivalents per 1,000 listed patients.
+- $x_2$ --- the **confounder we must control for**: an area **deprivation index** (a Care Need Index, higher = more socioeconomically deprived catchment area).
+
+Here is the catch, and it is a real feature of Swedish primary care: deprived areas are systematically *harder to staff*. Physicians are scarcer where the need is greatest, so $x_1$ and $x_2$ are strongly *negatively* correlated. A naive regression of quality on staffing alone will therefore conflate two things: the genuine effect of having more doctors, and the fact that well-staffed centers also tend to sit in affluent, low-deprivation catchments where diabetes is easier to manage for reasons that have nothing to do with the doctors.
+
+::: {.glass-card .glass-card--definition}
+We will compare two regressions throughout. The **simple regression**,
+
+$$
+y_i = a + b\, x_{1i} + e_i,
+$$
+
+ignores deprivation entirely. The **multiple regression**,
+
+$$
+y_i = \beta_0 + \beta_1 x_{1i} + \beta_2 x_{2i} + u_i,
+$$
+
+includes it. **How to read this**: "the expected quality outcome equals a baseline $\beta_0$, plus $\beta_1$ for each additional physician per 1,000 patients, plus $\beta_2$ for each unit of deprivation, with $u_i$ the part of quality the two regressors cannot explain."
+
+In our data the two slopes on staffing are dramatically different:
+
+$$
+\hat{b} = 84.17 \qquad \text{vs.} \qquad \hat{\beta}_1 = 35.21.
+$$
+
+The simple slope is more than *twice* the multiple slope. The FWL theorem will tell us exactly where the difference of $84.17 - 35.21 = 48.96$ went --- and why $35.21$ is the number that deserves to be called "the effect of staffing, holding deprivation constant."
+:::
+
+
+## The Frisch-Waugh-Lovell Theorem
+
+::: {.glass-card .glass-card--definition}
+**The Frisch-Waugh-Lovell theorem.** Consider the multiple regression
+
+$$
+y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + u.
+$$
+
+The OLS coefficient $\hat{\beta}_1$ is *identical* to the slope coefficient from the following three-step procedure:
+
+1. Regress $x_1$ on $x_2$ (and a constant); save the residuals $\tilde{x}_1$.
+2. Regress $y$ on $x_2$ (and a constant); save the residuals $\tilde{y}$.
+3. Regress $\tilde{y}$ on $\tilde{x}_1$. The slope from this single-variable regression equals $\hat{\beta}_1$.
+
+**How to read this**: "$\tilde{x}_1$ is the part of staffing that deprivation cannot predict; $\tilde{y}$ is the part of the quality outcome that deprivation cannot predict; and the multivariate effect of staffing is just the simple slope relating these two leftover parts."
+:::
+
+The residuals $\tilde{x}_1$ and $\tilde{y}$ are called the **partialled-out** (or **residualized**, or **orthogonalized**) versions of $x_1$ and $y$. They answer the question: *"after I have used deprivation to explain as much as it can, what variation remains?"* The **tilde (squiggle) is our shorthand for "residual"**: read $\tilde{x}_1$ as "staffing after deprivation has been subtracted out," and $\tilde{y}$ as "the quality outcome after deprivation has been subtracted out." Likewise the **hat** in $\hat{\beta}_1$ means "estimated from the data," and **orthogonal** simply means "at a right angle, i.e. statistically uncorrelated."
+
+There is a small bonus that surprises most students. You do **not** actually need to residualize the outcome:
+
+::: {.glass-card .glass-card--insight}
+Step 3 can also be run as a regression of the **raw** outcome $y$ on the residualized regressor $\tilde{x}_1$, and you get the *same* slope:
+
+$$
+\hat{\beta}_1 = \frac{\sum_i \tilde{x}_{1i}\, \tilde{y}_i}{\sum_i \tilde{x}_{1i}^2} = \frac{\sum_i \tilde{x}_{1i}\, y_i}{\sum_i \tilde{x}_{1i}^2}.
+$$
+
+**Why?** Because $\tilde{x}_1$ is, by construction, orthogonal to $x_2$ and to the constant. The part of $y$ that is *explained* by $x_2$ (namely $y - \tilde{y}$) is a linear combination of $x_2$ and the constant, so it is orthogonal to $\tilde{x}_1$ and contributes exactly zero to the numerator. Residualizing $y$ is tidy and makes the *picture* symmetric, but only residualizing $x_1$ is logically required. We verify both versions in the code below.
+:::
+
+::: {.glass-card}
+**Notation at a glance**
+
+- $x_1$ --- the regressor of interest (staffing); $x_2$ --- the covariate we control for (deprivation); $y$ --- the outcome (quality).
+- $\tilde{x}_1,\ \tilde{y}$ --- the **tilde** marks a *residual*: the variable with everything $x_2$ can explain stripped out ("partialled out").
+- $\hat{\beta}_1,\ \hat{b},\ \hat{\delta}$ --- the **hat** marks an *estimate from data* (a fitted slope), as opposed to an unknown true parameter.
+- $\hat{b}$ --- the *simple* (one-regressor) slope of $y$ on $x_1$; $\hat{\beta}_1$ --- the *multiple* (partial) slope of $y$ on $x_1$ holding $x_2$ fixed.
+- **orthogonal / uncorrelated** --- "at a right angle": two variables carry no linear information about each other.
+- **percentage points** --- an additive change on a 0--100 scale (e.g. 56% rising to 59% is +3 *percentage points*), not a relative *percent* change.
+:::
+
+### The three-step recipe, as a picture
+
+Before we watch it move, here is the whole Frisch-Waugh-Lovell pipeline as a static flow diagram. Two parallel "wash" steps strip deprivation out of staffing and out of the outcome; the cleaned leftovers feed one simple regression whose slope *is* $\hat{\beta}_1$.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Pure static flow-diagram helper for the FWL pipeline (page tag: p2_).
+// Builds an SVG with d3.create and returns the node. Boxes + arrows only.
+p2_drawFlow = function ({ width = 560, height = 230 }) {
+  const W = width, H = height;
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  const mk = (id, col) => {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  };
+  mk("p2-arrow-slate", "#3d5a6c");
+  mk("p2-arrow-green", "#2e6f40");
+
+  // box(cx, cy, w, h, title, sub, accent)
+  const box = (cx, cy, w, h, title, sub, accent) => {
+    const g = svg.append("g");
+    g.append("rect")
+      .attr("x", cx - w / 2).attr("y", cy - h / 2)
+      .attr("width", w).attr("height", h)
+      .attr("rx", 9).attr("ry", 9)
+      .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 1.5);
+    g.append("rect")
+      .attr("x", cx - w / 2).attr("y", cy - h / 2)
+      .attr("width", 5).attr("height", h)
+      .attr("rx", 2).attr("fill", accent);
+    g.append("text")
+      .attr("x", cx).attr("y", cy - 6).attr("text-anchor", "middle")
+      .attr("font-size", 14).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(title);
+    g.append("text")
+      .attr("x", cx).attr("y", cy + 13).attr("text-anchor", "middle")
+      .attr("font-size", 10.5).attr("fill", "#79766e")
+      .text(sub);
+  };
+
+  const arrow = (x1, y1, x2, y2, col, marker) => {
+    svg.append("line")
+      .attr("x1", x1).attr("y1", y1).attr("x2", x2).attr("y2", y2)
+      .attr("stroke", col).attr("stroke-width", 2.5)
+      .attr("marker-end", `url(#${marker})`);
+  };
+
+  const bw = 150, bh = 50;
+  const colL = 90, colM = W / 2, colR = W - 90;
+  const rowT = 52, rowB = H - 52;
+
+  // Left inputs
+  box(colL, rowT, bw, bh, "x₁  staffing", "raw regressor", "#990000");
+  box(colL, rowB, bw, bh, "y  outcome", "raw outcome", "#990000");
+  // Middle wash steps
+  box(colM, rowT, bw, bh, "Step 1: x₁ on x₂", "→ residual x̃₁", "#3d5a6c");
+  box(colM, rowB, bw, bh, "Step 2: y on x₂", "→ residual ỹ", "#3d5a6c");
+  // Right payoff
+  box(colR, (rowT + rowB) / 2, bw + 4, bh + 6, "Step 3: ỹ on x̃₁", "slope = β̂₁", "#2e6f40");
+
+  // Arrows left -> middle (slate, "wash out x2")
+  arrow(colL + bw / 2, rowT, colM - bw / 2 - 2, rowT, "#3d5a6c", "p2-arrow-slate");
+  arrow(colL + bw / 2, rowB, colM - bw / 2 - 2, rowB, "#3d5a6c", "p2-arrow-slate");
+  // Arrows middle -> right (green, into the payoff regression)
+  arrow(colM + bw / 2, rowT, colR - (bw + 4) / 2 - 2, (rowT + rowB) / 2 - 14, "#2e6f40", "p2-arrow-green");
+  arrow(colM + bw / 2, rowB, colR - (bw + 4) / 2 - 2, (rowT + rowB) / 2 + 14, "#2e6f40", "p2-arrow-green");
+
+  // Mid-arrow labels
+  svg.append("text")
+    .attr("x", (colL + colM) / 2).attr("y", rowT - 10).attr("text-anchor", "middle")
+    .attr("font-size", 10).attr("font-weight", 600).attr("fill", "#3d5a6c")
+    .text("wash out x₂");
+  svg.append("text")
+    .attr("x", (colL + colM) / 2).attr("y", rowB - 10).attr("text-anchor", "middle")
+    .attr("font-size", 10).attr("font-weight", 600).attr("fill", "#3d5a6c")
+    .text("wash out x₂");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+p2_drawFlow({ width: Math.min(580, width), height: 230 })
+```
+
+::: {.aside}
+The two <span style="color:#3d5a6c; font-weight:700;">slate</span> arrows are the auxiliary "wash" regressions that remove deprivation $x_2$; the two <span style="color:#2e6f40; font-weight:700;">green</span> arrows feed the cleaned residuals into the single regression whose slope equals the multivariate coefficient $\hat{\beta}_1$. Residualizing $y$ (the lower path) is optional --- regressing the *raw* $y$ on $\tilde{x}_1$ gives the same slope.
+:::
+
+### Why this is the definition of "holding constant"
+
+Look hard at $\tilde{x}_1$. It is staffing with the influence of deprivation *swept out*. Two centers with the same $\tilde{x}_1$ are equally over- or under-staffed *relative to what their deprivation level would predict*. So when we relate $\tilde{x}_1$ to $\tilde{y}$, we are comparing centers that are effectively at the *same* deprivation level. That is precisely what "holding deprivation constant" means. The multivariate coefficient $\hat{\beta}_1$ does not use the variation in staffing that merely reflects deprivation; it uses only the *residual* variation --- the part of staffing that is, statistically, unrelated to how deprived the area is.
+
+$$
+\hat{\beta}_1 = \text{effect of the part of } x_1 \text{ that is uncorrelated with } x_2.
+$$
+
+**Read this as**: "the multiple-regression coefficient on $x_1$ is the effect of the slice of $x_1$ that carries no information about $x_2$." If staffing and deprivation moved in perfect lockstep, there would be *no* residual variation in staffing and $\hat{\beta}_1$ would be undefined --- the regression could not separate them. This is the seed of multicollinearity, and it falls straight out of FWL.
+
+
+## See It: The Residualization Machine
+
+The interactive below shows the FWL theorem in action on a synthetic version of our staffing data. You choose how strongly staffing and deprivation are correlated, and you choose which *stage* of the partialling-out process to view. In every stage the fitted slope is printed --- watch how the raw slope and the partialled-out slope diverge as the confounding grows, while the partialled-out slope always matches the multiple-regression coefficient.
+
+::: {.interactive-container}
+
+#### From raw scatter to residual-on-residual
+
+**Start here:** pick a confounding strength and a stage to view, then watch the *raw* slope and the *partialled-out* slope diverge. A 5-step tour follows the chart.
+
+```{ojs}
+//| echo: false
+
+viewof fwl_rho = Inputs.range([0, 0.95], {
+  value: 0.75,
+  step: 0.05,
+  label: "Strength of staffing–deprivation link (|ρ|, negative)"
+})
+```
+
+In our data the link is *negative*; this slider sets how strong that negative link is (higher = staffing and deprivation move more strongly in opposite directions).
+
+```{ojs}
+//| echo: false
+
+viewof fwl_beta2 = Inputs.range([-12, 0], {
+  value: -8,
+  step: 0.5,
+  label: "True effect of deprivation (β₂)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof fwl_stage = Inputs.radio(
+  ["1 · Raw", "2 · Partial x₁", "3 · Partial y", "4 · Residual-on-residual"],
+  { label: "Stage to view", value: "1 · Raw" }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// True structural parameters used to GENERATE the synthetic centers.
+fwl_beta1_true = 35   // true effect of staffing
+fwl_meanX1 = 0.60     // mean physicians per 1000
+fwl_sdX1 = 0.10
+fwl_meanX2 = 2.9      // mean deprivation
+fwl_sdX2 = 0.95
+fwl_n = 40
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Generate a fixed dataset whose x1,x2 correlation equals -fwl_rho.
+// Deprivation drives staffing negatively: x1 = meanX1 - rho*(sdX1/sdX2)*(x2-meanX2) + noise.
+fwl_data = {
+  const rng = d3.randomNormal.source(d3.randomLcg(42));  // reproducible
+  const z1 = rng(0, 1);
+  const z2 = rng(0, 1);
+  const rho = fwl_rho;
+  const rows = [];
+  for (let i = 0; i < fwl_n; i++) {
+    const a = z1();
+    const b = z2();
+    // Standard bivariate normal with correlation -rho between standardized x1, x2
+    const sx2 = a;
+    const sx1 = -rho * a + Math.sqrt(1 - rho * rho) * b;
+    const x2 = fwl_meanX2 + fwl_sdX2 * sx2;
+    const x1 = fwl_meanX1 + fwl_sdX1 * sx1;
+    // Structural outcome: y = 35 + beta1*x1 + beta2*x2 + small noise
+    const noise = rng(0, 2.5)();
+    const y = 35 + fwl_beta1_true * x1 + fwl_beta2 * x2 + noise;
+    rows.push({ id: i + 1, x1, x2, y });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Tiny OLS helper (simple regression of v on u, with intercept).
+fwl_slope = function (u, v) {
+  const mu = d3.mean(u), mv = d3.mean(v);
+  let num = 0, den = 0;
+  for (let i = 0; i < u.length; i++) {
+    num += (u[i] - mu) * (v[i] - mv);
+    den += (u[i] - mu) * (u[i] - mu);
+  }
+  return { slope: num / den, intercept: mv - (num / den) * mu };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Compute all the regressions FWL needs from the current dataset.
+fwl_fit = {
+  const d = fwl_data;
+  const x1 = d.map(r => r.x1);
+  const x2 = d.map(r => r.x2);
+  const y  = d.map(r => r.y);
+
+  // Simple regression: y on x1
+  const simple = fwl_slope(x1, y);
+
+  // Aux 1: x1 on x2  -> residual x1_tilde
+  const a1 = fwl_slope(x2, x1);
+  const x1t = x1.map((v, i) => v - (a1.intercept + a1.slope * x2[i]));
+  // Aux 2: y on x2   -> residual y_tilde
+  const a2 = fwl_slope(x2, y);
+  const yt = y.map((v, i) => v - (a2.intercept + a2.slope * x2[i]));
+
+  // Step 3: y_tilde on x1_tilde
+  const resfit = fwl_slope(x1t, yt);
+
+  // Multiple regression beta1 via FWL identity (== resfit.slope)
+  const beta1 = resfit.slope;
+
+  // Attach residuals back to rows for plotting
+  const rows = d.map((r, i) => ({ ...r, x1t: x1t[i], yt: yt[i] }));
+
+  return {
+    rows,
+    simpleSlope: simple.slope,
+    simpleInt: simple.intercept,
+    a1, a2,
+    resSlope: resfit.slope,
+    resInt: resfit.intercept,
+    beta1
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// The plot: switches its x/y mapping based on the chosen stage.
+{
+  const f = fwl_fit;
+  const stage = fwl_stage;
+  let xKey, yKey, xLabel, yLabel, slope, intercept, slopeLabel, accent;
+
+  let marginLeft = 64;
+  if (stage.startsWith("1")) {
+    xKey = "x1"; yKey = "y";
+    xLabel = "Staffing x₁ (physicians / 1000)";
+    yLabel = "% at HbA1c target (y)";
+    slope = f.simpleSlope; intercept = f.simpleInt;
+    slopeLabel = "Raw (confounded) slope";
+    accent = "#990000";   // focal / confounded estimate (Uppsala red)
+  } else if (stage.startsWith("2")) {
+    xKey = "x2"; yKey = "x1t";
+    xLabel = "Deprivation x₂";
+    yLabel = "Residual staffing x̃₁";
+    slope = 0; intercept = 0;
+    slopeLabel = "Residual is flat in x₂";
+    accent = "#3d5a6c";   // secondary / residual diagnostic (slate)
+    marginLeft = 70;
+  } else if (stage.startsWith("3")) {
+    xKey = "x2"; yKey = "yt";
+    xLabel = "Deprivation x₂";
+    yLabel = "Residual outcome ỹ";
+    slope = 0; intercept = 0;
+    slopeLabel = "Residual is flat in x₂";
+    accent = "#3d5a6c";   // secondary / residual diagnostic (slate)
+    marginLeft = 70;
+  } else {
+    xKey = "x1t"; yKey = "yt";
+    xLabel = "Residual staffing x̃₁";
+    yLabel = "Residual outcome ỹ";
+    slope = f.resSlope; intercept = f.resInt;
+    slopeLabel = "Partialled-out slope = β̂₁";
+    accent = "#2e6f40";   // good / on-target partialled-out estimate (green)
+    marginLeft = 70;
+  }
+
+  const marks = [
+    Plot.dot(f.rows, { x: xKey, y: yKey, fill: accent, fillOpacity: 0.7, r: 5 }),
+    Plot.frame({ stroke: "#e6e3db" })
+  ];
+  // Add the regression line where a meaningful slope is shown
+  if (stage.startsWith("1") || stage.startsWith("4")) {
+    marks.push(Plot.linearRegressionY(f.rows, { x: xKey, y: yKey, stroke: accent, strokeWidth: 2.5 }));
+  } else {
+    marks.push(Plot.ruleY([0], { stroke: "#79766e", strokeDasharray: "4,4" }));
+  }
+
+  // On-chart caption: render the per-stage label + its fitted slope (was dead code).
+  const slopeTxt = stage.startsWith("2") || stage.startsWith("3")
+    ? slopeLabel
+    : `${slopeLabel} = ${slope.toFixed(1)}`;
+  marks.push(Plot.text([slopeTxt], {
+    frameAnchor: "top-left", dx: 8, dy: 8,
+    fill: accent, fontWeight: 700, fontSize: 13,
+    stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+  }));
+
+  return Plot.plot({
+    height: 320,
+    width: Math.min(680, width),
+    marginLeft,
+    marginRight: 24,
+    marginTop: 28,
+    marginBottom: 48,
+    grid: true,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1c1c1a" },
+    x: { label: xLabel },
+    y: { label: yLabel },
+    color: { range: ["#990000", "#3d5a6c", "#2e6f40", "#9c7a33"] },
+    marks
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Numeric readout comparing the slopes
+{
+  const f = fwl_fit;
+  const cell = (label, val, color, bg) => `
+    <div style="padding:0.55rem 0.8rem;border-radius:0.5rem;background:${bg};border:1px solid ${color}33;min-height:4.1rem;">
+      <div style="font-weight:600;color:#79766e;font-size:0.68rem;letter-spacing:0.02em;">${label}</div>
+      <div style="font-size:1.15rem;font-weight:700;color:${color};">${val}</div>
+    </div>`;
+  return html`
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:0.5rem;margin-top:0.5rem;font-family:'Inter',sans-serif;">
+    ${html([
+      cell("Raw slope (y on x₁)", f.simpleSlope.toFixed(1), "#990000", "rgba(153,0,0,0.06)") +
+      cell("Partialled-out (β̂₁)", f.resSlope.toFixed(1), "#2e6f40", "rgba(46,111,64,0.08)") +
+      cell("True β₁ (simulation)", fwl_beta1_true.toFixed(1), "#9c7a33", "rgba(156,122,51,0.08)")
+    ])}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Stage-aware "why" line: reads the existing reactive fwl_stage + fwl_fit
+// (no new controls, no change to the data-generating process). Surfaces the
+// MECHANISM behind whichever stage is on screen.
+p2_verdict = {
+  const f = fwl_fit;
+  const s = fwl_stage;
+  if (s.startsWith("1"))
+    return { text: `Stage 1 · Raw, confounded. The red slope reads ${f.simpleSlope.toFixed(1)} — well above the true 35 — because well-staffed centres also sit in low-deprivation areas, and that affluence is being credited to the doctors.`, color: "#990000", bg: "rgba(153,0,0,0.06)", border: "#990000" };
+  if (s.startsWith("2"))
+    return { text: "Stage 2 · Staffing washed clean. The cloud is now flat in deprivation: x̃₁ is staffing with deprivation's footprint removed. A point above zero is a centre better-staffed than its area predicts.", color: "#3d5a6c", bg: "rgba(61,90,108,0.07)", border: "#3d5a6c" };
+  if (s.startsWith("3"))
+    return { text: "Stage 3 · Outcome washed clean. The same operation on y: ỹ is quality with deprivation removed. Optional step — but it makes the final picture symmetric.", color: "#3d5a6c", bg: "rgba(61,90,108,0.07)", border: "#3d5a6c" };
+  return { text: `Stage 4 · The payoff. Regressing the two clouds of leftovers gives slope ${f.resSlope.toFixed(1)} ≈ the true 35 — NOT the inflated ${f.simpleSlope.toFixed(1)}. That is FWL: the partial effect is a simple slope of residuals.`, color: "#2e6f40", bg: "rgba(46,111,64,0.08)", border: "#2e6f40" };
+}
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem; line-height:1.45; font-weight:600; color:${p2_verdict.color}; background:${p2_verdict.bg}; border-left:3px solid ${p2_verdict.border}; border-radius:0 0.35rem 0.35rem 0; padding:0.55rem 0.8rem; margin-top:0.6rem;">${p2_verdict.text}</div>`
+```
+
+*This animation uses 40 simulated centers with noise, so the partialled-out slope wobbles near the true 35; the exact 35.21 comes from the fixed 12-center dataset in the worked example below.*
+
+:::
+
+### How to Read the Residualization Machine
+
+Take a guided tour. Each step isolates one idea.
+
+**Step 1 — See the confounded slope.** Leave the stage on **"1 · Raw"** and the link strength at $0.75$. This is the simple regression: quality plotted against raw staffing. The red line is steep --- the raw slope (printed on the chart and below) is much larger than the true $\beta_1 = 35$. The line is exaggerated because well-staffed centers also tend to be in low-deprivation areas, and low deprivation independently boosts quality. The slope is "borrowing" credit that belongs to deprivation.
+
+**Step 2 — Partial deprivation out of staffing.** Switch to **"2 · Partial x₁"**. We regress staffing on deprivation and plot the *residuals* $\tilde{x}_1$ against deprivation. The cloud is now flat (centered on the dashed zero line): by construction, $\tilde{x}_1$ has *no* linear relationship with deprivation left. A positive $\tilde{x}_1$ marks a center that is better-staffed than its deprivation level would predict; a negative one marks a center that is under-staffed for its area. This residual is "staffing, net of deprivation."
+
+**Step 3 — Partial deprivation out of the outcome.** Switch to **"3 · Partial y"**. Same operation, applied to $y$: we strip out the part of the quality outcome that deprivation can explain. The residual $\tilde{y}$ is "quality, net of deprivation." Again it is flat in $x_2$ --- nothing systematic about deprivation remains.
+
+**Step 4 — The payoff.** Switch to **"4 · Residual-on-residual"**. Now we plot $\tilde{y}$ against $\tilde{x}_1$ --- two clouds of leftovers, both purged of deprivation. The green line through them has slope $\hat{\beta}_1$ (printed on the chart), and the readout confirms it sits right at the true value near $35$, *not* the inflated raw slope. **This is the FWL theorem you can see with your eyes**: the messy multivariate coefficient is just the simple slope of one set of residuals on another.
+
+**Step 5 — Make deprivation matter more.** Drag the **"True effect of deprivation (β₂)"** slider toward $-12$ and watch Stage 1: the raw slope inflates further while the partialled-out slope in Stage 4 holds near $35$. The bias grows with $|\beta_2|$ --- the more deprivation drives quality, the more credit a confounded simple regression hands to staffing.
+
+**Step 6 — Crank up the confounding.** Drag the link-strength slider toward $0.95$ while watching Stage 1, then flip to Stage 4. As staffing and deprivation become nearly indistinguishable, the *raw* slope balloons (it has more and more deprivation baked in), but the *partialled-out* slope stays anchored near the truth --- until the very high end, where so little independent variation in staffing remains that the residual estimate gets noisy. That noise is the visual signature of multicollinearity: when regressors are almost the same variable, there is barely any residual variation to estimate the effect from.
+
+
+## The Worked Swedish Example
+
+Let us now do the arithmetic on the *fixed* 12-center dataset (no simulation noise), so every number is reproducible. The data are below. Staffing $x_1$ ranges from 0.47 to 0.76 physicians per 1,000, deprivation $x_2$ from 1.5 to 4.2, and the quality outcome $y$ from 41% to 68%.
+
+| Center | $x_1$ (staffing) | $x_2$ (deprivation) | $y$ (% at target) | $\tilde{x}_1$ | $\tilde{y}$ |
+|:------:|:----:|:----:|:----:|:------:|:------:|
+| 1  | 0.64 | 2.4 | 56 | $-0.006$ | $-2.224$ |
+| 2  | 0.52 | 3.3 | 49 | $-0.030$ | $-0.798$ |
+| 3  | 0.70 | 1.8 | 63 | $-0.011$ | $-0.841$ |
+| 4  | 0.49 | 3.9 | 45 | $+0.004$ | $+0.820$ |
+| 5  | 0.76 | 1.5 | 68 | $+0.017$ | $+1.350$ |
+| 6  | 0.58 | 2.6 | 55 | $-0.045$ | $-1.351$ |
+| 7  | 0.61 | 3.0 | 52 | $+0.028$ | $-0.606$ |
+| 8  | 0.47 | 4.2 | 41 | $+0.017$ | $-0.372$ |
+| 9  | 0.72 | 2.0 | 64 | $+0.031$ | $+2.031$ |
+| 10 | 0.55 | 3.5 | 50 | $+0.021$ | $+2.075$ |
+| 11 | 0.66 | 2.2 | 60 | $-0.008$ | $-0.096$ |
+| 12 | 0.50 | 3.6 | 47 | $-0.018$ | $+0.011$ |
+
+The two auxiliary regressions that produce the residual columns are:
+
+$$
+\hat{x}_1 = 0.904 - 0.107\, x_2 \qquad\text{and}\qquad \hat{y} = 80.69 - 9.36\, x_2.
+$$
+
+**Read the first one as**: "predicted staffing falls by about 0.107 physicians per 1,000 for every one-point increase in deprivation" --- the systematic under-staffing of deprived areas, quantified. The residuals $\tilde{x}_1 = x_1 - \hat{x}_1$ in the table are the deviations from this line. (Note: $-0.107$ is the *staffing-on-deprivation* slope used to **build the residuals**; it is a different regression from the $\hat{\delta} = -8.76$ *deprivation-on-staffing* slope that appears in the bias formula further below. Same two variables, opposite roles.)
+
+Plotting the two residual columns of the *actual* 12 centers against each other shows the theorem on the real data --- not the noisy 40-point simulation above. The line through this cloud has slope $35.21$, the multivariate coefficient itself. The four centers used in Exercise 1 are highlighted.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The fixed 12-center residuals straight from the table above (no simulation).
+p2_worked = [
+  { id: 1,  x1t: -0.006, yt: -2.224 },
+  { id: 2,  x1t: -0.030, yt: -0.798 },
+  { id: 3,  x1t: -0.011, yt: -0.841 },
+  { id: 4,  x1t:  0.004, yt:  0.820 },
+  { id: 5,  x1t:  0.017, yt:  1.350 },
+  { id: 6,  x1t: -0.045, yt: -1.351 },
+  { id: 7,  x1t:  0.028, yt: -0.606 },
+  { id: 8,  x1t:  0.017, yt: -0.372 },
+  { id: 9,  x1t:  0.031, yt:  2.031 },
+  { id: 10, x1t:  0.021, yt:  2.075 },
+  { id: 11, x1t: -0.008, yt: -0.096 },
+  { id: 12, x1t: -0.018, yt:  0.011 }
+]
+
+p2_ex1 = new Set([5, 8, 9, 6])
+p2_worked_hi = p2_worked.filter(d => p2_ex1.has(d.id))
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  height: 330,
+  width: Math.min(560, width),
+  marginLeft: 70,
+  marginRight: 24,
+  marginTop: 28,
+  marginBottom: 48,
+  grid: true,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1c1c1a" },
+  x: { label: "Residual staffing x̃₁  (staffing net of deprivation)" },
+  y: { label: "Residual outcome ỹ  (quality net of deprivation)" },
+  marks: [
+    Plot.frame({ stroke: "#e6e3db" }),
+    Plot.ruleX([0], { stroke: "#79766e", strokeDasharray: "3,3" }),
+    Plot.ruleY([0], { stroke: "#79766e", strokeDasharray: "3,3" }),
+    // The β̂₁ = 35.21 line through the origin (residual regressions have no intercept).
+    Plot.linearRegressionY(p2_worked, { x: "x1t", y: "yt", stroke: "#2e6f40", strokeWidth: 2.5 }),
+    Plot.dot(p2_worked, { x: "x1t", y: "yt", fill: "#3d5a6c", fillOpacity: 0.65, r: 5 }),
+    // Highlight the four Exercise-1 centres.
+    Plot.dot(p2_worked_hi, { x: "x1t", y: "yt", fill: "#990000", stroke: "white", strokeWidth: 1.2, r: 6.5 }),
+    Plot.text(p2_worked_hi, {
+      x: "x1t", y: "yt", text: d => `C${d.id}`, dy: -12,
+      fill: "#990000", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text(["slope = β̂₁ = 35.21"], {
+      frameAnchor: "bottom-right", dx: -8, dy: -8,
+      fill: "#2e6f40", fontWeight: 700, fontSize: 13,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+The 12 real *vårdcentraler* in residual space: both axes have deprivation partialled out. The <span style="color:#2e6f40; font-weight:700;">green</span> line's slope is exactly the multivariate staffing coefficient, $\hat{\beta}_1 = 35.21$. The <span style="color:#990000; font-weight:700;">red</span> points (centres 5, 8, 9, 6) are the four used for the hand-computation in Exercise 1.
+:::
+
+Now run the three regressions of interest:
+
+$$
+\underbrace{\hat{y} = 3.66 + 84.17\, x_1}_{\text{simple}}, \qquad
+\underbrace{\hat{y} = 48.86 + 35.21\, x_1 - 5.59\, x_2}_{\text{multiple}}, \qquad
+\underbrace{\hat{\tilde{y}} = 35.21\, \tilde{x}_1}_{\text{residual-on-residual}}.
+$$
+
+::: {.glass-card .glass-card--insight}
+The slope of the residual-on-residual regression, $35.21$, is *exactly* the multiple-regression coefficient on staffing, $\hat{\beta}_1 = 35.21$ --- to every decimal. That is the Frisch-Waugh-Lovell theorem, confirmed by hand.
+
+The simple regression's $84.17$ overstates the effect of staffing by a factor of more than two. The reason is that staffing and deprivation move together: a one-unit *drop* in deprivation comes with about $0.107$ more physicians per 1,000 (from the auxiliary regression $\hat{x}_1 = 0.904 - 0.107\,x_2$) *and*, separately, about $9.36$ extra percentage points of quality on its own (from $\hat{y} = 80.69 - 9.36\,x_2$). The simple slope silently bundles both channels together, crediting staffing with quality gains that really come from the affluence of well-staffed catchments.
+:::
+
+We can even decompose the gap exactly. The relationship between the simple and multiple slopes is
+
+$$
+\underbrace{\hat{b}}_{84.17} \;=\; \underbrace{\hat{\beta}_1}_{35.21} \;+\; \underbrace{\hat{\beta}_2}_{-5.59} \times \underbrace{\hat{\delta}}_{-8.76},
+$$
+
+where $\hat{\delta}$ is the slope from regressing the *confounder* $x_2$ on the *regressor of interest* $x_1$. Plugging in: $35.21 + (-5.59)\times(-8.76) \approx 35.21 + 48.96 = 84.17$ --- the bias term $\hat{\beta}_2\hat{\delta} \approx 48.96$ accounts for the entire gap $84.17 - 35.21$ between the simple and multiple slopes. **Read this as**: "the confounded simple slope equals the true partial effect plus a bias term --- the effect of deprivation on quality times the degree to which staffing predicts deprivation." This is the **omitted variable bias formula**, and it is the entire subject of the next page. FWL is the machinery that proves it.
+
+The "bias bridge" below makes the split visible: the confounded simple slope of $84.17$ is just the honest partial effect ($35.21$) with the bias term ($48.96$) stacked on top.
+
+```{ojs}
+//| echo: false
+
+// "Bias bridge": one horizontal stacked bar showing 84.17 = 35.21 + 48.96.
+{
+  const honest = 35.21, bias = 48.96, total = honest + bias;
+  const segs = [
+    { y: "slope", part: "True partial effect (β̂₁)", lo: 0, hi: honest, val: honest, fill: "#2e6f40" },
+    { y: "slope", part: "Bias term (β̂₂·δ̂)", lo: honest, hi: total, val: bias, fill: "#990000" }
+  ];
+  return Plot.plot({
+    height: 165,
+    width: Math.min(620, width),
+    marginLeft: 70,
+    marginRight: 24,
+    marginTop: 34,
+    marginBottom: 46,
+    x: { label: "Slope on staffing (percentage points per physician / 1000)", domain: [0, 92], grid: true },
+    y: { label: null, domain: ["slope"] },
+    style: { fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1c1c1a" },
+    marks: [
+      Plot.barX(segs, { y: "y", x1: "lo", x2: "hi", fill: "fill", fillOpacity: 0.85 }),
+      // Segment value labels, centred in each block.
+      Plot.text(segs, {
+        y: "y", x: d => (d.lo + d.hi) / 2, text: d => d.val.toFixed(2),
+        fill: "white", fontWeight: 700, fontSize: 13
+      }),
+      // Part labels above each block.
+      Plot.text(segs, {
+        y: "y", x: d => (d.lo + d.hi) / 2, text: "part",
+        dy: -26, fill: d => d.fill, fontWeight: 600, fontSize: 10.5,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The total at the right end.
+      Plot.ruleX([total], { stroke: "#1c1c1a", strokeDasharray: "3,3" }),
+      Plot.text(["simple slope b̂ = 84.17"], {
+        frameAnchor: "top-right", dx: -6, dy: 4,
+        fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+The bias bridge: the simple regression's $\hat{b} = 84.17$ is the <span style="color:#2e6f40; font-weight:700;">honest partial effect (35.21)</span> plus a <span style="color:#990000; font-weight:700;">bias block (48.96)</span> that omitting deprivation tacks on. The next page is devoted entirely to the size and sign of that red block.
+:::
+
+
+<details>
+<summary>Math Details: The Annihilator Matrix and a One-Line Proof</summary>
+<div class="details-content">
+
+### Projection and annihilator matrices
+
+Write the multiple regression in matrix form. Let $X_2$ be the matrix of "other" regressors (here: a column of ones and the deprivation column), and let $x_1$ be the column we care about. Define the **projection matrix** onto the column space of $X_2$:
+
+$$
+P_2 = X_2 (X_2' X_2)^{-1} X_2'.
+$$
+
+**How to read this**: "$P_2$ takes any vector and returns its best linear approximation using the columns of $X_2$." Multiplying any vector $v$ by $P_2$ gives the *fitted values* from regressing $v$ on $X_2$.
+
+Its complement is the **annihilator** (or **residual-maker**) matrix:
+
+$$
+M_2 = I - P_2 = I - X_2 (X_2' X_2)^{-1} X_2'.
+$$
+
+**How to read this**: "$M_2$ takes any vector and returns the *residuals* from regressing it on $X_2$ --- the part $X_2$ cannot explain." It is called the annihilator because $M_2 X_2 = 0$: it wipes out anything $X_2$ can already build.
+
+Two properties do all the work. $M_2$ is **symmetric** ($M_2' = M_2$) and **idempotent** ($M_2 M_2 = M_2$ --- residualizing twice is the same as residualizing once). In this notation the partialled-out variables are simply
+
+$$
+\tilde{x}_1 = M_2\, x_1, \qquad \tilde{y} = M_2\, y.
+$$
+
+### The proof
+
+The FWL theorem states $\hat{\beta}_1 = (\tilde{x}_1' \tilde{x}_1)^{-1} \tilde{x}_1' \tilde{y}$. Expand the right-hand side using $\tilde{x}_1 = M_2 x_1$ and $\tilde{y} = M_2 y$:
+
+$$
+(\tilde{x}_1' \tilde{x}_1)^{-1} \tilde{x}_1' \tilde{y}
+= \big( x_1' M_2' M_2 x_1 \big)^{-1} x_1' M_2' M_2 y.
+$$
+
+Now apply symmetry and idempotency, which collapse $M_2' M_2 = M_2 M_2 = M_2$:
+
+$$
+= \big( x_1' M_2 x_1 \big)^{-1} x_1' M_2 y.
+$$
+
+This is precisely the formula for the coefficient on $x_1$ in the full regression of $y$ on $[x_1 \; X_2]$, obtained from the partitioned normal equations. Hence $\hat{\beta}_1 = (x_1' M_2 x_1)^{-1} x_1' M_2 y$. $\blacksquare$
+
+### The "no need to residualize y" corollary
+
+The same algebra shows why regressing the *raw* $y$ on $\tilde{x}_1$ also works:
+
+$$
+(\tilde{x}_1' \tilde{x}_1)^{-1} \tilde{x}_1' y
+= (x_1' M_2 x_1)^{-1} x_1' M_2' y
+= (x_1' M_2 x_1)^{-1} x_1' M_2 y = \hat{\beta}_1.
+$$
+
+The middle step uses $M_2' = M_2$ once; we never needed a second $M_2$ on $y$ because the one already attached to $x_1$ does the orthogonalizing. Geometrically: $\tilde{x}_1$ lives in the subspace orthogonal to $X_2$, so it cannot "see" the part of $y$ that lies in the $X_2$ subspace --- residualizing $y$ removes exactly that invisible part.
+
+### Connection to fixed effects
+
+When $X_2$ is a full set of group dummies (one per *vårdcentral*, per *region*, or per year), $M_2$ subtracts group means: $M_2 y$ is the **within-group demeaned** outcome. FWL then says the multivariate coefficient equals a regression on demeaned data. That is the entire content of the within/fixed-effects estimator we develop later in the book --- it is FWL with dummies as the "other" regressors.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+# 12 vardcentraler: staffing, deprivation, and diabetes quality outcome
+vc <- tibble(
+  center = 1:12,
+  x1 = c(0.64, 0.52, 0.70, 0.49, 0.76, 0.58, 0.61, 0.47, 0.72, 0.55, 0.66, 0.50),  # physicians / 1000
+  x2 = c(2.4,  3.3,  1.8,  3.9,  1.5,  2.6,  3.0,  4.2,  2.0,  3.5,  2.2,  3.6),    # deprivation
+  y  = c(56,   49,   63,   45,   68,   55,   52,   41,   64,   50,   60,   47)      # % at HbA1c target
+)
+
+# (a) Simple regression: ignores deprivation -- confounded
+simple <- lm(y ~ x1, data = vc)
+
+# (b) Full multiple regression
+full <- lm(y ~ x1 + x2, data = vc)
+
+# (c) FWL three-step "partialling out"
+x1_tilde <- residuals(lm(x1 ~ x2, data = vc))   # step 1: staffing net of deprivation
+y_tilde  <- residuals(lm(y  ~ x2, data = vc))   # step 2: outcome net of deprivation
+fwl      <- lm(y_tilde ~ x1_tilde)               # step 3: residual on residual
+
+# (d) Bonus: regress RAW y on residualized x1 -- same slope
+fwl_raw  <- lm(vc$y ~ x1_tilde)
+
+cat("Simple slope (y ~ x1):        ", round(coef(simple)["x1"], 4), "\n")
+cat("Multiple coef on x1:          ", round(coef(full)["x1"], 4), "\n")
+cat("FWL residual-on-residual:     ", round(coef(fwl)["x1_tilde"], 4), "\n")
+cat("FWL raw y on x1_tilde:        ", round(coef(fwl_raw)["x1_tilde"], 4), "\n")
+# All three multivariate numbers agree to machine precision: 35.2146
+
+# Omitted-variable-bias decomposition: b = beta1 + beta2 * delta
+delta <- coef(lm(x2 ~ x1, data = vc))["x1"]       # confounder on regressor
+cat("\nDecomposition check: beta1 + beta2*delta =",
+    round(coef(full)["x1"] + coef(full)["x2"] * delta, 4),
+    " vs simple slope =", round(coef(simple)["x1"], 4), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import statsmodels.api as sm
+
+# 12 vardcentraler: staffing, deprivation, and diabetes quality outcome
+x1 = np.array([0.64, 0.52, 0.70, 0.49, 0.76, 0.58, 0.61, 0.47, 0.72, 0.55, 0.66, 0.50])  # phys/1000
+x2 = np.array([2.4,  3.3,  1.8,  3.9,  1.5,  2.6,  3.0,  4.2,  2.0,  3.5,  2.2,  3.6])     # deprivation
+y  = np.array([56,   49,   63,   45,   68,   55,   52,   41,   64,   50,   60,   47.0])    # % at target
+
+def ols(X, y):
+    return sm.OLS(y, sm.add_constant(X)).fit()
+
+# (a) Simple regression -- confounded
+simple = ols(x1, y)
+
+# (b) Full multiple regression
+full = ols(np.column_stack([x1, x2]), y)
+
+# (c) FWL three-step "partialling out"
+x1_tilde = ols(x2, x1).resid     # step 1: staffing net of deprivation
+y_tilde  = ols(x2, y).resid      # step 2: outcome net of deprivation
+fwl      = ols(x1_tilde, y_tilde)  # step 3: residual on residual
+
+# (d) Bonus: raw y on residualized x1 -- identical slope
+fwl_raw  = ols(x1_tilde, y)
+
+print(f"Simple slope (y ~ x1):    {simple.params[1]:.4f}")
+print(f"Multiple coef on x1:      {full.params[1]:.4f}")
+print(f"FWL residual-on-residual: {fwl.params[1]:.4f}")
+print(f"FWL raw y on x1_tilde:    {fwl_raw.params[1]:.4f}")
+# All multivariate numbers agree: 35.2146
+
+# Omitted-variable-bias decomposition: b = beta1 + beta2 * delta
+delta = ols(x1, x2).params[1]    # confounder on regressor
+check = full.params[1] + full.params[2] * delta
+print(f"\nDecomposition: beta1 + beta2*delta = {check:.4f}  vs simple = {simple.params[1]:.4f}")
+```
+
+:::
+
+Both implementations print the same headline result: the simple slope is **84.17**, while the multiple coefficient, the residual-on-residual slope, and the raw-$y$-on-residual slope are **all 35.21**. The decomposition check returns the simple slope, confirming that the entire gap is the omitted-variable-bias term.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Using the worked 12-center dataset, the residual columns $\tilde{x}_1$ and $\tilde{y}$ are given in the table above. Compute the residual-on-residual slope *by hand* using only the four most extreme centers (5, 8, 9, 6) and the formula $\hat{\beta}_1 = \dfrac{\sum \tilde{x}_1 \tilde{y}}{\sum \tilde{x}_1^2}$. Then state why this hand-computation on a *subset* would **not** in general equal the full multiple-regression coefficient.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Pull the four rows from the table:
+
+| Center | $\tilde{x}_1$ | $\tilde{y}$ | $\tilde{x}_1\tilde{y}$ | $\tilde{x}_1^2$ |
+|:--:|:--:|:--:|:--:|:--:|
+| 5 | $+0.017$ | $+1.350$ | $+0.02295$ | $0.000289$ |
+| 8 | $+0.017$ | $-0.372$ | $-0.00632$ | $0.000289$ |
+| 9 | $+0.031$ | $+2.031$ | $+0.06296$ | $0.000961$ |
+| 6 | $-0.045$ | $-1.351$ | $+0.06080$ | $0.002025$ |
+
+Sums: $\sum \tilde{x}_1\tilde{y} = 0.02295 - 0.00632 + 0.06296 + 0.06080 = 0.14039$ and $\sum \tilde{x}_1^2 = 0.000289 + 0.000289 + 0.000961 + 0.002025 = 0.003564$.
+
+$$
+\hat{\beta}_1^{\text{subset}} = \frac{0.14039}{0.003564} \approx 39.4.
+$$
+
+This is **not** equal to the full-sample $35.21$. The reason: FWL guarantees equality only when the *same residuals* are summed over the *same observations* used to fit the multiple regression. The residuals in the table were computed from auxiliary regressions on **all 12** centers; summing them over a hand-picked 4-center subset changes the cross-products and is no longer the OLS coefficient for any consistent regression. The lesson is that partialling out is a property of the whole sample, not of arbitrary slices of it. (Had we re-residualized within just those four centers and then taken the slope, FWL would hold for that 4-observation regression --- but the residuals would be different numbers.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague proposes a shortcut: "To control for deprivation, just residualize the *outcome* $y$ on deprivation, then regress that residual $\tilde{y}$ on the *raw* staffing $x_1$." Will this recover the multiple-regression coefficient $\hat{\beta}_1 = 35.21$? Prove your answer using the annihilator matrix.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**No --- this is the one combination that fails.** The valid shortcuts are (i) $\tilde{y}$ on $\tilde{x}_1$ and (ii) raw $y$ on $\tilde{x}_1$. The proposed version regresses $\tilde{y}$ on the *raw* $x_1$, and you must residualize the **regressor**, not just the outcome.
+
+**Proof.** The proposed slope is
+
+$$
+(x_1' x_1)^{-1} x_1' \tilde{y} = (x_1' x_1)^{-1} x_1' M_2 y.
+$$
+
+Compare with the true coefficient $\hat{\beta}_1 = (x_1' M_2 x_1)^{-1} x_1' M_2 y$. The numerators are identical ($x_1' M_2 y$), but the denominators differ: the proposal uses $x_1' x_1$ (the full variance of staffing) instead of $x_1' M_2 x_1$ (the variance of staffing *net of deprivation*). Because $M_2$ is idempotent and positive semi-definite, $x_1' M_2 x_1 \le x_1' x_1$, so the proposal divides by too large a number and **shrinks** the estimate toward zero. Intuitively, you have purged deprivation from the outcome but left it sitting inside the regressor, so the regression still "wastes" part of $x_1$'s variation matching the deprivation-driven part of... nothing, since $\tilde y$ has no deprivation left. The denominator must use the same orthogonalized $x_1$ for the cross-products to line up. **Residualizing $x_1$ is mandatory; residualizing $y$ is optional.**
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the worked example, the simple slope is $\hat{b} = 84.17$ and the multiple slope is $\hat{\beta}_1 = 35.21$. The auxiliary regression of deprivation on staffing has slope $\hat{\delta} = -8.76$, and $\hat{\beta}_2 = -5.59$. (a) Verify the omitted-variable-bias identity $\hat{b} = \hat{\beta}_1 + \hat{\beta}_2 \hat{\delta}$. (b) The bias is *positive* even though $\hat{\beta}_2 < 0$. Explain in words why an analysis that fails to control for deprivation makes staffing look *better* than it is.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Plug in:
+
+$$
+\hat{\beta}_1 + \hat{\beta}_2 \hat{\delta} = 35.21 + (-5.59)\times(-8.76) \approx 35.21 + 48.96 = 84.17.
+$$
+
+So the bias term is $\hat{\beta}_2\hat{\delta} \approx +48.96$, which is exactly the gap $84.17 - 35.21$ between the simple and multiple slopes. (The two-decimal inputs give $5.59 \times 8.76 = 48.97$; carrying full precision, $\hat\beta_2\hat\delta = (-5.5856)(-8.7645) = 48.955 \approx 48.96$, reproducing $84.17$ exactly.)
+
+**(b)** The bias is the product of two *negative* numbers, which is positive. Read each sign: $\hat{\beta}_2 = -5.59$ says more deprivation lowers quality; $\hat{\delta} = -8.76$ says better-staffed centers are in *less* deprived areas (staffing and deprivation move oppositely). So when the simple regression sees a well-staffed center post a high quality score, part of that high score is really the *low deprivation* of its catchment area --- a benefit that has nothing to do with the doctors. The simple regression credits all of it to staffing. Two negatives multiply to an upward bias: staffing looks more than twice as effective as it truly is. Controlling for deprivation strips out the borrowed credit and leaves the honest $35.21$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Suppose a Swedish *region* adds a third control: the size of each center's listed population, $x_3$, on top of deprivation $x_2$. State the generalized FWL recipe for recovering the coefficient on staffing $x_1$ in the regression $y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_3 + u$. Then explain what the residualized $\tilde{x}_1$ now represents, and why FWL makes fixed-effects models computationally trivial.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Generalized recipe.** Collect *all* the other regressors into $X_2 = [\,\mathbf{1},\, x_2,\, x_3\,]$ (constant, deprivation, listed population). Then:
+
+1. Regress $x_1$ on $X_2$ (i.e., on a constant, $x_2$, **and** $x_3$ jointly); keep the residual $\tilde{x}_1 = M_2 x_1$.
+2. Regress $y$ on the same $X_2$; keep the residual $\tilde{y} = M_2 y$ (optional, per Exercise 2).
+3. Regress $\tilde{y}$ (or raw $y$) on $\tilde{x}_1$. The slope equals $\hat{\beta}_1$.
+
+The only change from the two-variable case is that $X_2$ now has more columns; the annihilator $M_2 = I - X_2(X_2'X_2)^{-1}X_2'$ projects out *all* of them at once. **What $\tilde{x}_1$ represents now**: the part of staffing that is uncorrelated with deprivation *and* listed-population size simultaneously --- staffing that cannot be predicted from *any* linear combination of the other controls. The multivariate coefficient is the effect of that doubly-purged residual variation.
+
+**Why fixed effects become trivial.** If instead $X_2$ is a set of dummy variables --- one per *region*, say --- then $M_2$ subtracts region means. So $\tilde{x}_1$ is staffing *demeaned within each region* and $\tilde{y}$ is the outcome demeaned within each region. FWL says you can estimate the within-region effect of staffing by (i) subtracting region means from both variables and (ii) running one simple regression --- without ever inverting a huge matrix full of dummy columns. That is exactly how `feols` / `fixest` and the classic within estimator work: FWL turns "include 21 region dummies" into "demean by region," a computation that scales to millions of observations.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- "Controlling for" a variable is a concrete operation: partial it out of both the outcome and the regressor of interest, then look at what remains. It is not a vague gesture.
+- FWL guarantees the residual-on-residual slope equals the full multivariate coefficient — in the worked example, $35.21$ to every decimal, less than half the confounded simple slope of $84.17$.
+- A multiple-regression coefficient uses only the variation in a regressor that is uncorrelated with the other covariates; when regressors move in lockstep, that residual variation vanishes and the coefficient becomes undefined (multicollinearity).
+- Residualizing the regressor is mandatory; residualizing the outcome is optional — the annihilator matrix $M_2$ is symmetric and idempotent, so one $M_2$ does all the orthogonalizing.
+- The same machinery hands you the omitted-variable-bias decomposition $\hat{b} = \hat\beta_1 + \hat\beta_2\hat\delta$, and with group dummies it becomes within-group demeaning — the entire content of the fixed-effects estimator.
+:::
+
+## What Comes Next
+
+The Frisch-Waugh-Lovell theorem told us that a multiple-regression coefficient is the effect of the part of a regressor that is uncorrelated with everything else --- and, almost as a free gift, it handed us the decomposition $\hat{b} = \hat{\beta}_1 + \hat{\beta}_2\hat{\delta}$ that splits a confounded simple slope into the true partial effect plus a bias term. That bias term is no accident. It is what happens when a relevant variable like deprivation is *left out* of the regression entirely. The next page, **[Omitted Variable Bias](omitted-variable-bias.qmd)**, takes this formula as its starting point and asks the question every applied researcher must answer: when we cannot measure or include a confounder, how wrong are we, and in which direction?

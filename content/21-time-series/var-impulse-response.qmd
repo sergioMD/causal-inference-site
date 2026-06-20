@@ -1,0 +1,670 @@
+---
+title: "VAR and Impulse Responses"
+subtitle: "Dynamics among several series"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write a vector autoregression (VAR) that models several time series jointly, each as a linear function of lags of all of them
+- Test for Granger causality and state precisely what "X Granger-causes Y" does and does not mean
+- Trace an impulse-response function (IRF) by reading the VAR's companion matrix and taking its powers
+- Explain why identifying a *structural* shock requires an extra assumption (variable ordering / Cholesky) in one sentence
+- Estimate an IRF the flexible, regression-based way using Jordà local projections, and say when you would prefer it
+:::
+
+## When One Equation Is Not Enough
+
+Region Skåne's *primärvård* (primary care) directorate watches two monthly series side by side: the *budgetanslag* (operating funding) flowing to its *vårdcentraler*, measured as deviation from trend in millions of SEK, and the average **waiting time** for a routine appointment, in days. The policy hunch is dynamic and two-directional. A funding shock this month should shorten waiting times *over the coming months* as clinics hire and open slots --- but with a lag. And waiting times feed back: a month of long queues triggers next month's emergency funding top-up.
+
+A single regression of waiting time on funding cannot capture this. The two series move *together*, each responding to its own past and to the other's past, and a shock to either one ripples through *both* for months. We need a model of the *system*, not of one equation in isolation. That model is the **vector autoregression**.
+
+The VAR, introduced to macroeconomics by Christopher Sims (1980), treats every series as endogenous: each variable is regressed on lags of *itself and of every other variable*. No variable is privileged as "the" outcome. The payoff is the **impulse-response function** --- a clean answer to the question a policymaker actually asks: *if I inject one shock today, what happens to each series over the next two years?*
+
+## The VAR(1): Two Equations, One System
+
+Stack the two series at month $t$ into a vector. Let $y_{1t}$ be the funding deviation (MSEK) and $y_{2t}$ the waiting-time deviation (days), both written as deviations from their long-run means so we can drop the intercept. A **first-order vector autoregression**, or VAR(1), writes each variable as a linear function of *last month's* values of both, plus a fresh shock:
+
+$$
+\begin{aligned}
+y_{1t} &= a_{11}\,y_{1,t-1} + a_{12}\,y_{2,t-1} + \varepsilon_{1t},\\
+y_{2t} &= a_{21}\,y_{1,t-1} + a_{22}\,y_{2,t-1} + \varepsilon_{2t}.
+\end{aligned}
+$$
+
+**Read the first line aloud as**: "funding this month equals $a_{11}$ times funding last month, plus $a_{12}$ times waiting time last month, plus a funding shock $\varepsilon_{1t}$." The coefficient $a_{11}$ is funding's own persistence; $a_{12}$ is how last month's *queue* pushes this month's *funding* (the political feedback). Symmetrically in the second line, $a_{22}$ is the inertia of waiting times and $a_{21}$ is how last month's *funding* moves this month's *queue*.
+
+It is far tidier in matrix form. Collect $\mathbf{y}_t = (y_{1t}, y_{2t})'$, the coefficient matrix $\mathbf{A}$, and the shock vector $\boldsymbol{\varepsilon}_t$:
+
+$$
+\mathbf{y}_t = \mathbf{A}\,\mathbf{y}_{t-1} + \boldsymbol{\varepsilon}_t,
+\qquad
+\mathbf{A} = \begin{pmatrix} a_{11} & a_{12} \\ a_{21} & a_{22} \end{pmatrix},
+\qquad
+\boldsymbol{\varepsilon}_t \sim (\mathbf{0}, \boldsymbol{\Sigma}).
+$$
+
+**Read this as**: "the vector $\mathbf{y}$ at time $t$ equals the matrix $\mathbf{A}$ times the vector at $t-1$, plus a vector of mean-zero shocks with covariance $\boldsymbol{\Sigma}$." Everything you know about a scalar AR(1) carries over --- it is the *same* equation $y_t = a\,y_{t-1} + \varepsilon_t$ with numbers promoted to matrices.
+
+::: {.glass-card .glass-card--definition}
+A **vector autoregression of order $p$**, VAR($p$), models a $k$-vector of series $\mathbf{y}_t$ as
+
+$$
+\mathbf{y}_t = \mathbf{c} + \mathbf{A}_1 \mathbf{y}_{t-1} + \mathbf{A}_2 \mathbf{y}_{t-2} + \cdots + \mathbf{A}_p \mathbf{y}_{t-p} + \boldsymbol{\varepsilon}_t,
+$$
+
+where each $\mathbf{A}_\ell$ is a $k\times k$ coefficient matrix, $\mathbf{c}$ is an intercept vector, and $\boldsymbol{\varepsilon}_t$ is a vector of serially uncorrelated shocks with covariance $\boldsymbol{\Sigma} = \mathrm{E}[\boldsymbol{\varepsilon}_t\boldsymbol{\varepsilon}_t']$. Each *equation* has the same right-hand-side regressors (the stacked lags), so the VAR can be estimated equation by equation with ordinary least squares.
+:::
+
+::: {.glass-card .glass-card--assumption}
+**For the VAR to be well-behaved we assume:**
+
+1. **Stationarity (stability).** All eigenvalues of the companion matrix lie *strictly inside the unit circle* ($|\lambda| < 1$). Equivalently, shocks die out and the IRF decays to zero. For our VAR(1) this is just "the eigenvalues of $\mathbf{A}$ have modulus below 1." If a series has a unit root, difference it first or model the system as a [VECM](unit-roots-cointegration.qmd).
+2. **No serial correlation in $\boldsymbol{\varepsilon}_t$.** The lag order $p$ is chosen large enough (via AIC/BIC) that the residuals are white noise. Left-over autocorrelation means the dynamics are mis-specified.
+3. **Linearity and parameter stability.** The matrices $\mathbf{A}_\ell$ are constant over the sample --- no structural break in how funding and queues interact.
+:::
+
+## Granger Causality: Does One Series Help Predict Another?
+
+Before tracing shocks, ask a humbler question: does the *funding* series carry information about *future* waiting times beyond what the queue's own past already tells us? This is **Granger causality** (Granger, 1969).
+
+In our VAR(1), waiting time is $y_{2t} = a_{21}y_{1,t-1} + a_{22}y_{2,t-1} + \varepsilon_{2t}$. Funding ($y_1$) Granger-causes waiting time ($y_2$) precisely when the coefficient on lagged funding is non-zero, $a_{21}\neq 0$. With more lags, the test is a joint $F$/Wald test that *all* lags of $y_1$ in the $y_2$ equation are zero:
+
+$$
+H_0:\; a_{21}^{(1)} = a_{21}^{(2)} = \cdots = a_{21}^{(p)} = 0
+\quad\Longleftrightarrow\quad
+\text{$y_1$ does \emph{not} Granger-cause $y_2$.}
+$$
+
+**Read this as**: "the null hypothesis is that every lag of funding has a zero coefficient in the waiting-time equation; rejecting it means past funding improves the forecast of future waiting times."
+
+::: {.glass-card .glass-card--warning}
+**Granger causality is predictive, not structural.** "$y_1$ Granger-causes $y_2$" means *past $y_1$ helps forecast $y_2$* --- nothing more. It can fail to be true causation (a third variable, like a regional reform, drives both) and it can miss true causation (if markets are forward-looking, queues may already price in *anticipated* funding, so the past adds nothing). It is also directional and can run both ways: funding may Granger-cause queues *and* queues Granger-cause funding. Treat it as a Granger-*predictability* test and reserve "cause" for designs with identifying assumptions.
+:::
+
+## The Impulse-Response Function
+
+Now the centerpiece. Hit the system with a *one-time* unit shock today --- say $\varepsilon_{1,0}=1$ (a one-MSEK funding surprise), with no further shocks --- and let the VAR run. The **impulse-response function** is the path each variable traces out over horizons $h = 0, 1, 2, \dots$ as that single shock propagates and decays.
+
+For the VAR(1) the algebra is beautiful. Start from $\mathbf{y}_0 = \boldsymbol{\delta}$ (the shock) and set all later shocks to zero. Then $\mathbf{y}_1 = \mathbf{A}\boldsymbol{\delta}$, $\mathbf{y}_2 = \mathbf{A}^2\boldsymbol{\delta}$, and in general:
+
+$$
+\mathrm{IRF}(h) = \mathbf{A}^h\,\boldsymbol{\delta}.
+$$
+
+**Read this as**: "the response at horizon $h$ is the coefficient matrix raised to the $h$-th power, times the initial shock vector." The IRF is *literally the powers of $\mathbf{A}$*. Because the system is stable, $\mathbf{A}^h \to \mathbf{0}$, so every response eventually decays back to zero --- shocks are temporary. The off-diagonal entries of $\mathbf{A}$ are what let a *funding* shock show up in the *waiting-time* path: cross-effects are why we bothered with a system at all.
+
+::: {.glass-card .glass-card--insight}
+**The IRF is the model's policy headline.** A regression coefficient answers "how much does $y$ move with $x$, holding lags fixed for *one* period?" The IRF answers the question a director actually asks: "if I add one MSEK today, by how much --- and for how long --- do queues fall over the next two years?" It bundles the *entire dynamic chain* (the direct effect, the feedback, the persistence) into a single readable curve, horizon by horizon.
+:::
+
+### The identification problem in one sentence
+
+There is a catch. The shocks $\boldsymbol{\varepsilon}_t$ are usually *correlated* across equations ($\boldsymbol{\Sigma}$ is not diagonal), so a "pure" one-MSEK funding shock with *nothing* happening to queues is not something the data alone can isolate --- recovering economically meaningful **structural** shocks requires an extra assumption, most commonly a *recursive ordering* imposed through the **Cholesky decomposition** of $\boldsymbol{\Sigma}$ (e.g., "funding can move within the month but queues react only with a lag"), which is exactly what a **structural VAR (SVAR)** formalizes.
+
+## See It: A 2-Variable VAR and Its Impulse Responses
+
+The lab below *is* the VAR(1) above. You set the off-diagonal **spillover** coefficient $a_{21}$ --- how strongly last month's funding shock bleeds into this month's waiting time --- and the **persistence** of each series. Then you inject a one-time shock into one variable and watch the IRF: the response paths of *both* series, horizon by horizon, computed exactly as $\mathbf{A}^h\boldsymbol{\delta}$.
+
+::: {.interactive-container}
+
+#### A funding shock propagating through a 2-variable VAR
+
+```{ojs}
+//| echo: false
+// Concise "Start here" prompt above the controls (fuller tour is below).
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${tsvar_pal.axis};
+    background: ${tsvar_pal.fill};
+    border-left: 3px solid ${tsvar_pal.focal};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave the shock on <em>Funding</em> and drag the
+  <em>spillover a&#8322;&#8321;</em> slider up. Watch the slate
+  waiting-time curve grow a hump even though only funding was hit &mdash; that
+  hump <em>is</em> the cross-effect. The step-by-step tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof tsvar_shockVar = Inputs.radio(
+  ["Funding (y₁)", "Waiting time (y₂)"],
+  { label: "Shock which series?", value: "Funding (y₁)" }
+)
+```
+
+```{ojs}
+//| echo: false
+viewof tsvar_a21 = Inputs.range([-0.6, 0.6], {
+  value: -0.35, step: 0.01,
+  label: "Spillover a₂₁: funding last month → waiting time this month"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof tsvar_a11 = Inputs.range([0, 0.95], {
+  value: 0.6, step: 0.01,
+  label: "Persistence a₁₁: funding's own inertia"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof tsvar_a22 = Inputs.range([0, 0.95], {
+  value: 0.7, step: 0.01,
+  label: "Persistence a₂₂: waiting time's own inertia"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof tsvar_a12 = Inputs.range([-0.6, 0.6], {
+  value: 0.0, step: 0.01,
+  label: "Feedback a₁₂: waiting time last month → funding this month"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Uppsala-academic palette tokens shared across this page's interactives. ──
+tsvar_pal = ({
+  focal:   "#990000",  // focal / primary series (funding) — Uppsala red
+  second:  "#3d5a6c",  // secondary / comparison series (waiting time) — slate
+  good:    "#2e6f40",  // on-target / stable green
+  ochre:   "#9c7a33",  // highlight / true-value
+  ink:     "#1c1c1a",  // neutral ink
+  axis:    "#79766e",  // axis text
+  hair:    "#e6e3db",  // gridlines
+  muted:   "#79766e",  // muted ink
+  bad:     "#b3000b",  // alarm / unstable
+  fill:    "#f6f5f1"   // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The 2x2 coefficient matrix A, read live from the sliders. Row 1 is the
+// funding equation, row 2 the waiting-time equation.
+tsvar_A = [
+  [tsvar_a11, tsvar_a12],
+  [tsvar_a21, tsvar_a22]
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// 2x2 matrix-vector product, used to step the system forward one period.
+tsvar_matvec = (M, v) => [
+  M[0][0] * v[0] + M[0][1] * v[1],
+  M[1][0] * v[0] + M[1][1] * v[1]
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Stability check via the eigenvalues of A. For a 2x2 matrix the eigenvalues
+// solve λ² − (trace)λ + det = 0; the system is stable iff BOTH have modulus < 1.
+// We report the spectral radius (largest modulus) so the reader sees how close
+// to the unit circle the dynamics sit.
+tsvar_spectralRadius = {
+  const a = tsvar_A[0][0], b = tsvar_A[0][1],
+        c = tsvar_A[1][0], d = tsvar_A[1][1];
+  const tr = a + d, det = a * d - b * c;
+  const disc = tr * tr - 4 * det;
+  if (disc >= 0) {
+    const s = Math.sqrt(disc);
+    return Math.max(Math.abs((tr + s) / 2), Math.abs((tr - s) / 2));
+  } else {
+    // Complex pair λ = (tr ± i√|disc|)/2; modulus = √det.
+    return Math.sqrt(Math.abs(det));
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Number of horizons to trace the impulse response over (h = 0..H months).
+tsvar_H = 24
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The impulse response: start from the unit shock δ and apply A repeatedly,
+// IRF(h) = Aʰ δ. We tabulate h = 0..H for both series.
+tsvar_irf = {
+  const delta = tsvar_shockVar.startsWith("Funding") ? [1, 0] : [0, 1];
+  const rows = [];
+  let v = delta.slice();
+  for (let h = 0; h <= tsvar_H; h++) {
+    rows.push({ h, series: "Funding (y₁)",       value: v[0] });
+    rows.push({ h, series: "Waiting time (y₂)",  value: v[1] });
+    v = tsvar_matvec(tsvar_A, v);   // advance: v ← A v
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+// Live stability banner. Green when the system is stable (shocks decay),
+// red when the spectral radius reaches the unit circle (shocks explode).
+html`<div style="
+    font-family: Inter, sans-serif;
+    font-size: 0.82rem;
+    margin: 0.2rem 0 0.6rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    border-left: 3px solid ${tsvar_spectralRadius < 1 ? tsvar_pal.good : tsvar_pal.bad};
+    background: ${tsvar_pal.fill};
+    color: ${tsvar_spectralRadius < 1 ? tsvar_pal.good : tsvar_pal.bad};">
+  Spectral radius of <strong>A</strong> = <strong>${tsvar_spectralRadius.toFixed(3)}</strong>
+  ${tsvar_spectralRadius < 1
+    ? "— stable: every response decays back to zero."
+    : "— unstable: a shock now explodes instead of dying out (push the persistence sliders down)."}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 340,
+  marginLeft: 64,
+  marginBottom: 46,
+  marginTop: 28,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: tsvar_pal.axis },
+  x: { label: "Horizon h (months after the shock) →", domain: [0, tsvar_H], grid: false },
+  y: {
+    label: "↑ Response to a one-unit shock",
+    grid: true,
+    domain: [
+      Math.min(-0.4, d3.min(tsvar_irf, d => d.value) * 1.15),
+      Math.max( 1.05, d3.max(tsvar_irf, d => d.value) * 1.15)
+    ]
+  },
+  color: {
+    domain: ["Funding (y₁)", "Waiting time (y₂)"],
+    range: [tsvar_pal.focal, tsvar_pal.second]
+  },
+  marks: [
+    Plot.gridY({ stroke: tsvar_pal.hair }),
+    Plot.ruleY([0], { stroke: tsvar_pal.ink, strokeWidth: 1 }),
+    Plot.line(tsvar_irf, {
+      x: "h", y: "value", stroke: "series", strokeWidth: 2.5,
+      curve: "monotone-x"
+    }),
+    Plot.dot(tsvar_irf, {
+      x: "h", y: "value", fill: "series", r: 2.6,
+      title: d => `${d.series}\nh = ${d.h}\nresponse = ${d.value.toFixed(3)}`
+    }),
+    // Inline series labels placed a few horizons in (h = 2), nudged so they
+    // never overlap the y-axis or each other. Plot.line carries no text channel,
+    // so the white halo (stroke) keeps the text legible over the gridlines.
+    Plot.text(
+      tsvar_irf.filter(d => d.h === 2),
+      {
+        x: "h", y: "value", text: d => d.series.split(" (")[0],
+        fill: "series", fontWeight: 700, fontSize: 11,
+        dy: d => d.series.startsWith("Funding") ? -12 : 16,
+        textAnchor: "start", dx: 4,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }
+    )
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live summary tiles: peak response of the *other* series, the horizon of that
+// peak, and how long until both responses are within 0.05 of zero ("half-life"
+// style settle time). Driven directly from tsvar_irf so they can't drift.
+{
+  const focalName = tsvar_shockVar.startsWith("Funding") ? "Funding (y₁)" : "Waiting time (y₂)";
+  const otherName = tsvar_shockVar.startsWith("Funding") ? "Waiting time (y₂)" : "Funding (y₁)";
+  const otherPath = tsvar_irf.filter(d => d.series === otherName);
+
+  // Peak (largest in absolute value) response of the cross series.
+  let peak = otherPath[0];
+  for (const r of otherPath) if (Math.abs(r.value) > Math.abs(peak.value)) peak = r;
+
+  // Settle horizon: last h at which EITHER series still exceeds 0.05 in abs value.
+  let settle = 0;
+  for (const r of tsvar_irf) if (Math.abs(r.value) > 0.05) settle = Math.max(settle, r.h);
+
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Shock injected into", focalName.split(" (")[0], tsvar_pal.ink)}
+    ${tile("Peak cross-response", peak.value.toFixed(3), tsvar_pal.second)}
+    ${tile("…at horizon h", peak.h + " mo", tsvar_pal.ochre)}
+    ${tile("Settles below 0.05 by", settle + " mo", tsvar_pal.good)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Impulse-Response Chart
+
+Work through these in order; each isolates one moving part of the VAR.
+
+**Step 1: Read the two curves.** The red curve is the response of **funding** ($y_1$) and the slate curve the response of **waiting time** ($y_2$), traced over horizons $h=0$ (the month of the shock) to $h=24$. Height is the deviation from baseline caused by the *single* shock at $h=0$. Both curves start from the shock vector and then evolve as $\mathbf{A}^h\boldsymbol{\delta}$.
+
+**Step 2: See the impact.** With the shock on **Funding**, at $h=0$ the red curve jumps to $1$ (the unit shock) and the slate curve sits at $0$ --- the queue has not reacted *yet*. That one-period lag is the whole point of a *dynamic* model: cross-effects take time.
+
+**Step 3: Grow the spillover.** Drag **spillover $a_{21}$** more negative. Now the slate waiting-time curve dips below zero starting at $h=1$: the funding shock works its way into the queue and *shortens* it (negative response = fewer days). Make $a_{21}$ positive instead and the queue *lengthens* --- the sign of one off-diagonal coefficient flips the entire policy story.
+
+**Step 4: Tune persistence.** Raise **persistence $a_{11}$** toward $0.95$. The red curve now decays slowly --- a funding surprise lingers for many months --- which *prolongs* the slate response too, because the queue keeps being fed by still-elevated funding. Persistence stretches the IRF horizontally.
+
+**Step 5: Break stability.** Push **both** persistence sliders high *and* open up $a_{12}$ and $a_{21}$ so they reinforce. Watch the stability banner: when the **spectral radius** reaches $1$, it turns red and the curves stop decaying --- the system has a unit root and the IRF no longer settles. This is the stationarity assumption failing in real time.
+
+## Local Projections: IRFs Without the VAR
+
+The VAR gets its IRF "for free" as $\mathbf{A}^h\boldsymbol{\delta}$, but that elegance has a cost: *every* horizon's response is forced to be consistent with one estimated $\mathbf{A}$, so a mis-specified $\mathbf{A}$ contaminates the IRF at *all* horizons. Jordà (2005) proposed a refreshingly direct alternative: estimate the response at each horizon $h$ with its *own* regression.
+
+::: {.glass-card .glass-card--definition}
+A **local projection** estimates the response of $y$ at horizon $h$ by regressing the *future* value $y_{t+h}$ on the current shock (or impulse variable) $x_t$, controlling for lags:
+
+$$
+y_{t+h} = \alpha_h + \beta_h\, x_t + \sum_{\ell=1}^{p}\boldsymbol{\gamma}_{h\ell}'\,\mathbf{w}_{t-\ell} + u_{t+h},
+\qquad h = 0, 1, 2, \dots
+$$
+
+The **impulse response at horizon $h$ is the sequence of slopes $\widehat\beta_0, \widehat\beta_1, \widehat\beta_2, \dots$** --- one coefficient from one regression per horizon. Here $\mathbf{w}_{t-\ell}$ are control lags and $u_{t+h}$ is the error.
+:::
+
+**Read the recipe as**: "to get the response at horizon $h$, regress $y$ measured $h$ months *ahead* on today's shock; the coefficient $\beta_h$ is the IRF at that horizon, and you run a separate regression for each $h$." You are not iterating a matrix --- you are reading off a coefficient directly at each lead.
+
+::: {.glass-card .glass-card--insight}
+**Local projections trade efficiency for robustness.** Because each horizon is its own regression, an error in one does not propagate to the others, and the method handles non-linearities, state-dependence, and instrumented shocks (LP-IV) with ordinary regression machinery. The price is noisier estimates at long horizons and wider confidence bands. Rule of thumb: a stable, well-specified small system favors the VAR's efficiency; messy dynamics, a clean external shock, or a desire to avoid imposing the whole $\mathbf{A}$ favor local projections.
+:::
+
+## Estimating a VAR and Its IRF in Code
+
+Both panels fit a two-variable VAR to monthly *primärvård* data (funding deviation and waiting-time deviation), run a Granger test, extract the IRF, and then estimate the *same* response with a local projection for comparison.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("vars", "lpirfs"))  # if needed
+library(vars)
+
+## ---- Toy monthly primary-care data: funding & waiting-time deviations ----
+set.seed(2024)
+n  <- 200
+e  <- MASS::mvrnorm(n, mu = c(0, 0),
+                    Sigma = matrix(c(1, 0.2, 0.2, 1), 2))
+fund <- numeric(n); wait <- numeric(n)
+for (t in 2:n) {
+  # True VAR(1): funding persists; funding shortens next month's queue (a21<0)
+  fund[t] <- 0.60 * fund[t-1] + 0.00 * wait[t-1] + e[t, 1]
+  wait[t] <- -0.35 * fund[t-1] + 0.70 * wait[t-1] + e[t, 2]
+}
+Y <- data.frame(funding = fund, waiting = wait)
+
+## ---- Choose lag length, then fit the VAR by OLS, equation by equation ----
+VARselect(Y, lag.max = 8, type = "const")$selection   # AIC/BIC pick p
+fit <- VAR(Y, p = 1, type = "const")
+summary(fit)
+
+## ---- Granger causality: does funding help predict waiting time? ----
+causality(fit, cause = "funding")$Granger    # H0: funding does NOT Granger-cause
+
+## ---- Impulse response: a funding shock → both series, 24 months out ----
+ir <- irf(fit, impulse = "funding", response = c("funding", "waiting"),
+          n.ahead = 24, ortho = TRUE, boot = TRUE)   # ortho = Cholesky SVAR
+plot(ir)
+
+## ---- Same IRF via Jordà local projections (regression per horizon) ----
+library(lpirfs)
+lp <- lp_lin(endog_data = Y, lags_endog_lin = 1,
+             trend = 0, shock_type = 1, confint = 1.96, hor = 24)
+plot(lp)
+```
+
+### Python
+
+```python
+# pip install statsmodels numpy
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.tsa.api import VAR
+
+# ---- Toy monthly primary-care data: funding & waiting-time deviations ----
+rng = np.random.default_rng(2024)
+n = 200
+cov = np.array([[1.0, 0.2], [0.2, 1.0]])
+e = rng.multivariate_normal([0, 0], cov, size=n)
+fund = np.zeros(n); wait = np.zeros(n)
+for t in range(1, n):
+    # True VAR(1): funding persists; funding shortens next month's queue (a21<0)
+    fund[t] = 0.60 * fund[t-1] + 0.00 * wait[t-1] + e[t, 0]
+    wait[t] = -0.35 * fund[t-1] + 0.70 * wait[t-1] + e[t, 1]
+Y = pd.DataFrame({"funding": fund, "waiting": wait})
+
+# ---- Choose lag length, then fit the VAR by OLS ----
+model = VAR(Y)
+print(model.select_order(8).summary())     # AIC/BIC pick p
+fit = model.fit(1)
+print(fit.summary())
+
+# ---- Granger causality: does funding help predict waiting time? ----
+print(fit.test_causality("waiting", ["funding"], kind="f"))
+
+# ---- Impulse response: a funding shock → both series, 24 months out ----
+irf = fit.irf(24)
+irf.plot(orth=True)        # orth=True → Cholesky-identified (recursive) SVAR
+
+# ---- Same IRF via Jordà local projection (one regression per horizon) ----
+H = 24
+betas = []
+X = sm.add_constant(np.column_stack([Y["funding"].shift(1),
+                                     Y["waiting"].shift(1)]))
+for h in range(H + 1):
+    y_h = Y["waiting"].shift(-h)                 # waiting time h months ahead
+    d = pd.concat([y_h, pd.DataFrame(X, index=Y.index)], axis=1).dropna()
+    # Design columns are [const, funding_{t-1}, waiting_{t-1}]; the funding
+    # impulse coefficient is at position 1 (position 0 is the intercept).
+    beta = sm.OLS(d.iloc[:, 0], d.iloc[:, 1:]).fit().params.iloc[1]  # coef on fund_{t-1}
+    betas.append(beta)
+print("LP IRF of waiting time to a funding impulse:", np.round(betas, 3))
+```
+
+:::
+
+Both routes deliver the same object --- the response of each series to a shock, horizon by horizon. The VAR squeezes it from one estimated $\mathbf{A}$; the local projection reads it off horizon-specific regressions. On clean, stationary data they agree closely; they diverge when the VAR is mis-specified, which is exactly when the local projection's robustness earns its keep.
+
+<details>
+<summary>Math Details: The Companion Form and the IRF as Powers of the Matrix</summary>
+<div class="details-content">
+
+### Why a VAR(1) is all you ever need: the companion form
+
+A VAR($p$) looks more complicated than a VAR(1), but it is a VAR(1) in disguise. Take a VAR(2) in $k$ variables, $\mathbf{y}_t = \mathbf{A}_1\mathbf{y}_{t-1} + \mathbf{A}_2\mathbf{y}_{t-2} + \boldsymbol{\varepsilon}_t$. Stack the current and lagged vectors into a $2k$-dimensional state $\mathbf{z}_t = (\mathbf{y}_t',\,\mathbf{y}_{t-1}')'$. Then
+
+$$
+\underbrace{\begin{pmatrix}\mathbf{y}_t \\ \mathbf{y}_{t-1}\end{pmatrix}}_{\mathbf{z}_t}
+=
+\underbrace{\begin{pmatrix}\mathbf{A}_1 & \mathbf{A}_2 \\ \mathbf{I}_k & \mathbf{0}\end{pmatrix}}_{\mathbf{F},\ \text{the companion matrix}}
+\underbrace{\begin{pmatrix}\mathbf{y}_{t-1} \\ \mathbf{y}_{t-2}\end{pmatrix}}_{\mathbf{z}_{t-1}}
++
+\begin{pmatrix}\boldsymbol{\varepsilon}_t \\ \mathbf{0}\end{pmatrix}.
+$$
+
+The bottom block is the bookkeeping identity $\mathbf{y}_{t-1}=\mathbf{y}_{t-1}$. So *every* VAR($p$) is a VAR(1) in the stacked state, $\mathbf{z}_t = \mathbf{F}\mathbf{z}_{t-1} + \boldsymbol{\eta}_t$. **Stability** is the condition that all eigenvalues of $\mathbf{F}$ have modulus $<1$, and everything below for the VAR(1) applies to $\mathbf{F}$.
+
+### The IRF as powers of $\mathbf{A}$
+
+For a stable VAR(1), $\mathbf{y}_t = \mathbf{A}\mathbf{y}_{t-1} + \boldsymbol{\varepsilon}_t$, substitute backwards repeatedly:
+
+$$
+\mathbf{y}_t = \boldsymbol{\varepsilon}_t + \mathbf{A}\boldsymbol{\varepsilon}_{t-1} + \mathbf{A}^2\boldsymbol{\varepsilon}_{t-2} + \cdots
+= \sum_{j=0}^{\infty} \mathbf{A}^j\,\boldsymbol{\varepsilon}_{t-j}.
+$$
+
+This is the **vector moving-average (VMA) representation**: today's vector is a weighted sum of all past shocks, with weight $\mathbf{A}^j$ on the shock $j$ periods ago. The convergence of the sum requires $\mathbf{A}^j\to\mathbf{0}$, i.e. stability. The IRF reads the weights off directly:
+
+$$
+\frac{\partial \mathbf{y}_{t+h}}{\partial \boldsymbol{\varepsilon}_t'} = \mathbf{A}^h
+\quad\Longrightarrow\quad
+\mathrm{IRF}(h) = \mathbf{A}^h\,\boldsymbol{\delta},
+$$
+
+the response at horizon $h$ to a shock $\boldsymbol{\delta}$ today. Each *column* of $\mathbf{A}^h$ is the response of all variables to a unit shock in one variable.
+
+### A worked closed form via eigen-decomposition
+
+If $\mathbf{A} = \mathbf{V}\boldsymbol{\Lambda}\mathbf{V}^{-1}$ with eigenvalues $\lambda_1,\lambda_2$ on the diagonal of $\boldsymbol{\Lambda}$, then $\mathbf{A}^h = \mathbf{V}\boldsymbol{\Lambda}^h\mathbf{V}^{-1}$, and since $\boldsymbol{\Lambda}^h = \mathrm{diag}(\lambda_1^h,\lambda_2^h)$ the IRF is a *sum of geometric decays* $\lambda_1^h$ and $\lambda_2^h$. Take the interactive's default lower-triangular case $a_{12}=0$:
+
+$$
+\mathbf{A} = \begin{pmatrix} 0.6 & 0 \\ -0.35 & 0.7 \end{pmatrix}.
+$$
+
+Its eigenvalues are the diagonal entries $\lambda_1 = 0.6$ and $\lambda_2 = 0.7$ (triangular matrix). For a funding shock $\boldsymbol{\delta} = (1,0)'$, the funding response is pure $a_{11}^h = 0.6^h$, and the waiting-time response can be derived in closed form as
+
+$$
+\mathrm{IRF}_2(h) = a_{21}\,\frac{a_{22}^{\,h} - a_{11}^{\,h}}{a_{22}-a_{11}}
+= -0.35\cdot\frac{0.7^{\,h} - 0.6^{\,h}}{0.7 - 0.6}.
+$$
+
+Check the first horizons against the chart: $h=0$ gives $0$ (queue has not reacted), $h=1$ gives $-0.35\cdot(0.7-0.6)/0.1 = -0.35$, and $h=2$ gives $-0.35\cdot(0.49-0.36)/0.1 = -0.455$. The response builds to a trough and then decays as the slower root $0.7^h$ dominates --- exactly the hump-shaped slate curve in the lab. The spectral radius is $\max(0.6,0.7)=0.7<1$, so it converges to zero. $\checkmark$
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A two-variable VAR(1) for Region Östergötland links monthly *sjukfrånvaro* (sick leave, $y_1$, % deviation) and the number of unfilled *vårdcentral* vacancies ($y_2$, deviation) with coefficient matrix
+
+$$
+\mathbf{A} = \begin{pmatrix} 0.5 & 0.2 \\ 0.0 & 0.4 \end{pmatrix}.
+$$
+
+(a) Is the system stable? (b) Does sick leave Granger-cause vacancies? Do vacancies Granger-cause sick leave? (c) Compute the response of *sick leave* to a unit *vacancy* shock $\boldsymbol{\delta}=(0,1)'$ at horizons $h=0,1,2$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\mathbf{A}$ is upper-triangular, so its eigenvalues are the diagonal entries $0.5$ and $0.4$. Both have modulus $<1$, so the system is **stable** (spectral radius $0.5$); shocks decay.
+
+**(b)** Sick-leave Granger-causes vacancies iff $a_{21}\neq 0$. Here $a_{21}=0$, so sick leave does **not** Granger-cause vacancies. Vacancies Granger-cause sick leave iff $a_{12}\neq 0$; here $a_{12}=0.2\neq 0$, so vacancies **do** Granger-cause sick leave. Causality is one-directional.
+
+**(c)** $\mathrm{IRF}(h)=\mathbf{A}^h\boldsymbol{\delta}$ with $\boldsymbol{\delta}=(0,1)'$.
+
+- $h=0$: $\mathbf{A}^0\boldsymbol{\delta} = \boldsymbol{\delta} = (0,1)'$, so sick-leave response $=0$.
+- $h=1$: $\mathbf{A}\boldsymbol{\delta} = (0.5\cdot0 + 0.2\cdot1,\; 0\cdot0 + 0.4\cdot1)' = (0.2,\,0.4)'$, so sick-leave response $=0.2$.
+- $h=2$: $\mathbf{A}^2\boldsymbol{\delta} = \mathbf{A}(0.2,0.4)' = (0.5\cdot0.2 + 0.2\cdot0.4,\; 0.4\cdot0.4)' = (0.18,\,0.16)'$, so sick-leave response $=0.18$.
+
+The sick-leave response rises to $0.20$ at $h=1$ then decays toward zero. $\checkmark$
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain, in your own words, why "funding Granger-causes waiting times" is *not* the same as "extra funding will cause waiting times to fall." Give one Swedish primary-care scenario where Granger causality would mislead a policymaker.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Granger causality is a statement about **forecasting**: past funding improves the prediction of future waiting times beyond the queue's own history. It says nothing about a controlled intervention. Two ways it misleads:
+
+1. **Common cause.** A regional reform may simultaneously raise funding *and* reform triage so queues fall. Funding then predicts shorter queues (Granger-causes them) without *causing* them --- the reform drives both. Pouring money in without the reform might do nothing.
+
+2. **Anticipation / reverse information flow.** Suppose the region announces a funding rule that tops up any clinic whose queue lengthens. Then *long queues today predict more funding next month*, so queues Granger-cause funding --- but the queue is not "causing" the budget in any policy-actionable sense; it is triggering a pre-committed rule.
+
+**Scenario:** A director sees that funding Granger-causes shorter queues and concludes "if I add 10 MSEK, queues will fall." But in the data, funding rose in years when a national digital-triage rollout also happened. The triage rollout is the true cause; the standalone 10 MSEK, without triage, leaves queues unchanged. Granger causality flagged predictability, not a usable lever.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+You have a clean, externally identified one-time funding shock (a quasi-random central-government grant that hit some regions and not others). Would you estimate the IRF with a VAR or with a Jordà local projection? Give two reasons, and state one drawback of your choice.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Prefer a **local projection (LP-IV style)**. Reasons:
+
+1. **The shock is already identified externally.** You do not need the VAR's Cholesky ordering to recover a structural shock --- you can plug the known grant directly in as $x_t$ and read $\beta_h$ off each horizon. This sidesteps the contestable ordering assumption entirely.
+
+2. **Robustness to mis-specification.** Each horizon is its own regression, so an error in the short-run dynamics does not propagate to long-horizon responses the way a wrong $\mathbf{A}$ would contaminate every power $\mathbf{A}^h$. LP also accommodates non-linear or state-dependent responses (e.g., the grant working differently in understaffed regions).
+
+**Drawback:** Local projections are **less efficient** --- the horizon-by-horizon estimates are noisier and the confidence bands are wider, especially at long horizons, because they do not borrow strength across horizons the way the VAR's single $\mathbf{A}$ does. The IRF can also look jagged rather than smooth.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the shock on **Funding**, $a_{11}=0.6$, $a_{22}=0.7$, $a_{12}=0$, and $a_{21}=-0.35$ (the defaults). (a) Using the closed form from the Math Details, predict the waiting-time response at $h=3$ and confirm it against the chart tooltip. (b) Now raise $a_{22}$ to $0.9$. Qualitatively, what happens to *when* the waiting-time response bottoms out and *how long* it takes to settle? Why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The closed form is $\mathrm{IRF}_2(h) = -0.35\cdot\dfrac{0.7^{h}-0.6^{h}}{0.7-0.6}$. At $h=3$:
+
+$$
+0.7^3 = 0.343,\quad 0.6^3 = 0.216,\quad
+\mathrm{IRF}_2(3) = -0.35\cdot\frac{0.343-0.216}{0.1} = -0.35\cdot 1.27 = -0.4445.
+$$
+
+So the waiting-time response at $h=3$ is about $-0.444$ days --- hover the slate curve at $h=3$ and the tooltip reads $\approx -0.444$. $\checkmark$ Compare it to the $h=2$ value of $-0.455$: since $-0.444$ is *less* negative (shallower) than $-0.455$, the curve has already passed its trough. The trough sits exactly at $h=2$ ($-0.455$), and by $h=3$ the response is beginning to recover toward zero.
+
+**(b)** Raising $a_{22}$ to $0.9$ makes the *queue's own inertia* much larger. The dominant root becomes $0.9$ instead of $0.7$, so (i) the trough occurs **later** (the response keeps deepening for more months before the decay wins) and (ii) the curve takes **far longer to settle** back to zero, since the response now decays like $0.9^h$ rather than $0.7^h$ --- a much slower geometric decline. Persistence stretches the IRF out in time. The "settles below 0.05" tile jumps to a much larger horizon.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A VAR models several series jointly: each variable is a linear function of lags of *all* of them, $\mathbf{y}_t = \mathbf{A}_1\mathbf{y}_{t-1}+\cdots+\mathbf{A}_p\mathbf{y}_{t-p}+\boldsymbol{\varepsilon}_t$, estimable equation-by-equation by OLS.
+- Granger causality tests whether past $y_1$ improves the *forecast* of $y_2$ ($a_{21}\neq0$); it is predictive, directional, and not the same as structural causation.
+- The impulse-response function is the powers of the coefficient matrix, $\mathrm{IRF}(h)=\mathbf{A}^h\boldsymbol{\delta}$; a stable system (all eigenvalues inside the unit circle) has IRFs that decay back to zero.
+- Turning correlated reduced-form shocks into a *structural* shock needs an extra assumption --- a recursive ordering via the Cholesky decomposition (SVAR) is the standard choice.
+- Jordà local projections estimate the IRF with one regression per horizon: more robust to mis-specification and external shocks, but noisier and less efficient than the VAR.
+:::
+
+## What Comes Next
+
+The VAR assumes the shock variance $\boldsymbol{\Sigma}$ is *constant* --- one fixed cloud of noise feeding the same-sized impulses every month. Financial and many health-cost series violate this flagrantly: volatility comes in clusters, calm stretches punctuated by turbulent ones. The next page, [Volatility: ARCH and GARCH](volatility-garch.qmd), models that time-varying variance directly --- letting the *size* of today's shock depend on the size of yesterday's --- and shows how to forecast not just the level of a series but the uncertainty around it.

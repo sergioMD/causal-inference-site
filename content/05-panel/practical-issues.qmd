@@ -1,0 +1,1044 @@
+---
+title: "Practical Issues"
+subtitle: "Serial correlation, clustering, and unbalanced panels"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- explain why serial correlation leaves the fixed-effects point estimate consistent but deflates the iid standard error, using the design-effect multiplier
+- diagnose the over-rejection problem documented by Bertrand, Duflo & Mullainathan and choose the right clustering level for panel inference
+- estimate cluster-robust standard errors and interpret confidence-interval coverage when errors persist within a unit
+- handle the few-clusters problem with $t_{G-1}$ critical values and the wild cluster bootstrap
+- distinguish benign from biasing attrition in unbalanced panels, and decide between fixed and random effects using the Hausman logic
+:::
+
+## When the Point Estimate Is Right but the Standard Error Lies
+
+The previous page showed how the [Fixed Effects](fixed-effects.qmd) estimator sweeps away every time-invariant confounder by demeaning each unit's data. That is a triumph for *identification*: under the within transformation, a region's permanent characteristics --- its age structure, its terrain, its political culture --- can no longer bias the slope. But identification is only half of an honest causal claim. The other half is **inference**: how precise is the estimate, and would a different draw of the data have moved it much?
+
+Here is the uncomfortable fact this page is built around. You can have a perfectly consistent fixed-effects point estimate and a standard error that is *wildly* too small --- so small that it manufactures statistical significance out of nothing. The culprit is **serial correlation**: the errors of a single unit are correlated over time. A *vårdcentral* that has an unusually bad year for fall-related hospitalizations among its elderly patients tends to have a bad *next* year too. When you ignore that persistence, you fool yourself into thinking you have far more independent information than you actually do.
+
+To make this concrete, picture all 21 *regioner* (Sweden's regions) observed annually from 2014 to 2023. Starting in different years, some regions roll out a structured *fallpreventionsprogram* --- a falls-prevention program with balance training, medication reviews, and home-hazard assessments for patients over 75. The outcome $Y_{it}$ is the rate of fall-related hospitalizations per 1,000 elderly residents in region $i$ during year $t$. We want the effect of the program on that rate. The estimate is easy. Getting the standard error right is where careers are made and lost.
+
+::: {.glass-card .glass-card--insight}
+Serial correlation does not bias the fixed-effects *point estimate* --- $\hat{\beta}$ is still consistent. What it corrupts is the *standard error*. Naive (iid) standard errors treat each region-year as an independent observation, vastly overstating how much you know. The fix is not a better estimator; it is an honest variance estimator that respects the within-unit dependence.
+:::
+
+
+## How Serial Correlation Deflates the Standard Error
+
+Begin with the within-transformed fixed-effects model for a single covariate $x_{it}$ (the program indicator), where $\alpha_i$ is the region fixed effect and $\varepsilon_{it}$ is the idiosyncratic error:
+
+$$
+Y_{it} = \alpha_i + \beta\, x_{it} + \varepsilon_{it}, \qquad i = 1,\dots,N,\quad t = 1,\dots,T.
+$$
+
+**Read this as:** "Region $i$'s fall-hospitalization rate in year $t$ equals a region-specific intercept $\alpha_i$, plus $\beta$ times whether the program is active, plus an error $\varepsilon_{it}$." The classical inference machinery assumes the errors $\varepsilon_{it}$ are independent across *both* $i$ and $t$. The first part is plausible --- Skåne's bad year says little about Norrbotten's. The second part is almost never true: a region's shocks persist.
+
+Model that persistence as a first-order autoregressive process, $\varepsilon_{it} = \rho\,\varepsilon_{i,t-1} + \nu_{it}$, where $|\rho| < 1$ and $\nu_{it}$ is white noise. The parameter $\rho$ is the year-to-year correlation in a region's luck.
+
+::: {.glass-card .glass-card--warning}
+Suppose, for intuition, that the regressor $x_{it}$ is itself persistent (a program, once adopted, stays on). Then the variance of $\hat\beta$ is inflated relative to the naive formula by a **design-effect** multiplier that grows with the number of periods, the error persistence, and the regressor's own persistence. A simple upper bound captures the qualitative behaviour:
+
+$$
+\text{DEFF} \;=\; \frac{\operatorname{Var}_{\text{true}}(\hat\beta)}{\operatorname{Var}_{\text{iid}}(\hat\beta)} \;\le\; 1 + (T-1)\,\rho\,\rho_x ,
+$$
+
+where $\rho$ is the serial correlation of the errors and $\rho_x$ is the serial correlation of the regressor. **Read this as:** "The true sampling variance can exceed the iid formula by a multiplier that grows with the number of periods $T$, the error persistence $\rho$, and the regressor's own persistence $\rho_x$." (The exact closed form, derived in the Math Details below, is $\text{DEFF} = 1 + \tfrac{2}{T}\sum_{k=1}^{T-1}(T-k)\rho^{k}$ when the regressor is perfectly persistent.) With $T = 10$ years and $\rho = 0.5$, that exact formula gives $\text{DEFF}\approx 2.6$: the naive standard error is too small by a factor of $\sqrt{2.6}\approx 1.6$, so a true $t$-statistic of 2 is reported as roughly 3.2, and a marginal result becomes a "discovery."
+:::
+
+This is exactly the phenomenon documented by Bertrand, Duflo & Mullainathan (2004) in their celebrated critique of difference-in-differences practice. They took real outcome series, inserted *placebo* policies that affected nothing, and ran the standard panel regression. With conventional standard errors, they rejected the (true) null of no effect roughly **45% of the time** instead of the nominal 5%. The estimator was unbiased; the inference was catastrophically over-confident. The lesson generalizes far beyond DiD to every panel regression with serially correlated errors --- which is to say, essentially all of them.
+
+The picture below makes the villain visible. On the left are two simulated ten-year error paths for a single region: with **no persistence** ($\rho = 0$) the line is jagged and forgetful --- a bad year says nothing about the next --- while with **strong persistence** ($\rho = 0.8$) the line drifts in long swells, so a bad year drags the next one down with it. On the right is the resulting $10 \times 10$ error covariance matrix at $\rho = 0.8$. The iid standard error keeps only the bright **diagonal** ($t = s$) and silently throws away the entire shaded off-diagonal band of within-region covariances --- and it is precisely that discarded mass that the cluster-robust estimator recovers.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two illustrative AR(1) error paths for one region (white-noise vs persistent).
+// Both paths share the SAME innovations, so the only difference is ρ.
+pi_arPaths = {
+  const T = 10;
+  const rng0 = d3.randomNormal.source(d3.randomLcg(424242))(0, 1);
+  const innov = d3.range(T).map(() => rng0());
+  const build = (rho) => {
+    const sdInnov = 3 * Math.sqrt(1 - rho * rho);
+    let eps = innov[0] * 3;            // stationary start, sd ≈ 3
+    const path = [{ year: 2014, eps, label: `ρ = ${rho}` }];
+    for (let t = 1; t < T; t++) {
+      eps = rho * eps + sdInnov * innov[t];
+      path.push({ year: 2014 + t, eps, label: `ρ = ${rho}` });
+    }
+    return path;
+  };
+  return [...build(0), ...build(0.8)];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// AR(1) covariance matrix Cov(ε_t, ε_s) = σ² ρ^{|t−s|} for the right-hand heatmap.
+pi_covCells = {
+  const T = 10, rho = 0.8, sigma2 = 9; // σ ≈ 3
+  const cells = [];
+  for (let t = 0; t < T; t++)
+    for (let s = 0; s < T; s++)
+      cells.push({ t, s, cov: sigma2 * Math.pow(rho, Math.abs(t - s)), diag: t === s });
+  return cells;
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1.2rem; align-items:flex-start; justify-content:center;">
+  ${(() => {
+    const fig = Plot.plot({
+      width: Math.min(340, width),
+      height: 250,
+      marginLeft: 48,
+      marginBottom: 46,
+      style: { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontSize: "12px", background: "transparent" },
+      x: { label: "Year", tickFormat: "d", grid: true },
+      y: { label: "Region error εᵢₜ", grid: true },
+      color: { domain: ["ρ = 0", "ρ = 0.8"], range: ["#79766e", "#990000"], legend: true },
+      marks: [
+        Plot.ruleY([0], { stroke: "#1c1c1a", strokeWidth: 1 }),
+        Plot.line(pi_arPaths, { x: "year", y: "eps", stroke: "label", strokeWidth: 2.4, curve: "catmull-rom" }),
+        Plot.dot(pi_arPaths, { x: "year", y: "eps", fill: "label", r: 2.6 })
+      ]
+    });
+    return fig;
+  })()}
+  ${(() => {
+    const fig = Plot.plot({
+      width: Math.min(300, width),
+      height: 270,
+      marginLeft: 48,
+      marginBottom: 46,
+      marginTop: 24,
+      style: { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontSize: "11px", background: "transparent" },
+      x: { label: "year s", domain: d3.range(10), tickFormat: d => d + 1 },
+      y: { label: "year t", domain: d3.range(10), tickFormat: d => d + 1, reverse: true },
+      color: { type: "linear", range: ["#f6f5f1", "#990000"], legend: true, label: "Cov(εₜ, εₛ)" },
+      marks: [
+        Plot.cell(pi_covCells, { x: "s", y: "t", fill: "cov", inset: 0.5 }),
+        Plot.cell(pi_covCells.filter(d => d.diag), { x: "s", y: "t", stroke: "#1c1c1a", strokeWidth: 1.4, fill: "none", inset: 0.5 })
+      ]
+    });
+    return fig;
+  })()}
+</div>`
+```
+
+::: {.aside}
+Left: two ten-year error paths for one region driven by the *same* random shocks --- only $\rho$ differs, so the long swells at $\rho = 0.8$ (red) are pure persistence. Right: the $10 \times 10$ error covariance matrix at $\rho = 0.8$; the iid formula keeps only the black-outlined **diagonal** and discards the shaded off-diagonal band, which is exactly the within-region dependence the cluster-robust estimator restores.
+:::
+
+
+## The Fix: Cluster at the Level of the Correlation
+
+The remedy is to stop pretending the region-years are independent. We computed the conceptual groundwork on Module 4's [Inference](../04-regression/inference.qmd) page; here we apply it to panels. A **cluster-robust** variance estimator groups the data into clusters --- here, one cluster per region --- and allows the errors *within* a cluster to be correlated in **any** way, while assuming independence *across* clusters.
+
+::: {.glass-card .glass-card--definition}
+The **cluster-robust variance** of $\hat\beta$ stacks each cluster's contribution:
+
+$$
+\widehat{\operatorname{Var}}_{\text{cl}}(\hat\beta) = (X'X)^{-1}\left(\sum_{g=1}^{G} X_g'\,\hat u_g\,\hat u_g'\,X_g\right)(X'X)^{-1},
+$$
+
+where $g$ indexes the $G$ clusters (regions), $X_g$ stacks that cluster's rows, and $\hat u_g$ is its vector of residuals. **Read this as:** "Instead of summing squared residuals observation-by-observation, we form the outer product $\hat u_g \hat u_g'$ *within* each region --- which captures all the within-region correlations --- and then sum across regions." Because $\hat u_g \hat u_g'$ is a full $T_g \times T_g$ matrix, every pair of years inside a region is allowed to covary.
+
+**For the single regressor used in the simulation below**, the matrices collapse to plain numbers, and this is exactly what the in-browser code computes:
+
+$$
+\widehat{\operatorname{Var}}_{\text{cl}}(\hat\beta) = \frac{\sum_{g=1}^{G} s_g^{\,2}}{\left(\sum_i\sum_t \tilde x_{it}^2\right)^2}, \qquad s_g = \sum_{t} \tilde x_{gt}\,\hat u_{gt},
+$$
+
+where $\tilde x_{gt}$ is the demeaned program indicator and $s_g$ is region $g$'s "score" --- the within-region sum of demeaned-regressor times residual. The iid formula instead uses $s^2 \big/ \sum_i\sum_t \tilde x_{it}^2$ with a single pooled $s^2$; clustering replaces that with the sum of *squared region scores*, which grows whenever a region's residuals share a sign year after year --- the fingerprint of serial correlation.
+:::
+
+Two points make clustering intuitive. First, **cluster at the level where the errors are correlated and the treatment is assigned.** The falls program is adopted *region-wide*, and a region's shocks are persistent *within region* --- so the cluster is the region, not the region-year and not the individual patient. Second, **clustering changes only the standard error, never the coefficient.** You get the same $\hat\beta$; you simply stop lying about its precision.
+
+::: {.glass-card .glass-card--insight}
+A useful slogan: *cluster on the dimension along which you cannot honestly claim independent draws.* If a policy is assigned to whole regions and you observe each region for ten years, you do not have $21 \times 10 = 210$ independent observations --- you have something much closer to 21. Cluster-robust standard errors encode exactly that deflation of effective sample size.
+:::
+
+
+## See It: Coverage of the Fixed-Effects Confidence Interval
+
+The simulation below makes the whole argument visible. It generates many synthetic panels of 21 regions observed over 10 years. In every panel the *true* program effect is fixed at $\beta = -2.0$ (the program lowers fall hospitalizations by 2 per 1,000 elderly). For each simulated panel it fits the within (region fixed-effects) regression and builds two 95% confidence intervals for $\hat\beta$: one using **iid** standard errors that treat each region-year as an independent draw, the other using **standard errors clustered by region**. A confidence interval is doing its job if it covers the truth 95% of the time. Drag the serial-correlation slider and watch which method keeps its promise.
+
+::: {.interactive-container}
+
+#### Confidence-interval coverage under serial correlation
+
+**Start here:** drag the **ρ** slider up and watch the iid coverage on the scoreboard fall below 95%, then toggle **Highlight method** to compare interval widths.
+
+*Controls: ρ sets the error persistence and re-runs the simulation automatically. **Highlight method** only switches which interval is drawn (the point estimate is unchanged) — "iid (independent)" means standard errors that treat each region-year as an independent draw. **Re-simulate** draws a fresh random sample at the current settings.*
+
+::: {.aside}
+For clarity the in-browser demo fits a **one-way** (region) fixed-effects model and holds the staggered-adoption design fixed (sticky treatment = near-maximal regressor persistence $\rho_x$), so $\rho$ is the only free lever. The R/Python code tabs add **year** effects for a fully two-way specification; the coverage lesson is identical either way.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof pi_rho = Inputs.range([0, 0.9], {
+  value: 0.6,
+  step: 0.05,
+  label: "Serial correlation of errors (ρ)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pi_nSim = Inputs.range([100, 1000], {
+  value: 400,
+  step: 100,
+  label: "Number of simulated panels"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pi_method = Inputs.radio(["Clustered by region", "iid (independent)"], {
+  value: "Clustered by region",
+  label: "Highlight method"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pi_resim = Inputs.button("Re-simulate", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// --- Fixed design constants for the simulation ---
+pi_N = 21        // regioner
+pi_T = 10        // years 2014–2023
+pi_betaTrue = -2.0   // true program effect (per 1,000 elderly)
+pi_sigmaNu = 3.0     // sd of white-noise innovation
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build a sticky, staggered treatment design once: each region adopts the
+// program in some year (or never). Persistent regressor => worst case for
+// naive SEs, exactly the Bertrand–Duflo–Mullainathan setting.
+pi_design = {
+  const rng = d3.randomLcg(20240619);   // fixed seed: same design every redraw
+  const adoptYear = [];
+  for (let i = 0; i < pi_N; i++) {
+    // ~1/3 of regions never adopt; the rest adopt in a random year 3..8
+    const u = rng();
+    adoptYear.push(u < 0.33 ? Infinity : 2 + Math.floor(rng() * 6));
+  }
+  const x = [];               // x[i][t] = 1 if program active
+  for (let i = 0; i < pi_N; i++) {
+    x.push(d3.range(pi_T).map(t => (t >= adoptYear[i] ? 1 : 0)));
+  }
+  return { adoptYear, x };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Within (fixed-effects) OLS for a single regressor + its two variances.
+// Demean x and y by region, regress, then compute iid and clustered SEs.
+pi_fitOne = function(x, y) {
+  const N = x.length, T = x[0].length;
+  // region means
+  const xbar = x.map(row => d3.mean(row));
+  const ybar = y.map(row => d3.mean(row));
+  let sxx = 0, sxy = 0;
+  for (let i = 0; i < N; i++)
+    for (let t = 0; t < T; t++) {
+      const xd = x[i][t] - xbar[i];
+      sxx += xd * xd;
+      sxy += xd * (y[i][t] - ybar[i]);
+    }
+  const beta = sxy / sxx;
+  // residuals from the within regression
+  const u = [];
+  for (let i = 0; i < N; i++) {
+    u.push([]);
+    for (let t = 0; t < T; t++) {
+      const xd = x[i][t] - xbar[i];
+      u[i].push((y[i][t] - ybar[i]) - beta * xd);
+    }
+  }
+  // iid variance: s^2 / Sxx with dof = NT - N - 1 (regressor + N fixed effects)
+  let sse = 0;
+  for (let i = 0; i < N; i++) for (let t = 0; t < T; t++) sse += u[i][t] * u[i][t];
+  const dof = N * T - N - 1;
+  const s2 = sse / dof;
+  const varIID = s2 / sxx;
+  // cluster-robust (region) variance: sandwich with finite-sample scaling
+  let meat = 0;
+  for (let i = 0; i < N; i++) {
+    let sg = 0;
+    for (let t = 0; t < T; t++) sg += (x[i][t] - xbar[i]) * u[i][t];
+    meat += sg * sg;
+  }
+  const G = N;
+  const scale = (G / (G - 1)) * ((N * T - 1) / (N * T - N - 1));
+  const varCL = scale * meat / (sxx * sxx);
+  return { beta, seIID: Math.sqrt(varIID), seCL: Math.sqrt(varCL) };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Run the Monte Carlo: many panels with AR(1) errors of strength pi_rho.
+pi_sims = {
+  pi_resim;  // re-run when the button is pressed
+  const { x } = pi_design;
+  const N = pi_N, T = pi_T, rho = pi_rho;
+  const sdInnov = pi_sigmaNu * Math.sqrt(1 - rho * rho); // keep marginal var ~const
+  const out = [];
+  const norm = d3.randomNormal.source(d3.randomLcg(Math.random()))(0, 1);
+  for (let s = 0; s < pi_nSim; s++) {
+    const y = [];
+    for (let i = 0; i < N; i++) {
+      const row = [];
+      let eps = norm() * pi_sigmaNu;          // stationary start
+      for (let t = 0; t < T; t++) {
+        if (t > 0) eps = rho * eps + sdInnov * norm();
+        // y = alpha_i + beta*x + eps ; alpha_i drops out under demeaning
+        const alpha = 8 + 2 * Math.sin(i);     // arbitrary region intercept
+        row.push(alpha + pi_betaTrue * x[i][t] + eps);
+      }
+      y.push(row);
+    }
+    const fit = pi_fitOne(x, y);
+    out.push({
+      id: s,
+      beta: fit.beta,
+      loIID: fit.beta - 1.96 * fit.seIID, hiIID: fit.beta + 1.96 * fit.seIID,
+      loCL:  fit.beta - 1.96 * fit.seCL,  hiCL:  fit.beta + 1.96 * fit.seCL,
+      covIID: (fit.beta - 1.96 * fit.seIID <= pi_betaTrue) && (pi_betaTrue <= fit.beta + 1.96 * fit.seIID),
+      covCL:  (fit.beta - 1.96 * fit.seCL  <= pi_betaTrue) && (pi_betaTrue <= fit.beta + 1.96 * fit.seCL)
+    });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+pi_coverage = ({
+  iid: 100 * d3.mean(pi_sims, d => d.covIID ? 1 : 0),
+  cl:  100 * d3.mean(pi_sims, d => d.covCL ? 1 : 0),
+  seIIDmean: d3.mean(pi_sims, d => (d.hiIID - d.loIID) / (2 * 1.96)),
+  seCLmean:  d3.mean(pi_sims, d => (d.hiCL  - d.loCL ) / (2 * 1.96))
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Coverage scoreboard
+html`
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.6rem; margin-bottom: 0.9rem; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <div style="padding: 0.7rem 1rem; min-height: 5.2rem; border-radius: 0.6rem; background: ${pi_coverage.iid < 90 ? 'rgba(153,0,0,0.08)' : 'rgba(46,111,64,0.08)'}; border: 1px solid ${pi_coverage.iid < 90 ? 'rgba(153,0,0,0.25)' : 'rgba(46,111,64,0.25)'};">
+    <div style="font-weight:600; color:#79766e; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.05em;">iid SE coverage</div>
+    <div style="font-size:1.5rem; font-weight:800; color:${pi_coverage.iid < 90 ? '#990000' : '#2e6f40'};">${pi_coverage.iid.toFixed(1)}%</div>
+    <div style="font-size:0.72rem; color:#79766e;">target 95% &middot; mean SE ${pi_coverage.seIIDmean.toFixed(3)} (per 1,000)</div>
+  </div>
+  <div style="padding: 0.7rem 1rem; min-height: 5.2rem; border-radius: 0.6rem; background: ${pi_coverage.cl < 90 ? 'rgba(153,0,0,0.08)' : 'rgba(46,111,64,0.08)'}; border: 1px solid ${pi_coverage.cl < 90 ? 'rgba(153,0,0,0.25)' : 'rgba(46,111,64,0.25)'};">
+    <div style="font-weight:600; color:#79766e; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.05em;">Clustered SE coverage</div>
+    <div style="font-size:1.5rem; font-weight:800; color:${pi_coverage.cl < 90 ? '#990000' : '#2e6f40'};">${pi_coverage.cl.toFixed(1)}%</div>
+    <div style="font-size:0.72rem; color:#79766e;">target 95% &middot; mean SE ${pi_coverage.seCLmean.toFixed(3)} (per 1,000)</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Interval bars for a sample of panels, colored by whether they cover the truth.
+{
+  const useCL = pi_method === "Clustered by region";
+  const sample = pi_sims.slice(0, 40).map((d, k) => ({
+    rank: k,
+    beta: d.beta,
+    lo: useCL ? d.loCL : d.loIID,
+    hi: useCL ? d.hiCL : d.hiIID,
+    covers: useCL ? d.covCL : d.covIID
+  }));
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 420,
+    marginLeft: 45,
+    marginTop: 28,
+    marginRight: 16,
+    style: { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Estimated program effect β̂ (per 1,000 elderly)", grid: true },
+    y: { label: "Simulated panel (first 40)", ticks: [], inset: 6 },
+    color: { domain: [true, false], range: ["#2e6f40", "#990000"], legend: true, tickFormat: d => d ? "Covers truth" : "Misses truth" },
+    marks: [
+      Plot.ruleX([pi_betaTrue], { stroke: "#1c1c1a", strokeWidth: 2, strokeDasharray: "5,4" }),
+      Plot.text([{}], { frameAnchor: "top", text: ["true β = −2.0"], dy: -14, fill: "#1c1c1a", fontWeight: 600, fontSize: 11, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.link(sample, { x1: "lo", x2: "hi", y: "rank", stroke: "covers", strokeWidth: 2, strokeOpacity: 0.75 }),
+      Plot.dot(sample, { x: "beta", y: "rank", fill: "covers", r: 2.4 })
+    ]
+  });
+}
+```
+
+:::
+
+### How to Read the Coverage Plot
+
+Work through these steps to internalize what the simulation is telling you.
+
+**Step 1: Find the truth line.** The dashed black vertical line sits at the *true* program effect, $\beta = -2.0$. Every horizontal bar is one simulated panel's 95% confidence interval for $\hat\beta$. A bar that *crosses* the dashed line covers the truth (green); a bar entirely to one side *misses* it (red).
+
+**Step 2: Start with no serial correlation.** Drag $\rho$ to 0. Both methods give nearly identical intervals, and the scoreboard shows both covering the truth about 95% of the time. When errors really are independent, the iid formula is correct and clustering buys you nothing. This is the benign baseline.
+
+**Step 3: Turn on persistence.** Slide $\rho$ up to 0.6, then 0.9. Toggle **Highlight method** to "iid (independent)." The intervals barely widen --- the iid formula does not "see" the persistence --- yet many more bars now turn red. The iid coverage on the scoreboard collapses, often to 70--80% or worse. These are confidence intervals that claim 95% confidence but deliver far less: the over-confidence that Bertrand, Duflo & Mullainathan warned about, reproduced on your screen.
+
+**Step 4: Switch to clustering.** With $\rho$ still high, toggle **Highlight method** to "Clustered by region." The bars visibly *lengthen* --- the clustered standard errors are larger because they account for the within-region dependence --- and the share of green bars climbs back toward 95%. Compare the two "mean SE" figures on the scoreboard: the clustered SE is substantially larger, and that extra width is precisely what restores honest coverage.
+
+**Step 5: Stress-test it.** Increase the number of simulated panels to 1000 for a more stable coverage estimate, and press **Re-simulate** a few times. The qualitative verdict never changes: under serial correlation, iid intervals under-cover, and clustering by the unit repairs them. The point estimate $\hat\beta$ is centered on $-2.0$ either way --- only the *width* of the interval, and therefore the honesty of your inference, depends on the variance estimator.
+
+
+## The Few-Clusters Problem
+
+Clustering is the right idea, but it leans on an asymptotic argument: the cluster-robust variance is consistent as the *number of clusters* $G \to \infty$, holding cluster size fixed. With Swedish regions, $G = 21$. That is uncomfortably few. With a small number of clusters, the sandwich estimator is biased *downward* (too small), the residuals $\hat u_g$ are themselves shrunk toward zero by the fixed effects, and the reference distribution is no longer a standard normal.
+
+::: {.glass-card .glass-card--warning}
+With only $G \approx 21$ clusters, cluster-robust $t$-statistics should **not** be compared to $\pm 1.96$. Two standard adjustments help:
+
+1. **A $t$-distribution with $G - 1$ degrees of freedom** instead of the normal. With $G = 21$ that is $t_{20}$, whose 97.5th percentile is $2.086$, not $1.96$ --- a wider, more honest interval. Software such as `fixest` does this automatically.
+2. **The wild cluster bootstrap** (Cameron, Gelbach & Miller, 2008). Rather than trusting a formula, you *resample at the cluster level*: re-impose the null, multiply each cluster's residuals by a random $\pm 1$ (a Rademacher weight), refit, and build the reference distribution of the $t$-statistic empirically. This delivers correct test sizes with as few as a dozen clusters and is the recommended default when $G$ is small.
+:::
+
+The figure below shows *why* the cutoff moves. The standard normal (slate) and the $t_{20}$ distribution (red) look almost identical near the center, but the $t_{20}$ has **fatter tails** --- more probability mass far from zero. To keep only 2.5% in the upper tail you therefore have to push the cutoff out from $1.96$ to $2.086$. The shaded sliver between the two cutoffs is the extra benefit of the doubt that the few-clusters correction grants you; with even fewer clusters, the $t$ tails fatten further and the gap widens.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Densities for the few-clusters figure: N(0,1) vs Student-t with 20 df.
+pi_lgamma = function (z) {
+  // Lanczos approximation to ln Γ(z), accurate to ~1e-10 for z > 0.
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+  ];
+  z -= 1;
+  let a = c[0];
+  const tt = z + g + 0.5;
+  for (let i = 1; i < g + 2; i++) a += c[i] / (z + i);
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(tt) - tt + Math.log(a);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+pi_tDensity = function (x, nu) {
+  const lnK = pi_lgamma((nu + 1) / 2) - pi_lgamma(nu / 2)
+    - 0.5 * Math.log(nu * Math.PI);
+  return Math.exp(lnK - ((nu + 1) / 2) * Math.log(1 + (x * x) / nu));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+pi_normDensity = function (x) {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Sampled curves and the right-tail mass strip between 1.96 and 2.086.
+pi_tailGrid = {
+  const grid = d3.range(-4, 4.001, 0.04);
+  const norm = grid.map(x => ({ x, d: pi_normDensity(x), dist: "Normal N(0,1)" }));
+  const tdf  = grid.map(x => ({ x, d: pi_tDensity(x, 20), dist: "t₂₀ (G − 1 = 20 df)" }));
+  // Right-tail wedge: under t₂₀, between the two cutoffs 1.96 and 2.086.
+  const wedge = d3.range(1.96, 2.0861, 0.01).map(x => ({ x, d: pi_tDensity(x, 20) }));
+  return { curves: [...norm, ...tdf], wedge };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(560, width),
+  height: 300,
+  marginLeft: 60,
+  marginBottom: 45,
+  marginTop: 30,
+  style: { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "t-statistic", grid: true, domain: [-4, 4] },
+  y: { label: "Density", grid: true },
+  color: { domain: ["Normal N(0,1)", "t₂₀ (G − 1 = 20 df)"], range: ["#3d5a6c", "#990000"], legend: true },
+  marks: [
+    Plot.areaY(pi_tailGrid.wedge, { x: "x", y: "d", fill: "#990000", fillOpacity: 0.22 }),
+    Plot.line(pi_tailGrid.curves, { x: "x", y: "d", stroke: "dist", strokeWidth: 2.4 }),
+    Plot.ruleX([1.96], { stroke: "#3d5a6c", strokeWidth: 1.6, strokeDasharray: "4,3" }),
+    Plot.ruleX([2.086], { stroke: "#990000", strokeWidth: 1.6, strokeDasharray: "4,3" }),
+    Plot.text([{ x: 1.96, y: 0.40 }], { x: "x", y: "y", text: ["1.96"], fill: "#3d5a6c", fontWeight: 700, fontSize: 11, dx: -16, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: 2.086, y: 0.33 }], { x: "x", y: "y", text: ["2.086"], fill: "#990000", fontWeight: 700, fontSize: 11, dx: 22, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: 3.0, y: 0.06 }], { x: "x", y: "y", text: ["fatter t₂₀ tail"], fill: "#990000", fontWeight: 600, fontSize: 11, stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+::: {.aside}
+The standard normal (slate, cutoff $1.96$) and $t_{20}$ (red, cutoff $2.086$) for a 95% two-sided interval. The $t_{20}$ tail is fatter, so the honest critical value sits farther out; the shaded wedge between the two cutoffs is the extra width the few-clusters correction adds. Fewer clusters $\Rightarrow$ fatter tails $\Rightarrow$ a wider correction still.
+:::
+
+The practical upshot for the falls program: with 21 regions, report cluster-robust standard errors *and* a wild-cluster-bootstrap p-value. If the two disagree, trust the bootstrap. Do not be seduced by a clean $t = 2.1$ from the asymptotic formula --- with this few clusters, that may correspond to a bootstrap p-value of 0.10, not 0.04.
+
+
+## Unbalanced Panels and Attrition
+
+So far we have assumed every region is observed in every year --- a **balanced** panel. Real data are messier. A new region forms from a merger; a *vårdcentral* opens midway through the study or closes; a reporting system changes and a year goes missing. The result is an **unbalanced** panel, where $T_i$ differs across units.
+
+Unbalancedness *per se* is not a problem. The within transformation simply demeans each unit using whatever periods it has, and fixed-effects software handles ragged panels automatically. The danger is not the missingness but its *mechanism*.
+
+::: {.glass-card .glass-card--assumption}
+**When is attrition benign?** Missing observations are harmless for the fixed-effects estimator when the reason a region-year is missing is **unrelated to the idiosyncratic error** $\varepsilon_{it}$ --- formally, when the data are *missing at random* conditional on the fixed effect and covariates. A vårdcentral that closes for administrative reasons unconnected to its fall-hospitalization shocks creates a benign gap.
+
+**When does attrition bias?** Attrition is dangerous when units drop out *because of their outcome path* --- selection on the realized $\varepsilon_{it}$. If clinics with the worst fall-prevention results are exactly the ones that lose funding and exit the panel, then the surviving sample is no longer representative: the demeaning is performed over a self-selected subset, and $\hat\beta$ becomes biased even though the model looks identical.
+:::
+
+The two panel grids below make the distinction concrete. Each row is a region, each column a year; a filled cell means "observed," a hollow cell means "missing." On the **left**, the gaps are scattered at random --- a reporting glitch here, an administrative closure there --- unrelated to how the region was doing, so demeaning over the surviving cells is still honest. On the **right**, the missing cells all sit in the **post-treatment** years and concentrate in the regions with the *worst* outcomes (darkest rows): the high-rate units vanish exactly when the program turns on, so the surviving post-period average drops for reasons that have nothing to do with the program. That second pattern is what biases $\hat\beta$.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Pure helper: draw a regions × years panel grid, cells filled (present) or
+// hollow (missing). Optional per-row tint encodes a region's outcome level so
+// the outcome-driven pattern (worst rows drop out) is legible.
+pi_drawPanelGrid = function ({ present, rowTint = [], title = "", treatStart = null, width = 300, height = 220 }) {
+  const nRow = present.length, nCol = present[0].length;
+  const padL = 58, padT = 30, padR = 12, padB = 30;
+  const cw = (width - padL - padR) / nCol;
+  const ch = (height - padT - padB) / nRow;
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+  svg.append("text").attr("x", padL).attr("y", 16)
+    .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#1c1c1a").text(title);
+  // y axis label
+  svg.append("text").attr("x", 12).attr("y", padT + (height - padT - padB) / 2)
+    .attr("font-size", 10).attr("fill", "#79766e")
+    .attr("transform", `rotate(-90 12 ${padT + (height - padT - padB) / 2})`)
+    .attr("text-anchor", "middle").text("regions");
+  svg.append("text").attr("x", padL + (width - padL - padR) / 2).attr("y", height - 8)
+    .attr("font-size", 10).attr("fill", "#79766e").attr("text-anchor", "middle").text("years →");
+  // post-treatment shading band
+  if (treatStart !== null) {
+    svg.append("rect")
+      .attr("x", padL + treatStart * cw).attr("y", padT)
+      .attr("width", (nCol - treatStart) * cw).attr("height", nRow * ch)
+      .attr("fill", "#990000").attr("opacity", 0.05);
+  }
+  for (let i = 0; i < nRow; i++) {
+    for (let t = 0; t < nCol; t++) {
+      const x = padL + t * cw, y = padT + i * ch;
+      const here = present[i][t];
+      const tint = rowTint.length ? rowTint[i] : 0; // 0..1, higher = worse outcome
+      svg.append("rect")
+        .attr("x", x + 1).attr("y", y + 1)
+        .attr("width", cw - 2).attr("height", ch - 2)
+        .attr("rx", 1.5)
+        .attr("fill", here ? d3.interpolateRgb("#3d5a6c", "#990000")(tint) : "#fdfdfb")
+        .attr("fill-opacity", here ? 0.85 : 1)
+        .attr("stroke", here ? "none" : "#cfccc2")
+        .attr("stroke-dasharray", here ? null : "2,2");
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two designs over the same 8-region × 8-year frame, treatment starts in year 4.
+pi_attritionGrids = {
+  const nRow = 8, nCol = 8, treat = 4;
+  const rng = d3.randomLcg(13579);
+  // Region outcome levels (0 = good, 1 = worst). Used to tint and to drive
+  // outcome-based dropout on the right panel.
+  const tint = d3.range(nRow).map((_, i) => i / (nRow - 1));
+
+  // Benign: ~10% of cells missing completely at random.
+  const benign = d3.range(nRow).map(() =>
+    d3.range(nCol).map(() => (rng() > 0.10 ? 1 : 0)));
+
+  // Biasing: the worst-outcome regions (high tint) drop out in post years.
+  const biasing = d3.range(nRow).map((_, i) =>
+    d3.range(nCol).map(t => {
+      if (t < treat) return 1;                 // all present pre-treatment
+      // probability of exiting rises with how bad the region is
+      const pExit = Math.max(0, (tint[i] - 0.35)) * 1.4;
+      return rng() < pExit ? 0 : 1;
+    }));
+
+  return { benign, biasing, tint, treat };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1.4rem; align-items:flex-start; justify-content:center;">
+  ${pi_drawPanelGrid({
+    present: pi_attritionGrids.benign,
+    title: "Benign: gaps at random",
+    treatStart: pi_attritionGrids.treat,
+    width: Math.min(310, width),
+    height: 210
+  })}
+  ${pi_drawPanelGrid({
+    present: pi_attritionGrids.biasing,
+    rowTint: pi_attritionGrids.tint,
+    title: "Biasing: worst units exit post-treatment",
+    treatStart: pi_attritionGrids.treat,
+    width: Math.min(310, width),
+    height: 210
+  })}
+</div>`
+```
+
+::: {.aside}
+Each row is a region, each column a year; filled = observed, hollow dashed = missing; the faint red band marks the post-treatment years. Left: missingness is unrelated to outcomes (benign). Right: rows are tinted by outcome level (darker red = worse fall rates) and the worst rows lose their *post-treatment* cells --- selection on the realized $\varepsilon_{it}$, which biases $\hat\beta$. The fix is the balanced-subpanel comparison described below.
+:::
+
+The diagnostic question is always the same one we ask about any selection problem: *does the probability of being observed depend on the outcome, after conditioning on what we control for?* For the falls program, a sensible robustness check is to compare the estimate on the full unbalanced panel against the estimate on the **balanced subpanel** (regions present in all years). If they diverge sharply, selective attrition is a live threat and you should model the selection explicitly (for example, with an inverse-probability-of-observation weight or a Heckman-style correction) rather than report the naive within estimate.
+
+
+## Fixed Effects vs. Random Effects
+
+A recurring temptation is to replace fixed effects with **random effects**, which treats $\alpha_i$ not as a parameter to be estimated for each unit but as a random draw from a distribution. The random-effects estimator is a precision-weighted average of the within (over-time) and between (cross-region) variation, and it is *more efficient* than fixed effects --- smaller standard errors --- when its key assumption holds.
+
+::: {.glass-card .glass-card--assumption}
+The **random-effects assumption** is that the unit effect is *uncorrelated with the regressors*:
+
+$$
+\operatorname{Cov}(\alpha_i, x_{it}) = 0 \quad \text{for all } t.
+$$
+
+**Read this as:** "A region's permanent, unobserved propensity for falls ($\alpha_i$) is unrelated to whether and when it adopts the program ($x_{it}$)." If this holds, random effects is consistent *and* efficient. If it fails --- if, say, regions with structurally older, frailer populations (high $\alpha_i$) are precisely the ones that rush to adopt the program (high $x_{it}$) --- then random effects is **biased**, while fixed effects remains consistent because it never uses the cross-region comparison that the correlation contaminates.
+:::
+
+This is the classic **efficiency-versus-consistency trade-off**. Fixed effects throws away the between-unit variation to buy robustness against $\alpha_i$-confounding; random effects keeps that variation for efficiency but stakes everything on $\operatorname{Cov}(\alpha_i, x_{it}) = 0$. The table summarizes the choice at a glance.
+
+| | **Fixed effects (FE)** | **Random effects (RE)** |
+|:--|:--|:--|
+| **What variation it uses** | Within-unit (over time) only | Within + between (precision-weighted) |
+| **Treats $\alpha_i$ as** | Parameters (one per unit) | Random draws from a distribution |
+| **Key assumption** | Strict exogeneity of $\varepsilon_{it}$ (the demeaned regressor is uncorrelated with the error) | Also $\operatorname{Cov}(\alpha_i, x_{it}) = 0$ |
+| **If $\alpha_i$ correlates with $x_{it}$** | Still **consistent** | **Biased** |
+| **Efficiency** | Lower (discards between variation) | Higher (when its assumption holds) |
+| **Time-invariant regressors** | Cannot estimate (swept away) | Can estimate |
+| **Use when** | Confounding via $\alpha_i$ is plausible (most observational data) | Treatment is as-good-as-random across units |
+
+: Fixed effects vs. random effects at a glance {.science-table}
+
+The **Hausman test** adjudicates. Its logic is elegant: if the random-effects assumption holds, the FE and RE estimates both target the same $\beta$ and should differ only by sampling noise; if the assumption fails, only FE is consistent, so the two estimates *diverge systematically*.
+
+$$
+H = (\hat\beta_{\text{FE}} - \hat\beta_{\text{RE}})' \left[\widehat{\operatorname{Var}}(\hat\beta_{\text{FE}}) - \widehat{\operatorname{Var}}(\hat\beta_{\text{RE}})\right]^{-1} (\hat\beta_{\text{FE}} - \hat\beta_{\text{RE}}) \;\sim\; \chi^2_k.
+$$
+
+**Read this as:** "The Hausman statistic is the squared distance between the FE and RE estimates, scaled by the variance of their difference; a large value means the gap is too big to be chance, so we reject random effects in favor of fixed effects." A small $H$ (large p-value) does not *prove* the RE assumption --- it merely fails to detect a violation, which may reflect low power.
+
+The schematic below shows the two outcomes the test is built to tell apart. Each panel plots the FE estimate (slate) and the RE estimate (ochre) with their confidence intervals against the true $\beta = -2.0$. On the **left**, the RE assumption holds: both estimators target the truth and *agree* (intervals overlap heavily), so the Hausman test fails to reject and RE's extra efficiency --- its tighter interval --- is yours to keep. On the **right**, $\alpha_i$ correlates with adoption: RE is pulled away from the truth while FE stays centered, the estimates *diverge*, and Hausman rejects.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two stylized Hausman scenarios: FE vs RE point estimates and 95% CIs.
+pi_hausmanData = [
+  { panel: "RE assumption holds → agree", method: "FE", est: -2.05, lo: -2.05 - 0.55, hi: -2.05 + 0.55 },
+  { panel: "RE assumption holds → agree", method: "RE", est: -1.97, lo: -1.97 - 0.34, hi: -1.97 + 0.34 },
+  { panel: "α correlates with x → diverge", method: "FE", est: -2.02, lo: -2.02 - 0.55, hi: -2.02 + 0.55 },
+  { panel: "α correlates with x → diverge", method: "RE", est: -1.05, lo: -1.05 - 0.32, hi: -1.05 + 0.32 }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 240,
+  marginLeft: 64,
+  marginBottom: 46,
+  marginTop: 26,
+  marginRight: 16,
+  style: { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontSize: "12px", background: "transparent" },
+  facet: { data: pi_hausmanData, x: "panel" },
+  x: { label: "Estimate of β (per 1,000 elderly)", grid: true, domain: [-3.0, 0] },
+  y: { label: null, domain: ["FE", "RE"], padding: 0.5 },
+  color: { domain: ["FE", "RE"], range: ["#3d5a6c", "#9c7a33"], legend: true },
+  marks: [
+    Plot.ruleX([-2.0], { stroke: "#1c1c1a", strokeWidth: 1.6, strokeDasharray: "5,4" }),
+    Plot.link(pi_hausmanData, { x1: "lo", x2: "hi", y: "method", stroke: "method", strokeWidth: 4, strokeOpacity: 0.7 }),
+    Plot.dot(pi_hausmanData, { x: "est", y: "method", fill: "method", r: 5 }),
+    Plot.text([{ panel: "RE assumption holds → agree" }], { fx: "panel", frameAnchor: "top", text: ["true β = −2.0"], dy: -12, fill: "#1c1c1a", fontSize: 10, fontWeight: 600, stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+::: {.aside}
+Stylized Hausman logic. Left: RE (ochre) and FE (slate) agree near the truth, Hausman does not reject, and RE's narrower interval is a genuine efficiency gain. Right: RE is biased toward zero while FE stays centered on $\beta = -2.0$; the systematic gap is what the Hausman statistic detects. (Illustrative magnitudes, not estimated from a specific dataset.)
+:::
+
+::: {.glass-card .glass-card--insight}
+**Default to fixed effects when confounding through $\alpha_i$ is plausible** --- which, in observational health-policy data, it almost always is. Regions that adopt a falls program are rarely a random subset; they differ in baseline frailty, budget, and political priorities, all baked into $\alpha_i$. The modest efficiency gain from random effects is not worth the bias risk. Reserve random effects for settings where treatment is genuinely as-good-as-randomly assigned across units, or where you must extrapolate using between-unit variation that fixed effects discards.
+:::
+
+
+## A Caution: Fixed Effects Can Starve the Estimate of Variation
+
+Robustness is not free. The within transformation discards *all* between-unit variation and identifies $\beta$ purely from movements *within* a unit over time. If $x_{it}$ barely moves within units --- if almost all of its variation is cross-sectional --- then fixed effects leaves very little signal behind, and $\hat\beta$ becomes **imprecise**, with a large standard error, even though it remains consistent.
+
+Concretely: if the falls program is adopted by every region in the *same* year, there is no staggered within-region variation to exploit beyond a common time shift, and a two-way fixed-effects model with a full set of year dummies would be nearly collinear with the treatment. The more the program's timing varies across regions, the more within-variation survives demeaning, and the tighter your estimate. A symptom to watch for is a fixed-effects standard error far larger than the pooled-OLS one: that is the price of robustness when within-variation is scarce. The remedy is not to abandon fixed effects but to recognize that your design may simply lack the variation to answer the question precisely --- a substantive limitation, not a statistical bug.
+
+The two strips below show what "$x$ barely moves within units" looks like. Each row is a region across ten years; a filled cell means the program is active that year. On the **left** the timing is *staggered* --- regions switch on in different years, so within each region the indicator genuinely moves from 0 to 1, and demeaning leaves plenty of signal (a tight $\hat\beta$). On the **right** the treatment is almost purely *cross-sectional* --- each region is either always-on or always-off, so within every region the indicator never changes, demeaning erases nearly all of it, and the standard error balloons. The gauge bars beneath each strip report the share of the regressor's variance that survives the within transformation.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two treatment designs over 12 regions × 10 years: staggered (within-rich)
+// vs cross-sectional (within-scarce). Returns cells + the within-variance share.
+pi_withinDesigns = {
+  const nRow = 12, nCol = 10;
+  const rng = d3.randomLcg(0xC0FFEE);
+  // Staggered: each region adopts in a random year 1..8 (or never for a few).
+  const stag = d3.range(nRow).map(() => {
+    const a = rng() < 0.18 ? Infinity : 1 + Math.floor(rng() * 8);
+    return d3.range(nCol).map(t => (t >= a ? 1 : 0));
+  });
+  // Cross-sectional: each region is constant — always-on or always-off.
+  const cross = d3.range(nRow).map(() => {
+    const on = rng() < 0.5 ? 1 : 0;
+    return d3.range(nCol).map(() => on);
+  });
+  // Share of total variance that is WITHIN (= survives demeaning).
+  const withinShare = (grid) => {
+    let totSS = 0, withinSS = 0, gAll = 0, n = 0;
+    for (const row of grid) for (const v of row) { gAll += v; n++; }
+    gAll /= n;
+    for (const row of grid) {
+      const rm = d3.mean(row);
+      for (const v of row) { totSS += (v - gAll) ** 2; withinSS += (v - rm) ** 2; }
+    }
+    return totSS === 0 ? 0 : withinSS / totSS;
+  };
+  const toCells = (grid, design) =>
+    grid.flatMap((row, i) => row.map((v, t) => ({ design, region: i, year: t, on: v })));
+  return {
+    cells: [...toCells(stag, "Staggered (within-rich)"), ...toCells(cross, "Cross-sectional (within-scarce)")],
+    shareStag: withinShare(stag),
+    shareCross: withinShare(cross)
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 280,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 26,
+  style: { fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fontSize: "11px", background: "transparent" },
+  facet: { data: pi_withinDesigns.cells, x: "design" },
+  x: { label: "year →", tickFormat: d => d + 1, ticks: 5 },
+  y: { label: "regions", ticks: [], reverse: true },
+  color: { type: "ordinal", domain: [0, 1], range: ["#e6e3db", "#990000"], legend: true, label: "program active", tickFormat: d => d ? "on" : "off" },
+  marks: [
+    Plot.cell(pi_withinDesigns.cells, { x: "year", y: "region", fill: "on", inset: 0.5 })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; font-family:'Inter',sans-serif; font-size:0.78rem; margin-top:-0.3rem;">
+  ${[["Staggered (within-rich)", pi_withinDesigns.shareStag, "#2e6f40"],
+     ["Cross-sectional (within-scarce)", pi_withinDesigns.shareCross, "#990000"]].map(([name, share, col]) => html`
+    <div style="flex:1 1 14rem; min-width:13rem; border:1px solid #e6e3db; border-radius:0.35rem; padding:0.55rem 0.75rem;">
+      <div style="color:#79766e; font-weight:700; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.04em;">${name}</div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.3rem;">
+        <div style="flex:1; height:0.6rem; background:#f6f5f1; border-radius:0.3rem; overflow:hidden;">
+          <div style="width:${(share * 100).toFixed(0)}%; height:100%; background:${col};"></div>
+        </div>
+        <div style="font-weight:800; color:${col}; min-width:3rem; text-align:right;">${(share * 100).toFixed(0)}%</div>
+      </div>
+      <div style="color:#79766e; font-size:0.68rem; margin-top:0.2rem;">of the regressor's variance survives demeaning ${share > 0.5 ? "→ tight β̂" : "→ imprecise β̂"}</div>
+    </div>`)}
+</div>`
+```
+
+::: {.aside}
+Each row is a region over ten years; red = program active. Staggered adoption (left) keeps a large share of the treatment's variance *within* regions, so fixed effects has signal to work with. Purely cross-sectional treatment (right) is almost entirely *between* regions; demeaning destroys it, leaving an imprecise estimate even though it stays consistent. The bars report the within-variance share --- the fuel left for the within estimator.
+:::
+
+
+<details>
+<summary>Math Details: Why iid Standard Errors Are Too Small Under Serial Correlation</summary>
+<div class="details-content">
+
+### The variance of a sum of correlated terms
+
+The within estimator for a single regressor can be written as
+
+$$
+\hat\beta = \beta + \frac{\sum_{i}\sum_{t}\tilde x_{it}\,\varepsilon_{it}}{\sum_i\sum_t \tilde x_{it}^2},
+$$
+
+where $\tilde x_{it} = x_{it} - \bar x_i$ is the demeaned regressor. Conditioning on $X$, the sampling variance is driven by the numerator $S = \sum_i\sum_t \tilde x_{it}\,\varepsilon_{it}$. Because errors are independent *across* regions, $\operatorname{Var}(S) = \sum_i \operatorname{Var}\!\left(\sum_t \tilde x_{it}\,\varepsilon_{it}\right)$, and within a region,
+
+$$
+\operatorname{Var}\!\left(\sum_t \tilde x_{it}\,\varepsilon_{it}\right) = \underbrace{\sum_t \tilde x_{it}^2\,\sigma_\varepsilon^2}_{\text{iid term (diagonal)}} + \underbrace{2\sum_{t<s} \tilde x_{it}\,\tilde x_{is}\,\operatorname{Cov}(\varepsilon_{it},\varepsilon_{is})}_{\text{cross-time term (off-diagonal)}}.
+$$
+
+**The iid standard error keeps only the first term and silently sets every covariance to zero.** When the errors are positively serially correlated, $\operatorname{Cov}(\varepsilon_{it},\varepsilon_{is}) > 0$; and when the regressor is positively persistent, $\tilde x_{it}\,\tilde x_{is} > 0$ on average. The product of two positives makes the second term *positive*, so the true variance exceeds the iid approximation. The iid formula is too small by exactly the off-diagonal mass it discards.
+
+### Quantifying the gap for AR(1) errors
+
+Suppose $\operatorname{Cov}(\varepsilon_{it},\varepsilon_{is}) = \sigma_\varepsilon^2\,\rho^{|t-s|}$ (the AR(1) structure) and, for a clean closed form, that $\tilde x_{it} = \tilde x_i$ is constant within a region across the $T$ periods. Then the within sum for region $i$ has variance
+
+$$
+\operatorname{Var}\!\left(\tilde x_i \sum_t \varepsilon_{it}\right) = \tilde x_i^2\,\sigma_\varepsilon^2\left[T + 2\sum_{t<s}\rho^{|t-s|}\right] = \tilde x_i^2\,\sigma_\varepsilon^2\left[T + 2\!\sum_{k=1}^{T-1}(T-k)\rho^{k}\right].
+$$
+
+The iid formula would report only $\tilde x_i^2\,\sigma_\varepsilon^2\,T$. The ratio of true to iid variance is therefore the **design effect**
+
+$$
+\text{DEFF} = 1 + \frac{2}{T}\sum_{k=1}^{T-1}(T-k)\rho^{k}.
+$$
+
+For $\rho = 0$, $\text{DEFF} = 1$ (no inflation). For $\rho \to 1$ it approaches $T$, meaning the effective sample size collapses to one observation per region. With $T = 10$ and $\rho = 0.5$, $\text{DEFF} \approx 2.6$, so the correct standard error is about $\sqrt{2.6} \approx 1.6$ times the iid one --- a $t$-statistic reported as 3.2 is really about 2.0. This is the arithmetic behind the over-rejection in the simulation, and behind the Bertrand–Duflo–Mullainathan 45% false-positive rate. The cluster-robust estimator recovers the full bracketed quantity directly from the data, without assuming any particular $\rho$.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+Both panels fit the *same* fixed-effects model to a staggered-adoption falls-program panel, then contrast iid standard errors with standard errors clustered by region.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(fixest)
+
+# --- Simulate a staggered falls-program panel: 21 regions x 10 years ---
+set.seed(2024)
+N <- 21; T <- 10; beta_true <- -2.0; rho <- 0.6
+adopt <- sample(c(rep(Inf, 7), sample(3:8, N - 7, replace = TRUE)))  # ~1/3 never adopt
+
+panel <- do.call(rbind, lapply(1:N, function(i) {
+  eps <- numeric(T); eps[1] <- rnorm(1, 0, 3)
+  for (t in 2:T) eps[t] <- rho * eps[t - 1] + rnorm(1, 0, 3 * sqrt(1 - rho^2))
+  x     <- as.integer(seq_len(T) >= adopt[i])
+  alpha <- 8 + 2 * sin(i)                       # region fixed effect
+  data.frame(region = i, year = 2013 + 1:T,
+             treat = x, y = alpha + beta_true * x + eps)
+}))
+
+# Two-way fixed effects (region + year); compare vcov families
+m <- feols(y ~ treat | region + year, data = panel)
+
+# fixest reports clustered-by-region SEs by DEFAULT (first FE)
+summary(m)                              # clustered by region (the honest one)
+
+# Force the naive iid SE for contrast
+summary(m, vcov = "iid")               # far too small under serial correlation
+
+# With only G = 21 clusters, prefer the wild cluster bootstrap:
+# install.packages("fwildclusterboot")
+# library(fwildclusterboot)
+# boottest(m, param = "treat", clustid = "region", B = 9999)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from linearmodels.panel import PanelOLS
+
+# --- Simulate a staggered falls-program panel: 21 regions x 10 years ---
+rng = np.random.default_rng(2024)
+N, T, beta_true, rho = 21, 10, -2.0, 0.6
+adopt = np.concatenate([np.full(7, np.inf), rng.integers(3, 9, size=N - 7)])
+rng.shuffle(adopt)
+
+rows = []
+for i in range(N):
+    eps = np.empty(T); eps[0] = rng.normal(0, 3)
+    for t in range(1, T):
+        eps[t] = rho * eps[t - 1] + rng.normal(0, 3 * np.sqrt(1 - rho**2))
+    x = (np.arange(1, T + 1) >= adopt[i]).astype(int)
+    alpha = 8 + 2 * np.sin(i)                       # region fixed effect
+    for t in range(T):
+        rows.append((i, 2014 + t, x[t], alpha + beta_true * x[t] + eps[t]))
+
+panel = pd.DataFrame(rows, columns=["region", "year", "treat", "y"])
+panel = panel.set_index(["region", "year"])       # entity, time MultiIndex
+
+# Two-way fixed effects (region + year)
+mod = PanelOLS(panel["y"], panel[["treat"]],
+               entity_effects=True, time_effects=True, drop_absorbed=True)
+
+# Naive iid SEs — too small under serial correlation
+print(mod.fit(cov_type="unadjusted").summary)
+
+# Clustered by region (entity) — the honest standard error
+print(mod.fit(cov_type="clustered", cluster_entity=True).summary)
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A researcher fits a fixed-effects regression of fall-hospitalization rates on a falls-program indicator across 21 regions over 10 years. Errors follow an AR(1) process with $\rho = 0.5$, and the program indicator is highly persistent within regions. The iid standard error is reported as $0.40$, yielding $\hat\beta = -2.0$ and a $t$-statistic of $-5.0$.
+
+(a) Using the closed-form design effect from the Math Details with $T = 10$ and $\rho = 0.5$, estimate how much larger the correct (clustered) standard error should be.
+(b) What is the corrected $t$-statistic?
+(c) With only 21 clusters, what reference distribution should you use, and does the conclusion change?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The design effect is $\text{DEFF} = 1 + \frac{2}{T}\sum_{k=1}^{T-1}(T-k)\rho^{k}$. With $T = 10$, $\rho = 0.5$:
+
+$$
+\sum_{k=1}^{9}(10-k)(0.5)^k = 9(0.5) + 8(0.25) + 7(0.125) + 6(0.0625) + 5(0.03125) + 4(0.015625) + 3(0.0078125) + 2(0.00390625) + 1(0.001953125).
+$$
+
+Term by term: $4.5 + 2.0 + 0.875 + 0.375 + 0.15625 + 0.0625 + 0.0234375 + 0.0078125 + 0.001953125 \approx 8.0020$.
+
+So $\text{DEFF} = 1 + \frac{2}{10}(8.0020) = 1 + 1.6004 \approx 2.60$. The variance is inflated by $\approx 2.60$, so the standard error is larger by $\sqrt{2.60} \approx 1.61$. The corrected SE is approximately $0.40 \times 1.61 = 0.645$.
+
+**(b)** The corrected $t$-statistic is $-2.0 / 0.645 \approx -3.10$ --- substantially smaller in magnitude than the naive $-5.0$, but still well beyond conventional thresholds.
+
+**(c)** With $G = 21$ clusters, compare to a $t$-distribution with $G - 1 = 20$ degrees of freedom rather than the normal. The 97.5th percentile of $t_{20}$ is $2.086$. Since $|{-3.10}| = 3.10 > 2.086$, we still reject the null at the 5% level. The conclusion (a real effect) survives, but the naive analysis overstated the strength of the evidence by reporting $|t| = 5.0$ when the honest figure is closer to $3.1$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain why clustering at the *region* level (rather than the *region-year* level, or the *patient* level) is the appropriate choice for evaluating the regionwide falls program. Then describe a scenario in which clustering at the region level would be *insufficient* and you would need to cluster more coarsely.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Why region:** The cluster should be the level at which (i) treatment is assigned and (ii) errors are correlated. The falls program is adopted region-wide, so all of a region's observations share the same treatment timing, and a region's idiosyncratic shocks (a heat wave, a hospital reorganization, a reporting change) persist across its years. Clustering by *region* allows arbitrary correlation among all of a region's region-year errors. Clustering by *region-year* would treat each region-year as its own cluster --- which is just the heteroskedasticity-robust (iid-across-time) estimator and ignores the serial correlation entirely. Clustering by *patient* would be finer than the treatment-assignment level and would again fail to capture the region-level dependence.
+
+**When region is insufficient:** Suppose several regions share a common shock --- for instance, a *national* guideline from Socialstyrelsen changes fall-risk coding in the same year for all regions in a macro-area, or neighboring regions coordinate their programs and their outcomes co-move. Then errors are correlated *across* regions within that grouping, violating the across-cluster independence that region-level clustering assumes. You would need to cluster more coarsely (e.g., by macro-region or by a national-shock grouping), or use two-way clustering (region and year) so that common year shocks are absorbed. The guiding principle is unchanged: cluster at the coarsest level along which you cannot defend independent draws.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A region adopts the falls program at all of its *vårdcentraler* simultaneously, but the clinics with the worst pre-program fall rates are subsequently closed and merged into better-performing ones, so they disappear from the panel after the program starts. The analyst runs a fixed-effects regression on the resulting unbalanced panel and finds the program "reduced" fall rates substantially. Is this estimate trustworthy? Explain the mechanism and propose a diagnostic.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Not trustworthy --- this is selection-on-the-outcome attrition.** The clinics that exit are exactly those with the worst realized outcomes ($\varepsilon_{it}$ large and adverse). Their disappearance after the program starts mechanically lowers the *post-period* average fall rate among the surviving clinics, even if the program itself did nothing. The within transformation demeans each surviving clinic over the periods it is present, but the *composition* of survivors changed in a way correlated with the outcome path --- so the estimated drop conflates a true program effect with the removal of high-rate units. This violates the benign-attrition condition: the probability of being observed depends on the realized error.
+
+**Diagnostic:** Compare the estimate on the full unbalanced panel against the estimate on the **balanced subpanel** (clinics present in *all* periods, before and after). If the balanced-subpanel estimate is much smaller (or vanishes), selective attrition is driving the result. A complementary check is to model the probability of remaining in the panel as a function of pre-program outcomes; if exit is strongly predicted by bad prior outcomes, reweight by the inverse probability of being observed, or restrict to the balanced panel and report both. One should also test whether attrition is *differential by treatment timing*, which is the specific threat to a panel/DiD design.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive simulation, set $\rho = 0$ and note the coverage of both methods. Then set $\rho = 0.8$. (a) Predict, before reading off the scoreboard, what happens to iid coverage and to clustered coverage. (b) The point estimate $\hat\beta$ stays centered near $-2.0$ in both cases --- why does serial correlation hurt coverage but not consistency? (c) The clustered SE is larger than the iid SE under high $\rho$. In a real study with $G = 21$, why might even the clustered interval still be slightly too narrow?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $\rho = 0$, both methods cover at about 95% --- with independent errors the iid formula is correct and clustering is unnecessary (it should give nearly the same width). At $\rho = 0.8$, **iid coverage collapses** (typically to 70% or lower) because the iid SE ignores the large positive off-diagonal covariances and is far too small, so its intervals are too narrow and frequently miss the truth. **Clustered coverage stays near 95%** because the sandwich estimator absorbs the within-region covariances directly, widening the intervals appropriately.
+
+**(b)** Consistency concerns whether $\hat\beta$ converges to the true $\beta$; coverage concerns whether the *interval around* $\hat\beta$ is the right width. Serial correlation does not bias the within estimator --- the demeaned regressor is still uncorrelated with the error in expectation, so $\hat\beta \to \beta$. What serial correlation changes is the *sampling variance* of $\hat\beta$: persistent errors mean fewer effective independent observations, so $\hat\beta$ bounces around more from sample to sample. The iid formula mis-measures that bounce. Thus the center (consistency) is fine while the spread (coverage) is wrong.
+
+**(c)** With only $G = 21$ clusters, the cluster-robust estimator is itself biased *downward* in finite samples: the residuals $\hat u_g$ are shrunk by estimation of the many fixed effects, and the normal reference distribution is too thin-tailed. Even after the sandwich widens the interval, $\pm 1.96$ understates the true critical value. Using $t_{G-1}$ (here $t_{20}$, with critical value $2.086$) or, better, a wild cluster bootstrap restores the remaining shortfall in coverage.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Serial correlation does not bias $\hat\beta$ --- it corrupts the standard error; iid SEs treat each region-year as independent and can understate uncertainty by a factor of $\sqrt{\text{DEFF}}$ (about 1.6 when $T=10$, $\rho=0.5$).
+- Cluster at the level where treatment is assigned and errors are correlated --- here the region --- which changes only the standard error, never the coefficient, and encodes the true effective sample size.
+- With few clusters ($G \approx 21$), do not compare $t$-statistics to $\pm 1.96$; use $t_{G-1}$ critical values and prefer the wild cluster bootstrap.
+- Unbalanced panels are handled automatically, but attrition driven by the realized outcome biases $\hat\beta$ --- compare the full panel to the balanced subpanel as a diagnostic.
+- Fixed effects trades efficiency for robustness against $\alpha_i$-confounding; default to it in observational health-policy data and reserve random effects for when $\operatorname{Cov}(\alpha_i, x_{it}) = 0$ is defensible.
+:::
+
+## What Comes Next
+
+We now have the full panel toolkit: the within transformation that purges time-invariant confounders, and the cluster-robust inference that keeps our standard errors honest when a unit's errors persist over time. The natural next step is the design that fuses both ideas into a single, transparent identification strategy. When *some* units adopt a policy and *others* do not, and we observe both groups *before* and *after*, the comparison of changes --- treated-group change minus control-group change --- isolates the causal effect under a parallel-trends assumption. That is **difference-in-differences**, the subject of the [next module](../06-did/index.qmd), where serial correlation and clustering will return as central characters rather than footnotes.

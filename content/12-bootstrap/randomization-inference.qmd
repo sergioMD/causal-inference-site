@@ -1,0 +1,751 @@
+---
+title: "Randomization Inference"
+subtitle: "Design-based p-values from the assignment mechanism"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State the **sharp null** $H_0: Y_i(1) = Y_i(0)$ for *every* unit and explain why it fixes all observed outcomes
+- Argue that, under the sharp null, the treatment labels are **exchangeable**, so re-randomizing them reconstructs the exact reference distribution of any test statistic
+- Compute an **exact two-sided permutation p-value** as the share of re-randomizations whose statistic is at least as extreme as the observed one
+- Contrast Fisher's design-based randomization inference with Neyman's sampling-based inference for the average effect
+- Run a manual permutation loop in R and Python and read off a p-value that rests on no large-sample or distributional assumption
+:::
+
+## A Trial Too Small to Trust the t-Table
+
+A *vårdcentral* (primary care center) in Region Uppsala pilots a new structured insulin-titration protocol for poorly controlled Type 2 diabetes. The trial is tiny --- *läkare* (physicians) could spare only **ten** patients. Six were randomized to the new protocol, four to usual care, and the outcome is the twelve-month change in HbA1c (mmol/mol; more negative is better). The new-protocol arm averaged a $4.2$ mmol/mol *larger* drop than usual care. Encouraging --- but with ten patients, can the clinic rule out that the gap is just an unlucky shuffle of who landed in which arm?
+
+The reflex is to reach for a two-sample $t$-test. But the $t$-test borrows a *sampling* story: it imagines these ten patients as a random draw from an infinite super-population of diabetics, and it leans on the Central Limit Theorem to make the test statistic approximately Normal. With $n = 10$ that approximation is shaky, and the super-population story is fiction --- the clinic did not sample these patients from anywhere; it *randomized the patients it had*.
+
+Ronald Fisher's insight, from *The Design of Experiments* (1935), is that we do not need the fiction. The one thing we *know for certain* is the **assignment mechanism**: a coin, a lottery, a random number generator decided who got the protocol. That known randomness is enough --- by itself --- to build an exact test. No super-population, no Normal approximation, no minimum sample size. This is **randomization inference**, and for small experiments it is the gold standard.
+
+This page is the design-based companion to the resampling logic of [The Bootstrap](the-bootstrap.qmd): both manufacture a reference distribution by reshuffling the data, but where the bootstrap resamples *observations* to mimic sampling from a population, randomization inference re-draws *treatment labels* to mimic the experiment itself. It also completes a thread opened back in [Randomization](../01-fundamental-problem/randomization.qmd) in Module 1, where the permutation p-value was previewed; here we build it from the ground up.
+
+## The Sharp Null Freezes the Outcomes
+
+Everything turns on *which* null hypothesis we test. Neyman's framework targets the **average** effect and asks whether the *mean* difference could be zero. Fisher asks something far stronger.
+
+::: {.glass-card .glass-card--definition}
+**Fisher's sharp null hypothesis** states that treatment has *no effect for any unit whatsoever*:
+
+$$
+H_0^{\text{sharp}}: \quad Y_i(1) = Y_i(0) \quad \text{for every unit } i.
+$$
+
+**Read this as**: "for each and every patient $i$, the outcome they would have under the new protocol equals the outcome they would have under usual care." Not just *on average* --- for *every single person*, individually.
+:::
+
+This is a much bolder claim than "the average effect is zero." The average could be zero while some patients are helped and others harmed in exactly offsetting amounts; the sharp null forbids even that. And that boldness is precisely what buys us an exact test.
+
+Recall the switching equation from [Potential Outcomes](../01-fundamental-problem/potential-outcomes.qmd): we observe $Y_i^{\text{obs}} = D_i\,Y_i(1) + (1-D_i)\,Y_i(0)$. Normally the *unobserved* potential outcome is a mystery. But under the sharp null, the two potential outcomes are *identical*, so the missing one equals the one we saw:
+
+$$
+Y_i(1) = Y_i(0) = Y_i^{\text{obs}}.
+$$
+
+::: {.glass-card .glass-card--insight}
+**Why the sharp null is magic.** Once we assume $Y_i(1) = Y_i(0)$, the observed outcomes become *fixed, known constants* --- there is no missing data anymore. A patient who dropped $6$ mmol/mol would have dropped $6$ mmol/mol *regardless* of which arm they were assigned to. The only thing still random is **which label each patient received**. We know that randomness exactly, because we designed it.
+:::
+
+## Exchangeable Labels and the Reference Distribution
+
+Hold the ten outcomes fixed at their observed values. The assignment mechanism --- "choose 6 of these 10 patients to receive the protocol, uniformly at random" --- could have produced any of $\binom{10}{6} = 210$ equally likely label patterns. The one we actually observed is just *one draw* from those 210.
+
+For each hypothetical label pattern, recompute the test statistic --- say the difference in mean HbA1c change between the (relabeled) treated and control groups. Under the sharp null this is a legitimate exercise, because the outcomes never move; only the labels do. The collection of all 210 statistics is the **randomization distribution** (or **permutation distribution**): the exact set of values the statistic *could have taken*, with their exact probabilities, if the null were true.
+
+::: {.glass-card .glass-card--assumption}
+**What randomization inference assumes --- and what it does not.**
+
+- **Assumes:** the assignment mechanism is known (it is --- you ran the randomization), and the sharp null, under which outcomes are exchangeable across the treatment labels.
+- **Also relies on SUTVA:** no interference between patients, so relabeling one patient does not change another's outcome (see [Potential Outcomes](../01-fundamental-problem/potential-outcomes.qmd)).
+- **Does *not* assume:** Normality, equal variances, large $n$, or random sampling from any super-population. The p-value is **exact** for the ten patients in hand, however few they are.
+:::
+
+The observed assignment is exchangeable with all the others under $H_0$: each of the 210 patterns was *a priori* equally likely, so the observed statistic is "just another draw" from the reference distribution. If the new protocol truly does nothing, our observed difference should sit in the bulk of that distribution. If it lands far out in the tail, then either the null is false or we witnessed a rare coincidence --- and *how* rare is exactly the p-value.
+
+## The Exact Permutation p-Value
+
+Let $T^{\text{obs}}$ be the statistic computed from the real labels, and let $T^{(m)}$ be the statistic under the $m$-th of the $M = \binom{N}{N_1}$ possible label patterns. The **two-sided exact p-value** is the fraction of patterns whose statistic is at least as extreme as what we saw:
+
+$$
+p_{\text{exact}} = \frac{1}{M}\sum_{m=1}^{M}\mathbf{1}\!\left\{\,\bigl|T^{(m)}\bigr| \ge \bigl|T^{\text{obs}}\bigr|\,\right\}.
+$$
+
+**Read this aloud**: "the exact p-value is the count of re-randomizations whose statistic, in absolute value, is at least as large as the observed statistic's absolute value, divided by the total number of re-randomizations." The indicator $\mathbf{1}\{\cdot\}$ is $1$ when the condition holds and $0$ otherwise, so the sum just *counts the extreme patterns*.
+
+When $M$ is small (here $210$) we can enumerate every pattern and the p-value is exact to the last digit. When $M$ is astronomically large --- a trial of 200 patients has $\binom{200}{100} > 10^{58}$ patterns --- we instead draw a large random sample of $B$ permutations (a **Monte Carlo permutation test**) and estimate the p-value, with a small correction to keep it valid:
+
+$$
+\hat p_{\text{MC}} = \frac{1 + \sum_{b=1}^{B}\mathbf{1}\{\,|T^{(b)}| \ge |T^{\text{obs}}|\,\}}{1 + B}.
+$$
+
+**Read this as**: "one plus the number of sampled permutations as extreme as the observed, over one plus the number of sampled permutations." The $+1$ in numerator and denominator counts the *observed* assignment itself as one valid draw --- which it is --- and guarantees the estimated p-value can never be exactly zero, a subtle but important guard against overstating significance.
+
+## See It: Permute the Labels, Build the Distribution
+
+The lab below holds the ten patients' HbA1c changes fixed and lets *you* run the assignment mechanism. Each click of **Permute labels** randomly re-assigns six patients to "protocol" and four to "control", recomputes the difference in mean change, and drops it onto the histogram --- one more draw from the randomization distribution. The red rule marks the **observed** difference. As permutations pile up, the share of them landing as far from zero as the observed difference *is* the exact p-value. The **injected true effect** slider shifts every protocol patient's outcome, sliding the observed statistic out toward the tail so you can watch a null result become significant.
+
+::: {.interactive-container}
+
+#### Fisher's permutation test for the insulin-titration pilot
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls (fuller tour is below).
+html`<p style="
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.85rem;
+    color: ${bsri_pal.axis};
+    background: ${bsri_pal.fill};
+    border-left: 3px solid ${bsri_pal.treated};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave the effect slider at 0 (the sharp null) and
+  hammer <em>Permute labels</em> a few dozen times. Watch the histogram of
+  re-randomized differences grow around 0 while the red <em>observed</em> rule
+  sits in the bulk. Then drag the slider up and watch the red rule march into the
+  tail as the exact p-value collapses. Full guided tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+// Palette tokens — Uppsala-academic. Shared across this page's interactives.
+bsri_pal = ({
+  treated: "#990000",   // focal / observed statistic (Uppsala red)
+  control: "#3d5a6c",   // permuted-draw histogram (slate)
+  good:    "#2e6f40",   // not-significant / on-target (green)
+  bad:     "#b3000b",   // significant / alarm (bright red)
+  ochre:   "#9c7a33",   // injected true effect / highlight
+  ink:     "#1c1c1a",   // reference lines & ink text
+  axis:    "#79766e",   // axis / label text (muted Uppsala token)
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+
+// The injected true effect (mmol/mol) added to every PROTOCOL patient's
+// observed outcome. At 0 we are at the sharp null. Negative = protocol lowers
+// HbA1c more (a real benefit, since lower is better); positive = protocol worse.
+viewof bsri_effect = Inputs.range([-8, 8], {
+  value: 0,
+  step: 0.5,
+  label: "Injected true effect on protocol arm (mmol/mol)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Resampling button — the canonical reduce-counter pattern so we never
+// read+write a mutable. Each click adds 1 or 50 draws to bsri_permClicks.
+viewof bsri_permClicks = Inputs.button(
+  [
+    ["Permute labels (+1 draw)", v => v + 1],
+    ["Permute labels (+50 draws)", v => v + 50]
+  ],
+  { value: 0, label: "Re-randomize the assignment" }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The ten FIXED patients. y_base is the observed twelve-month HbA1c change
+// (mmol/mol; negative = improvement). d=1 is the protocol arm (6 patients),
+// d=0 usual care (4). These outcomes never move under the sharp null — only
+// the labels are reshuffled. The injected effect is added to protocol patients.
+bsri_patients = [
+  { id: 1, d: 1, y_base: -7.1 },
+  { id: 2, d: 1, y_base: -5.4 },
+  { id: 3, d: 1, y_base: -6.8 },
+  { id: 4, d: 1, y_base: -3.2 },
+  { id: 5, d: 1, y_base: -8.0 },
+  { id: 6, d: 1, y_base: -4.5 },
+  { id: 7, d: 0, y_base: -1.9 },
+  { id: 8, d: 0, y_base: -3.0 },
+  { id: 9, d: 0, y_base: -0.6 },
+  { id: 10, d: 0, y_base: -2.4 }
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+bsri_N = bsri_patients.length          // total patients (10)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+bsri_N1 = bsri_patients.filter(p => p.d === 1).length   // protocol arm size (6)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Observed outcomes WITH the injected effect baked into the real protocol arm.
+// This is the data the clinic "actually saw" for the current slider position.
+bsri_yObs = bsri_patients.map(p => ({
+  ...p,
+  y: p.y_base + (p.d === 1 ? bsri_effect : 0)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Difference-in-means statistic for a given assignment vector `assign`
+// (an array of 0/1 the same length as the outcomes `ys`): mean(treated) − mean(control).
+bsri_diffMeans = function (ys, assign) {
+  let s1 = 0, n1 = 0, s0 = 0, n0 = 0;
+  for (let i = 0; i < ys.length; i++) {
+    if (assign[i] === 1) { s1 += ys[i]; n1++; }
+    else { s0 += ys[i]; n0++; }
+  }
+  return s1 / n1 - s0 / n0;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The OBSERVED statistic: difference in means under the REAL labels.
+bsri_Tobs = bsri_diffMeans(
+  bsri_yObs.map(p => p.y),
+  bsri_yObs.map(p => p.d)
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fisher–Yates shuffle of an index array (used to relabel). Pure helper.
+bsri_shuffle = function (arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Draw ONE random assignment: pick N1 of the N positions to be "treated".
+bsri_randomAssign = function () {
+  const idx = bsri_shuffle(d3.range(bsri_N));
+  const assign = new Array(bsri_N).fill(0);
+  for (let k = 0; k < bsri_N1; k++) assign[idx[k]] = 1;
+  return assign;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The accumulating draw count. It depends reactively on the button counter
+// (how many draws requested) and on the outcomes (which change with the effect
+// slider — a new slider value rebuilds the reference distribution against the
+// new observed data, which doubles as a natural "clear").
+//
+// We recompute the WHOLE set of draws from the click count rather than
+// reading+writing a mutable: the cell is a pure function of (clicks, outcomes),
+// so it is acyclic and reproducible. Nudging the effect slider clears and
+// rebuilds the histogram; the +1 / +50 buttons accumulate draws against the
+// current data.
+bsri_drawCount = {
+  bsri_effect;               // changing the effect rebuilds against new data
+  return bsri_permClicks;    // total draws requested via the +1 / +50 buttons
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the array of permuted statistics. Capped for responsiveness; the count
+// shown to the reader is the true number drawn.
+bsri_perms = {
+  const ys = bsri_yObs.map(p => p.y);     // fixed outcomes (sharp null holds them)
+  const M = Math.min(bsri_drawCount, 4000);
+  const out = [];
+  for (let m = 0; m < M; m++) {
+    out.push(bsri_diffMeans(ys, bsri_randomAssign()));
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Exact-style two-sided p-value estimate from the accumulated draws, using the
+// (1 + extreme) / (1 + B) Monte-Carlo correction so it is never exactly zero.
+bsri_pval = {
+  const B = bsri_perms.length;
+  if (B === 0) return null;
+  const t = Math.abs(bsri_Tobs);
+  const extreme = bsri_perms.reduce(
+    (acc, v) => acc + (Math.abs(v) >= t - 1e-9 ? 1 : 0), 0
+  );
+  return (1 + extreme) / (1 + B);
+}
+```
+
+```{ojs}
+//| echo: false
+
+// The histogram of permuted differences with the observed statistic overlaid.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 340,
+  marginLeft: 60,
+  marginBottom: 48,
+  marginTop: 36,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: bsri_pal.axis
+  },
+  x: {
+    // Domain wide enough to hold the observed rule AND the permutation spread at
+    // every slider position: a large injected effect both shifts the observed
+    // statistic and widens the reference distribution (relabeling spreads the
+    // injected heterogeneity across both arms), reaching roughly ±12 at the
+    // slider extremes. Keeping the domain fixed avoids the marker overflowing.
+    label: "Difference in mean HbA1c change, treated − control (mmol/mol)  →",
+    domain: [-12.5, 12.5],
+    grid: false
+  },
+  y: {
+    label: "↑ Count of re-randomizations",
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: bsri_pal.hair }),
+    Plot.ruleY([0], { stroke: bsri_pal.axis }),
+
+    // The permutation distribution (slate bars). Bars at least as extreme as the
+    // observed statistic are tinted red to show what the p-value is counting.
+    Plot.rectY(
+      bsri_perms,
+      Plot.binX(
+        { y: "count" },
+        {
+          x: d => d,
+          thresholds: d3.range(-12.5, 12.5001, 0.5),
+          fill: d => Math.abs(d) >= Math.abs(bsri_Tobs) - 1e-9
+            ? bsri_pal.treated
+            : bsri_pal.control,
+          fillOpacity: 0.75
+        }
+      )
+    ),
+
+    // The observed statistic — a thick red rule.
+    Plot.ruleX([bsri_Tobs], {
+      stroke: bsri_pal.treated, strokeWidth: 3
+    }),
+    // Its mirror image (two-sided): the −|Tobs| boundary in muted dashes.
+    Plot.ruleX([-Math.abs(bsri_Tobs)], {
+      stroke: bsri_pal.treated, strokeWidth: 1.5, strokeDasharray: "4,4"
+    }),
+    // Plot.ruleX carries no text channel — label the observed value explicitly,
+    // pinned to the top frame band so it never collides with the bars. The label
+    // x is clamped to an interior band and its anchor flips near the edges so the
+    // text never overflows the frame even when the slider pushes Tobs to ±12.
+    Plot.text(
+      [{ x: Math.max(-10.5, Math.min(10.5, bsri_Tobs)) }],
+      {
+        x: "x",
+        frameAnchor: "top",
+        text: () => `observed = ${bsri_Tobs.toFixed(2)}`,
+        fill: bsri_pal.treated, fontWeight: 700, fontSize: 12,
+        dy: -6,
+        textAnchor: bsri_Tobs < -8 ? "start" : (bsri_Tobs > 8 ? "end" : "middle"),
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }
+    ),
+    // Zero reference (the sharp-null center) in ink.
+    Plot.ruleX([0], { stroke: bsri_pal.ink, strokeWidth: 1, strokeDasharray: "2,3" })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live numeric panel — observed statistic, draws accumulated, exact p-value,
+// and verdict. Driven from the same objects as the chart so they never drift.
+{
+  const sig = bsri_pval !== null && bsri_pval < 0.05;
+  const pColor = bsri_pval === null
+    ? bsri_pal.muted
+    : (sig ? bsri_pal.bad : bsri_pal.good);
+  const pText = bsri_pval === null ? "—" : bsri_pval.toFixed(3);
+
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7.5rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${bsri_pal.fill}; border: 1px solid ${bsri_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${bsri_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("Observed Tobs", bsri_Tobs.toFixed(2), bsri_pal.treated)}
+    ${tile("Draws accumulated", bsri_perms.length.toLocaleString(), bsri_pal.ink)}
+    ${tile("Exact p-value (2-sided)", pText, pColor)}
+    ${tile("At α = 0.05", bsri_pval === null ? "—" : (sig ? "reject H₀" : "fail to reject"), pColor)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line plain-language verdict that updates with the slider and draws.
+{
+  if (bsri_pval === null) {
+    return html`<div style="
+        margin-top:0.6rem; padding:0.55rem 0.85rem; border-radius:0.4rem;
+        border-left:3px solid ${bsri_pal.muted}; background:${bsri_pal.fill};
+        font-family:'Inter',system-ui,sans-serif; font-size:0.85rem;
+        color:${bsri_pal.ink};">
+      Click <strong>Permute labels</strong> to start drawing from the
+      randomization distribution.</div>`;
+  }
+  const sig = bsri_pval < 0.05;
+  const msg = sig
+    ? `Only ${(100 * bsri_pval).toFixed(1)}% of re-randomizations are as extreme as the observed difference (${bsri_Tobs.toFixed(2)} mmol/mol). Under the sharp null this gap is unlikely to be chance — the protocol effect is statistically detectable at the 5% level.`
+    : `${(100 * bsri_pval).toFixed(1)}% of re-randomizations are as extreme as the observed difference (${bsri_Tobs.toFixed(2)} mmol/mol). A gap this size is well within what label-shuffling alone produces — we cannot reject the sharp null at the 5% level.`;
+  return html`<div style="
+      margin-top:0.6rem; padding:0.55rem 0.85rem; border-radius:0.4rem;
+      border-left:3px solid ${sig ? bsri_pal.bad : bsri_pal.good};
+      background:${bsri_pal.fill}; font-family:'Inter',system-ui,sans-serif;
+      font-size:0.85rem; line-height:1.5; color:${bsri_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Permutation Histogram
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Anchor on the observed result.** Before clicking anything, find the thick **red rule** --- it marks the difference in mean HbA1c change actually observed in the pilot, treated minus control. With the effect slider at $0$ it reads about $-3.86$ mmol/mol (the protocol arm improved more). The dashed red rule on the other side of zero is its two-sided mirror, $+|T^{\text{obs}}|$.
+
+**Step 2: Run the assignment mechanism.** Click **Permute labels** repeatedly. Each click randomly chooses six of the ten *fixed* outcomes to call "protocol" and recomputes the difference. A slate bar grows for every draw. You are literally re-running the coin flip that assigned patients --- the outcomes never change, only who wears which label.
+
+**Step 3: Watch the null distribution emerge.** After 50--100 draws the histogram forms a roughly symmetric mound centered on **zero**. That is the signature of the sharp null: if the protocol does nothing, shuffling labels produces differences scattered around zero by chance alone. The spread of this mound is the natural variability of a ten-patient difference --- estimated with no formula, only the design.
+
+**Step 4: Read the exact p-value.** The bars tinted **red** are the re-randomizations at least as extreme as the observed statistic (in absolute value). Their share of all draws is the **exact two-sided p-value** in the panel. With the slider at $0$, only a small fraction of draws are as extreme as the observed $-3.86$ (the full 210-assignment enumeration gives an exact $p \approx 0.010$), and you can watch the Monte-Carlo estimate stabilize toward it as draws accumulate.
+
+**Step 5: Inject a real effect.** Drag **Injected true effect** to $-3$ or beyond. Every protocol patient's outcome shifts, the observed red rule slides deep into the left tail, and almost no re-randomization can match it --- the p-value plunges below $0.05$ and the verdict tile flips to *reject H₀* (turning red). Now drag the slider back toward $0$ and the red rule walks back into the bulk, the p-value climbs, and the verdict returns to *fail to reject* (green). You are watching design-based power in real time.
+
+## Fisher versus Neyman: Two Questions, Two Inferences
+
+Randomization inference is not the only design-based game in town. It is worth being crisp about how Fisher's framework differs from the Neyman repeated-sampling view that underlies the usual standard error.
+
+::: {.glass-card .glass-card--insight}
+**Fisher (this page)** tests the **sharp null** $Y_i(1)=Y_i(0)$ for all $i$. The estimand is implicit; the output is an *exact p-value* for "any effect at all," valid in any sample size, conditional on the realized outcomes. It answers: *could pure chance in the assignment have produced a gap this big?*
+
+**Neyman** targets the **average treatment effect** $\bar\tau = \tfrac1N\sum_i\tau_i$ and asks about its sampling variability across hypothetical re-randomizations, producing an unbiased $\hat\tau$, a (conservative) variance estimate $s_1^2/N_1 + s_0^2/N_0$, and a confidence interval that leans on a Normal approximation as $N$ grows. It answers: *how big is the average effect, with what uncertainty?*
+:::
+
+The two are complementary. Fisher's test is *exact* and assumption-light but speaks only to the sharp null; Neyman's interval *quantifies the effect size* but borrows asymptotics. For a ten-patient pilot, the Fisher p-value is the trustworthy headline; for a large trial where you want a confidence interval on $\bar\tau$, Neyman (or the bootstrap of the next modules) does the heavy lifting. By **inverting** the permutation test --- testing a grid of sharp nulls $Y_i(1)=Y_i(0)+\delta$ and collecting the $\delta$ not rejected --- you can even build an exact randomization *confidence interval*, getting the best of both.
+
+::: {.glass-card .glass-card--warning}
+**The exactness is borrowed from the design, not the data.** A permutation test is only valid when the labels really were assigned by a known random mechanism. Shuffling the "treatment" labels of an *observational* comparison --- patients who *chose* the new protocol versus those who did not --- reshuffles a variable that was never random, so the reference distribution is meaningless and the p-value is not exact (or even interpretable). The test also presumes **SUTVA**: if treating one patient spills over onto another at the same *vårdcentral* (a trained *diabetessjuksköterska* improving care for everyone), relabeling breaks the fixed-outcome assumption and the test loses its guarantee. Reach for randomization inference when you ran the randomization --- not as a distribution-free patch for confounding.
+:::
+
+<details>
+<summary>Math Details: Exchangeability under the sharp null and the exact p-value</summary>
+<div class="details-content">
+
+### Setup
+
+We have $N$ units with fixed potential outcomes $\{Y_i(0), Y_i(1)\}_{i=1}^N$. The experimenter draws an assignment vector $\mathbf{D} = (D_1,\dots,D_N)$ uniformly from the set $\Omega$ of all vectors with exactly $N_1$ ones (completely randomized design), so
+
+$$
+\Pr(\mathbf{D} = \mathbf{d}) = \frac{1}{|\Omega|} = \binom{N}{N_1}^{-1} \quad \text{for every } \mathbf{d}\in\Omega.
+$$
+
+The observed outcome obeys the switching equation $Y_i = D_i Y_i(1) + (1-D_i)Y_i(0)$.
+
+### The sharp null removes the missing data
+
+Impose $H_0^{\text{sharp}}: Y_i(1) = Y_i(0) \equiv y_i$ for all $i$. Then the switching equation collapses:
+
+$$
+Y_i = D_i\,y_i + (1-D_i)\,y_i = y_i,
+$$
+
+so the observed vector $\mathbf{Y} = (y_1,\dots,y_N)$ is a *fixed constant*, independent of $\mathbf{D}$. The entire vector of outcomes is known and would be identical under any relabeling. This is the crux: **under the sharp null there is no counterfactual left to impute.**
+
+### Exchangeability and the null distribution of the statistic
+
+Let $T(\mathbf{D}, \mathbf{Y})$ be any test statistic --- e.g. the difference in means $T = \bar Y_1 - \bar Y_0$. Because $\mathbf{Y}$ is fixed under $H_0$, the *only* source of randomness in $T$ is $\mathbf{D}$. Its exact null distribution is therefore obtained by enumerating $\Omega$:
+
+$$
+\Pr\!\big(T = t \mid H_0\big) = \frac{1}{|\Omega|}\sum_{\mathbf{d}\in\Omega}\mathbf{1}\{\,T(\mathbf{d},\mathbf{Y}) = t\,\}.
+$$
+
+The observed labels $\mathbf{D}^{\text{obs}}$ are exchangeable with every other $\mathbf{d}\in\Omega$: each was equally likely *ex ante*, so $T^{\text{obs}} = T(\mathbf{D}^{\text{obs}},\mathbf{Y})$ is a uniform draw from the multiset $\{T(\mathbf{d},\mathbf{Y}): \mathbf{d}\in\Omega\}$. No distributional assumption on $y_i$ was used anywhere.
+
+### The p-value is exact
+
+For a two-sided test the p-value is the probability, *under the null randomization*, of a statistic at least as extreme as observed:
+
+$$
+p = \Pr\!\big(|T| \ge |T^{\text{obs}}| \,\big|\, H_0\big)
+  = \frac{1}{|\Omega|}\sum_{\mathbf{d}\in\Omega}\mathbf{1}\{\,|T(\mathbf{d},\mathbf{Y})| \ge |T^{\text{obs}}|\,\}.
+$$
+
+Because the reference distribution is computed exactly (not approximated), this p-value is **exact**: under $H_0$, $\Pr(p \le \alpha) \le \alpha$ for every $\alpha$, with equality up to the discreteness of $\Omega$. The test is *valid in finite samples* --- there is no "as $N\to\infty$."
+
+### Validity of the Monte-Carlo version
+
+When $|\Omega|$ is too large to enumerate, draw $B$ assignments i.i.d. uniformly from $\Omega$ and estimate
+
+$$
+\hat p = \frac{1 + \sum_{b=1}^B \mathbf{1}\{|T^{(b)}| \ge |T^{\text{obs}}|\}}{1 + B}.
+$$
+
+Adding the observed assignment to the pool (the $+1$ terms) makes the $B+1$ statistics exchangeable under $H_0$, which guarantees $\Pr(\hat p \le \alpha \mid H_0) \le \alpha$ exactly --- the Monte-Carlo error never invalidates the test, it only costs a little power. As $B\to\infty$, $\hat p \to p_{\text{exact}}$. $\checkmark$
+
+</div>
+</details>
+
+## Computing It Yourself
+
+Both panels enumerate the full $\binom{10}{6}=210$ assignments for an exact p-value, then show the Monte-Carlo loop you would use when full enumeration is infeasible. The data are the pilot's ten HbA1c changes.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# Randomization inference for the 10-patient insulin-titration pilot.
+# Outcome: 12-month change in HbA1c (mmol/mol); more negative is better.
+# install.packages("utils")  # combn is in base R
+
+y <- c(-7.1, -5.4, -6.8, -3.2, -8.0, -4.5,   # protocol arm (6)
+       -1.9, -3.0, -0.6, -2.4)               # usual care   (4)
+d <- c(rep(1L, 6), rep(0L, 4))               # observed labels
+N  <- length(y); N1 <- sum(d)
+
+diff_means <- function(assign) mean(y[assign == 1]) - mean(y[assign == 0])
+
+T_obs <- diff_means(d)                        # observed statistic
+cat(sprintf("Observed difference: %.3f\n", T_obs))
+
+## ---- EXACT test: enumerate all choose(10, 6) = 210 assignments ----
+combos <- utils::combn(N, N1)                 # each column = treated indices
+T_perm <- apply(combos, 2, function(idx) {
+  a <- integer(N); a[idx] <- 1L
+  diff_means(a)
+})
+
+p_exact <- mean(abs(T_perm) >= abs(T_obs) - 1e-9)
+cat(sprintf("Exact two-sided p-value: %.4f  (over %d assignments)\n",
+            p_exact, ncol(combos)))
+
+## ---- MONTE-CARLO version (for trials too large to enumerate) ----
+set.seed(2024)
+B <- 10000
+T_mc <- replicate(B, {
+  a <- integer(N); a[sample(N, N1)] <- 1L
+  diff_means(a)
+})
+p_mc <- (1 + sum(abs(T_mc) >= abs(T_obs) - 1e-9)) / (1 + B)
+cat(sprintf("Monte-Carlo p-value:     %.4f  (B = %d draws)\n", p_mc, B))
+```
+
+### Python
+
+```python
+# Randomization inference for the 10-patient insulin-titration pilot.
+# Outcome: 12-month change in HbA1c (mmol/mol); more negative is better.
+import numpy as np
+from itertools import combinations
+
+y = np.array([-7.1, -5.4, -6.8, -3.2, -8.0, -4.5,   # protocol arm (6)
+              -1.9, -3.0, -0.6, -2.4])              # usual care   (4)
+d = np.array([1, 1, 1, 1, 1, 1, 0, 0, 0, 0])        # observed labels
+N, N1 = len(y), int(d.sum())
+
+def diff_means(assign):
+    return y[assign == 1].mean() - y[assign == 0].mean()
+
+T_obs = diff_means(d)
+print(f"Observed difference: {T_obs:.3f}")
+
+# ---- EXACT test: enumerate all C(10, 6) = 210 assignments ----
+T_perm = []
+for idx in combinations(range(N), N1):          # treated index sets
+    a = np.zeros(N, dtype=int)
+    a[list(idx)] = 1
+    T_perm.append(diff_means(a))
+T_perm = np.array(T_perm)
+
+p_exact = np.mean(np.abs(T_perm) >= np.abs(T_obs) - 1e-9)
+print(f"Exact two-sided p-value: {p_exact:.4f}  (over {len(T_perm)} assignments)")
+
+# ---- MONTE-CARLO version (for trials too large to enumerate) ----
+rng = np.random.default_rng(2024)
+B = 10_000
+T_mc = np.empty(B)
+for b in range(B):
+    a = np.zeros(N, dtype=int)
+    a[rng.choice(N, N1, replace=False)] = 1
+    T_mc[b] = diff_means(a)
+p_mc = (1 + np.sum(np.abs(T_mc) >= np.abs(T_obs) - 1e-9)) / (1 + B)
+print(f"Monte-Carlo p-value:     {p_mc:.4f}  (B = {B} draws)")
+```
+
+:::
+
+Both languages return the same exact p-value because both enumerate the identical 210 assignments; the Monte-Carlo estimate lands within Monte-Carlo error of it. Swapping the difference in means for the difference in medians, a rank statistic, or a trimmed mean changes only the `diff_means` function --- the permutation machinery is untouched. That flexibility is a quiet superpower: randomization inference gives an exact test for *any* statistic you can compute.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A *vårdcentral* runs a micro-pilot of a digital blood-pressure coaching app on **four** patients: two randomized to the app, two to usual care. The outcome is the six-month change in systolic blood pressure (mmHg; more negative is better): app patients recorded $\{-12, -8\}$, usual-care patients $\{-3, -1\}$.
+
+(a) How many distinct assignments of "2 of 4 to the app" are there? (b) Compute the observed difference in means. (c) Enumerate the permutation distribution of the difference in means and give the **exact two-sided p-value**.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\binom{4}{2} = 6$ distinct assignments.
+
+**(b)** Observed: app mean $= (-12-8)/2 = -10$; control mean $= (-3-1)/2 = -2$. Difference $T^{\text{obs}} = -10 - (-2) = -8$ mmHg.
+
+**(c)** Label the four fixed outcomes $a=-12,\ b=-8,\ c=-3,\ d=-1$. The six "treated pairs" and their difference (treated mean − control mean) are:
+
+| Treated pair | Treated mean | Control mean | $T$ |
+|:--|:--:|:--:|:--:|
+| $\{a,b\}$ | $-10$ | $-2$ | $-8$ |
+| $\{a,c\}$ | $-7.5$ | $-4.5$ | $-3$ |
+| $\{a,d\}$ | $-6.5$ | $-5.5$ | $-1$ |
+| $\{b,c\}$ | $-5.5$ | $-6.5$ | $+1$ |
+| $\{b,d\}$ | $-4.5$ | $-7.5$ | $+3$ |
+| $\{c,d\}$ | $-2$ | $-10$ | $+8$ |
+
+The absolute values are $\{8, 3, 1, 1, 3, 8\}$. Those with $|T| \ge |{-8}| = 8$ are the two patterns $\{a,b\}$ and $\{c,d\}$. So
+
+$$
+p_{\text{exact}} = \frac{2}{6} = 0.333.
+$$
+
+Even with the *largest possible* separation in this tiny design, the exact p-value cannot fall below $1/3$ --- four patients simply cannot deliver significance at $\alpha=0.05$. The smallest attainable two-sided p-value of a balanced $n$-patient design is $2/\binom{N}{N_1}$, a hard floor the design imposes.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain, in your own words, why the sharp null $H_0: Y_i(1)=Y_i(0)$ for all $i$ is *essential* to the permutation test, and what would go wrong if we tried to run the same label-shuffling procedure to test only the weak (Neyman) null $\bar\tau = 0$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The permutation test reshuffles treatment labels while holding the observed outcomes fixed, then recomputes the statistic for each reshuffling. That is only legitimate if relabeling a unit genuinely does not change its outcome --- i.e., if the outcome we observed is the outcome we *would* have seen under either label. The sharp null guarantees exactly this: $Y_i(1)=Y_i(0)$ means the missing potential outcome equals the observed one, so the outcome vector is a fixed constant and shuffling labels is a valid resampling of the *only* random object, the assignment.
+
+Under the weak null $\bar\tau=0$ this breaks. The average effect can be zero while individuals have nonzero effects that cancel: some $Y_i(1)\ne Y_i(0)$. Then the missing potential outcomes are *not* equal to the observed ones, so when we relabel a unit we are silently pretending its observed outcome would carry over to the other arm --- which is false. The reshuffled statistics no longer trace the true sampling distribution under $\bar\tau=0$, and the resulting p-value is not valid in general (it can be anti-conservative when effect heterogeneity inflates the variance). Testing the weak null requires Neyman's variance-based approach, not permutation. Randomization inference buys its exactness precisely by testing the *stronger* sharp null.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A region runs a larger trial: $N = 60$ patients, $N_1 = 30$ to a new *distriktssköterska* (district nurse) home-visit program. The number of possible assignments is $\binom{60}{30} \approx 1.18 \times 10^{17}$. (a) Why can we not enumerate them? (b) Describe the Monte-Carlo permutation procedure you would use instead. (c) If $5{,}000$ of $B = 50{,}000$ sampled permutations are at least as extreme as the observed statistic, what is the estimated p-value, and why is the formula $(1+5000)/(1+50000)$ rather than $5000/50000$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $1.18\times10^{17}$ assignments is far beyond what any computer can iterate in reasonable time --- at a billion per second it would take over three years. Full enumeration is infeasible.
+
+**(b)** Draw $B$ assignments independently and uniformly at random from the set of all "30-of-60" labelings (e.g., `sample(60, 30)` in R or `rng.choice(60, 30, replace=False)` in Python). For each, recompute the difference-in-means statistic with the observed outcomes held fixed. The estimated p-value is the (corrected) fraction of these $B$ draws at least as extreme as the observed statistic. This *samples* the randomization distribution instead of enumerating it.
+
+**(c)** The estimate is
+
+$$
+\hat p = \frac{1 + 5000}{1 + 50000} = \frac{5001}{50001} \approx 0.1000.
+$$
+
+The $+1$ in numerator and denominator counts the **observed assignment itself** as a legitimate (and always-as-extreme-as-itself) draw from the reference set. Including it makes the pool of $B+1$ statistics exchangeable under the null, which guarantees the test stays valid (it controls the Type I error rate exactly) and ensures $\hat p$ can never be $0$ --- the naive $5000/50000 = 0.1000$ could in principle hit $0$ when no sampled draw is extreme, falsely implying impossibility.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the injected true effect to $0$ and accumulate a few hundred permutations; note the p-value. Then drag the effect to $-5$ mmol/mol. (a) What happens to the *center* of the histogram, and what happens to the position of the red observed rule? (b) Why does the histogram itself stay centered on zero even as the observed rule moves? (c) What does the collapsing p-value tell you about the *power* of this ten-patient design to detect a 5-unit effect?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The histogram stays centered on **zero**, but the red observed rule slides far into the left tail (to about $-8.86$ mmol/mol, since the original $\approx -3.86$ gap plus the $-5$ injected shift on the protocol arm's mean compound). The two-sided red boundaries move out with it.
+
+**(b)** The histogram is the *null* (sharp-null) reference distribution: it is built by shuffling labels on the **current** fixed outcomes, and any constant added to one arm is, under relabeling, spread across both arms so the *expected* permuted difference remains zero. The reference distribution always asks "what would label-shuffling alone produce?" --- which is centered at zero regardless of the true effect. Only the *observed* statistic encodes the real effect, so only the red rule moves.
+
+**(c)** As the observed rule moves into the tail, almost no re-randomization is as extreme, so the p-value collapses below $0.05$ and we reject the sharp null. That the test *can* detect a 5-unit effect with only ten patients means the design has reasonable power *against a large effect* --- but Exercise 1's floor reminds us that against *small* effects, a tiny trial may have no power at all (the minimum attainable p-value is bounded below by the design). Power in randomization inference is governed by effect size relative to the spread of the permutation distribution, exactly as in any test.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The **sharp null** $Y_i(1)=Y_i(0)$ for *every* unit (not just on average) makes the observed outcomes fixed constants, removing all missing data.
+- With outcomes fixed, the only randomness is the **assignment**; re-randomizing the labels reconstructs the *exact* reference distribution of any test statistic.
+- The **exact p-value** is the share of re-randomizations at least as extreme as the observed statistic; it needs no Normality, equal variances, large $n$, or super-population sampling.
+- When enumeration is infeasible, a **Monte-Carlo** permutation test with the $(1+\text{extreme})/(1+B)$ correction stays valid and never reports $p=0$.
+- Fisher's design-based test (exact, sharp null) complements Neyman's sampling-based inference (effect size, confidence interval); inverting the permutation test even yields an exact randomization CI.
+:::
+
+## What Comes Next
+
+Randomization inference gave us an *exact*, assumption-light p-value by exploiting the one thing we truly know --- the assignment mechanism. But real experiments rarely randomize one patient at a time: they randomize whole *vårdcentraler*, school classes, or municipalities, inducing **clustered** dependence that the simple permutation (and the ordinary bootstrap) ignore at their peril. The next page, [Clustered and Wild Bootstrap](cluster-bootstrap.qmd), shows how to build reference distributions that respect cluster structure --- resampling clusters rather than units, and the wild-bootstrap trick that delivers reliable inference even with a handful of clusters, where both the cluster-robust $t$ and the naive bootstrap fall apart.

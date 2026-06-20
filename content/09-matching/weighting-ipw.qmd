@@ -1,0 +1,1517 @@
+---
+title: "Weighting and Doubly Robust Estimation"
+subtitle: "IPW, stabilized weights, and AIPW"
+---
+
+On the [previous page](propensity-scores.qmd) we learned to summarize a whole vector of confounders $X$ into a single scalar, the **propensity score** $e(X) = P(D=1 \mid X)$, and we proved that conditioning on $e(X)$ is enough to remove confounding bias. Matching on the score is one way to use it. This page develops the other major route: **weighting**. Instead of finding a control twin for each treated patient, we *reweight* the sample so that, in the reweighted world, treatment looks as if it were assigned by a coin flip. From that idea grow the inverse-probability-weighting (IPW) estimator, its stabilized cousin, and the doubly robust **augmented IPW (AIPW)** estimator that gives you two independent chances to be right.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Build a *pseudo-population* by weighting treated units by $1/e(X)$ and controls by $1/(1-e(X))$, and explain why this breaks the link between $X$ and $D$.
+- Write down the Horvitz--Thompson and stabilized (Hájek) IPW estimators and say precisely how they differ.
+- Diagnose why a propensity score near 0 or 1 produces *extreme weights* that make the IPW estimate explode in variance --- the overlap problem made quantitative.
+- Combine an outcome model and a propensity model into the doubly robust AIPW estimator, and state the exact sense in which it is consistent if *either* model is correct.
+:::
+
+
+## The Pseudo-Population Idea
+
+Return to the Swedish setting. A *region* is evaluating whether assigning a dedicated *distriktssköterska* (district nurse) for structured diabetes follow-up lowers patients' HbA1c. Sicker, older, more socially deprived patients are far more likely to be assigned a nurse --- so the treated and control groups are not comparable, and a raw difference in means is contaminated by selection on observables $X$ (age, baseline HbA1c, deprivation, comorbidity count).
+
+We assume, as on the propensity-score page, that $X$ contains everything that jointly drives both assignment and outcome.
+
+::: {.glass-card .glass-card--assumption}
+**Unconfoundedness and overlap.** Conditional on the covariates $X$,
+
+$$
+\big(Y(0), Y(1)\big) \perp\!\!\!\perp D \mid X
+\qquad\text{and}\qquad
+0 < e(X) < 1 \;\;\text{for all } X.
+$$
+
+**Read this as**: "Once we hold the measured covariates fixed, who gets the nurse is as good as random (no hidden confounders), *and* every type of patient has a strictly positive chance of being in either arm." (The double-perpendicular symbol $\perp\!\!\!\perp$ reads "is statistically independent of," and $\mid X$ reads "conditional on $X$" --- so the line says the potential outcomes carry no information about treatment once $X$ is fixed.) The first condition is **unconfoundedness** (a.k.a. selection on observables, ignorability). The second is **overlap** (a.k.a. positivity, common support). Weighting needs overlap even more urgently than matching does --- we are about to divide by $e(X)$ and by $1-e(X)$, and a probability near 0 or 1 means dividing by something near zero.
+:::
+
+Here is the central trick. Imagine cloning each patient a number of times *inversely proportional to the probability of the treatment they actually received*. A treated patient with propensity $e(X)=0.2$ was unusual --- only 1 in 5 patients like them got the nurse --- so we count them as if they stood in for $1/0.2 = 5$ patients. A treated patient with $e(X)=0.8$ was typical of the treated, so they count for only $1/0.8 = 1.25$. We do the mirror image for controls, weighting them by $1/(1-e(X))$.
+
+::: {.glass-card .glass-card--insight}
+In the reweighted **pseudo-population**, the covariate distribution among the (weighted) treated is identical to the covariate distribution among the (weighted) controls --- both equal the covariate distribution of the *whole* sample. Weighting manufactures a world in which $X \perp\!\!\!\perp D$. Confounding by $X$ is gone *by construction*, because in the pseudo-population $X$ no longer predicts treatment. A simple weighted difference in means then estimates the causal effect.
+:::
+
+To see why, take any covariate cell $X=x$. The treated in that cell get total weight $e(x) \cdot \frac{1}{e(x)} = 1$ (a fraction $e(x)$ of people are treated, each up-weighted by $1/e(x)$), and the controls in that cell get total weight $(1-e(x)) \cdot \frac{1}{1-e(x)} = 1$. Every cell contributes equal treated and control mass --- so the reweighted treated and control groups have the *same* covariate composition. That is exactly what randomization would have given us.
+
+The schematic below makes that bookkeeping literal for one cell where only $e(x)=0.2$ of patients are treated. On the left is the raw cell: 1 treated patient, 4 controls --- lopsided. On the right is the pseudo-population: the lone treated patient is "cloned" $1/0.2 = 5$ times and each control $1/0.8 = 1.25$ times, so both arms now carry exactly the same total mass of 5. Balance, by construction.
+
+```{ojs}
+//| echo: false
+
+// ── Static schematic: cell with e(x)=0.2 → equal mass after IPW cloning. ──
+// Pure d3 SVG (returns svg.node()); no controls, no mutable. Rows of person
+// glyphs; faded "clone" copies show the up-weighting visually.
+mipw_drawCells = {
+  const W = Math.min(620, width), H = 230;
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const treated = "#990000", control = "#3d5a6c", ink = "#1c1c1a", muted = "#79766e";
+  const colL = W * 0.05, colR = W * 0.55, panelW = W * 0.40;
+  const dotR = 9, gap = 26;
+
+  // A row of person-dots; faded copies marked by lower opacity.
+  const drawRow = (g, x, y, n, solidN, color, label) => {
+    for (let k = 0; k < n; k++) {
+      g.append("circle")
+        .attr("cx", x + k * gap).attr("cy", y).attr("r", dotR)
+        .attr("fill", color)
+        .attr("fill-opacity", k < solidN ? 0.9 : 0.28)
+        .attr("stroke", k < solidN ? "none" : color)
+        .attr("stroke-dasharray", k < solidN ? null : "2,2")
+        .attr("stroke-width", 1);
+    }
+    g.append("text")
+      .attr("x", x - 6).attr("y", y + 4).attr("text-anchor", "end")
+      .attr("font-size", 11).attr("font-weight", 700).attr("fill", muted)
+      .text(label);
+  };
+
+  // Panel headers.
+  const header = (x, t, sub) => {
+    svg.append("text").attr("x", x).attr("y", 26)
+      .attr("font-size", 13).attr("font-weight", 800).attr("fill", ink).text(t);
+    svg.append("text").attr("x", x).attr("y", 44)
+      .attr("font-size", 11).attr("font-weight", 600).attr("fill", muted).text(sub);
+  };
+  header(colL + 70, "RAW cell  (ê = 0.2)", "1 treated, 4 controls — lopsided");
+  header(colR + 70, "PSEUDO-POPULATION", "each cloned by 1/ê — equal mass");
+
+  // Left (raw): 1 treated solid, 4 controls solid.
+  const gL = svg.append("g");
+  drawRow(gL, colL + 78, 90, 1, 1, treated, "treated");
+  drawRow(gL, colL + 78, 140, 4, 4, control, "controls");
+
+  // Right (pseudo): treated ×5 (1 solid + 4 clones), controls ×1.25 (4 solid + 1 clone).
+  const gR = svg.append("g");
+  drawRow(gR, colR + 78, 90, 5, 1, treated, "treated ×5");
+  drawRow(gR, colR + 78, 140, 5, 4, control, "controls ×1.25");
+
+  // Equal-mass labels under each arm of the pseudo-population.
+  svg.append("text").attr("x", colR + 78).attr("y", 112)
+    .attr("font-size", 10.5).attr("font-weight", 700).attr("fill", treated)
+    .text("total weight = 1 × 5 = 5");
+  svg.append("text").attr("x", colR + 78).attr("y", 162)
+    .attr("font-size", 10.5).attr("font-weight", 700).attr("fill", control)
+    .text("total weight = 4 × 1.25 = 5");
+
+  // Arrow between panels.
+  const ay = 115;
+  svg.append("defs").append("marker")
+    .attr("id", "mipw-cell-arrow").attr("viewBox", "0 -5 10 10")
+    .attr("refX", 8).attr("refY", 0).attr("markerWidth", 8).attr("markerHeight", 8)
+    .attr("orient", "auto").append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", muted);
+  svg.append("line")
+    .attr("x1", colL + panelW + 8).attr("y1", ay)
+    .attr("x2", colR - 6).attr("y2", ay)
+    .attr("stroke", muted).attr("stroke-width", 2)
+    .attr("marker-end", "url(#mipw-cell-arrow)");
+
+  // Caption: both arms now sum to equal mass.
+  svg.append("text").attr("x", W / 2).attr("y", H - 12).attr("text-anchor", "middle")
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", ink)
+    .text("both arms now carry equal mass → balanced cell");
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+Faded dashed dots are the "clones" IPW manufactures by up-weighting. A treated patient who was rare in this cell ($\hat e=0.2$) stands in for $1/0.2=5$ patients; each common control stands in for $1/0.8=1.25$. After weighting, both arms sum to a mass of 5 --- the lopsided raw cell becomes a balanced one, with no patients actually duplicated, only re-counted.
+:::
+
+
+## The IPW Estimators
+
+Let $\hat e(X_i)$ be a fitted propensity score (typically logistic regression of $D$ on $X$, or a flexible learner). Define the **inverse-probability weight** for each unit:
+
+$$
+w_i = \frac{D_i}{\hat e(X_i)} + \frac{1-D_i}{1-\hat e(X_i)}.
+$$
+
+**Read this as**: "A treated unit ($D_i=1$) gets weight $1/\hat e(X_i)$; a control unit ($D_i=0$) gets weight $1/(1-\hat e(X_i))$." Each unit is up-weighted by the reciprocal of the probability of the treatment it actually received.
+
+### Horvitz--Thompson (unstabilized) IPW
+
+The simplest estimator plugs these weights straight into a weighted difference of means:
+
+::: {.glass-card .glass-card--definition}
+The **Horvitz--Thompson IPW estimator** of the average treatment effect is
+
+$$
+\widehat{\tau}_{\text{HT}}
+= \frac{1}{N}\sum_{i=1}^{N} \frac{D_i \, Y_i}{\hat e(X_i)}
+\;-\;
+\frac{1}{N}\sum_{i=1}^{N} \frac{(1-D_i)\, Y_i}{1-\hat e(X_i)}.
+$$
+
+**Read this as**: "The estimated mean of $Y(1)$ is the average of $D_i Y_i / \hat e(X_i)$ over *all* $N$ units, and likewise for $Y(0)$; the ATE is their difference." Note the denominator is $N$, the full sample size --- the treated terms are zero for controls and vice versa, so each sum only "sees" one arm but is rescaled to estimate a population mean.
+:::
+
+The name comes from survey sampling (Horvitz & Thompson, 1952): each sampled unit is inflated by the reciprocal of its inclusion probability. Here the "inclusion probability" into the treated arm is $e(X)$.
+
+### Stabilized (Hájek) IPW
+
+The Horvitz--Thompson estimator has an awkward property: its weights do not sum to $N$, so in any finite sample the two arms are not even guaranteed to be on the same scale. A small number of large weights can push the treated mean far above or below the plausible range of $Y$. The fix is to **normalize each arm by its own total weight**:
+
+::: {.glass-card .glass-card--definition}
+The **stabilized (Hájek) IPW estimator** is
+
+$$
+\widehat{\tau}_{\text{stab}}
+= \frac{\displaystyle\sum_i \frac{D_i Y_i}{\hat e(X_i)}}{\displaystyle\sum_i \frac{D_i}{\hat e(X_i)}}
+\;-\;
+\frac{\displaystyle\sum_i \frac{(1-D_i) Y_i}{1-\hat e(X_i)}}{\displaystyle\sum_i \frac{1-D_i}{1-\hat e(X_i)}}.
+$$
+
+**Read this as**: "Each arm's outcome mean is a *weighted average* --- numerator is the weighted sum of outcomes, denominator is the sum of the weights --- so each mean is guaranteed to lie inside the observed range of $Y$." Dividing by the realized sum of weights rather than by $N$ is what "stabilizes" the estimator.
+:::
+
+The Hájek form is what `WeightIt`, `survey`, and most applied papers actually use, because it is far less jumpy when a few weights are large. It is exactly the difference between an unnormalized and a self-normalizing importance-sampling estimator.
+
+::: {.glass-card .glass-card--warning}
+**Stabilization tames variance, not bias from misspecification.** Normalizing the weights protects you against *one* unit dominating the estimate, but it does nothing to fix a *wrong* propensity model. If $\hat e(X)$ is biased, both the HT and the Hájek estimators are biased. Stabilization is a variance device; getting the model right (or being doubly robust) is the bias device.
+:::
+
+
+## See It: Weighting Rebalances the Sample
+
+The interactive below shows a single confounder --- baseline **HbA1c severity** --- on the horizontal axis. Sicker patients (right) are much more likely to be assigned a nurse, so the raw treated group (red) sits to the right of the raw control group (slate): they are *not* comparable. The top panel shows the raw sample; the bottom panel shows the **IPW pseudo-population**, where each patient's dot area is its inverse-probability weight. Watch the two weighted distributions slide on top of each other.
+
+A second control lets you lower one patient's fitted propensity $\hat e$ toward 0 --- a unit with almost no comparison group --- and watch its weight, and the estimate's standard error, blow up.
+
+::: {.interactive-container}
+
+#### IPW as Reweighting Toward Balance
+
+::: {.start-here}
+**Start here:** raise **Confounding strength** and watch the naive estimate drift off target while IPW stays anchored; then lower one patient's **propensity ê** to see a single weight take over.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof maipw_selection = Inputs.range([0, 3], {
+  value: 0.8,
+  step: 0.1,
+  label: "Confounding strength: 0 = randomized-like (no selection), 3 = severe selection"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof maipw_extreme = Inputs.range([0.015, 0.45], {
+  value: 0.45,
+  step: 0.005,
+  label: "Set one treated patient's propensity ê (lower → bigger weight)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof maipw_estimator = Inputs.radio(
+  ["Stabilized (Hájek)", "Horvitz–Thompson"],
+  { label: "IPW estimator", value: "Stabilized (Hájek)" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof maipw_draw = Inputs.button("Draw new sample (reweighting demo)", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Data-generating process (runs in the browser) ──
+// One confounder: standardized baseline severity z ~ N(0,1).
+// True propensity:  e(z) = logistic(selection * z)  → sicker patients more likely treated.
+// Potential outcomes (HbA1c change, lower = better):
+//   Y(0) = 0.30*z + noise      (sicker patients drift worse without help)
+//   Y(1) = Y(0) + tau          (constant true effect tau = -0.50 pp)
+// Because severity drives BOTH treatment and outcome, the raw difference is confounded;
+// IPW with the (correct) propensity recovers tau.
+maipw_TRUE_TAU = -0.50
+
+maipw_sample = {
+  maipw_draw;                              // re-run on button press
+  const n = 220;
+  const rnd = d3.randomNormal.source(d3.randomLcg(0.71 + 0.013 * maipw_draw))(0, 1);
+  const sel = maipw_selection;
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const z = rnd();                        // standardized severity
+    const e = 1 / (1 + Math.exp(-sel * z)); // true propensity
+    const d = Math.random() < e ? 1 : 0;
+    const y0 = 0.30 * z + 0.45 * rnd();
+    const y1 = y0 + maipw_TRUE_TAU;
+    rows.push({ i, z, eTrue: e, d, y0, y1, y: d ? y1 : y0 });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fit a (correct, single-covariate logistic) propensity score by simple
+// Newton-Raphson on the realized sample, then override ONE treated unit's
+// fitted propensity toward 1 so the reader can watch its weight explode.
+maipw_fit = {
+  const data = maipw_sample;
+  // Newton-Raphson for logistic: features [1, z].
+  let b0 = 0, b1 = 0;
+  for (let iter = 0; iter < 30; iter++) {
+    let g0 = 0, g1 = 0, h00 = 0, h01 = 0, h11 = 0;
+    for (const r of data) {
+      const eta = b0 + b1 * r.z;
+      const p = 1 / (1 + Math.exp(-eta));
+      const wgt = p * (1 - p);
+      const resid = r.d - p;
+      g0 += resid; g1 += resid * r.z;
+      h00 += wgt; h01 += wgt * r.z; h11 += wgt * r.z * r.z;
+    }
+    const det = h00 * h11 - h01 * h01;
+    if (Math.abs(det) < 1e-10) break;
+    b0 += (h11 * g0 - h01 * g1) / det;
+    b1 += (-h01 * g0 + h00 * g1) / det;
+  }
+  return { b0, b1 };
+}
+
+maipw_scored = {
+  const { b0, b1 } = maipw_fit;
+  const data = maipw_sample.map(r => {
+    const eta = b0 + b1 * r.z;
+    let eHat = 1 / (1 + Math.exp(-eta));
+    eHat = Math.min(Math.max(eHat, 0.01), 0.99);   // mild numerical clip
+    return { ...r, eHat };
+  });
+  // Pick the treated unit with the LARGEST severity as the "extreme" unit and
+  // set its fitted propensity directly to the slider value ê. A treated unit's
+  // weight is 1/ê, so lowering ê inflates the weight: at ê=0.015 the weight is
+  // ~67×. The slider value IS the propensity, so the on-screen number, the
+  // label, and the ballooning dot all agree. No dead zone: any ê below the
+  // top of the range (0.45) is a deliberate override.
+  const treated = data.filter(r => r.d === 1).sort((a, b) => b.z - a.z);
+  if (treated.length && maipw_extreme < 0.45) {
+    treated[0].eHat = maipw_extreme;
+    treated[0].isExtreme = true;
+  }
+  return data;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Attach IPW weights to each unit.
+maipw_weighted = maipw_scored.map(r => ({
+  ...r,
+  w: r.d ? 1 / r.eHat : 1 / (1 - r.eHat)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Compute the estimators + the naive (unadjusted) difference + an analytic
+// standard error for the chosen IPW estimator (weighted-mean SE, arm-wise).
+maipw_est = {
+  const data = maipw_weighted;
+  const tr = data.filter(r => r.d === 1);
+  const ct = data.filter(r => r.d === 0);
+  const N = data.length;
+
+  // Naive difference in observed means.
+  const naive = d3.mean(tr, r => r.y) - d3.mean(ct, r => r.y);
+
+  // Horvitz–Thompson: divide weighted sums by N.
+  const htT = d3.sum(tr, r => r.w * r.y) / N;
+  const htC = d3.sum(ct, r => r.w * r.y) / N;
+  const ht = htT - htC;
+
+  // Stabilized (Hájek): divide by the realized sum of weights per arm.
+  const sT = d3.sum(tr, r => r.w * r.y) / d3.sum(tr, r => r.w);
+  const sC = d3.sum(ct, r => r.w * r.y) / d3.sum(ct, r => r.w);
+  const stab = sT - sC;
+
+  // Approximate SE of the Hájek estimator via weighted variance of each arm.
+  const wmeanVar = (arm, m) => {
+    const sw = d3.sum(arm, r => r.w);
+    const sw2 = d3.sum(arm, r => r.w * r.w);
+    const v = d3.sum(arm, r => r.w * (r.y - m) ** 2) / sw;   // weighted var
+    return v * sw2 / (sw * sw);                               // var of weighted mean
+  };
+  const seStab = Math.sqrt(wmeanVar(tr, sT) + wmeanVar(ct, sC));
+
+  // Approximate SE of HT via the design-based plug-in (sensitive to extremes).
+  const htVarArm = arm => d3.sum(arm, r => (r.w * r.y) ** 2) / (N * N);
+  const seHT = Math.sqrt(htVarArm(tr) + htVarArm(ct));
+
+  const maxW = d3.max(data, r => r.w);
+
+  // Effective sample size (∑w)²/∑w² — collapses when one weight dominates.
+  const sumW = d3.sum(data, r => r.w);
+  const sumW2 = d3.sum(data, r => r.w * r.w);
+  const ess = (sumW * sumW) / sumW2;
+
+  return { naive, ht, stab, seHT, seStab, maxW, ess, N,
+           chosen: maipw_estimator === "Horvitz–Thompson" ? ht : stab,
+           chosenSE: maipw_estimator === "Horvitz–Thompson" ? seHT : seStab };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Top panel: RAW sample. Treated (red) sit to the right of controls (slate)
+// because severity drives assignment. Equal-size dots = no weighting yet. ──
+Plot.plot({
+  height: 210,
+  marginLeft: 70,
+  marginTop: 34,
+  width: Math.min(660, width),
+  style: { fontFamily: "Inter, sans-serif" },
+  x: { label: "Severity (standardized)", labelArrow: "right", domain: [-3.2, 3.2], grid: true },
+  y: {
+    domain: ["Control (no nurse)", "Treated (nurse)"],
+    label: null
+  },
+  color: { domain: ["Treated (nurse)", "Control (no nurse)"], range: ["#990000", "#3d5a6c"], legend: true },
+  marks: [
+    Plot.dot(maipw_weighted, {
+      x: "z",
+      y: d => d.d ? "Treated (nurse)" : "Control (no nurse)",
+      fill: d => d.d ? "Treated (nurse)" : "Control (no nurse)",
+      r: 3.5, fillOpacity: 0.5,
+      dy: () => (Math.random() - 0.5) * 8
+    }),
+    Plot.ruleX([d3.mean(maipw_weighted.filter(r => r.d === 1), r => r.z)], {
+      stroke: "#990000", strokeWidth: 2, strokeDasharray: "4,3"
+    }),
+    Plot.ruleX([d3.mean(maipw_weighted.filter(r => r.d === 0), r => r.z)], {
+      stroke: "#3d5a6c", strokeWidth: 2, strokeDasharray: "4,3"
+    }),
+    Plot.text(["RAW: dashed lines = group means (don't overlap)"], {
+      frameAnchor: "top", dy: -20, fill: "#1c1c1a", fontSize: 11, fontWeight: "bold",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Bottom panel: PSEUDO-POPULATION. Dot AREA ∝ IPW weight. Up-weighted
+// rare units (treated-and-healthy, control-and-sick) grow; the two weighted
+// mean lines now (nearly) coincide. The extreme unit balloons. ──
+Plot.plot({
+  height: 230,
+  marginLeft: 70,
+  marginTop: 34,
+  width: Math.min(660, width),
+  style: { fontFamily: "Inter, sans-serif" },
+  x: { label: "Severity (standardized)", labelArrow: "right", domain: [-3.2, 3.2], grid: true },
+  y: { domain: ["Control (no nurse)", "Treated (nurse)"], label: null },
+  r: { range: [1, 16] },
+  color: { domain: ["Treated (nurse)", "Control (no nurse)"], range: ["#990000", "#3d5a6c"] },
+  marks: [
+    Plot.dot(maipw_weighted, {
+      x: "z",
+      y: d => d.d ? "Treated (nurse)" : "Control (no nurse)",
+      fill: d => d.d ? "Treated (nurse)" : "Control (no nurse)",
+      r: "w", fillOpacity: 0.35, stroke: d => d.isExtreme ? "#1c1c1a" : null,
+      strokeWidth: d => d.isExtreme ? 2 : 0,
+      dy: () => (Math.random() - 0.5) * 8,
+      title: d => `severity z=${d.z.toFixed(2)}\nê=${d.eHat.toFixed(3)}\nweight=${d.w.toFixed(2)}`
+    }),
+    // Annotate the extreme unit: one dot stands in for many "copies".
+    // The extreme unit is the max-severity treated dot, so its z can sit near
+    // the right domain edge — clamp x into a safe interior band and flip the
+    // text anchor by side so the ~22-char label never clips the frame.
+    Plot.text(
+      maipw_weighted.filter(d => d.isExtreme),
+      {
+        x: d => Math.max(-2.6, Math.min(d.z, 2.6)),
+        y: () => "Treated (nurse)",
+        text: d => `this 1 patient ≈ ${Math.round(d.w)} copies`,
+        dy: -22,
+        textAnchor: d => (d.z > 1.4 ? "end" : d.z < -1.4 ? "start" : "middle"),
+        dx: d => (d.z > 1.4 ? 6 : d.z < -1.4 ? -6 : 0),
+        fill: "#1c1c1a", fontSize: 10, fontWeight: "bold",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }
+    ),
+    // Weighted group means (these should nearly coincide once balanced).
+    Plot.ruleX([
+      d3.sum(maipw_weighted.filter(r => r.d === 1), r => r.w * r.z) /
+      d3.sum(maipw_weighted.filter(r => r.d === 1), r => r.w)
+    ], { stroke: "#990000", strokeWidth: 2, strokeDasharray: "4,3" }),
+    Plot.ruleX([
+      d3.sum(maipw_weighted.filter(r => r.d === 0), r => r.w * r.z) /
+      d3.sum(maipw_weighted.filter(r => r.d === 0), r => r.w)
+    ], { stroke: "#3d5a6c", strokeWidth: 2, strokeDasharray: "4,3" }),
+    Plot.text(["WEIGHTED: dot area ∝ weight; the two means now align"], {
+      frameAnchor: "top", dy: -20, fill: "#1c1c1a", fontSize: 11, fontWeight: "bold",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: naive vs chosen IPW estimate (± SE), true effect, the largest
+// weight (overlap alarm), and the effective sample size (collapses as weights
+// concentrate). Tiles use an auto-fit grid so they reflow on narrow screens.
+{
+  const e = maipw_est;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  const tile = (label, value, sub, color, bg) => html`<div style="
+      min-height: 5.2rem; text-align: center; display: flex;
+      flex-direction: column; justify-content: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.2rem;
+        font-weight:700; color:${color};">${value}</div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem;
+        color:#79766e;">${sub}</div>
+  </div>`;
+  const seAlarm = e.chosenSE > 0.14;
+  const wAlarm = e.maxW > 12;
+  const estName = maipw_estimator === "Horvitz–Thompson" ? "Horvitz–Thompson" : "Hájek (stabilized)";
+  const essAlarm = e.ess < 0.5 * e.N;
+  return html`<div style="display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+      gap:0.5rem; margin-top:0.85rem;">
+    ${tile("True effect", fmt(maipw_TRUE_TAU), "constant τ", "#9c7a33", "rgba(156,122,51,0.06)")}
+    ${tile("Naive diff", fmt(e.naive), "confounded", "#3d5a6c", "rgba(61,90,108,0.07)")}
+    ${tile("IPW estimate", fmt(e.chosen), `${estName} · SE ≈ ${e.chosenSE.toFixed(3)}`,
+        seAlarm ? "#990000" : "#2e6f40",
+        seAlarm ? "rgba(153,0,0,0.07)" : "rgba(46,111,64,0.08)")}
+    ${tile("Largest weight", e.maxW.toFixed(1) + "×",
+        wAlarm ? "overlap alarm!" : "healthy",
+        wAlarm ? "#990000" : "#1c1c1a",
+        wAlarm ? "rgba(153,0,0,0.07)" : "rgba(0,0,0,0.02)")}
+    ${tile("Effective n", Math.round(e.ess) + " of " + e.N,
+        essAlarm ? "shrinking!" : "healthy",
+        essAlarm ? "#990000" : "#1c1c1a",
+        essAlarm ? "rgba(153,0,0,0.07)" : "rgba(0,0,0,0.02)")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Plain-language verdict that updates with the controls.
+{
+  const e = maipw_est;
+  let msg, color;
+  if (e.maxW > 12) {
+    msg = `One patient now carries a weight of ${e.maxW.toFixed(1)}× — a single near-overlap-violating unit dominates the pseudo-population. The IPW estimate (${e.chosen >= 0 ? "+" : ""}${e.chosen.toFixed(3)}) is being yanked around and its SE has risen to ${e.chosenSE.toFixed(3)} (the unstabilized Horvitz–Thompson estimator is hit even harder). This is the overlap problem: as ê(X) → 0 for a treated unit, 1/ê → ∞.`;
+    color = "#990000";
+  } else if (Math.abs(e.naive - maipw_TRUE_TAU) > 0.12) {
+    msg = `The naive difference (${e.naive >= 0 ? "+" : ""}${e.naive.toFixed(3)}) is badly confounded — sicker patients selected into the nurse program. The IPW estimate (${e.chosen >= 0 ? "+" : ""}${e.chosen.toFixed(3)}) reweights toward balance and lands near the true effect (${maipw_TRUE_TAU.toFixed(2)}).`;
+    color = "#2e6f40";
+  } else {
+    msg = `With weak confounding the naive and IPW estimates nearly agree, and weights are mild (largest ${e.maxW.toFixed(1)}×). Crank up "Confounding strength" to see the naive estimate diverge while IPW stays anchored — then lower one patient's propensity ê to watch one weight take over, the effective sample size shrink, and the SE climb.`;
+    color = "#3d5a6c";
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+      border-left:3px solid ${color}; background:rgba(0,0,0,0.02);
+      font-family:'Inter',sans-serif; font-size:0.86rem; line-height:1.45;
+      color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Reweighting Plot
+
+Work through it in order; each step isolates one idea.
+
+**Step 1: See the confounding.** In the **top (RAW)** panel, the red treated dots cluster to the *right* (sicker patients) and the slate control dots to the *left* (healthier patients). The two dashed lines --- group mean severities --- are far apart. This imbalance is exactly what makes the **Naive diff** tile disagree with the **True effect** tile: the treated group was sicker to begin with.
+
+**Step 2: Watch the pseudo-population form.** In the **bottom (WEIGHTED)** panel, each dot's *area* is its inverse-probability weight. The rare units --- a *healthy* patient who nonetheless got the nurse, or a *sick* patient who did not --- swell up, because they stand in for many similar patients who got the more typical treatment. The two weighted mean lines now sit almost on top of each other: covariate balance has been manufactured.
+
+**Step 3: Confirm IPW beats naive.** Drag **Confounding strength** to the right. The **Naive diff** tile drifts away from $-0.50$ (it confuses "sicker patients" with "nurse doesn't help"), while the IPW tile stays anchored near the truth. This is identification by weighting in action.
+
+**Step 4: Break overlap.** Now drag **Set one treated patient's propensity ê** downward. Lowering ê toward 0.015 sends that treated unit's weight $1/\hat e$ rocketing upward (to 50× and beyond). Watch its dot balloon in the bottom panel, the **Largest weight** tile turn red, and the IPW estimate's **SE** climb as that one unit comes to dominate the pseudo-population. This is why overlap is not optional --- it is the next page's entire subject.
+
+**Step 5: Compare estimators.** Toggle between **Stabilized (Hájek)** and **Horvitz--Thompson**. With mild weights they nearly agree. With an extreme weight present, the unstabilized HT estimate jumps further and is more volatile --- normalization buys stability, but it cannot fully rescue you from a broken overlap.
+
+
+## When Weights Explode: The Overlap Problem
+
+The interactive made the danger visceral; here is the principle. A treated unit with $\hat e(X_i) = 0.02$ receives weight $1/0.02 = 50$. It alone counts as much as fifty ordinary patients. If its outcome is even slightly unusual, it drags the whole estimate. The variance of an IPW estimator is governed by the *second moment of the weights*: roughly,
+
+$$
+\operatorname{Var}\!\big(\widehat{\tau}_{\text{HT}}\big) \;\propto\; \frac{1}{N}\, E\!\left[\frac{Y^2}{e(X)^2}\right]
+\quad\text{(treated arm), and analogously } \frac{Y^2}{(1-e(X))^2} \text{ for controls.}
+$$
+
+**Read this as**: "The sampling variance of IPW scales with the expected *squared* inverse propensity --- so a propensity near 0 (or near 1) enters the variance quadratically and can make it enormous." A handful of units in the tails of $e(X)$ can dominate $E[1/e(X)^2]$ even when they are rare.
+
+The figure below plots the weight a treated unit receives, $1/e$, against its propensity $e$. The curve is a *hyperbola*: flat and well-behaved in the middle, but it shoots toward infinity as $e \to 0$. The marked point shows the example from the text --- a propensity of $0.02$ buys a single unit a weight of $50$. The mirror curve $1/(1-e)$ does the same for controls as $e \to 1$.
+
+```{ojs}
+//| echo: false
+
+// ── Static figure: the weight 1/e (treated) and 1/(1-e) (control) as a
+// function of the propensity e. Pure illustration of why weights explode in
+// the tails. No controls, no DGP — a self-contained anchor for the formula. ──
+mipw_weightCurve = {
+  const pts = [];
+  for (let e = 0.012; e <= 0.988; e += 0.002) {
+    pts.push({ e, w: 1 / e, arm: "treated weight 1/e" });
+    pts.push({ e, w: 1 / (1 - e), arm: "control weight 1/(1−e)" });
+  }
+  const capped = pts.filter(d => d.w <= 55);   // clip the y-view so the body is legible
+  return Plot.plot({
+    height: 300,
+    marginLeft: 62,
+    marginBottom: 46,
+    marginTop: 30,
+    width: Math.min(620, width),
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Fitted propensity ê", domain: [0, 1], grid: true },
+    y: { label: "Inverse-probability weight", domain: [0, 55], grid: true },
+    color: { domain: ["treated weight 1/e", "control weight 1/(1−e)"], range: ["#990000", "#3d5a6c"], legend: true },
+    marks: [
+      // Shade the explosive tails.
+      Plot.areaY(capped.filter(d => d.arm === "treated weight 1/e" && d.e < 0.1),
+        { x: "e", y: "w", fill: "#990000", fillOpacity: 0.08 }),
+      Plot.areaY(capped.filter(d => d.arm === "control weight 1/(1−e)" && d.e > 0.9),
+        { x: "e", y: "w", fill: "#3d5a6c", fillOpacity: 0.08 }),
+      Plot.line(capped, { x: "e", y: "w", stroke: "arm", strokeWidth: 2.5 }),
+      Plot.ruleY([2], { stroke: "#79766e", strokeDasharray: "3,3", strokeWidth: 1 }),
+      Plot.text([{ e: 0.42, w: 2, t: "a typical unit (ê=0.5) weighs only 2×" }], {
+        x: "e", y: "w", text: "t", dy: -8, textAnchor: "start",
+        fill: "#79766e", fontSize: 10, fontWeight: "bold",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // Mark the ê=0.02 → weight 50 example.
+      Plot.dot([{ e: 0.02, w: 50 }], { x: "e", y: "w", r: 5, fill: "#990000", stroke: "white", strokeWidth: 1.5 }),
+      Plot.text([{ e: 0.02, w: 50 }], {
+        x: "e", y: "w", text: () => "ê = 0.02  ⇒  weight = 50×", dx: 8, dy: 2, textAnchor: "start",
+        fill: "#1c1c1a", fontSize: 11, fontWeight: "bold",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+The hyperbola $1/e$ is nearly flat across the bulk of the $[0,1]$ range, so units with moderate propensities all carry similar, modest weights. The danger lives entirely in the shaded tails: as $\hat e \to 0$ a single treated unit's weight runs away without bound (and symmetrically for a control as $\hat e \to 1$). Because variance scales with the *square* of these weights, the tails dominate it even faster than the curve suggests.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Symptoms and remedies of extreme weights.** Watch for: a maximum weight that is a large multiple of the median; an *effective sample size* $(\sum w_i)^2 / \sum w_i^2$ that is a small fraction of $N$; or an estimate that swings wildly when one unit is dropped. Common (imperfect) remedies:
+
+- **Weight trimming / clipping** --- cap weights at a percentile (e.g. the 99th) or clip $\hat e(X)$ to $[\epsilon, 1-\epsilon]$. Reduces variance at the cost of some bias.
+- **Stabilized weights** --- the Hájek normalization above; first line of defense.
+- **Trim the sample to the region of common support** --- drop units with no comparable counterpart (this changes the *estimand* --- the precise quantity you are estimating, here shifting from the full-population ATE to an effect for a restricted, better-overlapping subpopulation; the topic of the next page).
+- **Use a doubly robust estimator** --- which we turn to now, and which is far more forgiving of a slightly-off propensity model.
+:::
+
+
+## Doubly Robust Estimation: Two Chances to Be Right
+
+IPW leans entirely on the propensity model $\hat e(X)$. A second, completely different strategy --- **outcome regression** (a.k.a. g-computation) --- leans entirely on models of the conditional mean outcome $\hat\mu_d(X) = \hat E[Y \mid D=d, X]$. Each is consistent *only if its own model is correct*. Why not combine them so that getting *either* one right is enough?
+
+That is exactly what **augmented IPW (AIPW)** does.
+
+::: {.glass-card .glass-card--definition}
+The **augmented IPW (doubly robust) estimator** of $E[Y(1)]$ is
+
+$$
+\widehat{E}[Y(1)]
+= \frac{1}{N}\sum_{i=1}^{N}\left[
+\hat\mu_1(X_i)
++ \frac{D_i}{\hat e(X_i)}\big(Y_i - \hat\mu_1(X_i)\big)
+\right],
+$$
+
+with the mirror-image formula for $E[Y(0)]$ using $\hat\mu_0$ and $(1-D_i)/(1-\hat e(X_i))$. The AIPW estimate of the ATE is the difference of the two.
+
+**Read this as**: "Start from the outcome-model prediction $\hat\mu_1(X_i)$ for *every* unit, then add an IPW-weighted *correction* equal to the prediction's residual $Y_i - \hat\mu_1(X_i)$, but only for treated units and only scaled by $1/\hat e(X_i)$." The first term is g-computation; the second term is an IPW estimator applied to the residuals.
+:::
+
+The magic is in that residual correction. Consider the two ways the models can be right:
+
+- **If the outcome model is correct** ($\hat\mu_1 = \mu_1$), then $E[Y_i - \hat\mu_1(X_i) \mid X_i] = 0$, so the entire augmentation term has expectation zero *no matter what the propensity model is*. The estimator collapses to the (correct) outcome regression. The propensity model can be garbage.
+- **If the propensity model is correct** ($\hat e = e$), then the augmentation term is an unbiased IPW estimator of the bias in $\hat\mu_1$, and it exactly cancels whatever error the outcome model made. The outcome model can be garbage.
+
+::: {.glass-card .glass-card--insight}
+**Double robustness.** AIPW is consistent for the ATE if *at least one* of the two models --- the outcome model $\hat\mu_d(X)$ or the propensity model $\hat e(X)$ --- is correctly specified. You do not need to know which one. You get two independent shots at the target; you only have to hit it once. This is the property that has made AIPW (and its modern cousin, double/debiased machine learning) the default in serious observational work.
+:::
+
+Double robustness is, at heart, a $2\times 2$ logical claim: AIPW is consistent in every cell of the table below *except* the one where both models are wrong. The figure makes that "consistent unless BOTH wrong" structure visible at a glance --- and it previews exactly what the four buttons of the next interactive will let you do.
+
+```{ojs}
+//| echo: false
+
+// ── Static 2×2 double-robustness matrix. Rows = propensity model state,
+// columns = outcome model state; each cell colored green (AIPW consistent) or
+// red (only the both-wrong cell). Pure HTML table, no controls. ──
+mipw_drMatrix = {
+  const green = "#2e6f40", red = "#b3000b", ink = "#1c1c1a", muted = "#79766e";
+  const cell = (ok, label) => {
+    const bg = ok ? "rgba(46,111,64,0.10)" : "rgba(179,0,11,0.10)";
+    const col = ok ? green : red;
+    return `<td style="border:1px solid #e6e3db; padding:0.7rem 0.6rem; text-align:center;
+        background:${bg}; vertical-align:middle;">
+      <div style="font-family:'Inter',sans-serif; font-weight:800; font-size:1.05rem; color:${col};">
+        ${ok ? "AIPW consistent ✓" : "AIPW biased ✗"}</div>
+      <div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:${muted}; margin-top:0.2rem;">
+        ${label}</div>
+    </td>`;
+  };
+  const hd = t => `<th style="font-family:'Inter',sans-serif; font-size:0.7rem; text-transform:uppercase;
+      letter-spacing:0.04em; color:${muted}; padding:0.5rem 0.6rem; text-align:center;
+      border-bottom:1px solid #cfccc2;">${t}</th>`;
+  const rh = t => `<th style="font-family:'Inter',sans-serif; font-size:0.7rem; text-transform:uppercase;
+      letter-spacing:0.04em; color:${muted}; padding:0.5rem 0.6rem; text-align:right; white-space:nowrap;
+      border-right:1px solid #cfccc2;">${t}</th>`;
+  return html`<div style="margin:1.25rem 0; overflow-x:auto;">
+    <table class="science-table" style="border-top:none; border-bottom:none; margin:0;">
+      <tr>
+        <td style="border:none;"></td>
+        ${hd("Outcome model<br>CORRECT")}
+        ${hd("Outcome model<br>WRONG")}
+      </tr>
+      <tr>
+        ${rh("Propensity<br>CORRECT")}
+        ${cell(true, "both right · most efficient")}
+        ${cell(true, "rides the propensity model home")}
+      </tr>
+      <tr>
+        ${rh("Propensity<br>WRONG")}
+        ${cell(true, "rides the outcome model home")}
+        ${cell(false, "no correct model to lean on")}
+      </tr>
+    </table>
+  </div>`;
+}
+```
+
+::: {.aside}
+Three of the four cells are green: AIPW is consistent whenever *either* nuisance model is correctly specified. Only the bottom-right cell --- *both* models wrong --- defeats it. Pure IPW would be green only in the top row (correct propensity); pure outcome regression only in the left column (correct outcome model). AIPW unions the two.
+:::
+
+There is a bonus beyond robustness: AIPW is a **Neyman-orthogonal** estimator. Small errors in *either* nuisance model affect the ATE estimate only to *second order* --- the two small errors get *multiplied*, so a $0.1$ error in each contributes only $0.1 \times 0.1 = 0.01$, far smaller than either alone. That is why you can plug in flexible, slowly-converging machine-learning estimators for $\hat\mu$ and $\hat e$ (with cross-fitting) and still get valid $\sqrt{N}$ inference. Pure IPW and pure outcome regression do not have this property.
+
+
+## See It: IPW vs Doubly Robust Under Misspecification
+
+The next interactive pits three estimators against each other --- pure outcome regression, pure IPW, and AIPW --- and lets you *deliberately break* one model or the other. The lesson: AIPW survives as long as *one* model is intact; it fails only when *both* are wrong.
+
+::: {.interactive-container}
+
+#### Three Estimators, One Broken Model
+
+::: {.start-here}
+**Start here:** with "Both models correct" all three bars are green and on target. Now break the propensity model, then the outcome model: only AIPW stays green either way.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof maipw_break = Inputs.radio(
+  [
+    "Both models correct",
+    "Break the propensity model only",
+    "Break the outcome model only",
+    "Break BOTH models"
+  ],
+  { label: "Which nuisance model is misspecified?", value: "Both models correct" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof maipw_dr_draw = Inputs.button("Draw new sample (DR demo)", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// DGP with a NONLINEAR confounder so that a "broken" (linear-on-z, omitting z²)
+// model is genuinely wrong. True propensity and true outcome both depend on z².
+// Estimators get either the correct features [z, z²] or the broken features [z].
+maipw_dr_TRUE_TAU = -0.50
+
+maipw_dr_sample = {
+  maipw_dr_draw;
+  const n = 2000;
+  const rnd = d3.randomNormal.source(d3.randomLcg(0.33 + 0.017 * maipw_dr_draw))(0, 1);
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const z = rnd();
+    // True propensity depends on z AND z² (a U-shape in assignment). The z²
+    // term is moderate so that, when the propensity is correctly specified,
+    // finite-sample weights stay tame enough for pure IPW to land near the truth.
+    const etaTrue = -0.2 + 1.1 * z + 0.5 * (z * z - 1);
+    const e = 1 / (1 + Math.exp(-etaTrue));
+    const d = Math.random() < e ? 1 : 0;
+    // True outcome mean is nonlinear in z (quadratic).
+    const mu0 = 0.4 * z + 0.5 * (z * z - 1);
+    const y0 = mu0 + 0.40 * rnd();
+    const y1 = y0 + maipw_dr_TRUE_TAU;
+    rows.push({ i, z, eTrue: e, d, y0, y1, y: d ? y1 : y0 });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Helpers: weighted/OLS fits with a chosen feature set.
+// feat(z) returns the design row. "correct" uses [1, z, z²]; "broken" uses [1, z].
+maipw_featCorrect = z => [1, z, z * z]
+maipw_featBroken  = z => [1, z]
+
+// Solve normal equations (X'WX) b = X'W y for small p via Gaussian elimination.
+maipw_solveWLS = function (rows, feat, yKey, wKey) {
+  const p = feat(0).length;
+  const A = Array.from({ length: p }, () => new Array(p).fill(0));
+  const b = new Array(p).fill(0);
+  for (const r of rows) {
+    const x = feat(r.z);
+    const w = wKey ? r[wKey] : 1;
+    for (let a = 0; a < p; a++) {
+      b[a] += w * x[a] * r[yKey];
+      for (let c = 0; c < p; c++) A[a][c] += w * x[a] * x[c];
+    }
+  }
+  // Gaussian elimination with partial pivoting.
+  for (let col = 0; col < p; col++) {
+    let piv = col;
+    for (let r = col + 1; r < p; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+    [A[col], A[piv]] = [A[piv], A[col]];
+    [b[col], b[piv]] = [b[piv], b[col]];
+    for (let r = 0; r < p; r++) {
+      if (r === col) continue;
+      const f = A[r][col] / A[col][col];
+      for (let c = col; c < p; c++) A[r][c] -= f * A[col][c];
+      b[r] -= f * b[col];
+    }
+  }
+  return b.map((bi, k) => bi / A[k][k]);
+}
+
+// Logistic fit (Newton-Raphson) with a chosen feature set → returns coefs.
+maipw_fitLogit = function (rows, feat) {
+  const p = feat(0).length;
+  let beta = new Array(p).fill(0);
+  for (let it = 0; it < 40; it++) {
+    const g = new Array(p).fill(0);
+    const H = Array.from({ length: p }, () => new Array(p).fill(0));
+    for (const r of rows) {
+      const x = feat(r.z);
+      const eta = x.reduce((s, xj, j) => s + xj * beta[j], 0);
+      const pr = 1 / (1 + Math.exp(-eta));
+      const w = pr * (1 - pr);
+      const resid = r.d - pr;
+      for (let a = 0; a < p; a++) {
+        g[a] += resid * x[a];
+        for (let c = 0; c < p; c++) H[a][c] += w * x[a] * x[c];
+      }
+    }
+    // Solve H step = g.
+    const step = (() => {
+      const A = H.map(row => row.slice()), bb = g.slice();
+      for (let col = 0; col < p; col++) {
+        let piv = col;
+        for (let r = col + 1; r < p; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+        [A[col], A[piv]] = [A[piv], A[col]]; [bb[col], bb[piv]] = [bb[piv], bb[col]];
+        for (let r = 0; r < p; r++) {
+          if (r === col) continue;
+          const f = A[r][col] / A[col][col];
+          for (let c = col; c < p; c++) A[r][c] -= f * A[col][c];
+          bb[r] -= f * bb[col];
+        }
+      }
+      return bb.map((bi, k) => bi / A[k][k]);
+    })();
+    let maxStep = 0;
+    for (let j = 0; j < p; j++) { beta[j] += step[j]; maxStep = Math.max(maxStep, Math.abs(step[j])); }
+    if (maxStep < 1e-8) break;
+  }
+  return beta;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the three estimates given which model(s) are broken.
+maipw_dr_est = {
+  const data = maipw_dr_sample;
+  const N = data.length;
+  const breakPs  = maipw_break === "Break the propensity model only" || maipw_break === "Break BOTH models";
+  const breakOut = maipw_break === "Break the outcome model only"    || maipw_break === "Break BOTH models";
+
+  const psFeat  = breakPs  ? maipw_featBroken : maipw_featCorrect;
+  const outFeat = breakOut ? maipw_featBroken : maipw_featCorrect;
+
+  // Propensity fit.
+  const psBeta = maipw_fitLogit(data, psFeat);
+  const eHat = r => {
+    const x = psFeat(r.z);
+    const eta = x.reduce((s, xj, j) => s + xj * psBeta[j], 0);
+    return Math.min(Math.max(1 / (1 + Math.exp(-eta)), 0.02), 0.98);
+  };
+
+  // Outcome fits, separately by arm, using the chosen outcome features.
+  const tr = data.filter(r => r.d === 1);
+  const ct = data.filter(r => r.d === 0);
+  const b1 = maipw_solveWLS(tr, outFeat, "y", null);
+  const b0 = maipw_solveWLS(ct, outFeat, "y", null);
+  const mu1 = r => outFeat(r.z).reduce((s, xj, j) => s + xj * b1[j], 0);
+  const mu0 = r => outFeat(r.z).reduce((s, xj, j) => s + xj * b0[j], 0);
+
+  // (1) Pure outcome regression (g-computation).
+  const gcomp = d3.mean(data, r => mu1(r) - mu0(r));
+
+  // (2) Pure stabilized IPW.
+  const wsT = d3.sum(tr, r => 1 / eHat(r));
+  const wsC = d3.sum(ct, r => 1 / (1 - eHat(r)));
+  const ipw = d3.sum(tr, r => (1 / eHat(r)) * r.y) / wsT
+            - d3.sum(ct, r => (1 / (1 - eHat(r))) * r.y) / wsC;
+
+  // (3) AIPW (doubly robust).
+  const aipw1 = d3.mean(data, r => mu1(r) + (r.d / eHat(r)) * (r.y - mu1(r)));
+  const aipw0 = d3.mean(data, r => mu0(r) + ((1 - r.d) / (1 - eHat(r))) * (r.y - mu0(r)));
+  const aipw = aipw1 - aipw0;
+
+  return { gcomp, ipw, aipw, breakPs, breakOut };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Bar chart of the three estimates vs the true effect.
+{
+  const e = maipw_dr_est;
+  const truth = maipw_dr_TRUE_TAU;
+  const bars = [
+    { name: "Outcome reg.", value: e.gcomp, ok: !e.breakOut },
+    { name: "Pure IPW",     value: e.ipw,   ok: !e.breakPs  },
+    { name: "AIPW (DR)",    value: e.aipw,  ok: !(e.breakPs && e.breakOut) }
+  ];
+  const xlo = -1.25, xhi = 0.7;
+  return Plot.plot({
+    height: 250,
+    width: Math.min(560, width),
+    marginLeft: 100,
+    marginTop: 28,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Estimated ATE on HbA1c (pp)", domain: [xlo, xhi], grid: true },
+    y: { domain: bars.map(b => b.name), label: null },
+    marks: [
+      Plot.ruleX([truth], { stroke: "#1c1c1a", strokeWidth: 2, strokeDasharray: "5,4" }),
+      Plot.text([truth], {
+        frameAnchor: "top", dy: -14,
+        text: d => `truth = ${d.toFixed(2)}`,
+        fill: "#9c7a33", fontSize: 11, fontWeight: "bold", textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.barX(bars, {
+        x: "value", y: "name",
+        fill: d => Math.abs(d.value - truth) < 0.12 ? "#2e6f40" : "#990000",
+        fillOpacity: 0.85, insetTop: 8, insetBottom: 8
+      }),
+      Plot.text(bars, {
+        x: "value", y: "name",
+        text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(3)}`,
+        // Keep the value label inside the frame: flip to inside-bar when the
+        // bar end is within ~0.18 of either domain edge.
+        dx: d => {
+          const nearLo = d.value - xlo < 0.18, nearHi = xhi - d.value < 0.18;
+          if (d.value >= 0) return nearHi ? -6 : 6;
+          return nearLo ? 6 : -6;
+        },
+        textAnchor: d => {
+          const nearLo = d.value - xlo < 0.18, nearHi = xhi - d.value < 0.18;
+          if (d.value >= 0) return nearHi ? "end" : "start";
+          return nearLo ? "start" : "end";
+        },
+        fill: "#1c1c1a", fontWeight: "bold", fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Companion mechanism plot: shows the CAUSE of the bias, not just its
+// consequence. Reads the existing DGP (maipw_dr_sample) and the existing radio
+// (maipw_break) read-only; recomputes the relevant fit with the SAME helper
+// functions the estimator cell uses. Purely additive — touches no mutable. ──
+// When the OUTCOME model is broken (or both), we plot the true E[Y(0)|z]
+// quadratic against the fitted curve; otherwise we plot the true propensity
+// e(z) against its fitted curve. Either way the reader SEES the straight line
+// failing to track the true U-shaped (z²) curve = "misspecified."
+mipw_dr_mechanism = {
+  const data = maipw_dr_sample;
+  const breakOut = maipw_break === "Break the outcome model only" || maipw_break === "Break BOTH models";
+  const breakPs  = maipw_break === "Break the propensity model only" || maipw_break === "Break BOTH models";
+  // Show the outcome-model view whenever the outcome model is the one broken;
+  // otherwise show the propensity-model view (covers "propensity broken" and
+  // "both correct").
+  const showOutcome = breakOut && !breakPs ? true : (breakPs && !breakOut ? false : breakOut);
+
+  const xs = d3.range(-3, 3.01, 0.06);
+  let curves, yLabel, title, brokenFeat, trueFn;
+
+  if (showOutcome) {
+    // Fit the control-arm outcome model with broken [1,z] vs correct [1,z,z²].
+    const ct = data.filter(r => r.d === 0);
+    const featUsed = breakOut ? maipw_featBroken : maipw_featCorrect;
+    const bUsed = maipw_solveWLS(ct, featUsed, "y", null);
+    const fitUsed = z => featUsed(z).reduce((s, xj, j) => s + xj * bUsed[j], 0);
+    trueFn = z => 0.4 * z + 0.5 * (z * z - 1);          // true E[Y(0)|z] from the DGP
+    curves = xs.flatMap(z => [
+      { z, v: trueFn(z), kind: "true E[Y(0) | z]  (curved)" },
+      { z, v: fitUsed(z), kind: breakOut ? "fitted model  (straight — WRONG)" : "fitted model  (curved — correct)" }
+    ]);
+    yLabel = "Control-arm mean outcome";
+    title = breakOut ? "Outcome model broken: a straight line can't bend to the truth"
+                     : "Outcome model correct: the fit tracks the curve";
+  } else {
+    const featUsed = breakPs ? maipw_featBroken : maipw_featCorrect;
+    const psBeta = maipw_fitLogit(data, featUsed);
+    const fitUsed = z => {
+      const eta = featUsed(z).reduce((s, xj, j) => s + xj * psBeta[j], 0);
+      return 1 / (1 + Math.exp(-eta));
+    };
+    trueFn = z => 1 / (1 + Math.exp(-(-0.2 + 1.1 * z + 0.5 * (z * z - 1)))); // true e(z)
+    curves = xs.flatMap(z => [
+      { z, v: trueFn(z), kind: "true propensity e(z)  (curved)" },
+      { z, v: fitUsed(z), kind: breakPs ? "fitted model  (straight — WRONG)" : "fitted model  (curved — correct)" }
+    ]);
+    yLabel = "P(treated | z)";
+    title = breakPs ? "Propensity model broken: a logistic-in-z line misses the U-shape"
+                    : "Propensity model correct: the fit tracks the curve";
+  }
+
+  const trueKey = curves[0].kind;
+  return Plot.plot({
+    height: 230,
+    marginLeft: 62,
+    marginBottom: 45,
+    marginTop: 30,
+    width: Math.min(560, width),
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Confounder z (standardized) →", domain: [-3, 3], grid: true },
+    y: { label: yLabel, grid: true },
+    color: {
+      domain: [trueKey, "fitted model  (straight — WRONG)", "fitted model  (curved — correct)"],
+      range: ["#1c1c1a", "#990000", "#2e6f40"],
+      legend: true
+    },
+    marks: [
+      Plot.line(curves, {
+        x: "z", y: "v", stroke: "kind",
+        strokeWidth: d => d.kind === trueKey ? 2.8 : 2.4,
+        strokeDasharray: d => d.kind === trueKey ? null : "6,4"
+      }),
+      Plot.text([title], {
+        frameAnchor: "top", dy: -16, text: d => d,
+        fill: "#1c1c1a", fontSize: 10.5, fontWeight: "bold", textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+This companion curve shows *what "misspecified" means*: the broken model uses only $[1, z]$, so its fit is a smooth line that cannot bend to follow the true curve, which depends on $z^2$. The bars above show the *consequence* (an estimator turns red); this plot shows the *cause* (a straight line failing to track a U-shape). When the relevant model is correctly specified, the dashed fit lies right on top of the solid truth.
+:::
+
+```{ojs}
+//| echo: false
+
+// Verdict: which estimators survived?
+{
+  const e = maipw_dr_est;
+  const truth = maipw_dr_TRUE_TAU;
+  const close = v => Math.abs(v - truth) < 0.12;
+  let msg, color;
+  if (maipw_break === "Both models correct") {
+    msg = "Both models correct: all three estimators land on (or very near) the truth. AIPW is also the most efficient of the three, so it hugs the line most tightly.";
+    color = "#2e6f40";
+  } else if (maipw_break === "Break the propensity model only") {
+    msg = `Propensity model broken (omits z²): Pure IPW is biased (${e.ipw.toFixed(3)}), but the OUTCOME model is still correct — so AIPW (${e.aipw.toFixed(3)}) rides the outcome model home to the truth (${truth.toFixed(2)}).`;
+    color = "#2e6f40";
+  } else if (maipw_break === "Break the outcome model only") {
+    msg = `Outcome model broken (omits z²): g-computation is biased (${e.gcomp.toFixed(3)}), but the PROPENSITY model is still correct — so AIPW (${e.aipw.toFixed(3)}) rides the propensity model home to the truth (${truth.toFixed(2)}).`;
+    color = "#2e6f40";
+  } else {
+    msg = `BOTH models broken: AIPW has no correct model to lean on and is biased (${e.aipw.toFixed(3)}). Double robustness gives you two chances — not infinitely many. If both are wrong, you are wrong.`;
+    color = "#990000";
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+      border-left:3px solid ${color}; background:rgba(0,0,0,0.02);
+      font-family:'Inter',sans-serif; font-size:0.86rem; line-height:1.45;
+      color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Three-Estimator Chart
+
+**Step 1: Establish the baseline.** Select **"Both models correct."** All three bars land on the dashed truth line at $-0.50$ and turn green. When everything is specified correctly, outcome regression, IPW, and AIPW all agree --- AIPW just happens to be the most efficient.
+
+**Step 2: Break the propensity model.** Select **"Break the propensity model only."** The propensity model now omits the quadratic term $z^2$, so the **Pure IPW** bar turns red and drifts off target. But the outcome model is still correct, so **AIPW stays green** --- the residual correction has expectation zero and AIPW collapses to the (correct) outcome regression.
+
+**Step 3: Break the outcome model instead.** Select **"Break the outcome model only."** Now **Outcome reg.** turns red, but the propensity model is correct, so **Pure IPW** and **AIPW** both stay green. AIPW rode the *other* model home. Steps 2 and 3 together are double robustness: whichever single model you break, AIPW survives.
+
+**Step 4: Break both.** Select **"Break BOTH models."** Now AIPW has nothing correct to lean on, and its bar turns red. Double robustness gives you *two* chances, not unlimited insurance --- if every model is wrong, so is the estimate. Press **Draw new sample** a few times in each mode to confirm the pattern is systematic, not a fluke of one draw.
+
+
+## A Worked Swedish Number
+
+This worked table is a separate, self-contained scenario with a true effect of $-0.40$; the two interactives above used a different scenario with a true effect of $-0.50$. Suppose a region has four patient *types*, defined by severity, with the following true propensities and observed mean outcomes (HbA1c change, in *percentage points* (pp) --- an absolute change on the HbA1c percentage scale, e.g. from 7.0% to 6.6% is $-0.4$ pp, not a relative percent change):
+
+| Type | Share | $e(X)$ | Mean $Y$, treated | Mean $Y$, control |
+|:----:|:-----:|:------:|:-----------------:|:-----------------:|
+| Mild | 0.40 | 0.20 | $-0.30$ | $+0.10$ |
+| Moderate | 0.30 | 0.50 | $-0.55$ | $-0.15$ |
+| Severe | 0.20 | 0.80 | $-0.80$ | $-0.40$ |
+| Very severe | 0.10 | 0.90 | $-1.00$ | $-0.60$ |
+
+The naive difference is dominated by who got treated. But the *within-type* effect is $-0.40$ in every row (e.g. mild: $-0.30 - (+0.10) = -0.40$; severe: $-0.80 - (-0.40) = -0.40$). Because the effect is constant across types, the true ATE is exactly $-0.40$ --- and any correct adjustment, IPW included, must return it. The stabilized IPW reconstruction reweights each type's treated and control means back to the *population* type shares (0.40, 0.30, 0.20, 0.10), recovering $\sum_t \text{share}_t \cdot (-0.40) = -0.40$. We verify this in code below.
+
+The figure makes the key point visible: the treated--control *gap* (the horizontal distance between the red and slate dots) is an identical $-0.40$ in every row. Yet the naive difference of raw means lands at $-0.65$ --- not because the effect is bigger for anyone, but because the treated column is packed with severe types (whose outcomes are most negative) while the control column is packed with mild types. The bias is pure *composition*, not effect heterogeneity.
+
+```{ojs}
+//| echo: false
+
+// ── Static figure for the worked Swedish table. One row per patient type:
+// treated mean (red) vs control mean (slate), connected by a gap line that is
+// a constant −0.40 everywhere. Naive and true ATE drawn as reference rules. ──
+mipw_worked = {
+  const types = [
+    { type: "Mild",        share: 0.40, e: 0.20, yT: -0.30, yC: 0.10 },
+    { type: "Moderate",    share: 0.30, e: 0.50, yT: -0.55, yC: -0.15 },
+    { type: "Severe",      share: 0.20, e: 0.80, yT: -0.80, yC: -0.40 },
+    { type: "Very severe", share: 0.10, e: 0.90, yT: -1.00, yC: -0.60 }
+  ];
+  const order = types.map(t => t.type);
+  // Naive treated/control composition (proportional to share·e and share·(1−e)).
+  const wT = types.map(t => t.share * t.e), sT = d3.sum(wT);
+  const wC = types.map(t => t.share * (1 - t.e)), sC = d3.sum(wC);
+  const naiveT = d3.sum(types, (t, i) => (wT[i] / sT) * t.yT);
+  const naiveC = d3.sum(types, (t, i) => (wC[i] / sC) * t.yC);
+  const naive = naiveT - naiveC;
+
+  const dots = [];
+  types.forEach(t => {
+    dots.push({ type: t.type, arm: "Treated (nurse)", y: t.yT });
+    dots.push({ type: t.type, arm: "Control (no nurse)", y: t.yC });
+  });
+
+  return Plot.plot({
+    height: 250,
+    marginLeft: 96,
+    marginTop: 30,
+    marginBottom: 46,
+    width: Math.min(620, width),
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Mean HbA1c change (pp, lower = better)", domain: [-1.15, 0.3], grid: true },
+    y: { domain: order, label: null },
+    color: { domain: ["Treated (nurse)", "Control (no nurse)"], range: ["#990000", "#3d5a6c"], legend: true },
+    marks: [
+      // Connector showing the constant −0.40 within-type gap.
+      Plot.link(types, {
+        x1: "yC", x2: "yT", y1: "type", y2: "type",
+        stroke: "#79766e", strokeWidth: 2
+      }),
+      Plot.text(types, {
+        x: d => (d.yT + d.yC) / 2, y: "type", text: () => "−0.40",
+        dy: -10, fill: "#1c1c1a", fontSize: 9.5, fontWeight: "bold",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.dot(dots, { x: "y", y: "type", fill: "arm", r: 6, stroke: "white", strokeWidth: 1 }),
+      Plot.ruleX([-0.40], { stroke: "#2e6f40", strokeWidth: 2, strokeDasharray: "5,4" }),
+      Plot.ruleX([naive], { stroke: "#990000", strokeWidth: 2, strokeDasharray: "2,3" }),
+      Plot.text([{ x: -0.40, y: "Mild", t: "true ATE −0.40" }], {
+        x: "x", y: "y", text: "t", dy: -20, textAnchor: "middle",
+        fill: "#2e6f40", fontSize: 10.5, fontWeight: "bold",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: naive, y: "Very severe", t: `naive ${naive.toFixed(2)}` }], {
+        x: "x", y: "y", text: "t", dy: 20, textAnchor: "middle",
+        fill: "#990000", fontSize: 10.5, fontWeight: "bold",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Each grey line is one patient type; its length --- the treated-minus-control gap --- is a constant $-0.40$ for all four. The dashed green rule is that true ATE. The dotted red rule is the naive difference of raw treated and control means ($\approx -0.65$), pulled far past the truth because the treated arm over-represents severe types and the control arm over-represents mild types. Correct weighting restores the population type shares in both arms and collapses the estimate back onto $-0.40$.
+:::
+
+
+## Code Implementations
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(WeightIt)   # IPW / stabilized weights
+library(survey)     # design-based SEs for weighted estimators
+
+set.seed(2024)
+n <- 2000
+
+# One confounder: standardized baseline severity. Sicker -> more likely a nurse.
+sim <- tibble(
+  z = rnorm(n),
+  e = plogis(1.5 * z),                      # true propensity
+  d = rbinom(n, 1, e),
+  y0 = 0.30 * z + rnorm(n, 0, 0.45),
+  y1 = y0 - 0.50,                           # constant true effect = -0.50
+  y  = if_else(d == 1, y1, y0)
+)
+
+# --- Fit the propensity score and build IPW (ATE) weights ---
+w <- weightit(d ~ z, data = sim, method = "ps", estimand = "ATE")
+sim$ipw <- w$weights                        # ATE weights: 1/e (treated), 1/(1-e) (control)
+
+# --- Stabilized (Hájek) IPW via a survey design ---
+# svyglm normalizes each arm by its own weight sum, so the coefficient on d
+# is the Hájek (self-normalized) ATE even though the raw weights are unstabilized.
+des <- svydesign(ids = ~1, weights = ~ipw, data = sim)
+ht  <- svyglm(y ~ d, design = des)          # coefficient on d = stabilized IPW ATE
+cat("Stabilized IPW ATE:", round(coef(ht)["d"], 3), "\n")
+
+# --- Manual Horvitz–Thompson for comparison ---
+ehat <- predict(glm(d ~ z, family = binomial, data = sim), type = "response")
+ht_manual <- mean(sim$d * sim$y / ehat) - mean((1 - sim$d) * sim$y / (1 - ehat))
+cat("Horvitz–Thompson ATE:", round(ht_manual, 3), "\n")
+
+# --- Doubly robust AIPW (by hand) ---
+m1 <- lm(y ~ z, data = filter(sim, d == 1))
+m0 <- lm(y ~ z, data = filter(sim, d == 0))
+mu1 <- predict(m1, newdata = sim)
+mu0 <- predict(m0, newdata = sim)
+aipw1 <- mean(mu1 + sim$d       / ehat       * (sim$y - mu1))
+aipw0 <- mean(mu0 + (1 - sim$d) / (1 - ehat) * (sim$y - mu0))
+cat("AIPW (doubly robust) ATE:", round(aipw1 - aipw0, 3), "\n")
+
+# Overlap diagnostics: largest weight and effective sample size
+cat("Max weight:", round(max(sim$ipw), 1),
+    " ESS:", round(sum(sim$ipw)^2 / sum(sim$ipw^2)), "of", n, "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(2024)
+n = 2000
+
+# One confounder: standardized baseline severity. Sicker -> more likely a nurse.
+z  = rng.normal(size=n)
+e  = 1 / (1 + np.exp(-1.5 * z))            # true propensity
+d  = rng.binomial(1, e)
+y0 = 0.30 * z + rng.normal(0, 0.45, n)
+y1 = y0 - 0.50                            # constant true effect = -0.50
+y  = np.where(d == 1, y1, y0)
+df = pd.DataFrame(dict(z=z, d=d, y=y))
+
+# --- Fit the propensity score ---
+ps = smf.logit("d ~ z", data=df).fit(disp=0)
+ehat = ps.predict(df).clip(0.02, 0.98)
+
+# --- Horvitz–Thompson IPW ---
+ht = np.mean(df.d * df.y / ehat) - np.mean((1 - df.d) * df.y / (1 - ehat))
+print(f"Horvitz–Thompson ATE: {ht:.3f}")
+
+# --- Stabilized (Hájek) IPW: normalize each arm by its own weight sum ---
+wt = df.d / ehat
+wc = (1 - df.d) / (1 - ehat)
+stab = np.sum(wt * df.y) / np.sum(wt) - np.sum(wc * df.y) / np.sum(wc)
+print(f"Stabilized IPW ATE:   {stab:.3f}")
+
+# --- Doubly robust AIPW ---
+m1 = smf.ols("y ~ z", data=df[df.d == 1]).fit()
+m0 = smf.ols("y ~ z", data=df[df.d == 0]).fit()
+mu1 = m1.predict(df)
+mu0 = m0.predict(df)
+aipw1 = np.mean(mu1 + df.d       / ehat       * (df.y - mu1))
+aipw0 = np.mean(mu0 + (1 - df.d) / (1 - ehat) * (df.y - mu0))
+print(f"AIPW (doubly robust): {aipw1 - aipw0:.3f}")
+
+# Overlap diagnostics
+w = np.where(df.d == 1, 1 / ehat, 1 / (1 - ehat))
+print(f"Max weight: {w.max():.1f}   ESS: {w.sum()**2 / (w**2).sum():.0f} of {n}")
+```
+
+:::
+
+Both implementations return ATE estimates near the true $-0.50$. The AIPW estimate is typically the most precise of the three, and --- as the interactive demonstrated --- it is the only one that survives misspecification of a single nuisance model.
+
+
+<details>
+<summary>Math Details: Why IPW is Unbiased, and the AIPW Influence Function</summary>
+<div class="details-content">
+
+### Why $E\!\left[\dfrac{D\,Y}{e(X)}\right] = E[Y(1)]$
+
+We want to show that the treated arm of the Horvitz--Thompson estimator targets $E[Y(1)]$. Start from the left side and use iterated expectations, conditioning on $X$:
+
+$$
+E\!\left[\frac{D\,Y}{e(X)}\right]
+= E\!\left[\, E\!\left[\frac{D\,Y}{e(X)} \;\middle|\; X \right] \right].
+$$
+
+By the switching equation, when $D=1$ the observed $Y$ equals $Y(1)$, so $D\,Y = D\,Y(1)$. Substitute and pull the $X$-measurable factor $1/e(X)$ out of the inner expectation:
+
+$$
+E\!\left[\frac{D\,Y(1)}{e(X)} \;\middle|\; X \right]
+= \frac{1}{e(X)}\, E\big[D\,Y(1) \mid X\big].
+$$
+
+Now invoke **unconfoundedness**, $Y(1) \perp\!\!\!\perp D \mid X$, which lets the conditional expectation of the product factor:
+
+$$
+E\big[D\,Y(1)\mid X\big] = E[D\mid X]\, E[Y(1)\mid X] = e(X)\, E[Y(1)\mid X].
+$$
+
+The $e(X)$ cancels, leaving $E[Y(1)\mid X]$. Taking the outer expectation over $X$ gives
+
+$$
+E\!\left[\frac{D\,Y}{e(X)}\right] = E\big[\,E[Y(1)\mid X]\,\big] = E[Y(1)]. \qquad \blacksquare
+$$
+
+The control arm is identical with $D \to 1-D$ and $e(X) \to 1-e(X)$, yielding $E[Y(0)]$. Their difference is the ATE. Notice that the proof needs $e(X) > 0$ for the division to be legal --- **overlap is not a technicality, it is what makes the algebra valid.**
+
+### The AIPW influence function
+
+Write the AIPW summand for $E[Y(1)]$ as
+
+$$
+\psi_1(O_i)
+= \hat\mu_1(X_i) + \frac{D_i}{\hat e(X_i)}\big(Y_i - \hat\mu_1(X_i)\big),
+\qquad O_i = (Y_i, D_i, X_i).
+$$
+
+Decompose its expectation by adding and subtracting the truths $\mu_1, e$. The estimator's bias is, to first order,
+
+$$
+E[\psi_1] - E[Y(1)]
+= E\!\left[\left(\frac{e(X)}{\hat e(X)} - 1\right)\big(\mu_1(X) - \hat\mu_1(X)\big)\right].
+$$
+
+**Read this product carefully.** The bias is the expectation of a *product* of two error terms: the propensity error $\big(\tfrac{e}{\hat e} - 1\big)$ and the outcome error $\big(\mu_1 - \hat\mu_1\big)$.
+
+- If the **outcome model is correct**, $\mu_1 - \hat\mu_1 = 0$, the whole product vanishes, and bias $= 0$ regardless of $\hat e$.
+- If the **propensity model is correct**, $\hat e = e$ so $\tfrac{e}{\hat e} - 1 = 0$, the product vanishes, and bias $= 0$ regardless of $\hat\mu_1$.
+
+That product structure *is* double robustness: the bias is a product of two errors, so it is zero whenever *either* factor is zero. It is also why the bias is **second-order** --- if both models are merely *close* (errors of order $r_e$ and $r_\mu$), the bias is of order $r_e \cdot r_\mu$, the product of two small numbers. This Neyman-orthogonality is what licenses plugging in machine-learning nuisance estimators (with cross-fitting) and still obtaining $\sqrt{N}$-consistent, asymptotically normal ATE estimates --- the foundation of double/debiased machine learning (Chernozhukov et al., 2018).
+
+### Connection to the efficient influence function
+
+When both models are correct, the AIPW summand for the ATE is the **efficient influence function** for the ATE under unconfoundedness:
+
+$$
+\psi(O_i)
+= \mu_1(X_i) - \mu_0(X_i)
++ \frac{D_i\big(Y_i - \mu_1(X_i)\big)}{e(X_i)}
+- \frac{(1-D_i)\big(Y_i - \mu_0(X_i)\big)}{1-e(X_i)}
+- \tau.
+$$
+
+An estimator built from the efficient influence function attains the **semiparametric efficiency bound** --- the smallest possible asymptotic variance any regular estimator can achieve. So AIPW is not merely robust; when both models are right, it is also (asymptotically) the *best* estimator in this class. Pure IPW is, by contrast, generally inefficient.
+
+</div>
+</details>
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A vårdcentral has six patients. Their treatment status $D$, true propensity $e(X)$, and observed HbA1c-change outcome $Y$ are:
+
+| Patient | $D$ | $e(X)$ | $Y$ |
+|:-------:|:---:|:------:|:---:|
+| 1 | 1 | 0.25 | $-0.6$ |
+| 2 | 1 | 0.50 | $-0.4$ |
+| 3 | 1 | 0.50 | $-0.2$ |
+| 4 | 0 | 0.25 | $+0.2$ |
+| 5 | 0 | 0.50 | $0.0$ |
+| 6 | 0 | 0.75 | $+0.1$ |
+
+(a) Compute each unit's inverse-probability weight. (b) Compute the Horvitz--Thompson ATE (divide each weighted sum by $N=6$). (c) Compute the stabilized (Hájek) ATE. Why do they differ?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Treated weight $= 1/e$; control weight $= 1/(1-e)$.
+
+| Patient | $D$ | weight |
+|:-------:|:---:|:------:|
+| 1 | 1 | $1/0.25 = 4.0$ |
+| 2 | 1 | $1/0.50 = 2.0$ |
+| 3 | 1 | $1/0.50 = 2.0$ |
+| 4 | 0 | $1/0.75 = 1.333$ |
+| 5 | 0 | $1/0.50 = 2.0$ |
+| 6 | 0 | $1/0.25 = 4.0$ |
+
+**(b) Horvitz--Thompson.** Treated weighted-outcome sum: $4.0(-0.6) + 2.0(-0.4) + 2.0(-0.2) = -2.4 - 0.8 - 0.4 = -3.6$. Divide by $N=6$: $\hat E[Y(1)] = -0.60$.
+
+Control weighted-outcome sum: $1.333(0.2) + 2.0(0.0) + 4.0(0.1) = 0.2667 + 0 + 0.4 = 0.6667$. Divide by $6$: $\hat E[Y(0)] = 0.1111$.
+
+$\widehat{\tau}_{\text{HT}} = -0.60 - 0.1111 = \mathbf{-0.711}$.
+
+**(c) Stabilized.** Treated weight sum $= 4.0 + 2.0 + 2.0 = 8.0$, so $\hat E[Y(1)] = -3.6/8.0 = -0.45$. Control weight sum $= 1.333 + 2.0 + 4.0 = 7.333$, so $\hat E[Y(0)] = 0.6667/7.333 = 0.0909$.
+
+$\widehat{\tau}_{\text{stab}} = -0.45 - 0.0909 = \mathbf{-0.541}$.
+
+**Why they differ:** the Horvitz--Thompson estimator divides by $N=6$, but the treated weights sum to $8.0$ and the control weights to $7.333$ --- neither equals $6$. In a finite sample the weights do not sum to $N$, so HT mis-scales each arm. The Hájek estimator divides each arm by its *own* realized weight sum, guaranteeing each arm's estimate stays inside the range of observed outcomes. Here HT is pulled further from zero precisely because its denominators are "wrong."
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A treated patient has fitted propensity $\hat e(X) = 0.02$. (a) What is their IPW weight, and how many "ordinary" treated patients (those with $\hat e = 0.5$) does it equal in influence? (b) The variance of the treated arm of HT scales with $E[1/e(X)^2]$. By what factor does this patient's contribution to that term exceed an ordinary patient's? (c) Name two remedies and state precisely what each trades away.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Weight $= 1/0.02 = \mathbf{50}$. An ordinary treated patient with $\hat e = 0.5$ has weight $1/0.5 = 2$. So this single patient carries $50/2 = \mathbf{25}$ times the influence of an ordinary treated patient --- they alone count as much as 25 typical treated units.
+
+**(b)** The variance term involves the *squared* weight (equivalently $1/e^2$). This patient contributes $1/0.02^2 = 1/0.0004 = 2500$; an ordinary patient contributes $1/0.5^2 = 4$. The ratio is $2500/4 = \mathbf{625}$. The squared weighting is why one tail unit can dominate the entire sampling variance, even when its point contribution looks merely "large."
+
+**(c)** Two remedies:
+
+- **Weight trimming / propensity clipping** (cap $\hat e$ at, say, $0.05$, making the weight at most $20$). This *reduces variance* but *introduces bias*, because the clipped units are no longer weighted to represent their true population share.
+- **Trim the sample to common support** (drop units whose propensity has no overlap with the other arm). This *reduces variance* but *changes the estimand* --- you are now estimating an effect for a restricted, better-overlapping subpopulation, not the full-population ATE.
+
+(One could also list *stabilization*, which reduces variance without changing the estimand, but cannot rescue genuinely broken overlap, and *doubly robust estimation*, which is more forgiving of a slightly-off propensity model.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+State the double-robustness property of AIPW precisely. Then, using the bias formula from the Math Details,
+
+$$
+\text{bias} = E\!\left[\left(\frac{e(X)}{\hat e(X)} - 1\right)\big(\mu_1(X) - \hat\mu_1(X)\big)\right],
+$$
+
+explain (i) why a correct outcome model rescues a wrong propensity model, and (ii) why "both models slightly wrong" gives a *second-order* (not first-order) bias.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Precise statement.** AIPW is consistent for the ATE if *at least one* of the two nuisance models is correctly specified --- either the outcome regression $\hat\mu_d(X)$ or the propensity model $\hat e(X)$ --- without the analyst needing to know which one is correct.
+
+**(i)** If the outcome model is correct, then $\mu_1(X) - \hat\mu_1(X) = 0$ for all $X$. The bias integrand is a *product* whose second factor is identically zero, so the product is zero pointwise and the expectation is zero --- regardless of how wrong $\hat e$ is (the first factor $\tfrac{e}{\hat e} - 1$ can be anything). The propensity model's errors never get to act, because they are multiplied by zero.
+
+**(ii)** Suppose the propensity error makes $\tfrac{e}{\hat e} - 1$ of order $r_e$ (small) and the outcome error $\mu_1 - \hat\mu_1$ of order $r_\mu$ (small). The bias is the expectation of their *product*, which is of order $r_e \cdot r_\mu$. A product of two small quantities is *second-order* small --- e.g. if each error is $0.1$, the bias is on the order of $0.01$, not $0.1$. Contrast pure IPW, whose bias is *first-order* in the propensity error ($\sim r_e$) because there is no compensating outcome model. This second-order (Neyman-orthogonal) bias is exactly what lets you plug in flexible machine-learning nuisance estimators that converge slowly (e.g. at rate $N^{-1/4}$ each): the product of two $N^{-1/4}$ errors is $N^{-1/2}$, fast enough for valid $\sqrt N$ inference.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Use the worked Swedish table (Mild/Moderate/Severe/Very severe). The within-type effect is $-0.40$ everywhere. (a) Compute the *naive* difference in observed means using the type shares as the treated/control composition weights, and show it differs from $-0.40$. (b) Explain in one sentence how stabilized IPW recovers $-0.40$, referencing the pseudo-population.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** In the naive comparison, the *treated* group's composition is skewed toward severe types (because $e(X)$ is high there), while the *control* group is skewed toward mild types. The treated-group composition weights are proportional to $\text{share} \times e(X)$, and the control-group weights to $\text{share} \times (1-e(X))$.
+
+Treated composition (proportional to $\text{share}\cdot e$): Mild $0.40 \cdot 0.20 = 0.08$; Moderate $0.30 \cdot 0.50 = 0.15$; Severe $0.20 \cdot 0.80 = 0.16$; Very severe $0.10 \cdot 0.90 = 0.09$. Sum $= 0.48$. Normalized: $(0.167, 0.3125, 0.333, 0.1875)$.
+
+Treated mean $Y$: $0.167(-0.30) + 0.3125(-0.55) + 0.333(-0.80) + 0.1875(-1.00) = -0.050 - 0.172 - 0.267 - 0.1875 = -0.676$.
+
+Control composition (proportional to $\text{share}\cdot(1-e)$): Mild $0.40 \cdot 0.80 = 0.32$; Moderate $0.30 \cdot 0.50 = 0.15$; Severe $0.20 \cdot 0.20 = 0.04$; Very severe $0.10 \cdot 0.10 = 0.01$. Sum $= 0.52$. Normalized: $(0.615, 0.288, 0.0769, 0.0192)$.
+
+Control mean $Y$: $0.615(0.10) + 0.288(-0.15) + 0.0769(-0.40) + 0.0192(-0.60) = 0.0615 - 0.0432 - 0.0308 - 0.0115 = -0.0240$.
+
+Naive difference $= -0.676 - (-0.024) = \mathbf{-0.652}$, which is far from the true $-0.40$. The naive estimate overstates the benefit because the treated group is concentrated in severe types whose treated outcomes are most negative, while the control group is concentrated in mild types whose control outcomes are least negative.
+
+**(b)** Stabilized IPW re-weights each type's treated and control means back to the *population* type shares $(0.40, 0.30, 0.20, 0.10)$ --- the same composition in both arms --- so each arm's reweighted mean reflects the full pseudo-population, and the difference collapses to the common within-type effect $\sum_t \text{share}_t \cdot (-0.40) = -0.40$. $\checkmark$
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- IPW builds a *pseudo-population* by weighting treated units by $1/e(X)$ and controls by $1/(1-e(X))$; in that reweighted world $X \perp\!\!\!\perp D$, so confounding by $X$ disappears and a weighted difference in means estimates the ATE.
+- The Horvitz--Thompson estimator divides weighted sums by $N$; the stabilized (Hájek) estimator divides each arm by its own weight sum, which keeps each mean inside the data range and dramatically reduces variance --- but stabilization fixes variance, not model misspecification.
+- Variance scales with $E[1/e(X)^2]$, so a propensity near 0 or 1 produces extreme weights that can let a single unit dominate the estimate. Overlap is essential; the proof of IPW's unbiasedness literally requires $e(X) > 0$.
+- AIPW combines an outcome model and a propensity model so the bias is the *product* of their two errors. It is consistent if *either* model is correct, its bias is second-order (Neyman-orthogonal), and --- when both models are right --- it attains the semiparametric efficiency bound.
+:::
+
+
+## What Comes Next
+
+Weighting and matching both rest on a load-bearing assumption we kept invoking and then setting aside: **overlap**. We saw it bite directly --- a propensity pushed toward 0 or 1 made the weights explode and the variance balloon. The next page, [Overlap and Balance Diagnostics](overlap-diagnostics.qmd), turns that warning into practice: how to *plot* the propensity distributions to spot regions of non-overlap, how to read standardized mean differences and the effective sample size to confirm that weighting actually balanced the covariates, what to do (trim, clip, redefine the estimand) when overlap fails, and why a beautifully balanced sample with no common support is still a mirage. It is the quality-control step that decides whether any of the estimators on this page can be trusted.

@@ -1,0 +1,1208 @@
+---
+title: "d-Separation"
+subtitle: "The algorithmic backbone of causal reasoning with graphs"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Apply the path-blocking rules to decide whether a path is open or blocked given a conditioning set, including the collider-descendant subtlety
+- Run the d-separation algorithm step by step to determine whether two variables are d-separated or d-connected by a set $\mathbf{Z}$
+- State and apply the backdoor criterion's two conditions --- no descendants of $D$, and every backdoor path blocked --- to choose a valid adjustment set
+- Diagnose why conditioning on a mediator without first closing the backdoor yields an estimate with no clean causal interpretation
+- Recognize when no adjustment set identifies the effect (an unobserved confounder) and connect the backdoor criterion to conditional independence (ignorability)
+:::
+
+## From Intuition to Algorithm
+
+The previous page introduced the three elemental structures --- chains, forks, and colliders --- and showed how conditioning opens or closes information flow in each case. But real-world DAGs have dozens of variables and hundreds of paths. You cannot eyeball a complex graph and decide which variables to condition on. You need an *algorithm*.
+
+That algorithm is **d-separation** (the "d" stands for *directional*). Given a DAG, d-separation tells you whether two variables are independent, conditional on a set of other variables --- without looking at any data. It turns causal questions into graph-tracing exercises.
+
+This page teaches you d-separation from the ground up, then applies it to the central question of causal inference: *which variables must I condition on to identify a causal effect?* The answer is the **backdoor criterion**.
+
+
+## Blocking and Opening Paths
+
+Recall from the basics page: a **path** between two variables is any route connecting them, following edges in either direction. Information can flow along a path unless something **blocks** it.
+
+The rules for what blocks a path depend entirely on the three elemental structures:
+
+::: {.glass-card .glass-card--definition}
+**Path-blocking rules** --- A path between $X$ and $Y$ is **blocked** by a conditioning set $\mathbf{Z}$ if and only if the path contains at least one of the following:
+
+1. **A chain** $\dots \rightarrow M \rightarrow \dots$ or **a fork** $\dots \leftarrow C \rightarrow \dots$ where the middle variable ($M$ or $C$) is **in** $\mathbf{Z}$ (i.e., you are conditioning on it). Conditioning closes these structures.
+
+2. **A collider** $\dots \rightarrow L \leftarrow \dots$ where $L$ is **not in** $\mathbf{Z}$ and no descendant of $L$ is in $\mathbf{Z}$. Colliders are blocked by default --- they only open when you condition on them (or on their descendants).
+
+**How to read this**: Walk along the path one node at a time. At each node, check: is this node a chain/fork middle that I'm conditioning on? If yes, the path is blocked --- stop. Is this node a collider? If I'm *not* conditioning on it (or any of its descendants), the path is blocked --- stop. If you reach the end without being blocked, the path is **open**.
+:::
+
+::: {.glass-card .glass-card--warning}
+**The descendant subtlety**: Conditioning on a *descendant* of a collider also partially opens the collider path. For example, if $A \rightarrow L \leftarrow B$ and $L \rightarrow M$, conditioning on $M$ (a child of the collider $L$) also opens the path between $A$ and $B$. This is because observing $M$ gives partial information about $L$, which is enough to induce an association. Always check whether your conditioning set includes any descendants of colliders on the path.
+:::
+
+The three path-blocking rules are easiest to learn as pictures. The figure below shows each elemental structure twice --- *before* conditioning (top row) and *after* conditioning on the middle node (bottom row, drawn as a box). Watch the colours: for the **chain** and **fork**, conditioning turns an open edge grey (it **blocks** the path); for the **collider**, conditioning turns a blocked grey edge red (it **opens** a path that was closed). That colour flip *is* the rule.
+
+```{ojs}
+//| echo: false
+
+// Static 3×2 reference panel of the path-blocking rules: chain / fork / collider,
+// each shown un-conditioned (top) and conditioned on its middle node (bottom).
+// Reuses the shared ddag_drawDAG component so colours match the rest of the page.
+ddag_rulesPanel = {
+  const cellTitle = t => html`<div style="font-family:'Inter',sans-serif; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#79766e; text-align:center; margin-bottom:0.1rem;">${t}</div>`;
+
+  // Chain A → M → B
+  const chainNodes = [
+    { id: "A", x: 0.08, y: 0.5, label: "A" },
+    { id: "M", x: 0.5,  y: 0.5, label: "M" },
+    { id: "B", x: 0.92, y: 0.5, label: "B" }
+  ];
+  const chainOpen = ddag_drawDAG({ width: 190, height: 110, nodes: chainNodes,
+    edges: [ { source: "A", target: "M", status: "open-causal" }, { source: "M", target: "B", status: "open-causal" } ] });
+  const chainCond = ddag_drawDAG({ width: 190, height: 110, conditioned: ["M"], nodes: chainNodes,
+    edges: [ { source: "A", target: "M", status: "blocked" }, { source: "M", target: "B", status: "blocked" } ] });
+
+  // Fork A ← C → B
+  const forkNodes = [
+    { id: "C", x: 0.5,  y: 0.16, label: "C" },
+    { id: "A", x: 0.08, y: 0.82, label: "A" },
+    { id: "B", x: 0.92, y: 0.82, label: "B" }
+  ];
+  const forkOpen = ddag_drawDAG({ width: 190, height: 110, nodes: forkNodes,
+    edges: [ { source: "C", target: "A", status: "open-noncausal" }, { source: "C", target: "B", status: "open-noncausal" } ] });
+  const forkCond = ddag_drawDAG({ width: 190, height: 110, conditioned: ["C"], nodes: forkNodes,
+    edges: [ { source: "C", target: "A", status: "blocked" }, { source: "C", target: "B", status: "blocked" } ] });
+
+  // Collider A → L ← B
+  const colNodes = [
+    { id: "A", x: 0.08, y: 0.16, label: "A" },
+    { id: "B", x: 0.92, y: 0.16, label: "B" },
+    { id: "L", x: 0.5,  y: 0.82, label: "L" }
+  ];
+  const colOpen = ddag_drawDAG({ width: 190, height: 110, nodes: colNodes,
+    edges: [ { source: "A", target: "L", status: "blocked" }, { source: "B", target: "L", status: "blocked" } ] });
+  const colCond = ddag_drawDAG({ width: 190, height: 110, conditioned: ["L"], nodes: colNodes,
+    edges: [ { source: "A", target: "L", status: "open-noncausal" }, { source: "B", target: "L", status: "open-noncausal" } ] });
+
+  const col = (title, top, topNote, bot, botNote) => html`<div style="flex:1 1 12rem; min-width:11rem;">
+    ${cellTitle(title)}
+    <div style="display:flex; justify-content:center;">${top}</div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.7rem; color:#79766e; text-align:center; margin:-0.1rem 0 0.4rem;">${topNote}</div>
+    <div style="display:flex; justify-content:center;">${bot}</div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.7rem; color:#79766e; text-align:center; margin-top:-0.1rem;">${botNote}</div>
+  </div>`;
+
+  return html`<div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.6rem 1.1rem; justify-content:center;">
+      ${col("Chain (mediation)", chainOpen, html`open: A→B linked <span style="color:#2e6f40;font-weight:700;">(causal)</span>`, chainCond, html`box M → <span style="color:#79766e;font-weight:700;">blocked</span>`)}
+      ${col("Fork (confounding)", forkOpen, html`open: A–B linked <span style="color:#b3000b;font-weight:700;">(spurious)</span>`, forkCond, html`box C → <span style="color:#79766e;font-weight:700;">blocked</span>`)}
+      ${col("Collider (common effect)", colOpen, html`<span style="color:#79766e;font-weight:700;">blocked</span> by default`, colCond, html`box L → <span style="color:#b3000b;font-weight:700;">OPENS</span>`)}
+    </div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; text-align:center; margin-top:0.5rem;">
+      Top row = nothing conditioned; bottom row = conditioned on the middle node (box). <span style="color:#2e6f40;font-weight:700;">━ open causal</span> &nbsp; <span style="color:#b3000b;font-weight:700;">━ open non-causal</span> &nbsp; <span style="color:#79766e;font-weight:700;">┄ blocked</span>
+    </div>
+  </div>`;
+}
+```
+
+The collider is the one rule where conditioning *opens* rather than closes --- and it has a subtle extension: conditioning on a **descendant** of the collider opens it too. The tiny interactive below lets you watch this happen. Tick a box and a grey (blocked) edge turns red (open), the exact reverse of every other structure.
+
+::: {.interactive-container}
+
+#### Mini-demo: Conditioning OPENS a Collider Path
+
+```{ojs}
+//| echo: false
+
+viewof ddag_colliderCond = Inputs.checkbox(
+  ["L (the collider itself)", "M (a descendant of L)"],
+  { label: "Condition on:", value: [] }
+)
+```
+
+```{ojs}
+//| echo: false
+
+// Mini collider demo, independent of the main explorer. Structure: A → L ← B,
+// with L → M (M is a descendant of the collider L). The A–B path through L is
+// blocked by default; conditioning on L *or* its descendant M opens it (red).
+ddag_colliderDemo = {
+  const condL = ddag_colliderCond.includes("L (the collider itself)");
+  const condM = ddag_colliderCond.includes("M (a descendant of L)");
+  const opened = condL || condM;            // collider opens on L OR any descendant
+  const abStatus = opened ? "open-noncausal" : "blocked";
+
+  const conditioned = [];
+  if (condL) conditioned.push("L");
+  if (condM) conditioned.push("M");
+
+  const nodes = [
+    { id: "A", x: 0.10, y: 0.18, label: "A", sub: "cause 1" },
+    { id: "B", x: 0.62, y: 0.18, label: "B", sub: "cause 2" },
+    { id: "L", x: 0.36, y: 0.58, label: "L", sub: "collider" },
+    { id: "M", x: 0.36, y: 0.92, label: "M", sub: "child of L" }
+  ];
+  const edges = [
+    { source: "A", target: "L", status: abStatus },
+    { source: "B", target: "L", status: abStatus },
+    // L → M is a genuine causal edge (always green); conditioning on M is what
+    // leaks information back up into the collider.
+    { source: "L", target: "M", status: "open-causal" }
+  ];
+
+  const verdict = opened
+    ? html`<strong style="color:#b3000b;">A and B are now d-CONNECTED</strong> — conditioning on ${condL ? "the collider L" : "its descendant M"} opened the path. A spurious red association now links A and B.`
+    : html`<strong style="color:#2e6f40;">A and B are d-SEPARATED</strong> — the collider L is closed, so no information flows between A and B.`;
+
+  return html`<div style="display:flex; flex-direction:column; align-items:center;">
+    ${ddag_drawDAG({ nodes, edges, conditioned, width: Math.min(340, width), height: 230 })}
+    <div style="font-family:'Inter',sans-serif; font-size:0.82rem; line-height:1.45; color:#1c1c1a; background:#f6f5f1; border-left:3px solid ${opened ? '#b3000b' : '#2e6f40'}; border-radius:0 0.35rem 0.35rem 0; padding:0.5rem 0.75rem; margin-top:0.5rem; max-width:30rem;">${verdict}</div>
+  </div>`;
+}
+```
+
+<div style="font-size: 0.78rem; color: #79766e; font-family: 'Inter', sans-serif; margin-top: 0.5rem;">
+Both edges A→L and B→L start <strong>grey (blocked)</strong>. Box <strong>L</strong> and they flip to <strong>red (open)</strong> — the classic collider rule. Now uncheck L and box <strong>M</strong> instead: the path opens again, because observing a child of the collider leaks partial information about L. This is the descendant subtlety, shown rather than described.
+</div>
+
+:::
+
+
+## d-Separation: The Formal Definition
+
+::: {.glass-card .glass-card--definition}
+Two variables $X$ and $Y$ are **d-separated** by a set $\mathbf{Z}$ in a DAG $\mathcal{G}$ if **every path** between $X$ and $Y$ is blocked by $\mathbf{Z}$.
+
+$$
+X \perp_{\mathcal{G}} Y \mid \mathbf{Z} \quad \Leftrightarrow \quad \text{every path between } X \text{ and } Y \text{ is blocked by } \mathbf{Z}
+$$
+
+**How to read this**: "$X$ is d-separated from $Y$ given $\mathbf{Z}$ in graph $\mathcal{G}$" means that, under the causal assumptions encoded in the DAG, $X$ and $Y$ should be statistically independent once you condition on $\mathbf{Z}$. The subscript $\mathcal{G}$ reminds us that d-separation is a property of the graph, not the data.
+
+If $X$ and $Y$ are **not** d-separated by $\mathbf{Z}$, they are **d-connected**: at least one open path remains, and we should expect an association in the data.
+:::
+
+### The d-Separation Algorithm (Step by Step)
+
+To determine whether $X \perp_\mathcal{G} Y \mid \mathbf{Z}$:
+
+1. **List all paths** between $X$ and $Y$ (ignoring arrow directions, just trace routes through the graph).
+2. **For each path**, walk along it and check each intermediate node:
+   - If the node is a **non-collider** (chain middle or fork center) **and** it is in $\mathbf{Z}$ → the path is **blocked** at this node. Stop checking this path.
+   - If the node is a **collider** **and** neither it nor any of its descendants is in $\mathbf{Z}$ → the path is **blocked** at this collider. Stop checking this path.
+   - Otherwise, the node does not block the path. Continue to the next node.
+3. If a path has no blocking nodes, it is **open**.
+4. If **all** paths are blocked, $X$ and $Y$ are d-separated given $\mathbf{Z}$. If **any** path is open, they are d-connected.
+
+
+## A Worked Example: Swedish Maternity Care
+
+Consider a study of how a prenatal care intervention ($D$) affects birth weight ($Y$) in a Swedish hospital. A researcher proposes the following DAG:
+
+$$
+D \leftarrow \text{SES} \rightarrow Y
+$$
+$$
+D \rightarrow \text{Prenatal visits} \rightarrow Y
+$$
+$$
+\text{SES} \rightarrow \text{Prenatal visits}
+$$
+
+The variables:
+
+- $D$ = enrollment in the specialized prenatal program
+- $Y$ = birth weight
+- SES = socioeconomic status of the mother
+- Prenatal visits = number of prenatal care visits during pregnancy
+
+**Goal**: Is $D$ d-separated from $Y$ given $\emptyset$ (the empty set, i.e., no conditioning)?
+
+**Step 1 — List all paths from $D$ to $Y$:**
+
+1. $D \rightarrow \text{Prenatal visits} \rightarrow Y$ (causal, through the mediator)
+2. $D \leftarrow \text{SES} \rightarrow Y$ (backdoor, through the confounder)
+3. $D \leftarrow \text{SES} \rightarrow \text{Prenatal visits} \rightarrow Y$ (another backdoor, longer route)
+
+**Step 2 — Check each path for blocking (conditioning on $\mathbf{Z} = \emptyset$):**
+
+1. $D \rightarrow \text{Prenatal visits} \rightarrow Y$: Prenatal visits is a chain middle, **not** in $\mathbf{Z}$. Path is **open**.
+2. $D \leftarrow \text{SES} \rightarrow Y$: SES is a fork center, **not** in $\mathbf{Z}$. Path is **open**.
+3. $D \leftarrow \text{SES} \rightarrow \text{Prenatal visits} \rightarrow Y$: SES is a fork center, not in $\mathbf{Z}$; Prenatal visits is a chain middle, not in $\mathbf{Z}$. Path is **open**.
+
+**Conclusion**: $D$ and $Y$ are d-connected given $\emptyset$. The association between $D$ and $Y$ includes both causal and non-causal components.
+
+**Now condition on SES ($\mathbf{Z} = \{\text{SES}\}$):**
+
+1. $D \rightarrow \text{Prenatal visits} \rightarrow Y$: No node is conditioned on. Path remains **open** ✓ (this is the causal path --- we *want* it open).
+2. $D \leftarrow \text{SES} \rightarrow Y$: SES is in $\mathbf{Z}$, and it's a fork center. Path is **blocked** ✓.
+3. $D \leftarrow \text{SES} \rightarrow \text{Prenatal visits} \rightarrow Y$: SES is in $\mathbf{Z}$. Path is **blocked** at SES ✓.
+
+After conditioning on SES, only the causal path remains open. The association between $D$ and $Y$ given SES *is* the causal effect.
+
+The figure below renders this maternity-care DAG with the same colour scheme used throughout the rest of this page and the DAG module: green arrows lie on the open causal path, red arrows on the open back-door, and grey dashed arrows are blocked. Here we show the graph *after* conditioning on SES --- the box around SES marks it as the variable we have conditioned on, and you can see that both back-door arrows leaving SES turn grey while the causal route $D \rightarrow \text{Prenatal visits} \rightarrow Y$ stays green.
+
+::: {.interactive-container}
+
+#### Worked Example: Maternity Care DAG (conditioning on SES)
+
+The pair of panels below makes the conditioning step visible as a contrast. **Before** (left): nothing is boxed, both back-door arrows out of SES are red and open, so the D–Y association mixes causal and non-causal flow. **After** (right): SES is boxed, both back-door arrows turn grey, and only the green causal route D → PV → Y survives.
+
+```{ojs}
+//| echo: false
+
+// Before / after pair for the maternity DAG, so the recolouring on conditioning
+// is a visible contrast rather than only the end state.
+ddag_maternityPair = {
+  const nodes = [
+    { id: "D",   x: 0.10, y: 0.80, label: "D",   sub: "Program" },
+    { id: "SES", x: 0.58, y: 0.14, label: "SES", sub: "Status" },
+    { id: "PV",  x: 0.50, y: 0.80, label: "PV",  sub: "Visits" },
+    { id: "Y",   x: 0.90, y: 0.80, label: "Y",   sub: "Birth wt." }
+  ];
+  // "Before": no conditioning — both back-door forks from SES are open (red).
+  const beforeEdges = [
+    { source: "D",   target: "PV", status: "open-causal" },
+    { source: "PV",  target: "Y",  status: "open-causal" },
+    { source: "SES", target: "D",  status: "open-noncausal" },
+    { source: "SES", target: "Y",  status: "open-noncausal" },
+    { source: "SES", target: "PV", status: "open-noncausal" }
+  ];
+  const w = Math.min(300, (width - 24) / 2);
+  const cap = t => html`<div style="font-family:'Inter',sans-serif; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#79766e; text-align:center; margin-bottom:0.1rem;">${t}</div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.8rem; justify-content:center; align-items:flex-start;">
+    <div>${cap("Before — Z = ∅ (back-door OPEN)")}${ddag_drawDAG({ width: w, height: 200, nodes, edges: beforeEdges })}</div>
+    <div>${cap("After — Z = {SES} (back-door BLOCKED)")}${ddag_drawDAG({ width: w, height: 200, conditioned: ["SES"], nodes, edges: [
+      { source: "D", target: "PV", status: "open-causal" },
+      { source: "PV", target: "Y", status: "open-causal" },
+      { source: "SES", target: "D", status: "blocked" },
+      { source: "SES", target: "Y", status: "blocked" },
+      { source: "SES", target: "PV", status: "blocked" }
+    ] })}</div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+ddag_maternityFig = ddag_drawDAG({
+  width: Math.min(460, width),
+  height: 240,
+  conditioned: ["SES"],
+  nodes: [
+    { id: "D",   x: 0.10, y: 0.80, label: "D",   sub: "Program" },
+    { id: "SES", x: 0.58, y: 0.14, label: "SES", sub: "Status" },
+    { id: "PV",  x: 0.50, y: 0.80, label: "PV",  sub: "Visits" },
+    { id: "Y",   x: 0.90, y: 0.80, label: "Y",   sub: "Birth wt." }
+  ],
+  edges: [
+    // Causal path D → PV → Y stays open (green) — SES is not on it.
+    { source: "D",   target: "PV", status: "open-causal" },
+    { source: "PV",  target: "Y",  status: "open-causal" },
+    // Back-door fork SES → D and SES → Y are blocked once we box SES.
+    { source: "SES", target: "D",  status: "blocked" },
+    { source: "SES", target: "Y",  status: "blocked" },
+    // SES → PV is the third arrow of the longer back-door; also blocked at SES.
+    { source: "SES", target: "PV", status: "blocked" }
+  ]
+})
+```
+
+<div style="font-size: 0.8rem; color: #79766e; font-family: 'Inter', sans-serif; margin-top: 0.5rem;">
+<strong>PV</strong> = Prenatal visits (mediator). The box around <strong>SES</strong> means we have conditioned on it; both back-door arrows leaving SES are now blocked (grey, dashed), leaving only the green causal route from D to Y.
+</div>
+
+:::
+
+
+## See It: The d-Separation Tester
+
+Use the interactive below to explore d-separation in a DAG with five variables. Select which variables to condition on and watch the **live graph recolour** as paths open and close: green arrows carry the causal effect we want, red arrows mark an open non-causal (back-door) path that biases the estimate, and grey dashed arrows are blocked. Boxed nodes are the variables you have conditioned on. A one-line verdict reports whether $D$ and $Y$ are d-separated given your selected set, and the path list and regression panel below the graph spell out the consequences.
+
+::: {.interactive-container}
+
+#### d-Separation Explorer
+
+The DAG below represents a study of how a Swedish hospital's staffing policy ($D$) affects patient recovery ($Y$):
+
+- **U** = Hospital funding level (unmeasured confounder)
+- **D** = Staffing policy (treatment)
+- **M** = Nurse-to-patient ratio (mediator)
+- **C** = Hospital reputation (affected by funding, affects outcome)
+- **Y** = Patient recovery time (outcome)
+
+DAG structure: $U \rightarrow D$, $U \rightarrow C$, $C \rightarrow Y$, $D \rightarrow M$, $M \rightarrow Y$, $D \rightarrow Y$
+
+```{ojs}
+//| echo: false
+
+// Start-here prompt + on-chart colour/symbol key, shown above the controls.
+ddag_startHere = html`<div style="margin: 0.25rem 0 0.6rem; padding: 0.55rem 0.8rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db; font-family: 'Inter', sans-serif; font-size: 0.85rem; color: #1c1c1a;">
+  <strong>Start here:</strong> tick a box below to <em>condition on</em> that variable (it turns into a square), then watch the graph and the estimate update. Each box you check is added as a control in a regression of Y on D. (Full step-by-step tour is just below the panels.)
+  <div style="display: flex; flex-wrap: wrap; gap: 0.8rem 1.1rem; margin-top: 0.5rem; color: #79766e;">
+    <span><span style="display:inline-block;width:1.4rem;height:0;border-top:3px solid #2e6f40;vertical-align:middle;"></span> open causal path</span>
+    <span><span style="display:inline-block;width:1.4rem;height:0;border-top:3px solid #b3000b;vertical-align:middle;"></span> open back-door (bias)</span>
+    <span><span style="display:inline-block;width:1.4rem;height:0;border-top:3px dashed #79766e;vertical-align:middle;"></span> blocked</span>
+    <span>□ = conditioned on &nbsp; ○ = not conditioned</span>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof condSet = Inputs.checkbox(
+  ["U (Funding)", "C (Reputation)", "M (Nurse ratio)"],
+  {
+    label: "Condition on:",
+    value: []
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Determine which paths are blocked based on conditioning set
+pathAnalysis = {
+  const condU = condSet.includes("U (Funding)");
+  const condM = condSet.includes("M (Nurse ratio)");
+  const condC = condSet.includes("C (Reputation)");
+
+  // Paths from D to Y:
+  // Path 1: D → Y (direct) — no intermediate nodes, always open
+  const p1 = { path: "D → Y (direct)", blocked: false, reason: "No intermediate nodes — always open", causal: true };
+
+  // Path 2: D → M → Y (causal, through mediator)
+  // M is a chain middle; blocked if M is conditioned on
+  const p2 = {
+    path: "D → M → Y (causal via mediator)",
+    blocked: condM,
+    reason: condM ? "M is conditioned on — chain blocked" : "M not conditioned on — chain open",
+    causal: true
+  };
+
+  // Path 3: D ← U → C → Y (backdoor through U and C)
+  // U is a fork center; C is a chain middle
+  const p3blocked = condU || condC;
+  const p3reason = condU
+    ? "U is conditioned on — fork blocked"
+    : condC
+    ? "C is conditioned on — chain blocked"
+    : "Neither U nor C conditioned on — fork open → BIAS";
+  const p3 = { path: "D ← U → C → Y (backdoor)", blocked: p3blocked, reason: p3reason, causal: false };
+
+  const allBackdoorBlocked = p3.blocked;
+  const causalOpen = !p1.blocked || !p2.blocked;
+
+  // Backdoor criterion has TWO conditions. Condition 2: every backdoor path is
+  // blocked (allBackdoorBlocked). Condition 1: the adjustment set contains no
+  // descendant of D — here M is a mediator (D → M → Y), so conditioning on it
+  // violates Condition 1 and blocks part of the causal effect. The TOTAL effect
+  // is identified only when the backdoor is closed AND no mediator is in the set.
+  const mediatorConditioned = condM;
+  const totalEffectIdentified = allBackdoorBlocked && !mediatorConditioned;
+
+  return { paths: [p1, p2, p3], allBackdoorBlocked, causalOpen, mediatorConditioned, totalEffectIdentified };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Shared DAG component (page tag: ddag) ──────────────────────────────
+// Pure function: given normalized node positions, edges with a status, and a
+// list of conditioned node ids, returns an <svg> DOM node. Boxed (square)
+// nodes are the conditioned ones; edge colour encodes path status. Depends
+// only on the globally-available d3 — no mutable / global state.
+ddag_drawDAG = function({ nodes, edges, width = 440, height = 230, conditioned = [] }) {
+  const pad = 34;                       // keep nodes clear of the svg border
+  const r = 19;                         // node radius / half-box size
+  const sx = id => pad + nodes.find(n => n.id === id).x * (width - 2 * pad);
+  const sy = id => pad + nodes.find(n => n.id === id).y * (height - 2 * pad);
+
+  const statusColor = {
+    "open-causal": "#2e6f40",
+    "open-noncausal": "#b3000b",
+    "blocked": "#79766e"
+  };
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  // One arrowhead marker per status colour (so each arrow tip matches its line).
+  const defs = svg.append("defs");
+  for (const [status, color] of Object.entries(statusColor)) {
+    defs.append("marker")
+      .attr("id", `ddag-arrow-${status}`)
+      .attr("viewBox", "0 0 10 10")
+      .attr("refX", 9)
+      .attr("refY", 5)
+      .attr("markerWidth", 7)
+      .attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path")
+      .attr("d", "M 0 0 L 10 5 L 0 10 z")
+      .attr("fill", color);
+  }
+
+  // ── Edges first (drawn under the nodes) ──
+  const edgeG = svg.append("g");
+  for (const e of edges) {
+    const x1 = sx(e.source), y1 = sy(e.source);
+    const x2 = sx(e.target), y2 = sy(e.target);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    // Trim the line so it starts/ends at the node boundary, not its centre.
+    const x1t = x1 + ux * (r + 2), y1t = y1 + uy * (r + 2);
+    const x2t = x2 - ux * (r + 7), y2t = y2 - uy * (r + 7);
+    const color = statusColor[e.status] || "#79766e";
+    if (e.curve) {
+      // Bow the edge along its perpendicular so it clears any node sitting on
+      // the straight chord (e.g. the direct D→Y arc bowing below the mediator M).
+      const mx = (x1t + x2t) / 2, my = (y1t + y2t) / 2;
+      const bow = e.curve;                 // signed pixel offset (perp. direction)
+      const cx = mx - uy * bow, cy = my + ux * bow;
+      edgeG.append("path")
+        .attr("d", `M ${x1t} ${y1t} Q ${cx} ${cy} ${x2t} ${y2t}`)
+        .attr("fill", "none")
+        .attr("stroke", color)
+        .attr("stroke-width", e.status === "blocked" ? 2 : 2.6)
+        .attr("stroke-dasharray", e.status === "blocked" ? "5,4" : null)
+        .attr("marker-end", `url(#ddag-arrow-${e.status})`);
+    } else {
+      edgeG.append("line")
+        .attr("x1", x1t).attr("y1", y1t)
+        .attr("x2", x2t).attr("y2", y2t)
+        .attr("stroke", color)
+        .attr("stroke-width", e.status === "blocked" ? 2 : 2.6)
+        .attr("stroke-dasharray", e.status === "blocked" ? "5,4" : null)
+        .attr("marker-end", `url(#ddag-arrow-${e.status})`);
+    }
+  }
+
+  // ── Nodes on top ──
+  const nodeG = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.id), cy = sy(n.id);
+    const isCond = conditioned.includes(n.id);
+    const g = nodeG.append("g");
+    if (isCond) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 5).attr("ry", 5)
+        .attr("fill", "#f6f5f1")
+        .attr("stroke", "#1c1c1a")
+        .attr("stroke-width", 3.5);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#f6f5f1")
+        .attr("stroke", "#1c1c1a")
+        .attr("stroke-width", 1.8);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "central")
+      .attr("font-size", "13px")
+      .attr("font-weight", 700)
+      .attr("fill", "#1c1c1a")
+      .text(n.label);
+    // Optional small grey name under the node so the single-letter symbol is
+    // self-explaining at the point of use (no need to hold a 5-symbol legend).
+    if (n.sub) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 11)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "9.5px")
+        .attr("font-weight", 500)
+        .attr("fill", "#79766e")
+        .text(n.sub);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Reactively map the explorer's conditioning set + path analysis onto the
+// shared DAG. Edge status is recomputed from condSet so the graph recolours
+// live. The DAG: U→D, U→C, C→Y, D→M, M→Y, D→Y.
+ddag_explorerGraph = {
+  const condU = condSet.includes("U (Funding)");
+  const condM = condSet.includes("M (Nurse ratio)");
+  const condC = condSet.includes("C (Reputation)");
+
+  const conditioned = [];
+  if (condU) conditioned.push("U");
+  if (condM) conditioned.push("M");
+  if (condC) conditioned.push("C");
+
+  // Back-door path D ← U → C → Y is open (and biasing) unless U or C is boxed.
+  const backdoorOpen = !condU && !condC;
+  // On the open back-door, colour both back-door arrows red; once blocked, grey.
+  const backdoorStatus = backdoorOpen ? "open-noncausal" : "blocked";
+
+  // Causal mediator path D → M → Y: green while open, grey once M is boxed.
+  const mediatorStatus = condM ? "blocked" : "open-causal";
+
+  const nodes = [
+    { id: "U", x: 0.10, y: 0.16, label: "U", sub: "Funding" },
+    { id: "C", x: 0.50, y: 0.16, label: "C", sub: "Reputation" },
+    { id: "D", x: 0.10, y: 0.74, label: "D", sub: "Staffing" },
+    { id: "M", x: 0.50, y: 0.74, label: "M", sub: "Nurse ratio" },
+    { id: "Y", x: 0.90, y: 0.74, label: "Y", sub: "Recovery" }
+  ];
+
+  const edges = [
+    // Direct causal edge D → Y: always open, always green. Bowed downward (curve)
+    // so it is visible as a distinct arc rather than hidden behind the D→M→Y chain
+    // that runs collinear through the M node.
+    { source: "D", target: "Y", status: "open-causal", curve: 58 },
+    // Causal mediator path.
+    { source: "D", target: "M", status: mediatorStatus },
+    { source: "M", target: "Y", status: mediatorStatus },
+    // Back-door path through U and C.
+    { source: "U", target: "D", status: backdoorStatus },
+    { source: "U", target: "C", status: backdoorStatus },
+    { source: "C", target: "Y", status: backdoorStatus }
+  ];
+
+  return { nodes, edges, conditioned, backdoorOpen };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live verdict: are D and Y d-separated given the selected set?
+ddag_verdict = {
+  const setLabel = ddag_explorerGraph.conditioned.length
+    ? "{" + ddag_explorerGraph.conditioned.join(", ") + "}"
+    : "∅";
+  // D and Y are connected by the direct edge D → Y, which no node can block,
+  // so D and Y are ALWAYS d-connected here. The interesting question is whether
+  // every NON-causal (back-door) path is blocked — that is identification.
+  const sep = false;
+  return html`<div style="margin-bottom: 0.6rem; padding: 0.55rem 0.8rem; border-radius: 0.5rem; background: rgba(153,0,0,0.04); border: 1px solid rgba(153,0,0,0.15); font-family: 'Inter', sans-serif; font-size: 0.9rem;">
+    <strong style="color: #1c1c1a;">Verdict:</strong>
+    D and Y are <strong style="color: ${sep ? '#2e6f40' : '#990000'};">d-connected</strong> given ${setLabel}
+    <span style="color: #79766e;">— the direct edge D → Y always keeps them connected. ${ddag_explorerGraph.backdoorOpen ? 'Back-door: <strong style="color:#b3000b;">OPEN</strong> — a non-causal path (red) still confounds the estimate.' : 'Back-door: <strong style="color:#2e6f40;">BLOCKED</strong> — the open connection is now purely causal.'}</span>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Render the live DAG with the shared component.
+html`<div style="display: flex; justify-content: center; margin: 0.25rem 0 0.75rem;">
+  ${ddag_drawDAG({
+    nodes: ddag_explorerGraph.nodes,
+    edges: ddag_explorerGraph.edges,
+    conditioned: ddag_explorerGraph.conditioned,
+    width: Math.min(480, width),
+    height: 250
+  })}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="margin-bottom: 0.75rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.7rem 1rem; border-left: 4px solid ${pathAnalysis.totalEffectIdentified ? '#2e6f40' : (pathAnalysis.allBackdoorBlocked ? '#9c7a33' : '#990000')};">
+    <div style="font-family: 'Inter'; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.02em; color: #79766e; font-weight: 700;">Identification</div>
+    <div style="font-size: 0.95rem; font-weight: 700; color: ${pathAnalysis.totalEffectIdentified ? '#2e6f40' : (pathAnalysis.allBackdoorBlocked ? '#9c7a33' : '#990000')};">
+      ${pathAnalysis.totalEffectIdentified
+        ? '✓ Backdoor blocked, no mediator conditioned — total effect identified'
+        : (pathAnalysis.allBackdoorBlocked
+            ? '⚠ Backdoor blocked, but mediator M is conditioned — total effect NOT identified'
+            : '✗ Backdoor path open — estimate is biased')}
+    </div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: flex; flex-direction: column; gap: 0.4rem;">
+  ${pathAnalysis.paths.map(p => html`
+    <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: ${p.causal ? (p.blocked ? 'rgba(156,122,51,0.07)' : 'rgba(46,111,64,0.07)') : (p.blocked ? 'rgba(46,111,64,0.07)' : 'rgba(153,0,0,0.06)')}; border-radius: 0.5rem; border-left: 3px solid ${p.causal ? (p.blocked ? '#9c7a33' : '#2e6f40') : (p.blocked ? '#2e6f40' : '#990000')};">
+      <span style="font-size: 1.1rem;">${p.causal ? (p.blocked ? '⚠️' : '✅') : (p.blocked ? '✅' : '🚫')}</span>
+      <div>
+        <div style="font-family: 'Inter'; font-weight: 600; font-size: 0.85rem; color: #1c1c1a;">${p.path}</div>
+        <div style="font-size: 0.78rem; color: #79766e;">${p.reason}</div>
+      </div>
+    </div>
+  `)}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Simulate data from the DAG for visualization
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randn(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+dagData = {
+  const rng = mulberry32(42);
+  const n = 500;
+  const obs = [];
+
+  for (let i = 0; i < n; i++) {
+    const U = randn(rng);
+    const D = U * 0.6 + randn(rng) * 0.5;
+    const C = U * 0.7 + randn(rng) * 0.4;
+    const M = D * 0.6 + randn(rng) * 0.5;
+    const Y = D * 0.3 + M * 0.4 + C * 0.5 + randn(rng) * 0.4;
+    obs.push({ U, D, C, M, Y });
+  }
+  return obs;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Compute regression coefficients to show bias
+regressionResults = {
+  const condU = condSet.includes("U (Funding)");
+  const condM = condSet.includes("M (Nurse ratio)");
+  const condC = condSet.includes("C (Reputation)");
+
+  const d = dagData;
+  const n = d.length;
+
+  // Project `vec` onto the orthogonal complement of a single (mean-centered) basis vector.
+  function sweepOut(vec, basis) {
+    const mb = d3.mean(basis);
+    const vb = d3.sum(basis, b => (b - mb) ** 2);
+    if (vb === 0) return vec.slice();
+    const cov = d3.sum(basis.map((b, i) => (b - mb) * vec[i]));
+    const beta = cov / vb;
+    return vec.map((r, i) => r - beta * (basis[i] - mb));
+  }
+
+  // Residualize via OLS. For >=2 correlated controls, sequential univariate
+  // residualization is NOT equivalent to multivariate OLS, so we first build a
+  // mutually orthogonal basis from the controls (Gram-Schmidt) and then sweep the
+  // outcome against that basis. This yields the true partial regression coefficient.
+  function residualize(outcome, controls) {
+    if (controls.length === 0) return outcome.slice();
+    const basis = [];
+    for (let ctrl of controls) {
+      for (const b of basis) ctrl = sweepOut(ctrl, b);
+      basis.push(ctrl);
+    }
+    let resid = outcome.slice();
+    for (const b of basis) resid = sweepOut(resid, b);
+    return resid;
+  }
+
+  const controls = [];
+  if (condU) controls.push(d.map(v => v.U));
+  if (condM) controls.push(d.map(v => v.M));
+  if (condC) controls.push(d.map(v => v.C));
+
+  const residD = residualize(d.map(v => v.D), controls);
+  const residY = residualize(d.map(v => v.Y), controls);
+
+  const mrD = d3.mean(residD);
+  const mrY = d3.mean(residY);
+  const cov = d3.sum(residD.map((rd, i) => (rd - mrD) * (residY[i] - mrY)));
+  const varD = d3.sum(residD.map(rd => (rd - mrD) ** 2));
+  const beta = cov / varD;
+
+  // True total causal effect: D→Y direct (0.3) + D→M→Y (0.6*0.4 = 0.24) = 0.54
+  const trueTotal = 0.54;
+  const trueDirect = 0.30;
+
+  return { beta, trueTotal, trueDirect };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Bridge the graphical act (boxing a node) to the statistical act (adding a
+// regressor), and name the current estimand so the live number is always
+// anchored to a meaning.
+ddag_estimandNote = {
+  const meaning = pathAnalysis.totalEffectIdentified
+    ? { txt: "currently estimating the total causal effect (backdoor closed, no mediator conditioned)", col: "#2e6f40" }
+    : (pathAnalysis.allBackdoorBlocked
+        ? "currently estimating the direct effect only — the mediator path is blocked"
+        : "currently biased: the open back-door adds confounding to whatever causal effect remains");
+  const m = typeof meaning === "string" ? { txt: meaning, col: "#9c7a33" } : meaning;
+  const biasCol = pathAnalysis.allBackdoorBlocked ? m.col : "#990000";
+  return html`<div style="margin-top: 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.82rem; color: #79766e;">
+    Each box you check is added as a control in a regression of <strong>Y</strong> on <strong>D</strong>; the <strong>Estimate</strong> below is the coefficient on D.
+    <div style="margin-top: 0.3rem;">The Estimate is <strong style="color: ${biasCol};">${m.txt}</strong>.</div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-top: 0.5rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.5rem; border-left: 4px solid #990000;">
+    <div style="font-family: 'Inter'; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.02em; color: #79766e; font-weight: 700;">Estimate</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #1c1c1a;">${regressionResults.beta.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.5rem; border-left: 4px solid #2e6f40;">
+    <div style="font-family: 'Inter'; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.02em; color: #79766e; font-weight: 700;">True Total</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #2e6f40;">${regressionResults.trueTotal.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.5rem; border-left: 4px solid #9c7a33;">
+    <div style="font-family: 'Inter'; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.02em; color: #79766e; font-weight: 700;">True Direct</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #9c7a33;">${regressionResults.trueDirect.toFixed(3)}</div>
+  </div>
+</div>`
+```
+
+:::
+
+### How to Read the Live Graph
+
+The graph at the top of the explorer *is* the d-separation algorithm running in front of you. Walk through it once, slowly:
+
+**Step 1: Find the variables.** Five nodes: **U** (funding, top-left), **C** (reputation, top-right), **D** (staffing policy, bottom-left), **M** (nurse ratio, bottom-middle), and **Y** (recovery time, bottom-right). With nothing checked, every node is a plain **circle** --- you have conditioned on none of them.
+
+**Step 2: Read the arrow colours.** Each colour encodes one line of the path-blocking rules. **Green** arrows lie on an *open causal* route from $D$ to $Y$ (the direct edge $D \rightarrow Y$ and the mediator chain $D \rightarrow M \rightarrow Y$) --- this is the signal we want to keep. **Red** arrows lie on the *open back-door* path $D \leftarrow U \rightarrow C \rightarrow Y$ --- a non-causal route that contaminates the estimate. **Grey, dashed** arrows are *blocked*: no information flows through them.
+
+**Step 3: Box a node and watch it recolour.** Check **U (Funding)**. The U node becomes a **box** (the visual mark for "conditioned on"), and the two back-door arrows $U \rightarrow D$ and $U \rightarrow C$ flip from red to grey --- conditioning on the fork centre $U$ blocks the back-door. The green causal arrows are untouched. The one-line **verdict** above the graph updates to say the back-door is now closed.
+
+**Step 4: Try blocking the same path elsewhere.** Uncheck U and check **C (Reputation)** instead. The back-door arrows turn grey again --- you have blocked the *same* path at a different node (the chain middle $C$). Either box works, which is exactly the "multiple valid adjustment sets" idea from later on this page.
+
+**Step 5: See a mediator close.** Check **M (Nurse ratio)**. Now the *green* chain $D \rightarrow M \rightarrow Y$ turns grey: conditioning on a mediator blocks part of the causal effect. Notice that $D$ and $Y$ stay **d-connected** throughout --- the direct edge $D \rightarrow Y$ can never be blocked --- so the verdict always reads "d-connected." That is the point: d-separation of $D$ and $Y$ is not the goal; blocking every *non-causal* path while keeping the causal ones open is.
+
+### What to Try
+
+The graph shows you *which* paths are open; the regression panel below shows the *numerical* consequence. Toggle the same boxes and watch both respond together. (Exact estimates depend on the random draw --- read the live **Estimate** card; the approximate values below are for the bundled $n=500$, seed-42 simulation.)
+
+1. **Start with nothing conditioned on**: The estimated effect (close to 0.9) is inflated because the backdoor path through $U$ and $C$ adds confounding (the two red arrows in the graph). The true total causal effect is 0.54.
+
+2. **Condition on U (Funding)**: The estimate drops to roughly 0.5, close to the true total effect of 0.54 (the small gap is sampling noise in this $n=500$ draw). Conditioning on the fork center blocks the backdoor.
+
+3. **Condition on C (Reputation) instead**: The estimate again moves toward the true total (roughly 0.45). Since $C$ lies on the backdoor path $D \leftarrow U \rightarrow C \rightarrow Y$, conditioning on $C$ blocks it even though we don't observe $U$.
+
+4. **Condition on M (Nurse ratio) alone**: The estimate changes, but the backdoor is still open. You get something between the direct effect and the biased estimate --- neither fish nor fowl.
+
+5. **Condition on C and M**: The backdoor is blocked *and* the mediator path is blocked. The estimate (roughly 0.2) targets only the direct effect ($D \rightarrow Y \approx 0.30$); the gap is sampling noise in this $n=500$ draw (the population value of this regression is $\approx 0.30$).
+
+
+## The Backdoor Criterion
+
+d-Separation gives us the general tool. The **backdoor criterion** is the most important special case: it tells us *which variables to condition on* to identify the total causal effect of $D$ on $Y$.
+
+::: {.glass-card .glass-card--definition}
+**The Backdoor Criterion** (Pearl, 1993)
+
+A set of variables $\mathbf{Z}$ satisfies the backdoor criterion relative to the treatment $D$ and outcome $Y$ if:
+
+1. **No variable in $\mathbf{Z}$ is a descendant of $D$** (don't condition on anything caused by the treatment).
+2. **$\mathbf{Z}$ blocks every backdoor path** from $D$ to $Y$ (every non-causal path that starts with an arrow *into* $D$).
+
+If $\mathbf{Z}$ satisfies the backdoor criterion, then the causal effect of $D$ on $Y$ is **identified** by the adjustment formula:
+
+$$
+P(Y \mid do(D = d)) = \sum_{\mathbf{z}} P(Y \mid D = d, \mathbf{Z} = \mathbf{z}) \, P(\mathbf{Z} = \mathbf{z})
+$$
+
+**How to read this formula**: The left side, $P(Y \mid do(D = d))$, is the distribution of outcomes if we *intervened* and set everyone's treatment to $d$. The $do(\cdot)$ operator distinguishes intervention (physically setting a value) from observation (passively recording it). The right side says: compute the conditional association between $D$ and $Y$ within each stratum of $\mathbf{Z}$, then average across strata weighted by the population distribution of $\mathbf{Z}$.
+
+In practice (for continuous variables and linear models), this reduces to: regress $Y$ on $D$ and $\mathbf{Z}$, and the coefficient on $D$ estimates the causal effect.
+
+The same formula, colour-coded into its three working parts:
+
+```{ojs}
+//| echo: false
+
+// Annotated adjustment formula: each coloured chunk maps to one plain-language
+// job. Pure HTML (no LaTeX inside the template literal); arrows are Unicode.
+ddag_adjFormula = html`<div style="font-family:'Inter',sans-serif; max-width:34rem; margin:0.25rem auto 0.5rem;">
+  <div style="text-align:center; font-size:1.15rem; color:#1c1c1a; line-height:1.6;">
+    <span style="color:#990000; font-weight:700;">P(Y | do(D=d))</span>
+    <span style="color:#1c1c1a;"> = </span>
+    <span style="color:#9c7a33; font-weight:700;">&Sigma;<sub>z</sub></span>
+    <span style="color:#2e6f40; font-weight:700;">P(Y | D=d, Z=z)</span>
+    <span style="color:#3d5a6c; font-weight:700;">P(Z=z)</span>
+  </div>
+  <div style="display:flex; flex-wrap:wrap; gap:0.5rem 0.9rem; justify-content:center; margin-top:0.7rem; font-size:0.8rem;">
+    <span style="color:#990000;"><strong>P(Y | do(D=d))</strong> &mdash; effect of <em>setting</em> the treatment</span>
+    <span style="color:#9c7a33;"><strong>&Sigma;<sub>z</sub></strong> &mdash; average over the strata of Z</span>
+    <span style="color:#2e6f40;"><strong>P(Y | D=d, Z=z)</strong> &mdash; within-stratum association</span>
+    <span style="color:#3d5a6c;"><strong>P(Z=z)</strong> &mdash; how common that stratum is</span>
+  </div>
+  <div style="text-align:center; font-size:0.78rem; color:#79766e; margin-top:0.6rem;">
+    Read it as a recipe: <span style="color:#2e6f40;font-weight:600;">compare D within each level of Z</span>, then <span style="color:#9c7a33;font-weight:600;">average those comparisons</span> using <span style="color:#3d5a6c;font-weight:600;">how often each level occurs</span>.
+  </div>
+</div>`
+```
+:::
+
+### Why the Two Conditions?
+
+**Condition 1** (no descendants of $D$) prevents you from conditioning on mediators or colliders downstream of treatment. Conditioning on a mediator blocks part of the causal effect. Conditioning on a collider that is a descendant of $D$ can open new spurious paths.
+
+**Condition 2** (block all backdoor paths) ensures that every non-causal association between $D$ and $Y$ is removed. A backdoor path starts with an arrow *into* $D$ --- these paths carry confounding, not causation.
+
+::: {.glass-card .glass-card--insight}
+The backdoor criterion has a remarkable implication: **you don't need to observe every confounder**. You need to observe enough variables to *block every backdoor path*. Sometimes a single variable blocks multiple paths. Sometimes you can block a path by conditioning on a variable that isn't itself a confounder but sits on a backdoor path. The DAG shows you the minimum you need --- and equally, when no sufficient adjustment set exists because a confounder is unobserved and unreachable.
+:::
+
+
+## Multiple Valid Adjustment Sets
+
+An important insight: the backdoor criterion often admits *multiple* valid adjustment sets. The maternity care example above is deliberately minimal --- it has just one confounder (SES), so $\{\text{SES}\}$ is the *only* valid adjustment set. It is worth seeing why the obvious alternatives fail:
+
+- $\{\text{Prenatal visits}\}$ alone does *not* satisfy the criterion: it fails to block the backdoor path $D \leftarrow \text{SES} \rightarrow Y$.
+- $\{\text{SES}, \text{Prenatal visits}\}$ is a **trap**. It *does* block every backdoor path, but Prenatal visits is a **child of $D$** ($D \rightarrow \text{Prenatal visits}$), so it is a descendant of the treatment and violates **Condition 1** of the backdoor criterion. Worse, Prenatal visits is a *mediator* on the causal path $D \rightarrow \text{Prenatal visits} \rightarrow Y$; conditioning on it blocks part of the very effect we are trying to estimate. The resulting coefficient is neither the total effect nor a clean direct effect.
+
+The lesson: blocking all backdoor paths (Condition 2) is necessary but not sufficient. A valid set must *also* contain no descendants of $D$ (Condition 1).
+
+To see multiple genuinely valid sets, you need a graph with redundant blocking points --- as in Exercise 1 below, where the backdoor $D \leftarrow \text{Clinic size} \rightarrow \text{Staff training} \rightarrow Y$ can be blocked at *either* node, giving two minimal valid sets: $\{\text{Clinic size}\}$ and $\{\text{Staff training}\}$.
+
+When multiple valid sets do exist, how should you choose?
+
+1. **Prefer smaller sets** (fewer variables) for simplicity and statistical efficiency.
+2. **Avoid mediators** if you want the total effect (conditioning on a mediator gives you a direct effect, which may not be what you want).
+3. **Prefer well-measured variables** --- conditioning on a poorly measured confounder only partially blocks the path (residual confounding).
+4. **Stay upstream of treatment** --- descendants of $D$ are risky even if they technically satisfy the criterion.
+
+
+## When Identification Fails
+
+Sometimes no adjustment set satisfies the backdoor criterion. This happens when a backdoor path runs through a variable that is **unobserved** and cannot be blocked by any observed variable.
+
+Consider a study of whether a new physiotherapy method ($D$) reduces chronic pain ($Y$) at a Swedish rehabiliteringsklinik:
+
+$$
+D \leftarrow U \rightarrow Y
+$$
+
+where $U$ is the patient's underlying "motivation and pain tolerance" --- unobserved and unmeasured. No other variable lies on this path. Nothing we can condition on will block it.
+
+The figure makes the obstruction visible: $U$ is drawn as a **dashed, hollow node** to mark it as *unobserved*, and the back-door fork it creates is red and permanently open --- there is no observed node sitting on the path to box.
+
+```{ojs}
+//| echo: false
+
+// Static "identification fails" figure. U is unobserved: drawn as a dashed,
+// hollow circle (distinct from the solid observed nodes), and the back-door
+// fork it opens is red and unblockable. Self-contained SVG so the shared
+// ddag_drawDAG component is left untouched.
+ddag_unidentifiedFig = {
+  const W = Math.min(360, width), H = 190, pad = 36, r = 21;
+  const P = { U: [0.5, 0.16], D: [0.10, 0.84], Y: [0.90, 0.84] };
+  const sx = id => pad + P[id][0] * (W - 2 * pad);
+  const sy = id => pad + P[id][1] * (H - 2 * pad);
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  defs.append("marker")
+    .attr("id", "ddag-unid-arrow").attr("viewBox", "0 0 10 10")
+    .attr("refX", 9).attr("refY", 5).attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M 0 0 L 10 5 L 0 10 z").attr("fill", "#b3000b");
+
+  const edge = (a, b) => {
+    const x1 = sx(a), y1 = sy(a), x2 = sx(b), y2 = sy(b);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    svg.append("line")
+      .attr("x1", x1 + ux * (r + 2)).attr("y1", y1 + uy * (r + 2))
+      .attr("x2", x2 - ux * (r + 7)).attr("y2", y2 - uy * (r + 7))
+      .attr("stroke", "#b3000b").attr("stroke-width", 2.6)
+      .attr("marker-end", "url(#ddag-unid-arrow)");
+  };
+  edge("U", "D");
+  edge("U", "Y");
+
+  const node = (id, label, sub, unobserved) => {
+    const cx = sx(id), cy = sy(id), g = svg.append("g");
+    g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r)
+      .attr("fill", unobserved ? "#fdfdfb" : "#f6f5f1")
+      .attr("stroke", unobserved ? "#79766e" : "#1c1c1a")
+      .attr("stroke-width", unobserved ? 1.8 : 1.8)
+      .attr("stroke-dasharray", unobserved ? "4,3" : null);
+    g.append("text").attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", "13px").attr("font-weight", 700)
+      .attr("fill", unobserved ? "#79766e" : "#1c1c1a").text(label);
+    g.append("text").attr("x", cx).attr("y", cy + r + 11)
+      .attr("text-anchor", "middle").attr("font-size", "9.5px").attr("font-weight", 500)
+      .attr("fill", "#79766e").text(sub);
+  };
+  node("U", "U", "unobserved", true);
+  node("D", "D", "Method", false);
+  node("Y", "Y", "Pain", false);
+
+  return html`<div style="display:flex; flex-direction:column; align-items:center; margin:0.5rem 0;">
+    ${svg.node()}
+    <div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; text-align:center; max-width:28rem; margin-top:0.25rem;">
+      The dashed hollow node is the <strong>unobserved</strong> confounder U. The red fork D ← U → Y is an open back-door with no observed node on it to condition on, so it can never be blocked by adjustment.
+    </div>
+  </div>`;
+}
+```
+
+In this case, the causal effect is **not identified** by the backdoor criterion. The naive regression of $Y$ on $D$ will be biased, and no amount of observed covariates can fix it.
+
+::: {.glass-card .glass-card--warning}
+When the backdoor criterion fails, you need a *different* identification strategy: instrumental variables (Module 3), regression discontinuity (Module 4), difference-in-differences (Module 6), or other methods covered later. Each leverages a different source of quasi-random variation instead of selection on observables. The DAG doesn't just tell you *when* conditioning works --- it tells you *when it doesn't*, which is equally valuable.
+:::
+
+
+## The Connection to Potential Outcomes
+
+How does d-separation connect to the potential outcomes framework from Module 1? The bridge is the **conditional independence assumption** (also called "selection on observables," "ignorability," or "unconfoundedness"):
+
+$$
+(Y(0), Y(1)) \perp\!\!\!\perp D \mid \mathbf{Z}
+$$
+
+**How to read this**: "The potential outcomes $Y(0)$ and $Y(1)$ are jointly independent of the treatment $D$, conditional on $\mathbf{Z}$." In words: after conditioning on $\mathbf{Z}$, the treatment assignment is *as good as random* --- treated and untreated groups are comparable within each stratum of $\mathbf{Z}$.
+
+The backdoor criterion provides the *graphical* condition under which this statistical assumption holds. If $\mathbf{Z}$ satisfies the backdoor criterion in your DAG, and the DAG is correct, then the conditional independence assumption is satisfied.
+
+| Potential Outcomes Framework | DAG Framework |
+|:---|:---|
+| $(Y(0), Y(1)) \perp\!\!\!\perp D \mid \mathbf{Z}$ | $\mathbf{Z}$ satisfies the backdoor criterion |
+| Selection on observables | All backdoor paths blocked by observed variables |
+| Ignorability | d-separation of $D$ and $Y$ from non-causal paths given $\mathbf{Z}$ |
+| Random assignment within strata | No open non-causal paths within strata |
+
+
+<details>
+<summary>Math Details: Faithfulness, Testability, and the Adjustment Formula</summary>
+<div class="details-content">
+
+### The Faithfulness Assumption
+
+The Markov condition (from the basics page) says: d-separation in the graph *implies* independence in the data.
+
+$$
+X \perp_{\mathcal{G}} Y \mid \mathbf{Z} \implies X \perp\!\!\!\perp_P Y \mid \mathbf{Z}
+$$
+
+**How to read this**: "If $X$ and $Y$ are d-separated by $\mathbf{Z}$ in graph $\mathcal{G}$, then $X$ and $Y$ are statistically independent given $\mathbf{Z}$ in the data distribution $P$." The arrow "$\implies$" means "implies" --- the left side guarantees the right side.
+
+**Faithfulness** adds the reverse direction:
+
+$$
+X \not\perp_{\mathcal{G}} Y \mid \mathbf{Z} \implies X \not\perp\!\!\!\perp_P Y \mid \mathbf{Z}
+$$
+
+**How to read this**: "If $X$ and $Y$ are d-connected given $\mathbf{Z}$, then they are associated in the data." Faithfulness rules out knife-edge cases where two confounding paths accidentally cancel each other out. Such cancellations have probability zero in continuous distributions but can occur in carefully engineered examples.
+
+### Why Faithfulness Matters for Testability
+
+Together, the Markov condition and faithfulness imply that a DAG generates a *specific* set of conditional independence relations. You can test some of these in data. If the data show an independence that the DAG does not predict (or vice versa), the DAG may be wrong. This gives DAGs a degree of empirical falsifiability, even though you cannot confirm them from data alone.
+
+### The Adjustment Formula (Derivation Sketch)
+
+Given that $\mathbf{Z}$ satisfies the backdoor criterion:
+
+$$
+P(Y \mid do(D = d)) = \sum_{\mathbf{z}} P(Y \mid D = d, \mathbf{Z} = \mathbf{z}) \, P(\mathbf{Z} = \mathbf{z})
+$$
+
+The intuition: the $do(\cdot)$ operator is defined by the **truncated factorization**. In the observational DAG, the joint distribution factors as:
+
+$$
+P(V) = \prod_{j} P(V_j \mid \text{Parents}(V_j))
+$$
+
+When we set $D = d$ by intervention, we delete the factor $P(D \mid \text{Parents}(D))$ (because $D$ is no longer determined by its parents --- it is set externally) and replace it with a point mass:
+
+$$
+P(V \mid do(D = d)) = \prod_{j \ne D} P(V_j \mid \text{Parents}(V_j)) \Big|_{D=d}
+$$
+
+**How to read this**: "The post-intervention distribution equals the original factorization with the treatment's equation removed and $D$ fixed at $d$." This "graph surgery" removes all arrows into $D$, which is equivalent to deleting all backdoor paths.
+
+The backdoor criterion ensures that conditioning on $\mathbf{Z}$ achieves the same result *statistically*, without requiring physical intervention. The proof uses the three rules of Pearl's **do-calculus** (1995).
+
+</div>
+</details>
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Consider the following DAG for a study of how electronic health records ($D$) affect diagnostic accuracy ($Y$) in Swedish vårdcentraler:
+
+$$
+D \leftarrow \text{Clinic size} \rightarrow \text{Staff training} \rightarrow Y
+$$
+$$
+D \rightarrow Y
+$$
+
+List all paths from $D$ to $Y$. For each path, determine whether it is causal or non-causal. Then find all minimal valid adjustment sets using the backdoor criterion.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Paths from $D$ to $Y$:**
+
+1. $D \rightarrow Y$ — **causal** (direct effect). No intermediate nodes to block.
+2. $D \leftarrow \text{Clinic size} \rightarrow \text{Staff training} \rightarrow Y$ — **backdoor** (non-causal). Starts with an arrow into $D$.
+
+**Applying the backdoor criterion:**
+
+We need to block path 2 without conditioning on descendants of $D$.
+
+- $\mathbf{Z} = \{\text{Clinic size}\}$ — blocks path 2 at the fork center. **Valid** ✓
+- $\mathbf{Z} = \{\text{Staff training}\}$ — blocks path 2 at the chain middle. **Valid** ✓ (Staff training is not a descendant of $D$.)
+- $\mathbf{Z} = \{\text{Clinic size}, \text{Staff training}\}$ — blocks path 2 redundantly. Valid but not minimal.
+- $\mathbf{Z} = \emptyset$ — path 2 is open. **Invalid** ✗
+
+The two **minimal** valid sets are $\{\text{Clinic size}\}$ and $\{\text{Staff training}\}$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the d-Separation Explorer above, what happens when you condition on **only M** (the mediator)? The backdoor path is still open, but the estimate changes. Explain what the estimate represents and why it has no clean causal interpretation.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+When you condition on $M$ (the nurse-to-patient ratio), two things happen simultaneously:
+
+1. **The causal path $D \rightarrow M \rightarrow Y$ is blocked**: Conditioning on the mediator removes the indirect causal effect ($0.6 \times 0.4 = 0.24$). Only the direct effect ($D \rightarrow Y = 0.30$) survives on the causal side.
+
+2. **The backdoor path $D \leftarrow U \rightarrow C \rightarrow Y$ remains open**: Nothing blocks the confounding flow through $U$ and $C$.
+
+So the estimate captures: the direct causal effect (0.30) **plus** the confounding bias from the open backdoor. These combine into a number that is neither the total causal effect (0.54) nor the controlled direct effect (0.30) nor anything with a clean interpretation.
+
+This illustrates a critical lesson: **conditioning on a mediator without first blocking the backdoor produces an uninterpretable estimate**. The first condition of the backdoor criterion ("no descendants of $D$") exists precisely to prevent this.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher at a Swedish university hospital proposes the following DAG for studying whether a new surgical technique ($D$) reduces complications ($Y$):
+
+$$
+D \leftarrow \text{Surgeon skill} \rightarrow Y
+$$
+$$
+D \rightarrow \text{Operating time} \leftarrow \text{Patient BMI} \rightarrow Y
+$$
+
+(a) Is "Operating time" a collider? On which path?
+(b) What happens if the researcher conditions on Operating time?
+(c) Find the minimal valid adjustment set.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Yes, Operating time is a **collider** on the path $D \rightarrow \text{Op. time} \leftarrow \text{BMI} \rightarrow Y$. Both $D$ and BMI have arrows pointing *into* Operating time.
+
+**(b)** Conditioning on Operating time **opens the collider path**: $D \rightarrow \text{Op. time} \leftarrow \text{BMI} \rightarrow Y$. This creates a spurious association between $D$ and BMI (through the opened collider), which then flows to $Y$. The researcher *introduces bias that wasn't there before*.
+
+**(c)** List the paths from $D$ to $Y$:
+
+1. $D \rightarrow Y$ (if a direct arrow exists) — causal.
+2. $D \leftarrow \text{Surgeon skill} \rightarrow Y$ — **backdoor**, open.
+3. $D \rightarrow \text{Op. time} \leftarrow \text{BMI} \rightarrow Y$ — contains a **collider** at Op. time. This path is **blocked by default** (the collider is not conditioned on).
+
+Only path 2 is a problem. The minimal valid set is $\mathbf{Z} = \{\text{Surgeon skill}\}$. This blocks the only open backdoor. The collider path is already blocked. **Do not** condition on Operating time.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A common piece of advice in epidemiology is: "control for everything that is correlated with both treatment and outcome." Using what you know about d-separation and the three elemental structures, explain why this advice is *wrong*. Give a concrete healthcare example where following this advice introduces bias.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The advice "control for everything correlated with both treatment and outcome" is wrong because **correlation does not distinguish confounders from colliders**.
+
+A **confounder** (fork: $D \leftarrow C \rightarrow Y$) is correlated with both $D$ and $Y$ and *should* be controlled for. A **collider** (common effect: $D \rightarrow L \leftarrow Y$) is also correlated with both $D$ and $Y$ (because they are its causes!) but should *not* be controlled for. Conditioning on a collider *creates* bias.
+
+**Concrete example**: A Swedish hospital studies whether a new medication ($D$) reduces 30-day readmission ($Y$). Both the medication and the severity of the initial illness contribute to whether the patient is admitted to the ICU ($L$):
+
+$$D \rightarrow L \leftarrow Y$$
+
+$L$ (ICU admission) is correlated with both $D$ and $Y$. Following the bad advice, the researcher controls for ICU admission. This is a collider: conditioning on it creates a spurious association. Among ICU patients, those on the new medication appear to have *worse* readmission rates --- not because the drug is harmful, but because non-medication factors (like severity) must have been especially high to land them in the ICU.
+
+The correct approach: draw a DAG, check which variables are confounders vs. colliders vs. mediators, and use the backdoor criterion. The presence of correlation with treatment and outcome is *necessary* but not *sufficient* to justify adjustment.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- d-Separation turns causal questions into graph-tracing: $X$ and $Y$ are d-separated by $\mathbf{Z}$ only if *every* path between them is blocked --- one open path makes them d-connected.
+- A non-collider (chain middle or fork center) blocks a path when it is *in* $\mathbf{Z}$; a collider blocks by default and opens only when it --- or any descendant --- is *in* $\mathbf{Z}$.
+- The backdoor criterion identifies the total effect when $\mathbf{Z}$ contains no descendant of $D$ *and* blocks every backdoor path; blocking the backdoor alone is necessary but not sufficient.
+- You need not observe every confounder --- only enough variables to block every backdoor path, and the same path can often be blocked at more than one node.
+- When a backdoor path runs through an unobserved variable no observed variable can block, the effect is not identified, and you need IV, RD, or DiD instead.
+:::
+
+## What Comes Next
+
+d-Separation gives you the algorithm; the backdoor criterion gives you the recipe. But applying the recipe in practice requires recognizing which of the common adjustment patterns your variables fit. The next page — [Good and Bad Controls](good-bad-controls.qmd) — catalogs the six prototypical patterns: the confounders you must adjust for, the colliders you must avoid, the mediators that answer different questions, and several subtler cases that arise in real healthcare research.

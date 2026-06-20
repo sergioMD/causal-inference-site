@@ -1,0 +1,1092 @@
+---
+title: "Selection on Observables"
+subtitle: "The conditional independence assumption and when adjustment works"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State the **conditional independence assumption** (CIA / unconfoundedness) and the **overlap** condition, and explain why together they are called *selection on observables*.
+- Connect CIA to the **back-door criterion** from Module 2: adjustment works exactly when your covariates block every back-door path.
+- Distinguish selection-on-observables designs from IV, RD, and DiD --- and articulate the price of that distinction: an assumption of **no unobserved confounding** that the data cannot test.
+- Use the identification result $\text{ATE} = E_X\big[\,E[Y\mid D{=}1,X] - E[Y\mid D{=}0,X]\,\big]$ to recover an average effect by adjusting for $X$.
+- Diagnose when adjustment *removes* bias (the confounder is observed and included) versus when it leaves **residual bias** (an unobserved confounder remains).
+:::
+
+## When You Cannot Randomize, and There Is No Clever Trick
+
+The last three modules were a tour of *quasi-experimental* designs --- research strategies that manufacture as-good-as-random variation out of the messy world. Instrumental variables borrowed randomness from a third variable that shifts treatment but not the outcome. Regression discontinuity exploited an arbitrary cutoff that splits nearly-identical units into treated and control. Difference-in-differences leaned on a parallel-trends comparison group to net out fixed differences and common shocks. Each design earns its credibility from a *structural feature* of the setting: an instrument, a threshold, a pre-period.
+
+But most policy questions arrive without any of these gifts. Consider a concrete one from Swedish primary care. In 2021 several *vårdcentraler* (primary care centers) began offering a voluntary **fall-prevention program** (*fallprevention*) to patients aged 75 and over: a *distriktssköterska* (district nurse) conducts a home balance assessment, prescribes strength exercises, and reviews medications. Patients **choose** whether to enroll. Eighteen months later we observe each patient's number of fall-related emergency visits. Did the program reduce falls?
+
+There is no instrument --- enrollment is a personal decision, not nudged by any external lever we can isolate. There is no cutoff --- nobody becomes eligible at a sharp threshold. There is no clean pre-period reform to difference against. All we have is a registry: who enrolled, who did not, their outcomes, and a rich set of **measured characteristics** --- age, a comorbidity index, prior fall history, and an area-level deprivation score.
+
+The strategy of **selection on observables** is the most demanding and the most honest of the bunch. It says: *I will not pretend I have a natural experiment. Instead, I will assume that once I compare patients who look identical on the variables I measured, the remaining difference in who enrolled is as good as random.* Whether that assumption holds is not something the data can confirm. This page is about stating the assumption precisely, seeing exactly when it rescues a naive comparison, and --- just as important --- watching it fail when a confounder hides in the unmeasured dark.
+
+## The Problem, in Potential-Outcomes Terms
+
+Recall the machinery from Module 1. Each patient $i$ has two potential outcomes: $Y_i(1)$, the number of fall-related visits *if enrolled*, and $Y_i(0)$, the number *if not enrolled*. We observe only one. The estimands we care about are the **ATE**, $E[Y_i(1) - Y_i(0)]$, and the **ATT**, $E[Y_i(1) - Y_i(0)\mid D_i = 1]$.
+
+The naive difference in means decomposes, exactly as on the [Selection Bias](../01-fundamental-problem/selection-bias.qmd) page, into the ATT plus a selection-bias term:
+
+$$
+\underbrace{E[Y_i\mid D_i{=}1] - E[Y_i\mid D_i{=}0]}_{\text{naive difference}}
+= \underbrace{E[Y_i(1) - Y_i(0)\mid D_i{=}1]}_{\text{ATT}}
++ \underbrace{E[Y_i(0)\mid D_i{=}1] - E[Y_i(0)\mid D_i{=}0]}_{\text{selection bias}}.
+$$
+
+**Read this as**: "The gap we can compute equals the causal effect we want, *plus* a contaminating term that asks whether the enrolled and non-enrolled groups would have differed in fall risk even with no program." In the fall-prevention setting the bias term is almost surely large and *negative for the program's apparent benefit*: the patients who enroll are the **frailer** ones --- older, more comorbidities, a history of falls. Their $Y(0)$ (falls without the program) is high. Comparing them to robust non-enrollees makes the program look useless or even harmful, because the enrolled group would have fallen more *regardless*.
+
+Randomization sets the selection-bias term to zero by making $D$ independent of *everything*, observed and unobserved. We cannot randomize here. Selection on observables makes a weaker, conditional bet: that the bias disappears **once we hold the measured covariates fixed**.
+
+## The Conditional Independence Assumption
+
+Here is the central assumption of this entire module, stated carefully.
+
+::: {.glass-card .glass-card--assumption}
+**Conditional Independence Assumption (CIA), a.k.a. unconfoundedness or selection on observables.** Given a vector of observed covariates $X$, treatment assignment is independent of the potential outcomes:
+
+$$
+\big(Y_i(0),\, Y_i(1)\big) \;\perp\!\!\!\perp\; D_i \;\big|\; X_i.
+$$
+
+**Read this as**: "Among patients with the *same* covariate values $X$, who enrolls and who does not is unrelated to how they *would* fare under either treatment --- so within an $X$-cell, treatment is as good as randomly assigned." The symbol $\perp\!\!\!\perp$ means "is statistically independent of"; the vertical bar means "conditional on" or "within levels of."
+:::
+
+Unconditionally, $D$ is hopelessly entangled with the potential outcomes: frail patients both enroll more *and* fall more. CIA says all of that entanglement runs **through $X$**. Stratify on age, comorbidity, prior falls, and deprivation, and inside each stratum the leftover decision to enroll is unrelated to fall risk. It is as if a separate tiny randomized experiment ran within every covariate cell.
+
+CIA alone is not enough. We also need to be able to *find* comparable treated and control units in every cell. That is the second condition.
+
+::: {.glass-card .glass-card--assumption}
+**Overlap (a.k.a. positivity / common support).** Every covariate profile that occurs in the population has a strictly positive probability of being treated *and* of being untreated:
+
+$$
+0 < P(D_i = 1 \mid X_i = x) < 1 \quad\text{for all } x \text{ with positive density.}
+$$
+
+The quantity $e(x) \equiv P(D_i = 1\mid X_i = x)$ is the **propensity score** --- the probability of enrollment given covariates.
+
+**Read this as**: "For every kind of patient, there are *some* who enrolled and *some* who did not." If a profile is always treated (or never treated), there is no comparison group at that profile, and no amount of cleverness can fill in the missing counterfactual there."
+:::
+
+Together, CIA + overlap are called **strong ignorability** (Rosenbaum & Rubin, 1983). When they hold, adjustment works. When either fails, it does not.
+
+::: {.glass-card .glass-card--insight}
+**Why this is a fundamentally different kind of assumption.** IV, RD, and DiD all assume something about *structure* --- an exclusion restriction, continuity at a cutoff, parallel trends --- and crucially they remain valid *even if unobserved confounders exist*, because the design isolates a slice of variation that the confounders do not touch. Selection on observables makes no such claim. It asserts directly that **there are no unobserved confounders left** after conditioning on $X$. You are not borrowing randomness from anywhere; you are *betting that you measured everything that matters*. That is why this assumption is simultaneously the most widely used (it needs no special design) and the most criticized (it is the strongest and least testable).
+:::
+
+## CIA Is the Back-Door Criterion in Disguise
+
+This is not a new idea --- it is Module 2's **back-door criterion** wearing potential-outcomes clothing. Recall the language of directed acyclic graphs (DAGs). A *back-door path* from treatment $D$ to outcome $Y$ is any path that starts with an arrow *into* $D$; such paths carry spurious (confounding) association. The back-door criterion says: a set $X$ identifies the causal effect of $D$ on $Y$ if $X$ blocks every back-door path and contains no descendants of $D$ (no colliders or mediators opened up by conditioning).
+
+The bridge is exact:
+
+$$
+\big(Y(0), Y(1)\big) \perp\!\!\!\perp D \mid X
+\qquad\Longleftrightarrow\qquad
+X \text{ satisfies the back-door criterion relative to } (D, Y).
+$$
+
+**Read this as**: "Treatment is conditionally independent of potential outcomes given $X$" is *the same statement* as "$X$ blocks all back-door paths from $D$ to $Y$." The graphical condition and the independence condition are two languages for one fact.
+
+Consider the fall-prevention DAG. **Frailty** $U$ is a common cause: frailer patients both enroll more ($U \to D$) and fall more ($U \to Y$). That is a back-door path $D \leftarrow U \to Y$. If frailty were fully captured by our measured covariates $X = \{\text{age, comorbidity, prior falls, deprivation}\}$ --- if $U$ is a deterministic function of $X$ --- then conditioning on $X$ blocks the path and CIA holds. But if frailty has a component we *never measure* (say, an unrecorded gait-and-balance assessment, or a spouse at home who provides support), then a residual back-door path $D \leftarrow U_{\text{unobs}} \to Y$ stays open. Conditioning on $X$ does not close it. CIA fails, and adjustment leaves bias behind.
+
+The two panels below draw exactly this contrast. The treatment $D$ and outcome $Y$ sit on a green **causal** edge $D \to Y$ (the effect we want). Confounding rides the **back-door** edges through frailty. On the left, the measured covariate $X$ captures all of frailty, so conditioning on it (the boxed node) blocks the back-door --- only the green path survives. On the right, an unobserved slice $U$ remains: it can never be boxed, so a red back-door path $D \leftarrow U \to Y$ stays open no matter how carefully we adjust.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG component for this page (self-contained, page-tag prefixed). ──
+// Pure function of d3 only; builds an SVG with d3.create and returns the node.
+//   nodes:  [{id, x, y, label}]  with x,y normalized to [0,1] (padded so nothing clips).
+//   edges:  [{source, target, kind}]  kind ∈
+//             "causal"        → green (#2e6f40)  the wanted D→Y effect
+//             "backdoor-open" → red   (#b3000b)  an OPEN confounding path
+//             "blocked"       → grey  (#79766e, dashed) a path closed by adjustment
+//   conditioned: [id,...]  drawn as a rounded SQUARE (the "we adjusted for it" box).
+soo_drawDAG = function ({ nodes, edges, width = 360, height = 240, conditioned = [] }) {
+  const pad = 42;
+  const r = 23;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "backdoor-open" ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "soo-arrow-green" :
+    k === "backdoor-open" ? "soo-arrow-red" : "soo-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["soo-arrow-green", "#2e6f40"],
+    ["soo-arrow-red", "#b3000b"],
+    ["soo-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("opacity", e.opacity == null ? 1 : e.opacity)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Two side-by-side panels: back-door BLOCKED (X captures all frailty) vs OPEN
+// (an unobserved slice U remains). Static — one call per structure.
+html`<div style="display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; margin:0.5rem 0 0.25rem;">
+  <figure style="margin:0; flex:1 1 290px; max-width:360px; text-align:center;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; color:#2e6f40; font-weight:700; margin-bottom:0.2rem;">
+      Frailty fully observed — CIA holds
+    </figcaption>
+    ${soo_drawDAG({
+      width: Math.min(340, width),
+      height: 210,
+      conditioned: ["X"],
+      nodes: [
+        { id: "X", x: 0.50, y: 0.12, label: "X" },
+        { id: "D", x: 0.10, y: 0.82, label: "D" },
+        { id: "Y", x: 0.90, y: 0.82, label: "Y" }
+      ],
+      edges: [
+        { source: "D", target: "Y", kind: "causal" },
+        { source: "X", target: "D", kind: "blocked" },
+        { source: "X", target: "Y", kind: "blocked" }
+      ]
+    })}
+  </figure>
+  <figure style="margin:0; flex:1 1 290px; max-width:360px; text-align:center;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; color:#b3000b; font-weight:700; margin-bottom:0.2rem;">
+      Unobserved frailty remains — CIA fails
+    </figcaption>
+    ${soo_drawDAG({
+      width: Math.min(340, width),
+      height: 210,
+      conditioned: ["X"],
+      nodes: [
+        { id: "X", x: 0.27, y: 0.12, label: "X" },
+        { id: "U", x: 0.73, y: 0.12, label: "U" },
+        { id: "D", x: 0.10, y: 0.82, label: "D" },
+        { id: "Y", x: 0.90, y: 0.82, label: "Y" }
+      ],
+      edges: [
+        { source: "D", target: "Y", kind: "causal" },
+        { source: "X", target: "D", kind: "blocked" },
+        { source: "X", target: "Y", kind: "blocked" },
+        { source: "U", target: "D", kind: "backdoor-open" },
+        { source: "U", target: "Y", kind: "backdoor-open" }
+      ]
+    })}
+  </figure>
+</div>`
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = the causal effect $D \to Y$ we want to keep open; <span style="color:#b3000b; font-weight:700;">red</span> = an open back-door (confounding) path; <span style="color:#79766e; font-weight:700;">grey dashed</span> = a path blocked by adjustment. A **boxed** node ($X$) is one we conditioned on. The unobserved $U$ can never be boxed --- that is why its red back-door path stays open. ($D$ = enrollment, $Y$ = falls, $X$ = measured covariates, $U$ = unmeasured frailty.)
+:::
+
+::: {.glass-card .glass-card--warning}
+**The two ways to ruin a perfectly good covariate set.** The back-door view warns of two opposite errors. *Adjusting for too little*: leaving a genuine confounder out (the unobserved-frailty case) leaves a back-door path open --- omitted-variable bias. *Adjusting for too much*: conditioning on a **collider** (a common *effect* of $D$ and $Y$) or a **mediator** (a variable *on* the causal path $D \to M \to Y$) actively *creates* bias where none existed. "Control for everything you measured" is not a strategy --- it is a way to manufacture collider bias. Choose $X$ by drawing the DAG, not by dumping every column into a regression.
+:::
+
+## See It: Adjustment Works Only When the Confounder Is Observed
+
+Here is the keystone interactive. We simulate the fall-prevention study with a single confounder --- **frailty** --- that drives both enrollment and falls. You control how strongly frailty confounds, and how much of frailty is *captured by your measured covariate* versus hidden in an unobserved component. Then you watch four estimates of the program's true effect line up against each other:
+
+- the **naive** difference in means (no adjustment),
+- the **adjusted** estimate (regression on the *observed* part of frailty),
+- the **oracle** estimate (adjusting on the *full* confounder --- the luxury we never have), and
+- the **truth** (the effect baked into the simulation).
+
+The lesson is brutal and clean: adjustment removes *exactly the part of the confounding it can see*, and not one bit more. The gap between the adjusted estimate and the truth is the bias from the **unobserved** slice of frailty.
+
+::: {.interactive-container}
+
+#### How Much Bias Does Adjustment Remove?
+
+```{ojs}
+//| echo: false
+
+// ── "Start here" orientation prompt above the controls. ──
+html`<div style="
+    font-family: 'Inter', sans-serif; font-size: 0.86rem; color: #1c1c1a;
+    background: #f6f5f1; border-left: 3px solid #990000;
+    border-radius: 0.4rem; padding: 0.55rem 0.8rem; margin-bottom: 0.8rem; line-height: 1.5;">
+  <strong>Start here:</strong> watch how close each estimate lands to the dashed
+  <span style="color:#9c7a33; font-weight:700;">truth</span> line as you drag the sliders.
+  The full 6-step walkthrough is just below the charts.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof macia_confound = Inputs.range([0, 2.5], {
+  value: 1.6,
+  step: 0.05,
+  label: "Confounding strength (frailty → falls & → enrollment)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Helper note: what the confounding slider does physically. ──
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e;
+    margin:-0.4rem 0 0.6rem;">higher = frailty distorts the treated-vs-control comparison more strongly</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof macia_observed = Inputs.range([0, 1], {
+  value: 0.6,
+  step: 0.05,
+  label: "Fraction of frailty captured by measured X"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof macia_trueEffect = Inputs.range([-3, 0.5], {
+  value: -1.5,
+  step: 0.05,
+  label: "True program effect (τ, falls per patient)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof macia_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+// ── Helper note for the resample button. ──
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e;
+    margin:-0.4rem 0 0.6rem;">resamples 600 patients so you can tell sampling noise from structural bias</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Simulate the fall-prevention study. ──
+// One latent confounder: frailty F ~ N(0,1), standardized.
+// It splits into an OBSERVED part X (the measured covariate) and an
+// UNOBSERVED part U, with var(X) = observed-fraction of var(F):
+//     X = sqrt(p)   * F_x-component,   U = sqrt(1-p) * F_u-component
+// We build F itself from the two orthogonal pieces so that conditioning on
+// X removes exactly a fraction p of the confounding and leaves 1-p behind.
+//
+// Enrollment:  logit P(D=1) = a*F  (frailer -> more likely to enroll)
+// Outcome (falls): Y = mu + tau*D + g*F + noise
+//   so g (= confounding strength) is the path F -> Y, and `a` the path F -> D.
+// referencing macia_draw makes the button resample.
+macia_sim = {
+  macia_draw;                                   // resample trigger
+  const n   = 600;
+  const g   = macia_confound;                   // F -> Y strength
+  const a   = 1.1 * macia_confound;             // F -> D strength (scales together)
+  const p   = macia_observed;                   // fraction of F captured by X
+  const tau = macia_trueEffect;                 // true program effect
+  const mu  = 4.0;                              // baseline fall count (untreated, avg frailty)
+
+  const rnorm = d3.randomNormal(0, 1);
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    // Two orthogonal standard-normal pieces; F is their normalized sum so F~N(0,1).
+    const zx = rnorm();
+    const zu = rnorm();
+    const F  = Math.sqrt(p) * zx + Math.sqrt(1 - p) * zu;   // var(F) = 1
+    const X  = Math.sqrt(p) * zx;        // observed component (corr with F = sqrt(p))
+    const U  = Math.sqrt(1 - p) * zu;    // unobserved component
+
+    // Enrollment via logistic model: P(D=1 | F) = logistic(a * F).
+    const lp = a * F;
+    const pr = 1 / (1 + Math.exp(-lp));
+    const D  = Math.random() < pr ? 1 : 0;
+
+    const noise = d3.randomNormal(0, 1.1)();
+    const Y = mu + tau * D + g * F + noise;
+    rows.push({ i, F, X, U, D, Y, pr });
+  }
+  return { rows, g, a, p, tau, mu, n };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Estimators computed from the simulated sample. ──
+// Naive:    mean(Y|D=1) - mean(Y|D=0).
+// Adjusted: OLS of Y on D and the OBSERVED covariate X  -> coef on D.
+// Oracle:   OLS of Y on D and the FULL confounder F     -> coef on D (infeasible).
+macia_fit = {
+  const rows = macia_sim.rows;
+  const tr = rows.filter(r => r.D === 1);
+  const ct = rows.filter(r => r.D === 0);
+  const naive = d3.mean(tr, r => r.Y) - d3.mean(ct, r => r.Y);
+
+  // Tiny OLS for Y ~ 1 + D + Z (Z is the chosen adjustment covariate).
+  // Returns the coefficient on D via normal-equation solve (3x3).
+  const olsD = (Z) => {
+    // Design columns: [1, D, Z]; solve (X'X) b = X'y.
+    const n = rows.length;
+    let Sdd=0,Sdz=0,Szz=0,Sd=0,Sz=0,Syd=0,Syz=0,Sy=0;
+    for (const r of rows) {
+      const d=r.D, z=Z(r), y=r.Y;
+      Sd+=d; Sz+=z; Sy+=y;
+      Sdd+=d*d; Sdz+=d*z; Szz+=z*z;
+      Syd+=y*d; Syz+=y*z;
+    }
+    // Normal equations matrix A (3x3) for [b0,bD,bZ] and rhs c.
+    const A = [
+      [n,   Sd,  Sz ],
+      [Sd,  Sdd, Sdz],
+      [Sz,  Sdz, Szz]
+    ];
+    const c = [Sy, Syd, Syz];
+    // Gaussian elimination (3x3).
+    for (let col=0; col<3; col++) {
+      let piv = A[col][col];
+      for (let j=col; j<3; j++) A[col][j] /= piv;
+      c[col] /= piv;
+      for (let r2=0; r2<3; r2++) {
+        if (r2===col) continue;
+        const f = A[r2][col];
+        for (let j=col; j<3; j++) A[r2][j] -= f*A[col][j];
+        c[r2] -= f*c[col];
+      }
+    }
+    return c[1]; // coefficient on D
+  };
+
+  const adjusted = olsD(r => r.X);   // adjust on observed component only
+  const oracle   = olsD(r => r.F);   // adjust on the full (latent) confounder
+
+  return {
+    naive,
+    adjusted,
+    oracle,
+    truth: macia_sim.tau,
+    biasNaive:    naive    - macia_sim.tau,
+    biasAdjusted: adjusted - macia_sim.tau,
+    biasOracle:   oracle   - macia_sim.tau
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Estimate-vs-truth bar chart. ──
+// Four horizontal markers on a shared "falls per patient" axis; the dashed
+// black rule is the truth. Distance of each colored tick from the rule is bias.
+{
+  const f = macia_fit;
+  // Semantic palette: focal estimate (naive) = Uppsala red; comparison (adjusted) = slate;
+  // good/oracle = green; truth/highlight rule = ochre.
+  const rowsData = [
+    { name: "Naive",        value: f.naive,    fill: "#990000" },
+    { name: "Adjusted (X)", value: f.adjusted, fill: "#3d5a6c" },
+    { name: "Oracle (F)",   value: f.oracle,   fill: "#2e6f40" }
+  ];
+  const lo = Math.min(f.truth, ...rowsData.map(d => d.value)) - 0.6;
+  const hi = Math.max(f.truth, ...rowsData.map(d => d.value)) + 0.6;
+
+  return Plot.plot({
+    width: Math.min(660, width),
+    height: 210,
+    marginTop: 34,
+    marginLeft: 96,
+    marginRight: 28,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Estimated effect (falls per patient) →", domain: [lo, hi], grid: true },
+    y: { label: null, domain: rowsData.map(d => d.name) },
+    marks: [
+      Plot.ruleX([0], { stroke: "#e6e3db" }),
+      // Truth line + label anchored to the FRAME (not a data row) so it never clips.
+      Plot.ruleX([f.truth], { stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "5,4" }),
+      Plot.text([f.truth], {
+        x: d => d,
+        frameAnchor: "top",
+        dy: -18,
+        text: d => `truth = ${d.toFixed(2)}`,
+        fill: "#9c7a33", fontWeight: 700, fontSize: 11, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.barX(rowsData, {
+        x1: f.truth, x2: "value", y: "name",
+        fill: "fill", fillOpacity: 0.18, insetTop: 14, insetBottom: 14
+      }),
+      Plot.dot(rowsData, { x: "value", y: "name", fill: "fill", r: 7 }),
+      // Value labels to the RIGHT of each dot so near-equal estimates do not stack;
+      // ink-dark fill for readable contrast on white.
+      Plot.text(rowsData, {
+        x: "value", y: "name",
+        text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`,
+        dx: 12, textAnchor: "start", fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Color key + label glossary for the bar chart above. ──
+html`<div style="
+    font-family: 'Inter', sans-serif; font-size: 0.8rem; color: #79766e;
+    margin: -0.25rem 0 0.4rem; line-height: 1.5;">
+  <span style="color:#990000; font-weight:700;">■</span> Naive (no adjustment) &nbsp;
+  <span style="color:#3d5a6c; font-weight:700;">■</span> Adjusted (regression on observed X) &nbsp;
+  <span style="color:#2e6f40; font-weight:700;">■</span> Oracle (adjust on full frailty F) &nbsp;
+  <span style="color:#9c7a33; font-weight:700;">┄</span> truth.
+  Each tick's distance from the dashed line is its bias.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── Propensity-score overlap: the distribution of the true propensity by group. ──
+// `pr` is the TRUE propensity given the full confounder, P(D=1 | F), not the
+// estimable e(x) = P(D=1 | X). Shows whether treated and control share common
+// support; under heavy confounding the two histograms pull apart (poor overlap).
+{
+  const rows = macia_sim.rows;
+  return Plot.plot({
+    width: Math.min(660, width),
+    height: 210,
+    marginLeft: 60,
+    marginBottom: 42,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "True propensity P(D=1 | frailty)", domain: [0, 1], grid: true },
+    y: { label: "patients" },
+    // Distinct from the bar chart's estimator palette: treated = Uppsala red, control = slate.
+    color: { domain: ["Enrolled", "Not enrolled"], range: ["#990000", "#3d5a6c"], legend: true },
+    marks: [
+      Plot.rectY(rows.filter(r => r.D === 1),
+        Plot.binX({ y: "count" }, { x: "pr", fill: () => "Enrolled",     fillOpacity: 0.55, thresholds: 24 })),
+      Plot.rectY(rows.filter(r => r.D === 0),
+        Plot.binX({ y: "count" }, { x: "pr", fill: () => "Not enrolled", fillOpacity: 0.55, thresholds: 24 })),
+      Plot.ruleY([0])
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Caption clarifying what the histogram plots. ──
+html`<div style="
+    font-family: 'Inter', sans-serif; font-size: 0.8rem; color: #79766e;
+    margin: -0.25rem 0 0.2rem; line-height: 1.5;">
+  This is the <em>oracle</em> propensity P(D=1 | full frailty), not the estimable
+  e(x) = P(D=1 | observed X). When the two histograms pull apart, treated and control
+  stop sharing common support — that is deteriorating <strong>overlap</strong>.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── Plain-language verdict that updates with the controls. ──
+{
+  const f = macia_fit;
+  const p = macia_sim.p;
+  const removed = Math.abs(f.biasNaive) < 1e-6
+    ? 0
+    : (1 - Math.abs(f.biasAdjusted) / Math.abs(f.biasNaive)) * 100;
+  let color = p > 0.95 ? "#2e6f40" : (p < 0.4 ? "#b3000b" : "#9c7a33");
+  const msg = `Naive bias = ${f.biasNaive >= 0 ? "+" : ""}${f.biasNaive.toFixed(2)}. `
+    + `Adjusting on the measured covariate removes about ${removed.toFixed(0)}% of it, leaving a residual bias of `
+    + `${f.biasAdjusted >= 0 ? "+" : ""}${f.biasAdjusted.toFixed(2)} falls per patient. `
+    + (p > 0.97
+        ? "Frailty is essentially fully observed — CIA holds and the adjusted estimate lands on the truth."
+        : `The unobserved ${Math.round((1 - p) * 100)}% of frailty keeps a back-door path open, so adjustment cannot reach the truth.`);
+  return html`<div style="
+      margin-top: 0.75rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 0.5rem;
+      border-left: 3px solid ${color};
+      background: #f6f5f1;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Live mini-DAG wired to the SAME "fraction observed" slider as the lab. ──
+// Additive only: it reads macia_sim.p and recolors/fades the back-door edges.
+// It does NOT touch the simulation's DGP, controls, or estimators.
+// As p → 1, the observed covariate X captures all of frailty: its back-door is
+// blocked (grey) and the unobserved U (and its red back-door) fade to nothing.
+// As p → 0, X explains little: its edges fade out while U's red back-door
+// glows at full strength — the open confounding the adjusted estimate cannot reach.
+{
+  const p = macia_sim.p;
+  const xCaptured = Math.max(0.12, p);          // how visible X's (blocked) edges are
+  const uOpen = Math.max(0.08, 1 - p);          // how strong U's open back-door is
+  const node = soo_drawDAG({
+    width: Math.min(420, width),
+    height: 215,
+    conditioned: ["X"],
+    nodes: [
+      { id: "X", x: 0.27, y: 0.12, label: "X" },
+      { id: "U", x: 0.73, y: 0.12, label: "U" },
+      { id: "D", x: 0.10, y: 0.82, label: "D" },
+      { id: "Y", x: 0.90, y: 0.82, label: "Y" }
+    ],
+    edges: [
+      { source: "D", target: "Y", kind: "causal" },
+      { source: "X", target: "D", kind: "blocked", opacity: xCaptured },
+      { source: "X", target: "Y", kind: "blocked", opacity: xCaptured },
+      { source: "U", target: "D", kind: "backdoor-open", opacity: uOpen },
+      { source: "U", target: "Y", kind: "backdoor-open", opacity: uOpen }
+    ]
+  });
+  return html`<div style="display:flex; flex-direction:column; align-items:center; margin-top:0.85rem;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; color:#79766e; font-weight:700; margin-bottom:0.2rem;">
+      Causal structure as you adjust — ${Math.round(p * 100)}% of frailty observed
+    </div>
+    ${node}
+    <div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; margin-top:0.2rem; text-align:center; line-height:1.4;">
+      <span style="color:#2e6f40; font-weight:700;">━ causal D→Y</span> &nbsp;
+      <span style="color:#b3000b; font-weight:700;">━ open back-door via U</span> &nbsp;
+      <span style="color:#79766e; font-weight:700;">┄ blocked via X (boxed)</span>
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Adjustment Lab
+
+Work through the controls in order; each isolates one piece of the logic.
+
+**Step 1: Start with the textbook trap.** With the defaults (confounding $\approx 1.6$, $60\%$ of frailty observed), read the top chart. The red **Naive** tick sits far to the right of the dashed truth line: because frailer patients both enroll and fall more, the unadjusted comparison badly understates the benefit --- it may even show the program *increasing* falls. The red bar is the raw selection bias.
+
+**Step 2: Turn the confounder fully observable.** Drag **Fraction of frailty captured by measured X** all the way to $1$. Now your covariate *is* the entire confounder. The slate **Adjusted** tick snaps onto the dashed truth line, and the green **Oracle** sits right on top of it --- adjusting on $X$ and adjusting on the full frailty become the same thing. This is CIA holding exactly: with every back-door path blocked, regression recovers the true effect.
+
+**Step 3: Hide part of the confounder.** Now drag the fraction back down toward $0$. Watch the slate **Adjusted** tick peel away from the truth and drift back toward the naive estimate. The green **Oracle** tick stays glued to the truth --- because the oracle gets to condition on frailty in full --- but the oracle is a fantasy. The gap between slate (what you can do) and green (what you wish you could do) is precisely the bias from the **unobserved** slice. The verdict line reports what percent of the bias your adjustment actually removed.
+
+**Step 4: Crank up the confounding.** Slide **Confounding strength** toward its maximum. Two things happen at once. The naive bias balloons (the red tick races away from the truth), and in the lower chart the two propensity histograms pull *apart* --- enrolled patients cluster at a high probability of enrollment, non-enrolled at a low one. That separation is **deteriorating overlap**: at the extremes there are few comparison units, so even correct adjustment leans on extrapolation. Strong confounding hurts you twice --- bigger bias to remove, thinner common support to remove it with.
+
+**Step 5: Resample to see it is not luck.** Click **Draw new sample** a few times. The ticks jiggle (sampling noise) but the *pattern* is stable: Oracle hugs the truth, Adjusted is offset by the unobserved share, Naive is worst. The bias is structural, not a fluke of one dataset.
+
+**Step 6: Change the truth.** Move **True program effect** to a strong benefit (e.g. $-2.5$) and confirm every estimator shifts with it while the *biases* (gaps from truth) stay put. The confounding contaminates the estimate by a fixed amount regardless of how effective the program truly is --- bias and effect size are separate dials.
+
+**Watch the structure, not just the numbers.** The little DAG at the bottom of the lab redraws as you move the **fraction observed** slider. At $100\%$ the unobserved node $U$ and its red back-door fade to nothing --- only the green causal edge $D \to Y$ and the blocked (grey) path through the boxed $X$ remain, so adjustment is clean. As you slide toward $0\%$, $X$'s blocked edges dim and $U$'s **red** back-door $D \leftarrow U \to Y$ glows back to full strength: that re-opened path is the bias the slate Adjusted tick cannot remove. The picture and the bar chart tell the same story in two languages --- structure and magnitude.
+
+## Identification: Why Adjustment Recovers the ATE
+
+Strong ignorability is exactly the lever that turns an observable conditional comparison into a causal effect. Here is the argument in three short moves.
+
+Within a covariate cell $X = x$, CIA says $D$ is independent of the potential outcomes. So the average outcome among the *treated* at $x$ equals the average treated-potential-outcome for *everyone* at $x$:
+
+$$
+E[Y \mid D = 1, X = x] = E[Y(1)\mid D = 1, X = x] = E[Y(1)\mid X = x],
+$$
+
+and symmetrically $E[Y\mid D=0, X=x] = E[Y(0)\mid X=x]$. **Read this as**: "Inside a cell of look-alike patients, the enrolled ones are a fair stand-in for what *all* patients in that cell would do under the program, because within the cell enrollment is unrelated to potential falls." The first equality uses the switching equation; the second uses CIA to drop the conditioning on $D$.
+
+Subtract them to get the **conditional average treatment effect** (CATE) at $x$ --- a quantity built entirely from observable conditional means:
+
+$$
+\tau(x) \;\equiv\; E[Y\mid D{=}1, X{=}x] - E[Y\mid D{=}0, X{=}x] \;=\; E[Y(1) - Y(0)\mid X = x].
+$$
+
+Finally, average $\tau(x)$ over the covariate distribution to get the ATE (or over the treated's covariate distribution to get the ATT). This is the **adjustment formula** (also called the back-door adjustment or g-formula):
+
+::: {.glass-card .glass-card--definition}
+Under CIA and overlap, the average treatment effect is identified as
+
+$$
+\text{ATE} \;=\; E_X\!\Big[\,E[Y\mid D{=}1, X] - E[Y\mid D{=}0, X]\,\Big],
+$$
+
+and the average treatment effect on the treated as
+
+$$
+\text{ATT} \;=\; E_{X\mid D=1}\!\Big[\,E[Y\mid D{=}1, X] - E[Y\mid D{=}0, X]\,\Big].
+$$
+
+**Read the ATE formula as**: "Inside each covariate cell, take the treated-minus-control difference in observed means; then average those cell-level differences across the whole population's mix of covariates." The ATT uses the same cell-level differences but weights by the *treated* population's covariate mix --- the right weighting when you only care about the patients who actually enrolled. (The subscript on $E$ names the averaging weights: $E_X[\,g(X)\,]$ means "average $g(X)$ over the *whole population's* distribution of $X$," while $E_{X\mid D=1}[\,\cdot\,]$ averages over the *treated subgroup's* distribution of $X$ --- same cell effects, different mix.)
+:::
+
+The two estimands differ *only* in how they weight the same per-cell effects $\tau(x)$. The figure below makes that visible: identical cell effects, but the ATE bars are sized by the population's covariate mix (here half robust, half frail) while the ATT bars are sized by the *treated* mix (mostly frail). Because the program happens to help frail patients more, the treated-weighted ATT comes out slightly larger than the population ATE.
+
+```{ojs}
+//| echo: false
+
+// ── Static ATE-vs-ATT weighting figure. ──
+// Same per-cell CATEs τ(x); ATE weights by the POPULATION covariate mix,
+// ATT by the TREATED mix. Each of the four rows is its own y-category (so no
+// fragile within-band stacking); the bar LENGTH is τ(x) and the WEIGHT is shown
+// as text + a proportional weight strip, making E_X[...] vs E_{X|D=1}[...]
+// concrete. Uses the Exercise-1 numbers (robust τ=-0.4, frail τ=-0.6).
+{
+  const ROBUST = "#9c7a33", FRAIL = "#3d5a6c";
+  const data = [
+    { row: "ATE · Frail",  group: "ATE", cell: "Frail",  tau: -0.6, w: 0.50, fill: FRAIL  },
+    { row: "ATE · Robust", group: "ATE", cell: "Robust", tau: -0.4, w: 0.50, fill: ROBUST },
+    { row: "ATT · Frail",  group: "ATT", cell: "Frail",  tau: -0.6, w: 0.75, fill: FRAIL  },
+    { row: "ATT · Robust", group: "ATT", cell: "Robust", tau: -0.4, w: 0.25, fill: ROBUST }
+  ];
+  const ate = 0.50 * -0.4 + 0.50 * -0.6;   // -0.50
+  const att = 0.25 * -0.4 + 0.75 * -0.6;   // -0.55
+  const order = ["ATT · Robust", "ATT · Frail", "ATE · Robust", "ATE · Frail"];
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 270,
+    marginLeft: 96,
+    marginRight: 90,
+    marginBottom: 46,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Per-cell effect τ(x) (falls per patient) →", domain: [-0.7, 0.05], grid: true },
+    y: { label: null, domain: order },
+    marks: [
+      Plot.ruleX([0], { stroke: "#79766e" }),
+      Plot.barX(data, {
+        x: "tau", y: "row", fill: "fill", fillOpacity: 0.85,
+        insetTop: 6, insetBottom: 6
+      }),
+      // τ(x) value at the bar tip.
+      Plot.text(data, {
+        x: "tau", y: "row", dx: -6, textAnchor: "end",
+        text: d => d.tau.toFixed(1),
+        fill: "white", fontSize: 11, fontWeight: 700
+      }),
+      // Weight label pinned to the right edge of the frame.
+      Plot.text(data, {
+        y: "row", frameAnchor: "right", dx: 84, textAnchor: "end",
+        text: d => `weight ${d.w.toFixed(2)}`,
+        fill: "#1c1c1a", fontSize: 10.5, fontWeight: 600
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Weighted-average readout for the figure above. ──
+html`<div style="
+    font-family:'Inter',sans-serif; font-size:0.82rem; color:#1c1c1a;
+    background:#f6f5f1; border-left:3px solid #990000; border-radius:0 0.35rem 0.35rem 0;
+    padding:0.5rem 0.8rem; margin:-0.2rem 0 0.4rem; line-height:1.5;">
+  Averaging the cell effects with each set of weights:
+  <strong>ATE</strong> = 0.50(−0.4) + 0.50(−0.6) = <strong>−0.50</strong>;
+  <strong>ATT</strong> = 0.25(−0.4) + 0.75(−0.6) = <strong>−0.55</strong>.
+  Same τ(x), different mix → a different number.
+</div>`
+```
+
+::: {.aside}
+Same per-cell effects $\tau(\text{robust}) = -0.4$ (<span style="color:#9c7a33; font-weight:700;">ochre</span>), $\tau(\text{frail}) = -0.6$ (<span style="color:#3d5a6c; font-weight:700;">slate</span>) --- the Exercise 1 numbers. **ATE** weights both cells equally (the 50/50 population mix); **ATT** up-weights the frail cell (the 25/75 treated mix). Because the program helps frail patients slightly more, the treated-weighted ATT ($-0.55$) is a touch larger than the population ATE ($-0.50$). The estimand you report is a *choice of weights*, not a different measurement.
+:::
+
+Everything on the right-hand side is estimable from data: conditional means $E[Y\mid D, X]$ and the covariate distribution. Overlap is what guarantees both conditional means *exist* at every $x$ --- without treated units at some $x$, $E[Y\mid D{=}1, X{=}x]$ is undefined and the cell contributes nothing but extrapolation. This single formula is the engine behind every estimator in this module: regression adjustment models $E[Y\mid D, X]$ directly; matching estimates $\tau(x)$ by pairing like with like; inverse-propensity weighting reweights to balance $X$. They are different roads to the same identified estimand.
+
+<details>
+<summary>Math Details: The bias of regression adjustment when a confounder is omitted</summary>
+<div class="details-content">
+
+### Setup
+
+Suppose the true outcome model is linear in treatment $D$ and a confounder $F$ (here, frailty):
+
+$$
+Y = \mu + \tau D + \gamma F + \varepsilon, \qquad E[\varepsilon \mid D, F] = 0,
+$$
+
+and the confounder shifts enrollment, so $F$ and $D$ are correlated. Decompose frailty into an observed part $X$ and an unobserved part $U$, taken orthogonal for clarity:
+
+$$
+F = X + U, \qquad \operatorname{Cov}(X, U) = 0.
+$$
+
+This is the *same* object the lab and the R/Python code build, just written without the square-roots. There, $X = \sqrt{p}\,z_x$ and $U = \sqrt{1-p}\,z_u$ with $z_x, z_u$ independent standard normals, so $F = X + U$ exactly, $\operatorname{Cov}(X,U) = 0$, and $\operatorname{Var}(X) = p \cdot \operatorname{Var}(F)$. In words: **$p$ is the fraction of frailty *variance* that the measured covariate captures** --- the single number the "fraction observed" slider controls. (*Variance* here is the spread of frailty across patients; capturing a fraction $p$ of it means $X$ explains that share of why patients differ in frailty.)
+
+### Adjusting on the full confounder (the oracle)
+
+Regressing $Y$ on $D$ and $F$ gives an unbiased estimate of $\tau$, because conditional on $F$ the error is mean-independent of $D$ --- this is CIA holding with $X = F$. The **probability limit** of the OLS coefficient on $D$ is exactly $\tau$. (The probability limit, written $\xrightarrow{p}$ or "plim", is the value an estimate converges to as the sample grows without bound --- the large-sample target, stripped of sampling noise; "unbiased in the limit" is the relevant sense here.)
+
+### Adjusting on the observed part only
+
+Now regress $Y$ on $D$ and $X$, omitting $U$. The omitted term $\gamma U$ is absorbed into the error, so the *effective* error is $\gamma U + \varepsilon$. By the omitted-variable-bias formula, the probability limit of the coefficient on $D$ is
+
+$$
+\widehat{\tau}_{\text{adj}} \;\xrightarrow{p}\; \tau \;+\; \gamma \cdot \underbrace{\delta_{D}}_{\text{partial slope of } U \text{ on } D \text{ given } X},
+$$
+
+where $\delta_D$ is the coefficient on $D$ in the auxiliary regression of $U$ on $\{D, X\}$. **Read this as**: "the adjusted estimate equals the truth plus a bias that is the product of two paths: how strongly the omitted frailty drives falls ($\gamma$) times how strongly it still predicts enrollment after we control for the observed covariate ($\delta_D$)." Here $\delta_D$ is a **linear partial regression coefficient** (a least-squares projection slope, not a log-odds): the omitted-variable-bias formula is the linear approximation that matches the OLS adjustment the lab and code actually run. Enrollment is generated by a logistic model, so $\delta_D$ is the best *linear* summary of how $U$ still tracks $D$ given $X$ --- exact for the OLS estimator, approximate as a description of the underlying logistic mechanism.
+
+### The two ways the bias vanishes
+
+The bias term $\gamma\,\delta_D$ is zero in exactly two cases:
+
+1. **$\gamma = 0$**: the omitted part does not affect the outcome --- then $U$ is not a confounder at all, just noise.
+2. **$\delta_D = 0$**: after conditioning on $X$, the omitted part $U$ no longer predicts treatment --- which is precisely **CIA**, $(Y(0),Y(1)) \perp D \mid X$. In the simulation this happens as the observed fraction $p \to 1$, because then $U \to 0$ and there is nothing left to confound.
+
+### Connecting to the lab
+
+In the interactive, raising "fraction of frailty captured by $X$" shrinks $\operatorname{Var}(U)$ toward zero, which drives $\delta_D \to 0$ and collapses the bias --- the slate Adjusted tick walks onto the truth. Lowering it inflates $\operatorname{Var}(U)$, so the residual back-door path $D \leftarrow U \to Y$ reasserts itself and the bias $\gamma\,\delta_D$ grows. The Oracle, which conditions on the full $F$, sets $\delta_D = 0$ by construction and is always unbiased --- but it requires measuring what we cannot.
+
+</div>
+</details>
+
+## Estimating the Effect by Adjustment
+
+The code below simulates the fall-prevention study, then estimates the program effect three ways: the naive difference, regression adjusting on the *observed* covariate, and the infeasible oracle adjusting on full frailty. As in the lab, the gap between the adjusted and oracle estimates is the price of unobserved confounding. (Matching and weighting estimators that target the same adjustment formula are the subject of the next page.)
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(MatchIt)   # for propensity-score tools used on the next page
+
+set.seed(2021)
+n <- 4000
+
+# One latent confounder, frailty F ~ N(0,1), split into observed X and
+# unobserved U so that var(X) = p * var(F). p = fraction observed.
+p   <- 0.60
+zx  <- rnorm(n); zu <- rnorm(n)
+F   <- sqrt(p) * zx + sqrt(1 - p) * zu     # full frailty,  var = 1
+X   <- sqrt(p) * zx                         # observed component
+# (U = sqrt(1 - p) * zu is the unobserved component, never used in fitting)
+
+g   <- 1.6                                  # confounding strength: F -> falls
+a   <- 1.1 * g                              # F -> enrollment
+tau <- -1.5                                 # TRUE program effect (fewer falls)
+
+pr  <- plogis(a * F)                        # propensity to enroll
+D   <- rbinom(n, 1, pr)
+Y   <- 4.0 + tau * D + g * F + rnorm(n, 0, 1.1)   # falls per patient
+
+dat <- tibble(Y, D, X, F)
+
+# 1) Naive difference in means
+naive <- mean(Y[D == 1]) - mean(Y[D == 0])
+
+# 2) Regression adjustment on the OBSERVED covariate (feasible)
+adj   <- coef(lm(Y ~ D + X, data = dat))["D"]
+
+# 3) Oracle: adjust on the FULL confounder (infeasible in real life)
+oracle <- coef(lm(Y ~ D + F, data = dat))["D"]
+
+cat(sprintf("Truth   : %+.3f\n", tau))
+cat(sprintf("Naive   : %+.3f  (bias %+.3f)\n", naive,  naive  - tau))
+cat(sprintf("Adjusted: %+.3f  (bias %+.3f)\n", adj,    adj    - tau))
+cat(sprintf("Oracle  : %+.3f  (bias %+.3f)\n", oracle, oracle - tau))
+
+# Check overlap: propensity-score range within each group
+dat |>
+  mutate(ehat = predict(glm(D ~ X, family = binomial), type = "response")) |>
+  group_by(D) |>
+  summarise(min_e = min(ehat), max_e = max(ehat))
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(2021)
+n = 4000
+
+# One latent confounder, frailty F ~ N(0,1), split into observed X / unobserved U
+# so that var(X) = p * var(F).  p = fraction observed.
+p  = 0.60
+zx = rng.normal(size=n); zu = rng.normal(size=n)
+F  = np.sqrt(p) * zx + np.sqrt(1 - p) * zu     # full frailty,  var = 1
+X  = np.sqrt(p) * zx                            # observed component
+
+g   = 1.6                                       # confounding strength: F -> falls
+a   = 1.1 * g                                   # F -> enrollment
+tau = -1.5                                      # TRUE program effect
+
+pr = 1 / (1 + np.exp(-a * F))                   # propensity to enroll
+D  = rng.binomial(1, pr)
+Y  = 4.0 + tau * D + g * F + rng.normal(0, 1.1, n)   # falls per patient
+
+dat = pd.DataFrame({"Y": Y, "D": D, "X": X, "F": F})
+
+# 1) Naive difference in means
+naive = Y[D == 1].mean() - Y[D == 0].mean()
+
+# 2) Regression adjustment on the OBSERVED covariate (feasible)
+adj = smf.ols("Y ~ D + X", data=dat).fit().params["D"]
+
+# 3) Oracle: adjust on the FULL confounder (infeasible in real life)
+oracle = smf.ols("Y ~ D + F", data=dat).fit().params["D"]
+
+print(f"Truth   : {tau:+.3f}")
+print(f"Naive   : {naive:+.3f}  (bias {naive  - tau:+.3f})")
+print(f"Adjusted: {adj:+.3f}  (bias {adj    - tau:+.3f})")
+print(f"Oracle  : {oracle:+.3f}  (bias {oracle - tau:+.3f})")
+
+# Check overlap: fitted propensity-score range within each group
+ehat = smf.logit("D ~ X", data=dat).fit(disp=0).predict()
+dat["ehat"] = ehat
+print(dat.groupby("D")["ehat"].agg(["min", "max"]))
+```
+
+:::
+
+Both scripts return a naive estimate badly contaminated by frailty, an adjusted estimate that removes part --- but not all --- of the bias (about half at the default 60% observed fraction), and an oracle that lands on the truth. The residual in the adjusted estimate is the empirical signature of the unmeasured confounding that CIA assumes away.
+
+## When Selection on Observables Is Credible --- and When It Is Not
+
+CIA is an assumption about the world, defended by argument, not proven by data. A few rules of thumb separate the defensible applications from the wishful ones.
+
+::: {.glass-card .glass-card--insight}
+**It is more credible when** (i) you measure the *actual* variables decision-makers used to select into treatment --- here, if enrollment is driven by a documented frailty assessment that you observe, you are in good shape; (ii) treatment is assigned by a transparent rule on recorded characteristics (administrative allocation, clinical guidelines); and (iii) rich, pre-treatment covariates are available. **It is less credible when** selection runs on private information --- motivation, an attentive family, an undocumented clinical gestalt --- that never enters the registry. The fall-prevention program is borderline: much of frailty is recorded, but a patient's *willingness to do daily exercises* is not, and it plausibly affects both enrollment and falls.
+:::
+
+Because the assumption is untestable, honest practice pairs the estimate with a **sensitivity analysis**: how strong would an unobserved confounder have to be --- in its effect on both enrollment and falls --- to overturn the conclusion? Rosenbaum bounds and the $E$-value formalize exactly this question, and they are the principled way to report a selection-on-observables result without overclaiming. In the lab, the "unobserved fraction" slider *is* a sensitivity analysis: it shows how the conclusion moves as the share of hidden confounding grows.
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- **Selection on observables = CIA + overlap.** CIA: $(Y(0),Y(1)) \perp D \mid X$ --- within covariate cells, treatment is as-good-as-random. Overlap: $0 < e(x) < 1$ --- every profile has both treated and control units to compare.
+- **CIA is the back-door criterion restated.** Conditioning on $X$ identifies the effect iff $X$ blocks every back-door path from $D$ to $Y$ --- and adjusting for colliders or mediators can *create* bias.
+- **The price is no unobserved confounding.** Unlike IV / RD / DiD, this design assumes you measured everything that drives both treatment and outcome; it borrows randomness from nowhere.
+- **Adjustment removes only the confounding it can see.** Regression, matching, and weighting all target $\text{ATE} = E_X[\,E[Y\mid D{=}1,X] - E[Y\mid D{=}0,X]\,]$; residual bias equals the part of the confounder left in $U$.
+- **Defend it, then stress-test it.** Argue that selection runs on observed variables, verify overlap, and report a sensitivity analysis for the unobserved remainder.
+:::
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Consider the fall-prevention study with a single binary covariate $X \in \{\text{robust}, \text{frail}\}$. The table gives the average number of fall-related visits per patient, by covariate cell and enrollment status, along with the cell sizes:
+
+| Cell | $\bar{Y}$ if enrolled ($D{=}1$) | $\bar{Y}$ if not ($D{=}0$) | # enrolled | # not enrolled |
+|:---|:---:|:---:|:---:|:---:|
+| Robust | 1.0 | 1.4 | 100 | 300 |
+| Frail  | 3.0 | 3.6 | 300 | 100 |
+
+(a) Compute the within-cell (conditional) effects $\tau(\text{robust})$ and $\tau(\text{frail})$. (b) Compute the **ATE** by averaging the cell effects over the population covariate mix. (c) Compute the **naive** difference in means (ignoring $X$). (d) Explain why the naive estimate has the wrong sign relative to the truth.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\tau(\text{robust}) = 1.0 - 1.4 = -0.4$ visits; $\tau(\text{frail}) = 3.0 - 3.6 = -0.6$ visits. The program helps in both cells.
+
+**(b)** Population shares: robust $= (100+300)/800 = 0.5$, frail $= (300+100)/800 = 0.5$. So
+$$\text{ATE} = 0.5\times(-0.4) + 0.5\times(-0.6) = -0.50 \text{ visits per patient.}$$
+
+**(c)** Naive enrolled mean: $(100\times 1.0 + 300\times 3.0)/400 = (100 + 900)/400 = 2.50$. Naive non-enrolled mean: $(300\times 1.4 + 100\times 3.6)/400 = (420 + 360)/400 = 1.95$. Naive difference $= 2.50 - 1.95 = +0.55$ visits.
+
+**(d)** The naive estimate is **positive** (+0.55) --- it suggests the program *increases* falls --- even though it lowers falls in every cell. The reason is composition: the enrolled group is $75\%$ frail while the non-enrolled group is only $25\%$ frail. Frail patients fall far more *regardless* of the program, so the enrolled group's high average reflects *who enrolled*, not *what the program did*. Conditioning on $X$ (computing the effect within each frailty cell, then averaging) removes this selection bias and recovers the true $-0.50$. This is **Simpson's paradox** --- the within-cell sign reverses in the pooled comparison.
+
+The picture makes the reversal unmistakable: each **within-cell** line slopes *downhill* from "not enrolled" to "enrolled" (the program lowers falls in both the robust and the frail group), yet the **pooled** dashed line slopes *uphill* --- because the enrolled column is packed with frail patients, dragging its average up.
+
+```{ojs}
+//| echo: false
+
+// ── Simpson's-paradox figure for Exercise 1. ──
+// x: enrollment status (Not enrolled → Enrolled). y: mean fall-related visits.
+// Two WITHIN-cell lines (robust, frail) both go DOWN when enrolled (program helps);
+// the POOLED line goes UP because the enrolled column is mostly frail.
+{
+  const within = [
+    { cell: "Frail",  status: "Not enrolled", x: 0, y: 3.6 },
+    { cell: "Frail",  status: "Enrolled",     x: 1, y: 3.0 },
+    { cell: "Robust", status: "Not enrolled", x: 0, y: 1.4 },
+    { cell: "Robust", status: "Enrolled",     x: 1, y: 1.0 }
+  ];
+  const pooled = [
+    { status: "Not enrolled", x: 0, y: 1.95 },
+    { status: "Enrolled",     x: 1, y: 2.50 }
+  ];
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 300,
+    marginLeft: 60,
+    marginRight: 86,
+    marginBottom: 46,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: {
+      label: null, domain: [0, 1],
+      ticks: [0, 1], tickFormat: d => d === 0 ? "Not enrolled" : "Enrolled",
+      grid: true, inset: 36
+    },
+    y: { label: "↑ Mean fall-related visits", domain: [0.6, 3.9], grid: true },
+    marks: [
+      // Within-cell lines (downhill = program helps).
+      Plot.line(within, { x: "x", y: "y", z: "cell", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+      Plot.dot(within, { x: "x", y: "y", fill: "#3d5a6c", r: 4 }),
+      // Pooled line (uphill = naive trap), dashed red.
+      Plot.line(pooled, { x: "x", y: "y", stroke: "#990000", strokeWidth: 2.5, strokeDasharray: "5,4" }),
+      Plot.dot(pooled, { x: "x", y: "y", fill: "#990000", r: 5 }),
+      // Right-edge labels.
+      Plot.text(
+        [{ x: 1, y: 3.0, t: "Frail (within): −0.6" },
+         { x: 1, y: 1.0, t: "Robust (within): −0.4" },
+         { x: 1, y: 2.50, t: "Pooled (naive): +0.55" }],
+        { x: "x", y: "y", text: "t", dx: 9, textAnchor: "start",
+          fill: d => d.t.startsWith("Pooled") ? "#990000" : "#3d5a6c",
+          fontSize: 10.5, fontWeight: 700,
+          stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+      )
+    ]
+  });
+}
+```
+
+::: {.aside}
+<span style="color:#3d5a6c; font-weight:700;">Slate</span> = the two within-cell trajectories (robust and frail); both slope **downhill** when patients enroll, so the program lowers falls in every cell. <span style="color:#990000; font-weight:700;">Red dashed</span> = the pooled enrolled-vs-not comparison, which slopes **uphill** because the enrolled column is $75\%$ frail. The sign flip between the within-cell lines and the pooled line *is* Simpson's paradox.
+:::
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+For each scenario, state whether conditioning on the listed variable helps satisfy CIA, threatens it, or is irrelevant, and name the graphical concept involved (confounder, mediator, collider).
+
+(a) A diabetes coordination program: you adjust for patients' **baseline HbA1c**, which influences both who enrolls and later HbA1c.
+(b) The fall-prevention program: you adjust for **muscle strength measured 6 months *after* enrollment**, which the program improves and which reduces falls.
+(c) A program where you adjust for **whether the patient was later hospitalized**, an outcome jointly affected by enrollment and by falls.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Helps --- baseline HbA1c is a confounder.** It is a pre-treatment common cause of enrollment and outcome ($D \leftarrow \text{HbA1c}_0 \to Y$). Adjusting for it blocks a back-door path and moves you *toward* CIA. This is the textbook case for adjustment.
+
+**(b) Threatens --- post-treatment muscle strength is a mediator.** It lies *on* the causal path $D \to \text{strength} \to Y$. Conditioning on it removes part of the program's own effect (you "control away" the mechanism), biasing the total effect toward zero. Never adjust for post-treatment variables that the treatment causes.
+
+**(c) Threatens --- later hospitalization is a collider.** It is a common *effect* of both enrollment and falls ($D \to \text{hosp} \leftarrow Y$). Conditioning on a collider opens a non-causal path between $D$ and $Y$, *creating* spurious association where adjustment should not occur. This is **collider (selection) bias**.
+
+Only (a) belongs in the adjustment set. Cases (b) and (c) illustrate that "control for more variables" is not a safe default --- the DAG decides.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the Math Details, the bias of the feasibly-adjusted estimator is $\gamma\,\delta_D$, where $\gamma$ is the effect of omitted frailty $U$ on falls and $\delta_D$ is the partial association of $U$ with enrollment given the observed $X$. Suppose $\gamma = 1.6$ (one extra unit of frailty raises falls by 1.6) and, after adjusting for $X$, the residual frailty still raises the log-odds of enrollment enough that its partial slope on $D$ is $\delta_D = 0.25$. (a) What is the approximate bias of the adjusted estimate? (b) If the true effect is $\tau = -1.5$, what does the adjusted estimate converge to? (c) What single change to the study design would drive the bias to zero, and which slider in the lab represents it?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Bias $\approx \gamma \cdot \delta_D = 1.6 \times 0.25 = +0.40$ falls per patient.
+
+**(b)** $\widehat{\tau}_{\text{adj}} \to \tau + \text{bias} = -1.5 + 0.40 = -1.10$. The adjusted estimate understates the benefit: it reports a reduction of 1.1 falls when the truth is 1.5. The program looks weaker than it is, because the residual frailty still concentrates among enrollees and inflates their fall count.
+
+**(c)** Measure frailty completely --- i.e., fold the unobserved part $U$ into the observed covariate set so that nothing confounding is left in the error. Then $\operatorname{Var}(U) \to 0$, the residual partial slope $\delta_D \to 0$, and the bias $\gamma\,\delta_D \to 0$. In the lab this is the **"Fraction of frailty captured by measured X"** slider pushed to $1$. Equivalently, this is the condition $(Y(0),Y(1)) \perp D \mid X$ --- CIA --- being satisfied.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A colleague argues: "Selection on observables is just like difference-in-differences --- both adjust for confounders, so they are equally credible." (a) Explain the key difference in *what each design assumes about unobserved confounders*. (b) Give a concrete situation in the fall-prevention setting where DiD would succeed but selection on observables would fail. (c) Explain why overlap is a concern for selection on observables but is not the binding constraint for DiD.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Selection on observables assumes there are **no unobserved confounders** after conditioning on $X$ --- every common cause of treatment and outcome must be measured. DiD makes a different bet: it allows **time-invariant** unobserved confounders (any fixed difference between groups, observed or not, is differenced out), and instead assumes **parallel trends** --- that the groups' untreated outcomes would have moved together. DiD trades the "measure everything" assumption for an assumption about *trends*; it can handle unobserved confounders as long as they are fixed over time.
+
+**(b)** Suppose enrollment is driven by an *unrecorded* baseline frailty that we never measure, but it is stable over time and we have pre-period fall data for both enrollees and non-enrollees. Selection on observables fails --- the unobserved frailty keeps a back-door path open, so adjustment is biased (exactly the lab's residual-bias case). But DiD succeeds: the fixed frailty difference cancels in the before-minus-after differencing, and if the two groups' fall trends were parallel absent the program, DiD recovers the ATT despite never measuring frailty.
+
+**(c)** Selection on observables needs **overlap** because it compares treated and control units *within* covariate cells; a covariate profile that is always (or never) treated has no comparison group, and the conditional mean $E[Y\mid D, X]$ is undefined there. DiD compares *group-by-period means* and identifies the effect from the difference in trends, so it does not require treated and control units to share a covariate profile --- the treated group can be permanently sicker. Overlap is the binding constraint when identification rests on cell-by-cell comparison (matching/weighting/regression on $X$), not when it rests on a parallel-trends comparison group.
+
+</div>
+</details>
+:::
+
+## What Comes Next
+
+We now have the assumption that makes adjustment legitimate --- conditional independence plus overlap --- and the identification formula it unlocks, $\text{ATE} = E_X[\,E[Y\mid D{=}1,X] - E[Y\mid D{=}0,X]\,]$. What we do *not* yet have is a good way to *estimate* it when $X$ is high-dimensional: stratifying into cells breaks down with many covariates, and pure regression leans heavily on functional-form assumptions. The next page, [Matching Methods](matching-methods.qmd), turns the adjustment formula into practical estimators --- nearest-neighbor and propensity-score matching, and inverse-propensity weighting --- that rebalance the treated and control groups so that, cell by cell, like is finally compared with like.

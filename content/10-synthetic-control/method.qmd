@@ -1,0 +1,988 @@
+---
+title: "The Synthetic Control Method"
+subtitle: "Building a counterfactual from a weighted donor pool"
+---
+
+## One Region Reforms, the Others Do Not
+
+In 2016, a single one of Sweden's 21 *regioner* --- call it **Region Norrvik** --- launched an ambitious overhaul of how its *vårdcentraler* (primary care centers) manage Type 2 diabetes. Every center got a dedicated *distriktssköterska* (district nurse) acting as a diabetes coordinator, a shared electronic dashboard flagging patients whose blood sugar was drifting, and a standing budget for group education. No other region adopted the package. The question for *Socialstyrelsen* (the National Board of Health and Welfare) is the familiar one: did the reform lower the average HbA1c of Norrvik's diabetes patients?
+
+This looks like a job for [difference-in-differences](../06-did/classic-2x2.qmd). But DiD needs a *credible* comparison group whose untreated trend matches the treated unit's. With only **one** treated region, that is hard. Which of the other 20 regions is the right control? Stockholm is huge and urban; Norrbotten is sparse and rural; Skåne has a different demographic mix. No single region looks like Norrvik, and DiD's parallel-trends assumption would be an act of faith against *any* one of them.
+
+The **synthetic control method** --- introduced by Abadie and Gardeazabal (2003) for the Basque Country and formalized by Abadie, Diamond, and Hainmueller (2010, 2015) --- answers with a deceptively simple idea. If no *single* region resembles Norrvik, perhaps a *weighted average* of several regions does. We do not pick one control; we *build* one. We search the pool of untreated "donor" regions for the combination whose pre-reform HbA1c path and characteristics track Norrvik's as closely as possible. That weighted average --- the **synthetic Norrvik** --- becomes our estimate of what Norrvik *would have looked like* without the reform. The post-reform gap between the real Norrvik and its synthetic twin is the estimated effect.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Construct a synthetic control as a convex combination of donor units whose weights are non-negative and sum to one, and explain why that restriction blocks extrapolation.
+- Read a treated-vs-synthetic trajectory plot and locate the treatment effect as the post-intervention gap.
+- Choose donor weights to fit a pre-treatment outcome path and quantify the fit with the pre-period RMSPE.
+- State the synthetic-control weight-optimization problem as minimizing pre-treatment prediction error over the simplex, and relate the method to difference-in-differences.
+:::
+
+
+## The Donor Pool and the Convex Hull
+
+Set up the notation. We have $J + 1$ regions observed over periods $t = 1, \dots, T$. Region $1$ is the **treated** unit (Norrvik), treated from period $T_0 + 1$ onward; the remaining $J$ regions are **donors** that are never treated. Let $Y_{jt}$ be the average HbA1c of region $j$ in period $t$.
+
+A synthetic control is a **weighted average of the donors**, with a weight $w_j$ on each donor $j = 2, \dots, J+1$:
+
+$$
+\hat{Y}_{1t}^{\,N} = \sum_{j=2}^{J+1} w_j \, Y_{jt}, \qquad
+w_j \ge 0, \qquad \sum_{j=2}^{J+1} w_j = 1.
+$$
+
+**Read this as**: "The synthetic version of the treated region in period $t$ is a weighted sum of the donor regions' outcomes in that same period, where the weights are non-negative and add up to one." The superscript $N$ stands for the *no-treatment* potential outcome --- the synthetic control is our estimate of $Y_{1t}(0)$, the path Norrvik would have followed had it never reformed.
+
+The two constraints on the weights are the heart of the method, so look at them closely.
+
+::: {.glass-card .glass-card--definition}
+A set of weights $\mathbf{w} = (w_2, \dots, w_{J+1})$ with $w_j \ge 0$ for all $j$ and $\sum_j w_j = 1$ is called a **convex combination**. Geometrically, the set of all such weighted averages of the donor units is their **convex hull** --- the smallest "envelope" that contains all the donor points.
+
+- **Non-negativity** ($w_j \ge 0$) forbids *short positions*: a donor can be used or ignored, but never subtracted.
+- **Adding to one** ($\sum_j w_j = 1$) makes the synthetic an *average*, on the same scale as the units, not an arbitrarily rescaled blend.
+
+Together they restrict the synthetic control to lie *inside* the convex hull of the donors --- it can interpolate among them but can never extrapolate beyond them.
+:::
+
+Why does this no-extrapolation restriction matter so much? Because it is what disciplines the method against overfitting and against drawing conclusions that the data cannot support.
+
+::: {.glass-card .glass-card--insight}
+**No extrapolation is a feature, not a limitation.** An unrestricted regression that lets weights go negative or exceed one can fit *any* pre-period path perfectly --- including pure noise --- by violently combining donors (e.g. $+3.4 \times$ Stockholm $- 2.7 \times$ Skåne). Such a fit extrapolates outside the range of real regions and is fragile out of sample.
+
+The simplex constraint refuses to do this. If Norrvik's pre-reform HbA1c sits *above every donor's*, no convex combination can match it, and the method tells you so with a poor fit. That honesty is the point: a synthetic control that fits well in the pre-period is one the data genuinely supports, because it was assembled only from regions that actually exist.
+:::
+
+A practical consequence is **sparsity**. The optimal weights are typically zero for most donors and positive for only a handful. The synthetic Norrvik might turn out to be, say, $0.45 \times$ Västmanland $+ 0.30 \times$ Gävleborg $+ 0.25 \times$ Dalarna --- a transparent, interpretable recipe you can name and defend, not a black box.
+
+The picture below makes "convex hull" concrete. Imagine each donor as a point in characteristic space; the three of them span a shaded **triangle** --- their convex hull. Any convex combination (non-negative weights summing to one) lands *inside* that triangle, so a good synthetic Norrvik (slate dot) sits among the donors. The hollow red dot outside the triangle is what an *unrestricted* fit with a negative weight would produce --- an "extrapolated" region that no convex average can reach and that resembles no real donor.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static convex-hull / simplex diagram (no inputs, no randomness). ──
+// Three donor points define a triangle (their convex hull); a convex
+// combination of them lands strictly inside it, while a negative-weight
+// "fit" escapes outside. Built with d3.create per the page's DAG pattern.
+scmethod_drawHull = function ({ width = 460, height = 300 } = {}) {
+  const pad = 54;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + (1 - v) * (height - 2 * pad);   // y up
+
+  // Donor positions (normalized). The treated point is an interior convex combo
+  // (0.45/0.30/0.25); the "extrapolation" point uses a negative weight.
+  const donors = [
+    { id: "V", x: 0.18, y: 0.78, label: "Västmanland" },
+    { id: "G", x: 0.82, y: 0.86, label: "Gävleborg" },
+    { id: "D", x: 0.52, y: 0.14, label: "Dalarna" }
+  ];
+  const w = { V: 0.45, G: 0.30, D: 0.25 };
+  const cx = w.V * donors[0].x + w.G * donors[1].x + w.D * donors[2].x;
+  const cy = w.V * donors[0].y + w.G * donors[1].y + w.D * donors[2].y;
+  // Outside-hull point: push beyond donor G along the V→G direction (neg. weight on V).
+  const ex = donors[1].x + 0.42 * (donors[1].x - donors[0].x);
+  const ey = donors[1].y + 0.42 * (donors[1].y - donors[0].y);
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  // Shaded convex hull (the triangle of all convex combinations).
+  svg.append("polygon")
+    .attr("points", donors.map(d => `${sx(d.x)},${sy(d.y)}`).join(" "))
+    .attr("fill", "#3d5a6c").attr("fill-opacity", 0.10)
+    .attr("stroke", "#3d5a6c").attr("stroke-width", 1.5)
+    .attr("stroke-dasharray", "4,3");
+
+  // Donor points + labels.
+  for (const d of donors) {
+    svg.append("circle")
+      .attr("cx", sx(d.x)).attr("cy", sy(d.y)).attr("r", 6)
+      .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    svg.append("text")
+      .attr("x", sx(d.x)).attr("y", sy(d.y) + (d.id === "D" ? -14 : 20))
+      .attr("text-anchor", "middle").attr("font-size", 11)
+      .attr("font-weight", 600).attr("fill", "#1c1c1a")
+      .text(d.label);
+  }
+
+  // Treated (synthetic) point — inside the hull.
+  svg.append("circle")
+    .attr("cx", sx(cx)).attr("cy", sy(cy)).attr("r", 7)
+    .attr("fill", "#3d5a6c").attr("stroke", "white").attr("stroke-width", 2);
+  svg.append("text")
+    .attr("x", sx(cx)).attr("y", sy(cy) + 22)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("font-weight", 700)
+    .attr("fill", "#3d5a6c")
+    .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+    .text("synthetic Norrvik (inside)");
+
+  // Out-of-hull extrapolation point (negative weight).
+  svg.append("circle")
+    .attr("cx", sx(ex)).attr("cy", sy(ey)).attr("r", 7)
+    .attr("fill", "none").attr("stroke", "#b3000b").attr("stroke-width", 2.5);
+  svg.append("text")
+    .attr("x", sx(ex)).attr("y", sy(ey) - 14)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("font-weight", 700)
+    .attr("fill", "#b3000b")
+    .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+    .text("negative-weight fit (outside)");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<figure style="margin:1.25rem 0; text-align:center;">
+  ${scmethod_drawHull({ width: Math.min(460, width) })}
+  <figcaption style="font-family:'Inter',sans-serif; font-size:0.8rem;
+      color:#79766e; margin-top:0.4rem; line-height:1.45;">
+    The shaded triangle is the donors' <strong>convex hull</strong>. Every convex
+    combination (weights ≥ 0, summing to one) lands <em>inside</em> it — that is the
+    synthetic control. Only by allowing a <span style="color:#b3000b;
+    font-weight:700;">negative weight</span> could a fit escape outside, into
+    territory no real region occupies.
+  </figcaption>
+</figure>`
+```
+
+
+## Matching the Pre-Period: Outcomes and Predictors
+
+We choose the weights so the synthetic control matches the treated unit *before* the reform, where both are untreated and therefore comparable. Matching is done on two kinds of quantities.
+
+First, the **pre-treatment outcome path** itself: the synthetic's HbA1c in 2010, 2011, ..., 2015 should track Norrvik's HbA1c in those same years. A synthetic control that reproduces six years of pre-reform outcome history is far more believable than one matched on a single baseline year.
+
+Second, a vector of **predictors** $X_1$ for the treated unit and $X_0$ for the donors --- variables thought to drive the outcome's trajectory. In our setting these might include the share of patients over 65, the number of *läkare* (physicians) per 1,000 residents, median income (in SEK), the baseline diabetes prevalence, and the average pre-period HbA1c. Matching on predictors guards against a synthetic that happens to track the outcome path for the wrong reasons.
+
+Concretely, $X_1$ is one column of numbers (Norrvik) and $X_0$ stacks one such column per donor. The illustrative table below shows what those vectors look like, and that the synthetic's predictor column $X_0\mathbf{w}$ --- the donor columns mixed with the $0.45 / 0.30 / 0.25$ weights --- lands close to Norrvik's $X_1$.
+
+| Predictor | $X_1$ Norrvik | Västmanland | Gävleborg | Dalarna | Synthetic $X_0\mathbf{w}$ |
+|:----------|--:|--:|--:|--:|--:|
+| Share over 65 (%) | 22.0 | 21.0 | 24.5 | 21.0 | 22.0 |
+| *Läkare* per 1,000 | 4.1 | 4.3 | 3.7 | 4.3 | 4.1 |
+| Median income (kSEK) | 312 | 320 | 295 | 318 | 312 |
+| Diabetes prevalence (%) | 6.4 | 6.2 | 6.8 | 6.2 | 6.4 |
+| Avg pre-period HbA1c (%) | 7.99 | 7.99 | 8.35 | 7.54 | 7.99 |
+
+: Predictor vectors for the treated unit and donors. The last column is the donor-weighted average $X_0\mathbf{w}$ with $\mathbf{w}=(0.45,0.30,0.25)$; it tracks $X_1$ closely on the demographic predictors. The *simplified interactive below ignores predictors and matches only the outcome path* --- this table shows the fuller object the general method optimizes over. {.science-table}
+
+::: {.glass-card .glass-card--assumption}
+**What synthetic control assumes.** The post-treatment gap identifies the treatment effect under two conditions:
+
+1. **Good pre-treatment fit.** The synthetic control closely reproduces the treated unit's pre-treatment outcomes *and* predictors --- formally, $\sum_j w_j Y_{jt} \approx Y_{1t}$ for all $t \le T_0$ and $\sum_j w_j X_j \approx X_1$.
+
+2. **No anticipation and no interference.** Donors are genuinely untreated (the reform did not spill over into them), and the treated unit's outcome did not respond *before* the intervention date.
+
+Under these conditions, Abadie, Diamond, and Hainmueller show that the synthetic control is an approximately unbiased estimate of the treated unit's untreated potential outcome path. A *poor* pre-treatment fit is a red flag that the donor pool cannot reconstruct the treated unit --- and the method should not be used.
+:::
+
+
+## See It: Building Norrvik's Synthetic Twin
+
+The plot below shows Region Norrvik's average HbA1c (solid red) from 2010 to 2021, with the 2016 reform marked by a vertical line. Three donor regions --- **Västmanland**, **Gävleborg**, and **Dalarna** --- are available to build the synthetic. You control how much weight each donor gets; the dashed slate line is the resulting **synthetic Norrvik**.
+
+Your job is the analyst's job: drag the sliders so the dashed synthetic line lies on top of the solid red line *in the pre-reform years* (2010--2015, left of the intervention line). The quality of that fit is summarized by the **pre-period RMSPE** (root mean squared prediction error --- in plain terms, the typical size of the pre-reform gap between the two lines, measured in HbA1c percentage points) --- smaller is better. Once the pre-period matches, the **post-period gap** to the right of the red line is your estimate of the reform's effect on HbA1c.
+
+::: {.interactive-container}
+
+#### Fit the Synthetic Control by Choosing Donor Weights
+
+::: {.start-here}
+**Start here:** drag the three weight sliders until the dashed slate **synthetic** line sits on top of the solid red **Norrvik** line *before* the 2016 reform line. Watch the *Pre-period RMSPE* tile shrink toward zero, then read the post-2016 gap.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof scmethod_wVastmanland = Inputs.range([0, 1], {
+  value: 0.33,
+  step: 0.01,
+  label: "Weight: Västmanland"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof scmethod_wGavleborg = Inputs.range([0, 1], {
+  value: 0.33,
+  step: 0.01,
+  label: "Weight: Gävleborg"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof scmethod_wDalarna = Inputs.range([0, 1], {
+  value: 0.34,
+  step: 0.01,
+  label: "Weight: Dalarna"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof scmethod_showGap = Inputs.toggle({
+  label: "Show post-period effect gap",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Note: the three sliders show the RAW value you drag; the tiles below show the
+// NORMALIZED weights (rescaled to sum to 100%, the actual convex combination).
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem;
+    color:#79766e; margin-top:0.35rem; line-height:1.4;">
+  Sliders are auto-rescaled to sum to <strong>100%</strong> — the tiles below show
+  the actual weights. The effect-gap toggle hides the shaded band; the
+  <em>gap</em> number stays in the tiles either way.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// On-chart color key (the auto legend gave no dash cue for the synthetic line).
+html`<div style="display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
+    font-family:'Inter',sans-serif; font-size:0.82rem; color:#1c1c1a;
+    margin-top:0.6rem;">
+  <span style="display:inline-flex; align-items:center; gap:0.45rem;">
+    <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5"
+      stroke="#990000" stroke-width="3"/></svg>
+    Region Norrvik (observed)
+  </span>
+  <span style="display:inline-flex; align-items:center; gap:0.45rem;">
+    <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5"
+      stroke="#3d5a6c" stroke-width="2.5" stroke-dasharray="5,4"/></svg>
+    Synthetic Norrvik (dashed)
+  </span>
+  <span style="display:inline-flex; align-items:center; gap:0.45rem;">
+    <span style="width:18px; height:10px; background:#2e6f40; opacity:0.16;
+      border-radius:2px; display:inline-block;"></span>
+    Post-reform effect gap
+  </span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed panel data: HbA1c (%) by region and year, 2010–2021. ──
+// Region Norrvik (treated) reforms in 2016. The three donors are constructed
+// so that a SPECIFIC convex combination (≈ 0.45 / 0.30 / 0.25) reproduces
+// Norrvik's pre-reform path almost exactly — there is a "right answer" the
+// reader can discover with the sliders. Lower HbA1c is better, so the reform's
+// true effect is a downward divergence of the real series below its synthetic.
+scmethod_years = d3.range(2010, 2022)
+
+scmethod_T0 = 2015          // last pre-treatment year
+scmethod_reformYear = 2016  // first treated year
+
+// Donor outcome series. Each is a plausible regional HbA1c trajectory with its
+// own level and gentle secular decline (national guidelines + new drugs).
+scmethod_donors = {
+  const vast = [8.10, 8.06, 8.00, 7.97, 7.92, 7.88, 7.85, 7.82, 7.80, 7.78, 7.76, 7.75];
+  const gavl = [8.45, 8.40, 8.38, 8.33, 8.30, 8.26, 8.23, 8.21, 8.19, 8.18, 8.17, 8.16];
+  const dala = [7.60, 7.58, 7.55, 7.53, 7.50, 7.48, 7.47, 7.46, 7.45, 7.45, 7.44, 7.44];
+  return {
+    "Västmanland": vast,
+    "Gävleborg":   gavl,
+    "Dalarna":     dala
+  };
+}
+
+// The "true" weights used to manufacture Norrvik's untreated path. The reader
+// is not told these; they are the target the RMSPE rewards converging toward.
+scmethod_trueWeights = ({ "Västmanland": 0.45, "Gävleborg": 0.30, "Dalarna": 0.25 })
+
+// Norrvik's UNTREATED potential path = exact convex combination of the donors.
+scmethod_norrvikUntreated = scmethod_years.map((y, i) =>
+  scmethod_trueWeights["Västmanland"] * scmethod_donors["Västmanland"][i] +
+  scmethod_trueWeights["Gävleborg"]   * scmethod_donors["Gävleborg"][i] +
+  scmethod_trueWeights["Dalarna"]     * scmethod_donors["Dalarna"][i]
+)
+
+// True reform effect: zero before 2016, then a phased reduction that grows and
+// stabilizes (coordination takes a year or two to bite). Negative = HbA1c falls.
+scmethod_trueEffect = scmethod_years.map(y => {
+  if (y < scmethod_reformYear) return 0;
+  const k = y - scmethod_reformYear;            // 0,1,2,...
+  return -Math.min(0.42, 0.12 + 0.10 * k);      // ramps to a 0.42-pt reduction
+})
+
+// Observed Norrvik = untreated path + (true effect, post only).
+scmethod_norrvikObserved = scmethod_years.map((y, i) =>
+  scmethod_norrvikUntreated[i] + scmethod_trueEffect[i]
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Auto-normalize the three slider weights to the simplex (sum to 1). ──
+// If the reader drags all sliders to 0 we fall back to equal weights so the
+// synthetic is always a genuine convex combination and never divides by zero.
+scmethod_rawW = ({
+  "Västmanland": scmethod_wVastmanland,
+  "Gävleborg":   scmethod_wGavleborg,
+  "Dalarna":     scmethod_wDalarna
+})
+
+scmethod_weights = {
+  const keys = Object.keys(scmethod_rawW);
+  const s = d3.sum(keys, k => scmethod_rawW[k]);
+  if (s <= 0) {
+    const eq = 1 / keys.length;
+    return Object.fromEntries(keys.map(k => [k, eq]));
+  }
+  return Object.fromEntries(keys.map(k => [k, scmethod_rawW[k] / s]));
+}
+
+// The synthetic control series implied by the (normalized) weights.
+scmethod_synthetic = scmethod_years.map((y, i) =>
+  scmethod_weights["Västmanland"] * scmethod_donors["Västmanland"][i] +
+  scmethod_weights["Gävleborg"]   * scmethod_donors["Gävleborg"][i] +
+  scmethod_weights["Dalarna"]     * scmethod_donors["Dalarna"][i]
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fit and effect summaries. ──
+// Pre-period RMSPE: root mean squared gap between observed and synthetic over
+// the pre-treatment years only (this is what the optimizer minimizes).
+scmethod_preIdx = scmethod_years.map((y, i) => ({ y, i })).filter(d => d.y <= scmethod_T0)
+scmethod_postIdx = scmethod_years.map((y, i) => ({ y, i })).filter(d => d.y >= scmethod_reformYear)
+
+scmethod_rmspePre = Math.sqrt(
+  d3.mean(scmethod_preIdx, d =>
+    (scmethod_norrvikObserved[d.i] - scmethod_synthetic[d.i]) ** 2)
+)
+
+// Post-period average gap = estimated treatment effect (observed − synthetic).
+scmethod_postGap = d3.mean(scmethod_postIdx, d =>
+  scmethod_norrvikObserved[d.i] - scmethod_synthetic[d.i])
+
+// Gap in the final year, for a "matured effect" readout.
+scmethod_finalGap = scmethod_norrvikObserved[scmethod_norrvikObserved.length - 1]
+  - scmethod_synthetic[scmethod_synthetic.length - 1]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Tidy long-format data for the line marks.
+scmethod_lineData = {
+  const rows = [];
+  scmethod_years.forEach((y, i) => {
+    rows.push({ year: y, hba1c: scmethod_norrvikObserved[i], series: "Region Norrvik (observed)" });
+    rows.push({ year: y, hba1c: scmethod_synthetic[i],       series: "Synthetic Norrvik" });
+  });
+  return rows;
+}
+
+// Post-period gap ribbon between observed and synthetic.
+scmethod_gapData = scmethod_postIdx.map(d => ({
+  year: scmethod_years[d.i],
+  yObs: scmethod_norrvikObserved[d.i],
+  ySyn: scmethod_synthetic[d.i]
+}))
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 400,
+  marginLeft: 60,
+  marginRight: 72,
+  marginTop: 28,
+  marginBottom: 42,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    label: "Year",
+    domain: [2010, 2021],
+    ticks: d3.range(2010, 2022, 2),
+    tickFormat: d => `${d}`,
+    grid: false
+  },
+  y: {
+    // Top headroom must clear Gävleborg's 2010 peak (8.45): Step 4 of the tour
+    // asks the reader to set the synthetic to 100% Gävleborg, so the dashed line
+    // (and the "2016 reform" label at y=8.30) must not clip the top frame edge.
+    label: "Mean HbA1c (%)",
+    domain: [7.25, 8.55],
+    grid: true
+  },
+  color: {
+    domain: ["Region Norrvik (observed)", "Synthetic Norrvik"],
+    range: ["#990000", "#3d5a6c"],
+    legend: false
+  },
+  marks: [
+    // Vertical intervention line at the reform year.
+    Plot.ruleX([scmethod_reformYear - 0.5], {
+      stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "4,4"
+    }),
+    Plot.text([{ x: scmethod_reformYear - 0.5, y: 8.30 }], {
+      x: "x", y: "y",
+      text: ["2016 reform"],
+      dx: 6, textAnchor: "start",
+      fill: "#9c7a33", fontSize: 11, fontWeight: 700,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // Post-period effect gap: a shaded band between observed and synthetic.
+    scmethod_showGap ? Plot.areaY(scmethod_gapData, {
+      x: "year", y1: "yObs", y2: "ySyn",
+      fill: "#2e6f40", fillOpacity: 0.16
+    }) : null,
+
+    // Observed and synthetic trajectories (synthetic dashed).
+    Plot.line(scmethod_lineData.filter(d => d.series === "Region Norrvik (observed)"), {
+      x: "year", y: "hba1c", stroke: "#990000", strokeWidth: 3
+    }),
+    Plot.line(scmethod_lineData.filter(d => d.series === "Synthetic Norrvik"), {
+      x: "year", y: "hba1c", stroke: "#3d5a6c", strokeWidth: 2.5,
+      strokeDasharray: "5,4"
+    }),
+    Plot.dot(scmethod_lineData, {
+      x: "year", y: "hba1c", fill: "series", r: 3.2,
+      title: d => `${d.series}\n${d.year}: ${d.hba1c.toFixed(3)}`
+    }),
+
+    // End-of-line labels anchored to the right frame edge (with white halo).
+    Plot.text([{}], {
+      frameAnchor: "right", dx: -4, dy: -52,
+      text: ["Norrvik"], textAnchor: "end",
+      fill: "#990000", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{}], {
+      frameAnchor: "right", dx: -4, dy: 64,
+      text: ["Synthetic (dashed)"], textAnchor: "end",
+      fill: "#3d5a6c", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // Annotate the final-year gap (the matured effect), anchored to the frame.
+    scmethod_showGap ? Plot.text([{}], {
+      frameAnchor: "right", dx: -4, dy: 6,
+      text: [`gap = ${scmethod_finalGap.toFixed(2)}`],
+      textAnchor: "end",
+      fill: "#2e6f40", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: normalized weights, pre-period fit, and the estimated effect.
+{
+  const fmtW = v => `${(v * 100).toFixed(0)}%`;
+  // One threshold scheme shared with the verdict below: <0.01 excellent (green),
+  // otherwise ochre. (0.01–0.03 "okay", >0.03 "poor" in the verdict text.)
+  const goodFit = scmethod_rmspePre < 0.01;
+  const w = scmethod_weights;
+
+  const tile = (label, value, color, bg) => html`<div style="
+      text-align: center; min-height: 4.1rem;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 0.5rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family: 'Inter', sans-serif; font-size: 0.66rem;
+        font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+        color: #79766e;">${label}</div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.15rem;
+        font-weight: 700; color: ${color}; margin-top: 0.2rem;">${value}</div>
+  </div>`;
+
+  const gridStyle = "display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr)); gap:0.5rem;";
+
+  return html`<div>
+    <div style="${gridStyle} margin-top:0.75rem;">
+      ${tile("Västmanland", fmtW(w["Västmanland"]), "#1c1c1a", "#f6f5f1")}
+      ${tile("Gävleborg", fmtW(w["Gävleborg"]), "#1c1c1a", "#f6f5f1")}
+      ${tile("Dalarna", fmtW(w["Dalarna"]), "#1c1c1a", "#f6f5f1")}
+    </div>
+    <div style="${gridStyle} margin-top:0.5rem;">
+      ${tile("RMSPE (pre)",
+          scmethod_rmspePre.toFixed(4),
+          goodFit ? "#2e6f40" : "#9c7a33",
+          goodFit ? "rgba(46,111,64,0.10)" : "rgba(156,122,51,0.10)")}
+      ${tile("Avg effect",
+          `${scmethod_postGap >= 0 ? "+" : ""}${scmethod_postGap.toFixed(3)}`,
+          "#1c1c1a", "rgba(0,0,0,0.03)")}
+      ${tile("Final effect",
+          `${scmethod_finalGap >= 0 ? "+" : ""}${scmethod_finalGap.toFixed(3)}`,
+          "#1c1c1a", "rgba(0,0,0,0.03)")}
+    </div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.74rem; color:#79766e;
+        margin-top:0.4rem;">RMSPE is in HbA1c percentage points; lower is a better pre-reform fit.</div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Plain-language verdict that reacts to the pre-period fit.
+{
+  let msg, color;
+  if (scmethod_rmspePre < 0.01) {
+    msg = `Excellent pre-period fit (RMSPE = ${scmethod_rmspePre.toFixed(4)}). The synthetic tracks Norrvik almost exactly before 2016, so the post-2016 gap of about ${scmethod_postGap.toFixed(2)} HbA1c points is a credible estimate of the reform's effect.`;
+    color = "#2e6f40";
+  } else if (scmethod_rmspePre < 0.03) {
+    msg = `Okay pre-period fit (RMSPE = ${scmethod_rmspePre.toFixed(4)}), but you can do better. Nudge the weights toward roughly 45% Västmanland / 30% Gävleborg / 25% Dalarna to make the dashed line sit on top of the solid line before 2016.`;
+    color = "#9c7a33";
+  } else {
+    msg = `Poor pre-period fit (RMSPE = ${scmethod_rmspePre.toFixed(4)}). The dashed synthetic line and the solid Norrvik line diverge before the reform — so the post-reform gap is contaminated by bad fit, not just by the program. Keep adjusting the weights to close the pre-period gap first.`;
+    color = "#b3000b";
+  }
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${color}; background: rgba(0,0,0,0.02);
+      font-family: 'Inter', sans-serif; font-size: 0.86rem;
+      line-height: 1.45; color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Synthetic Control Plot
+
+Work through these steps in order; each isolates one idea of the method.
+
+**Step 1: Identify the four objects.** The solid red line is **Region Norrvik**, the region that reformed. The dashed slate line is **synthetic Norrvik**, the weighted average of the three donors that *you* build. The ochre dashed vertical line marks the **2016 reform**: everything to its left is the pre-treatment period (where you fit), everything to its right is post-treatment (where you read off the effect). The shaded green band is the gap between the two lines after the reform --- toggle it off with the *Show post-period effect gap* switch (the numeric gap stays in the tiles either way).
+
+**Step 2: Fit the pre-period first.** Drag the three weight sliders until the dashed line lies on top of the solid line *to the left of the intervention line*. Watch the **RMSPE (pre)** tile: it shrinks as the fit improves and turns green when the match is excellent (below 0.01 HbA1c points). The right answer is near **45% Västmanland, 30% Gävleborg, 25% Dalarna** --- the convex combination that reconstructs Norrvik's untreated path. Notice the sliders are *auto-normalized*: whatever three numbers you set, they are rescaled to sum to 100%, so the synthetic is always a genuine convex average.
+
+**Step 3: Now read the effect.** Once the pre-period matches, look right of the intervention line. The solid Norrvik line peels *below* its synthetic twin --- HbA1c fell further than the no-reform counterfactual predicted. That vertical gap, growing from 2016 and stabilizing around $-0.42$ points by 2021, *is* the estimated treatment effect. The **Avg effect** and **Final effect** tiles quantify it. Your number will land near $-0.42$ once the pre-period fit is excellent; small differences just reflect imperfect weights.
+
+**Step 4: See why fit must come first.** Deliberately set a bad mix --- say, drag Gävleborg to the top and the other two to 0, so the synthetic is 100% Gävleborg (the highest donor). The dashed line now sits *above* Norrvik even before 2016, the RMSPE tile turns amber and the verdict box turns red, and the post-period "gap" is huge --- but it is meaningless, because it is mostly pre-existing mismatch, not the reform. **A synthetic control is only as trustworthy as its pre-treatment fit.** This is the discipline the method imposes: you cannot claim an effect until you have demonstrated that your synthetic tracked the treated unit *before* anything happened.
+
+**Step 5: Feel the convex hull.** Drag Västmanland and Gävleborg to 0 so Dalarna is 100%. The synthetic now *equals* Dalarna (the lowest donor, ~7.44 in 2021) and cannot dip below it --- and no other mix of the three can get lower, either. No convex combination can fall below the lowest donor or rise above the highest. That boundary is the convex hull from the definition above --- the synthetic can interpolate among the donors but never extrapolate past them.
+
+
+## The Relationship to Difference-in-Differences
+
+Synthetic control is best understood as a *generalization* of difference-in-differences, and seeing the connection clarifies what each method buys you.
+
+Recall the [2x2 DiD](../06-did/classic-2x2.qmd) counterfactual: take the treated unit's pre-period level and shift it by the *control group's* change. Written in our notation, DiD's implied no-treatment outcome for the treated unit is
+
+$$
+\hat{Y}_{1t}^{\,\text{DiD}} = Y_{1,T_0} + \big(\bar{Y}_{C,t} - \bar{Y}_{C,T_0}\big),
+$$
+
+where $\bar{Y}_{C,t}$ is the *simple, equal-weighted* average of all controls. That is exactly a synthetic control with weights $w_j = 1/J$ for every donor --- DiD is the special case where every control gets the same weight, *and* the method only has to match the treated unit's level at $T_0$ rather than its whole pre-period path.
+
+::: {.glass-card .glass-card--insight}
+**Synthetic control relaxes parallel trends by reweighting.** DiD assumes the equal-weighted control average would have moved in parallel with the treated unit. That is a strong assumption when no single control, or the naive average of all of them, actually resembles the treated unit.
+
+Synthetic control replaces the *assumption* of parallel trends with a *demonstrated* match: it searches for the donor weights that make the synthetic's pre-treatment path coincide with the treated unit's. If such weights exist and the fit is good, the parallel-trends-style assumption applies to a comparison unit that we have *shown* tracked the treated unit for years before the intervention --- a far more credible counterfactual than "trust me, the average is fine."
+:::
+
+The figure below puts the two counterfactuals on the same axes (reusing the chapter's data). The **equal-weighted DiD line** (ochre) is the $w_j = 1/3$ blend anchored at Norrvik's 2015 level; the **optimal synthetic** (slate, $0.45 / 0.30 / 0.25$) is the convex combination that fits the whole pre-period. Watch the pre-2016 region: the synthetic *hugs* Norrvik, while the flat-average DiD line floats above it --- it only touches at the 2015 anchor point. Both happen to land near the same place post-reform here (a benign donor pool), but the synthetic *earned* its counterfactual by demonstrating the fit, rather than assuming it.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DiD-vs-synthetic comparison (additive; reads the widget's data
+// but defines its own series — does NOT touch the live widget's controls). ──
+// Optimal synthetic = the true 0.45/0.30/0.25 convex combination.
+scmethod_didfig_opt = ({ "Västmanland": 0.45, "Gävleborg": 0.30, "Dalarna": 0.25 })
+
+scmethod_didfig_synthetic = scmethod_years.map((y, i) =>
+  scmethod_didfig_opt["Västmanland"] * scmethod_donors["Västmanland"][i] +
+  scmethod_didfig_opt["Gävleborg"]   * scmethod_donors["Gävleborg"][i] +
+  scmethod_didfig_opt["Dalarna"]     * scmethod_donors["Dalarna"][i]
+)
+
+// Equal-weighted DiD counterfactual: anchor Norrvik's T0 level, then add the
+// simple (1/3) average donor change relative to T0.
+scmethod_didfig_T0idx = scmethod_years.indexOf(scmethod_T0)
+
+scmethod_didfig_eqAvg = scmethod_years.map((y, i) =>
+  (scmethod_donors["Västmanland"][i] +
+   scmethod_donors["Gävleborg"][i] +
+   scmethod_donors["Dalarna"][i]) / 3
+)
+
+scmethod_didfig_did = scmethod_years.map((y, i) =>
+  scmethod_norrvikObserved[scmethod_didfig_T0idx] +
+  (scmethod_didfig_eqAvg[i] - scmethod_didfig_eqAvg[scmethod_didfig_T0idx])
+)
+
+scmethod_didfig_rows = {
+  const rows = [];
+  scmethod_years.forEach((y, i) => {
+    rows.push({ year: y, hba1c: scmethod_norrvikObserved[i],     series: "Region Norrvik (observed)" });
+    rows.push({ year: y, hba1c: scmethod_didfig_synthetic[i],    series: "Optimal synthetic (45/30/25)" });
+    rows.push({ year: y, hba1c: scmethod_didfig_did[i],          series: "Equal-weighted DiD (1/3 each)" });
+  });
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 360,
+  marginLeft: 60,
+  marginRight: 78,
+  marginTop: 26,
+  marginBottom: 46,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: {
+    label: "Year", domain: [2010, 2021],
+    ticks: d3.range(2010, 2022, 2), tickFormat: d => `${d}`, grid: false
+  },
+  y: { label: "Mean HbA1c (%)", domain: [7.25, 8.55], grid: true },
+  marks: [
+    Plot.ruleX([scmethod_reformYear - 0.5], {
+      stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "4,4"
+    }),
+    Plot.text([{ x: scmethod_reformYear - 0.5, y: 8.30 }], {
+      x: "x", y: "y", text: ["2016 reform"], dx: 6, textAnchor: "start",
+      fill: "#9c7a33", fontSize: 11, fontWeight: 700,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Equal-weighted DiD counterfactual (ochre).
+    Plot.line(scmethod_didfig_rows.filter(d => d.series === "Equal-weighted DiD (1/3 each)"), {
+      x: "year", y: "hba1c", stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "2,3"
+    }),
+    // Optimal synthetic (slate dashed).
+    Plot.line(scmethod_didfig_rows.filter(d => d.series === "Optimal synthetic (45/30/25)"), {
+      x: "year", y: "hba1c", stroke: "#3d5a6c", strokeWidth: 2.5, strokeDasharray: "5,4"
+    }),
+    // Observed Norrvik (solid red).
+    Plot.line(scmethod_didfig_rows.filter(d => d.series === "Region Norrvik (observed)"), {
+      x: "year", y: "hba1c", stroke: "#990000", strokeWidth: 3
+    }),
+    Plot.text([{}], {
+      frameAnchor: "right", dx: -4, dy: -56, text: ["Norrvik"], textAnchor: "end",
+      fill: "#990000", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{}], {
+      frameAnchor: "right", dx: -4, dy: 18, text: ["Synthetic"], textAnchor: "end",
+      fill: "#3d5a6c", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{}], {
+      frameAnchor: "right", dx: -4, dy: 48, text: ["DiD avg"], textAnchor: "end",
+      fill: "#9c7a33", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
+    font-family:'Inter',sans-serif; font-size:0.8rem; color:#1c1c1a; margin-top:0.5rem;">
+  <span style="display:inline-flex; align-items:center; gap:0.45rem;">
+    <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5"
+      stroke="#990000" stroke-width="3"/></svg> Region Norrvik (observed)
+  </span>
+  <span style="display:inline-flex; align-items:center; gap:0.45rem;">
+    <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5"
+      stroke="#3d5a6c" stroke-width="2.5" stroke-dasharray="5,4"/></svg>
+    Optimal synthetic (hugs the pre-period)
+  </span>
+  <span style="display:inline-flex; align-items:center; gap:0.45rem;">
+    <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5"
+      stroke="#9c7a33" stroke-width="2" stroke-dasharray="2,3"/></svg>
+    Equal-weighted DiD (floats above pre-2016)
+  </span>
+</div>`
+```
+
+The price is that synthetic control needs a longer pre-period (enough periods to fit a path, not just one baseline), a single (or few) treated units, and a donor pool rich enough that some convex combination can reproduce the treated unit. When those conditions hold, it turns the untestable parallel-trends assumption into something you can largely *see* in the pre-treatment fit.
+
+
+<details>
+<summary>Math Details: The Weight-Optimization Problem on the Simplex</summary>
+<div class="details-content">
+
+::: {.glass-card .glass-card--insight}
+**Signpost.** The interactive above implements the *simplified, outcome-only* version of the method --- it has no predictor matrix and no importance-weighting matrix $V$; it just minimizes the gap between the two HbA1c paths. The general predictor problem below is given for completeness. Read $\arg\min$ as "the weights that make the following quantity as small as possible," and the **simplex** as the set of all valid weight vectors (non-negative, summing to one).
+:::
+
+### The objective
+
+Let $X_1 \in \mathbb{R}^{k}$ collect the treated unit's $k$ pre-treatment predictors (including, typically, several pre-period outcome values), and let $X_0 \in \mathbb{R}^{k \times J}$ stack the same predictors for the $J$ donors, one column per donor. For weights $\mathbf{w} = (w_2, \dots, w_{J+1})^{\top}$, the synthetic control's predictor vector is $X_0 \mathbf{w}$.
+
+The synthetic control problem chooses $\mathbf{w}$ to minimize the (weighted) distance between the treated unit's predictors and the synthetic's, subject to the simplex constraints:
+
+$$
+\mathbf{w}^{\star} = \arg\min_{\mathbf{w}} \; \big(X_1 - X_0 \mathbf{w}\big)^{\top} V \big(X_1 - X_0 \mathbf{w}\big)
+\quad \text{subject to} \quad w_j \ge 0, \;\; \sum_{j=2}^{J+1} w_j = 1.
+$$
+
+**How to read this.** "Find the donor weights that make the synthetic unit's predictors as close as possible to the treated unit's predictors --- measured by a $V$-weighted squared distance --- while keeping the weights non-negative and summing to one." The matrix $V$ is a positive semi-definite diagonal matrix of importance weights on the predictors; predictors that better explain the pre-period outcome path get larger $V$-entries.
+
+### The simplex and why the constraint is a quadratic program
+
+The feasible set $\{\mathbf{w} : w_j \ge 0, \; \sum_j w_j = 1\}$ is the **unit simplex** $\Delta^{J-1}$. The objective is quadratic in $\mathbf{w}$ and the constraints are linear, so this is a **convex quadratic program**: it has a global optimum, and standard solvers find it reliably. The non-negativity constraints are *inequality* constraints, so the solution typically lands on a face of the simplex --- many $w_j$ are exactly zero. This is the source of the method's characteristic **sparsity**: the optimal synthetic uses only a few donors.
+
+### The inner/outer loop and the simplified RMSPE objective
+
+In the full Abadie–Diamond–Hainmueller procedure, $V$ is itself chosen (the *outer* loop) to minimize the pre-treatment prediction error of the *outcome*, while $\mathbf{w}^\star(V)$ solves the QP above for each candidate $V$ (the *inner* loop). A common and transparent special case --- the one the interactive above implements --- drops the separate predictor vector and matches **only the pre-treatment outcomes**, choosing $\mathbf{w}$ to minimize the **pre-treatment RMSPE**:
+
+$$
+\text{RMSPE}_{\text{pre}}(\mathbf{w}) = \sqrt{\frac{1}{T_0} \sum_{t=1}^{T_0} \left( Y_{1t} - \sum_{j=2}^{J+1} w_j Y_{jt} \right)^{2}}.
+$$
+
+**How to read this.** "Over the pre-treatment periods $t = 1, \dots, T_0$, take the gap between the treated unit's outcome and the synthetic's, square it, average across periods, and take the square root." Minimizing this over the simplex gives the weights that best reproduce the treated unit's pre-reform trajectory. It is the loss the **Pre-period RMSPE** tile in the interactive reports, and the quantity Step 2 of the tour asks you to drive toward zero.
+
+### Reading off the effect
+
+With $\mathbf{w}^\star$ in hand, the estimated treatment effect in each post-period is the gap between observed and synthetic:
+
+$$
+\hat{\tau}_{1t} = Y_{1t} - \sum_{j=2}^{J+1} w_j^{\star}\, Y_{jt}, \qquad t > T_0.
+$$
+
+This is a *path* of effects, one per post-period, not a single number --- which is exactly why the interactive reports both an average post-period effect and a matured final-year effect. Whether such a gap is *statistically* distinguishable from what we would see by chance is the subject of the next page.
+
+</div>
+</details>
+
+
+## Computing a Synthetic Control
+
+The code below reconstructs the Norrvik example: three donors, a 2010--2021 panel, the simplex-constrained weight fit, and the post-period gap. The R version uses `tidysynth` (the modern tidy interface to Abadie's `Synth`); the Python version solves the same convex quadratic program directly with `scipy.optimize` over the simplex.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(tidysynth)
+
+# --- Panel: 4 regions × 12 years (2010–2021); Norrvik reforms in 2016 ---
+donors <- tribble(
+  ~region,         ~`2010`, ~`2011`, ~`2012`, ~`2013`, ~`2014`, ~`2015`,
+                   ~`2016`, ~`2017`, ~`2018`, ~`2019`, ~`2020`, ~`2021`,
+  "Vastmanland",   8.10, 8.06, 8.00, 7.97, 7.92, 7.88, 7.85, 7.82, 7.80, 7.78, 7.76, 7.75,
+  "Gavleborg",     8.45, 8.40, 8.38, 8.33, 8.30, 8.26, 8.23, 8.21, 8.19, 8.18, 8.17, 8.16,
+  "Dalarna",       7.60, 7.58, 7.55, 7.53, 7.50, 7.48, 7.47, 7.46, 7.45, 7.45, 7.44, 7.44
+)
+
+# Norrvik's untreated path = 0.45 Vastmanland + 0.30 Gavleborg + 0.25 Dalarna,
+# plus a phased reform effect (-0.12 ... -0.42) from 2016 on.
+w_true <- c(Vastmanland = 0.45, Gavleborg = 0.30, Dalarna = 0.25)
+years  <- 2010:2021
+untreated <- as.numeric(t(as.matrix(donors[, -1])) %*% w_true)
+effect <- ifelse(years < 2016, 0, -pmin(0.42, 0.12 + 0.10 * (years - 2016)))
+norrvik <- tibble(region = "Norrvik",
+                  !!!set_names(as.list(untreated + effect), as.character(years)))
+
+panel <- bind_rows(norrvik, donors) |>
+  pivot_longer(-region, names_to = "year", values_to = "hba1c") |>
+  mutate(year = as.integer(year))
+
+# --- Fit the synthetic control (match on pre-2016 outcomes) ---
+sc <- panel |>
+  synthetic_control(outcome = hba1c, unit = region, time = year,
+                    i_unit = "Norrvik", i_time = 2016,
+                    generate_placebos = FALSE) |>
+  generate_predictor(time_window = 2010:2015,
+                     hba1c_pre = mean(hba1c)) |>
+  generate_weights(optimization_window = 2010:2015) |>
+  generate_control()
+
+# Donor weights (sparse, non-negative, sum to 1) and the effect path
+sc |> grab_unit_weights() |> arrange(desc(weight))
+sc |> grab_synthetic_control() |>          # observed vs synthetic by year
+  mutate(gap = real_y - synth_y) |>
+  filter(time_unit >= 2016) |>
+  summarise(avg_effect = mean(gap), final_effect = last(gap))
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy.optimize import minimize
+
+years = np.arange(2010, 2022)
+T0 = 6                       # number of pre-treatment periods (2010–2015)
+
+# Donor outcome matrix: rows = years, columns = donors
+donors = {
+    "Vastmanland": [8.10, 8.06, 8.00, 7.97, 7.92, 7.88, 7.85, 7.82, 7.80, 7.78, 7.76, 7.75],
+    "Gavleborg":   [8.45, 8.40, 8.38, 8.33, 8.30, 8.26, 8.23, 8.21, 8.19, 8.18, 8.17, 8.16],
+    "Dalarna":     [7.60, 7.58, 7.55, 7.53, 7.50, 7.48, 7.47, 7.46, 7.45, 7.45, 7.44, 7.44],
+}
+names = list(donors)
+Y0 = np.array([donors[k] for k in names]).T          # (12, 3)
+
+# Norrvik = convex combo of donors + phased reform effect from 2016
+w_true = np.array([0.45, 0.30, 0.25])
+untreated = Y0 @ w_true
+effect = np.where(years < 2016, 0.0, -np.minimum(0.42, 0.12 + 0.10 * (years - 2016)))
+Y1 = untreated + effect                              # observed Norrvik
+
+# --- Solve the simplex-constrained QP: minimise pre-period RMSPE ---
+def pre_rmspe(w):
+    synth = Y0[:T0] @ w
+    return np.sqrt(np.mean((Y1[:T0] - synth) ** 2))
+
+cons = ({"type": "eq", "fun": lambda w: w.sum() - 1.0},)   # weights sum to 1
+bnds = [(0.0, 1.0)] * len(names)                           # non-negativity
+res = minimize(pre_rmspe, x0=np.full(len(names), 1 / len(names)),
+               method="SLSQP", bounds=bnds, constraints=cons)
+
+w_hat = res.x
+synth = Y0 @ w_hat
+gap = Y1 - synth
+
+print("Weights:", dict(zip(names, w_hat.round(3))))
+print(f"Pre-period RMSPE : {pre_rmspe(w_hat):.4f}")
+print(f"Avg post effect  : {gap[years >= 2016].mean():.3f}")
+print(f"Final-year effect: {gap[-1]:.3f}")
+```
+
+:::
+
+Both implementations recover weights close to $0.45 / 0.30 / 0.25$, a pre-period RMSPE near zero, and a final-year effect of about $-0.42$ HbA1c points --- matching the truth baked into the simulation and the numbers you can reproduce by hand in the interactive.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A treated region has pre-period HbA1c values of $8.0, 7.9, 7.8$ over three years. There are two donors. Donor A has values $8.2, 8.1, 8.0$ and Donor B has values $7.6, 7.5, 7.4$. Using weights $w_A = 0.5$ and $w_B = 0.5$, (a) compute the synthetic control's three pre-period values, and (b) compute the pre-period RMSPE. (c) Is there a *better* convex combination? Find the weights that fit perfectly, if one exists.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Synthetic $= 0.5 \times \text{A} + 0.5 \times \text{B}$ year by year:
+
+- Year 1: $0.5(8.2) + 0.5(7.6) = 7.90$
+- Year 2: $0.5(8.1) + 0.5(7.5) = 7.80$
+- Year 3: $0.5(8.0) + 0.5(7.4) = 7.70$
+
+**(b)** Gaps (treated $-$ synthetic): $8.0 - 7.9 = 0.10$; $7.9 - 7.8 = 0.10$; $7.8 - 7.7 = 0.10$. Each squared gap is $0.01$, the mean squared gap is $0.01$, so
+
+$$
+\text{RMSPE} = \sqrt{0.01} = 0.10.
+$$
+
+**(c)** Yes. The treated unit is uniformly $0.10$ above the equal-weighted synthetic, so we need to tilt weight toward the *higher* donor (A). Solve for $w_A$ in year 1: $w_A(8.2) + (1 - w_A)(7.6) = 8.0 \Rightarrow 0.6\,w_A = 0.4 \Rightarrow w_A = 2/3$. Check year 2: $\tfrac{2}{3}(8.1) + \tfrac{1}{3}(7.5) = 5.4 + 2.5 = 7.9$. $\checkmark$ Year 3: $\tfrac{2}{3}(8.0) + \tfrac{1}{3}(7.4) = 5.333 + 2.467 = 7.80$. $\checkmark$ So $w_A = 2/3, \; w_B = 1/3$ fits all three years exactly, giving $\text{RMSPE} = 0$. Both weights are non-negative and sum to one, so this is a valid convex combination.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague proposes "improving the fit" by allowing the donor weights to be *any* real numbers (positive or negative) that sum to one, fitting them by ordinary least squares on the pre-period. With three pre-periods and two donors they obtain a perfect pre-period fit using $w_A = 1.8, \; w_B = -0.8$. (a) Why is this not a valid synthetic control? (b) Explain the danger of the resulting counterfactual. (c) What does the convex-hull restriction protect against here?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** A synthetic control requires $w_j \ge 0$. The weight $w_B = -0.8$ is negative --- the colleague is *short-selling* Donor B --- so this is not a convex combination and not a synthetic control. It is an extrapolation outside the convex hull of the donors.
+
+**(b)** Negative weights let the synthetic take values *outside the range of any real region*. The "counterfactual" Norrvik could be assigned an HbA1c lower than every donor or higher than every donor, a value no actual region exhibits. Such a fit can match any pre-period path --- including noise --- but it has no anchor in reality, so its post-period extrapolation is fragile and can swing wildly with small data changes. A perfect pre-period fit obtained this way is meaningless: with two free coefficients and three points, OLS will fit almost anything.
+
+**(c)** The convex-hull (simplex) restriction protects against exactly this overfitting-by-extrapolation. By forcing the synthetic to stay *inside* the envelope of observed donors, it guarantees the counterfactual is a believable, interpolated region and forces the method to *fail honestly* (a large RMSPE) when no convex combination can reproduce the treated unit --- a signal that the donor pool is inadequate rather than a false sense of precision.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the interactive, set the weights to roughly $0.45 / 0.30 / 0.25$ so the pre-period fits well. The treated region's observed 2021 HbA1c is about $7.38$ and its synthetic is about $7.80$. (a) State the estimated 2021 treatment effect and interpret its sign. (b) The DiD counterfactual for the same year would instead shift Norrvik's 2015 level by the *equal-weighted* donor change from 2015 to 2021. Using the donor series in the code (Västmanland $7.88 \to 7.75$, Gävleborg $8.26 \to 8.16$, Dalarna $7.48 \to 7.44$) and Norrvik's 2015 level of about $7.89$, compute the DiD counterfactual and effect, and explain why it is so close to the synthetic-control answer here.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Estimated 2021 effect $= Y_{1,2021} - \hat Y^{N}_{1,2021} = 7.38 - 7.80 = -0.42$ HbA1c points. The sign is negative, and because *lower HbA1c is better*, this means the reform *reduced* average blood sugar by about $0.42$ percentage points relative to the no-reform counterfactual --- a beneficial effect.
+
+**(b)** The equal-weighted donor changes from 2015 to 2021 are:
+
+- Västmanland: $7.75 - 7.88 = -0.13$
+- Gävleborg: $8.16 - 8.26 = -0.10$
+- Dalarna: $7.44 - 7.48 = -0.04$
+
+Average change $= (-0.13 - 0.10 - 0.04)/3 = -0.27/3 = -0.09$. Norrvik's 2015 level is $\approx 7.89$, so the DiD counterfactual for 2021 is $7.89 + (-0.09) = 7.80$, giving a DiD effect of $7.38 - 7.80 = -0.42$ (about $-0.43$ before rounding).
+
+**Why they nearly coincide.** DiD weights all three donors equally and only anchors on Norrvik's *2015 level*, whereas synthetic control chose weights ($0.45/0.30/0.25$) that reproduce Norrvik's entire pre-reform trajectory. Here the two counterfactuals land almost on top of each other ($-0.42$ vs $-0.43$) because the donor pool is well-behaved: the equal-weighted donor average in 2015 ($\approx 7.87$) is already very close to Norrvik's true 2015 level ($\approx 7.89$), and the three donors' post-period drifts are similar, so reweighting them barely moves the counterfactual. The methods agree *because* the comparison group is benign. The two diverge sharply only when a treated unit is poorly matched by the naive average --- precisely the case in which DiD's parallel-trends assumption is least credible and synthetic control's demonstrated pre-period fit earns its keep.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A region launches a **fall-prevention program** at its vårdcentraler; the outcome is fall-related emergency visits per 1,000 elderly residents. An analyst builds a synthetic control and reports a pre-period RMSPE of $4.8$ visits, while the estimated post-period effect is $-3.0$ visits. (a) Why should the analyst be worried? (b) What is the general rule for interpreting an effect relative to the pre-period RMSPE? (c) Suggest two concrete fixes.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The estimated effect ($-3.0$) is *smaller in magnitude than the pre-period prediction error* ($4.8$). The synthetic control could not even reproduce the treated unit *before* the program, so the post-period gap is well within the noise of the method's own mis-fit. The "effect" may be nothing more than the synthetic continuing to miss the treated unit, as it already did pre-treatment.
+
+**(b)** A credible synthetic-control effect should be *large relative to the pre-treatment RMSPE* --- the post-period gap should clearly exceed the typical pre-period gap. If the post-period gap is comparable to or smaller than the pre-period RMSPE, the design has not demonstrated an effect distinguishable from poor fit. (This intuition is formalized by the post/pre RMSPE ratio used in placebo inference on the next page.)
+
+**(c)** Two fixes: **(i) Enlarge or improve the donor pool** --- add more untreated regions so that some convex combination can actually reproduce the treated unit's pre-period path, lowering the RMSPE. **(ii) Add or refine predictors** (e.g. share of residents over 80, baseline fracture rates, staffing of *distriktssköterskor*) and re-optimize, or lengthen the pre-period so the fit is matched on more history. If no configuration achieves a small RMSPE, the honest conclusion is that synthetic control cannot credibly evaluate this program with the available donors.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A synthetic control is a *convex combination* of untreated donor units --- non-negative weights summing to one --- chosen so the synthetic reproduces the treated unit's pre-treatment outcomes and predictors.
+- The non-negativity-and-sum-to-one constraint confines the synthetic to the donors' convex hull: it interpolates, never extrapolates, which guards against overfitting and forces the method to fail honestly when the donor pool is inadequate.
+- The estimated effect is the *post-treatment gap* between the treated unit and its synthetic --- a path of effects over time, not a single number --- and it is only credible when the *pre-treatment fit* (a small RMSPE) is good.
+- Synthetic control generalizes difference-in-differences: DiD is the equal-weighted special case, and synthetic control replaces the *assumption* of parallel trends with a *demonstrated* pre-period match.
+:::
+
+
+## What Comes Next
+
+We built a counterfactual region from a weighted donor pool, read the treatment effect as the post-reform gap, and learned that the whole edifice rests on a small pre-period RMSPE. But one question remains unanswered: the gap for Norrvik is about $-0.42$ HbA1c points --- *is that gap larger than we would expect by chance?* With a single treated unit there are no conventional standard errors. The next page, [Inference for Synthetic Control](inference.qmd), develops the answer Abadie and coauthors pioneered: **placebo tests** that reassign the treatment to each donor in turn, build a synthetic for every region, and ask whether the real treated unit's post/pre RMSPE ratio stands out from the distribution of placebo gaps --- turning "the gap looks big" into a defensible inferential statement.

@@ -1,0 +1,1424 @@
+---
+title: "Randomization"
+subtitle: "How random assignment eliminates selection bias"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain how independence $(Y(0), Y(1)) \perp\!\!\!\perp D$ sets selection bias to zero and makes the difference in means identify the ATE
+- Interpret the randomization distribution to see why the difference-in-means estimator is unbiased but variable in any single draw
+- Distinguish Fisher's exact (sharp-null permutation) framework from Neyman's repeated-sampling framework for inference
+- Compute an exact permutation $p$-value by shuffling treatment labels under the sharp null $H_0: Y_i(1) = Y_i(0)$
+- Explain why the standard variance estimator $s_1^2/N_1 + s_0^2/N_0$ is conservative and why balance checks cannot detect imbalance in unobserved confounders
+:::
+
+## Why Randomization Works
+
+The previous two pages established a problem: we want $E[Y(1) - Y(0)]$ but can only observe $E[Y|D=1] - E[Y|D=0]$, and the two differ by the selection bias term $E[Y(0)|D=1] - E[Y(0)|D=0]$.
+
+Consider a concrete example. A Swedish municipality wants to evaluate a new *fallprevention* (fall prevention) program in its *äldrevård* (elderly care) facilities. The outcome is the number of fall-related injuries over six months. If the program is offered on a voluntary basis, the facilities that adopt it may be systematically different from those that do not --- precisely the selection problem we have been studying. Sweden's national *kvalitetsregister* (quality registries), which track patient outcomes across the entire healthcare system, provide an ideal infrastructure for running and analyzing randomized trials at scale.
+
+Randomization solves the selection problem directly. If treatment $D$ is assigned independently of potential outcomes --- if a coin flip, a lottery, or a random number generator decides who gets treated --- then treatment status carries no information about what would have happened absent treatment. Formally:
+
+::: {.glass-card .glass-card--definition}
+**Random assignment** guarantees $(Y(0), Y(1)) \perp\!\!\!\perp D$ --- the potential outcomes are *statistically independent of* (that is the double-perp symbol $\perp\!\!\!\perp$) the treatment indicator, so knowing whether a unit was treated tells you nothing about what it would have done either way. This independence condition implies:
+
+$$
+E[Y(0) | D = 1] = E[Y(0) | D = 0] = E[Y(0)]
+$$
+
+$$
+E[Y(1) | D = 1] = E[Y(1) | D = 0] = E[Y(1)]
+$$
+
+Under independence, the selection bias is identically zero, and the naive difference in means identifies the ATE:
+
+$$
+E[Y | D=1] - E[Y | D=0] = E[Y(1)] - E[Y(0)] = \text{ATE}
+$$
+:::
+
+The power of randomization lies in its scope: it balances *all* pre-treatment characteristics between treated and untreated groups, including those we cannot observe or measure. No observational method can make this guarantee.
+
+The two pictures below make the difference visible *before* you reach the Balance Scanner far down the page. On the left, facilities **self-select** into the program: a confounder $U$ (say, baseline staff quality) drives both who adopts and the outcome, so a **backdoor path** $D \leftarrow U \rightarrow Y$ stays open (red) and contaminates the naive comparison. On the right, a coin flip assigns $D$: the arrow into $D$ from $U$ is **severed** by randomization (grey, dashed), so the backdoor is cut. The effect $U \rightarrow Y$ still exists (grey, solid) --- staff quality still drives injuries --- but with no path from $U$ into $D$ it can no longer confound, leaving the green causal arrow $D \rightarrow Y$ as the only thing the comparison picks up.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG component for this page (pure; depends only on global d3). ──
+// Builds an SVG with d3.create and returns the node. Used only for the two
+// small "selection vs randomization" figures below — these are FIGURES, not
+// interactives.
+//   nodes: [{id, x, y, label}]  x,y normalized in [0,1]
+//   edges: [{source, target, kind}]  kind ∈
+//            "causal"        → green (#2e6f40), solid
+//            "backdoor-open" → red   (#b3000b), solid
+//            "present"       → grey  (#79766e), solid (a real link, not the focus)
+//            "blocked"       → grey  (#79766e), dashed (the link randomization removes)
+//   conditioned: [id,...]  drawn as a rounded SQUARE instead of a circle
+p1r_drawDAG = function ({ nodes, edges, width = 300, height = 200, conditioned = [] }) {
+  const pad = 34;
+  const r = 22;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "backdoor-open" || k === "biasing") ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "p1r-arrow-green" :
+    (k === "backdoor-open" || k === "biasing") ? "p1r-arrow-red" : "p1r-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["p1r-arrow-green", "#2e6f40"],
+    ["p1r-arrow-red", "#b3000b"],
+    ["p1r-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 6).attr("ry", 6)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+p1r_panel = function (title, edges, accent) {
+  return html`<figure style="margin:0; flex:1 1 16rem; min-width:14rem;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:${accent}; text-align:center; margin-bottom:0.25rem;">${title}</figcaption>
+    ${p1r_drawDAG({
+      width: 300, height: 185,
+      nodes: [
+        { id: "U", x: 0.5,  y: 0.12, label: "U" },
+        { id: "D", x: 0.12, y: 0.82, label: "D" },
+        { id: "Y", x: 0.88, y: 0.82, label: "Y" }
+      ],
+      edges
+    })}
+  </figure>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; align-items:flex-start; margin:1rem 0 0.4rem;">
+  ${p1r_panel("Self-selection — backdoor open", [
+    { source: "U", target: "D", kind: "backdoor-open" },
+    { source: "U", target: "Y", kind: "backdoor-open" },
+    { source: "D", target: "Y", kind: "causal" }
+  ], "#b3000b")}
+  ${p1r_panel("Randomization — backdoor cut", [
+    { source: "U", target: "D", kind: "blocked" },
+    { source: "U", target: "Y", kind: "present" },
+    { source: "D", target: "Y", kind: "causal" }
+  ], "#2e6f40")}
+</div>`
+```
+
+::: {.aside}
+$D$ = program, $Y$ = fall injuries, $U$ = an unobserved confounder (e.g. baseline staff quality). <span style="color:#2e6f40; font-weight:700;">Green</span> = causal path; <span style="color:#b3000b; font-weight:700;">red</span> = open backdoor (spurious); <span style="color:#79766e; font-weight:700;">grey dashed</span> = the link randomization removes; <span style="color:#79766e; font-weight:700;">grey solid</span> = a link that still exists but no longer biases. Randomization deletes the arrow $U \rightarrow D$, so no backdoor can run through $U$ --- $U \rightarrow Y$ still exists, but with nothing feeding $U$ into $D$ it can no longer confound, even though $U$ is never measured.
+:::
+
+
+## The Difference-in-Means Estimator
+
+Under random assignment, the natural estimator of the ATE is the sample difference in means:
+
+$$
+\hat{\tau} = \bar{Y}_1 - \bar{Y}_0 = \frac{1}{N_1} \sum_{i: D_i = 1} Y_i - \frac{1}{N_0} \sum_{i: D_i = 0} Y_i
+$$
+
+where $N_1$ and $N_0$ are the numbers of treated and untreated units, respectively. This estimator is **unbiased**: $E[\hat{\tau}] = \text{ATE}$.
+
+The estimator is unbiased, but it is not *precise* in any single draw. Each random allocation produces a different $\hat{\tau}$, and some draws will produce estimates far from the true ATE by chance. The distribution of $\hat{\tau}$ across all possible random allocations is the **randomization distribution**, and its spread determines how much uncertainty remains after the experiment.
+
+
+## See It: The Randomization Distribution
+
+The simulation below makes the fall-prevention example concrete. The fixed population is a set of *äldrevård* facilities, each with a known pair of potential outcomes: the number of fall-related injuries it would record over six months *with* the program ($Y_i(1)$) and *without* it ($Y_i(0)$). The program helps on average, so the true ATE is **negative** --- it lowers injuries. Each time you click "Randomize once," half the facilities are randomly assigned to run the program, the difference in mean injuries (treated minus control) is computed, and the estimate is added to the histogram. Over many draws, the histogram centers on the true ATE.
+
+::: {.interactive-container}
+
+#### Repeated Randomization: Seeing Unbiasedness
+
+::: {.start-here}
+**Start here:** click **Draw 500**, then watch the histogram pile up around the ochre line (the true ATE). Increase **N** to see the spread shrink.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof sampleSize = Inputs.range([20, 500], {
+  value: 100,
+  step: 20,
+  label: "Number of facilities (N)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof drawButton = Inputs.button([
+  ["Randomize once", value => value + 1],
+  ["Draw 50", value => value + 50],
+  ["Draw 500", value => value + 500],
+  ["Reset", value => 0]
+], { value: 0, label: "Draw allocations" })
+```
+
+```{ojs}
+//| echo: false
+
+// Fall-prevention example: outcome is fall-related injuries per facility
+// over six months. The program reduces injuries on average, so the ATE
+// is negative. Baseline injuries average ~12 per facility.
+populationATE = -4.0
+baselineFalls = 12
+
+// Generate fixed population of facilities (regenerates when N changes)
+population = {
+  const rng = mulberry32r(12345);
+  const pop = [];
+  for (let i = 0; i < sampleSize; i++) {
+    // Injuries without the program (clamped at 0 — counts can't be negative)
+    const y0 = Math.max(0, baselineFalls + 4 * randnr(rng));
+    const tau = populationATE + 3 * randnr(rng);
+    const y1 = Math.max(0, y0 + tau);
+    pop.push({ y0: y0, y1: y1, tau: y1 - y0 });
+  }
+  return pop;
+}
+
+// The estimand the difference-in-means is actually unbiased for is the REALIZED
+// finite-population ATE — the mean of tau_i over this fixed population. Because
+// y1 is clamped at 0 (counts can't be negative) and N is finite, this differs
+// from the nominal data-generating parameter (-4.0). The histogram of estimates
+// centers on THIS value, so it is the honest reference for unbiasedness and the
+// center of the Neyman Normal.
+populationMeanTau = population.reduce((s, d) => s + d.tau, 0) / population.length
+
+function mulberry32r(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randnr(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// Accumulate estimates across draws
+estimates = {
+  const count = drawButton;
+  if (count === 0) return [];
+
+  const results = [];
+  for (let d = 0; d < count; d++) {
+    // True random allocation (not seeded — different each click)
+    const n1 = Math.floor(sampleSize / 2);
+    const indices = Array.from({length: sampleSize}, (_, i) => i);
+    // Fisher-Yates shuffle
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    const treated = new Set(indices.slice(0, n1));
+
+    let sumT = 0, sumC = 0, nT = 0, nC = 0;
+    for (let i = 0; i < sampleSize; i++) {
+      if (treated.has(i)) {
+        sumT += population[i].y1;
+        nT++;
+      } else {
+        sumC += population[i].y0;
+        nC++;
+      }
+    }
+    results.push({ estimate: sumT / nT - sumC / nC, draw: d });
+  }
+  return results;
+}
+
+meanEstimate = estimates.length > 0
+  ? estimates.reduce((s, d) => s + d.estimate, 0) / estimates.length
+  : null
+
+sdEstimate = estimates.length > 1
+  ? Math.sqrt(estimates.reduce((s, d) => s + (d.estimate - meanEstimate) ** 2, 0) / (estimates.length - 1))
+  : null
+
+// Theoretical SDs computed from the (fully known) population.
+// With N1 = N0 = floor(N/2). We have both potential outcomes here, so we
+// can compute the true (Neyman) sampling SD and the conservative one the
+// standard estimator targets.
+neymanSDs = {
+  const n1 = Math.floor(sampleSize / 2);
+  const n0 = sampleSize - n1;
+  const n = sampleSize;
+
+  const varOf = (arr) => {
+    const m = arr.reduce((s, x) => s + x, 0) / arr.length;
+    return arr.reduce((s, x) => s + (x - m) ** 2, 0) / (arr.length - 1);
+  };
+
+  const S1sq = varOf(population.map(d => d.y1)); // Var(Y(1))
+  const S0sq = varOf(population.map(d => d.y0)); // Var(Y(0))
+  const Stau = varOf(population.map(d => d.tau)); // Var(tau_i)
+
+  // Conservative variance: what s1^2/N1 + s0^2/N0 estimates (ignores Var(tau)/N)
+  const conservativeVar = S1sq / n1 + S0sq / n0;
+  // True (Neyman) finite-population variance: subtracts Var(tau_i)/N
+  const trueVar = Math.max(0, conservativeVar - Stau / n);
+
+  return {
+    predicted: Math.sqrt(trueVar),
+    conservative: Math.sqrt(conservativeVar)
+  };
+}
+
+predictedSD = neymanSDs.predicted
+conservativeSD = neymanSDs.conservative
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-bottom: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.82rem;">
+  <div style="min-height: 4.6rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(153, 0, 0, 0.06); border: 1px solid rgba(153, 0, 0, 0.15);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Realized ATE</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #990000;">${populationMeanTau.toFixed(2)}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">mean of τ_i, clamped</div>
+  </div>
+  <div style="min-height: 4.6rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Draws</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #1c1c1a;">${estimates.length}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">allocations drawn</div>
+  </div>
+  <div style="min-height: 4.6rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: ${meanEstimate !== null ? 'rgba(46, 111, 64, 0.06)' : '#f6f5f1'}; border: 1px solid ${meanEstimate !== null ? 'rgba(46, 111, 64, 0.15)' : '#e6e3db'};">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Mean estimate</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: ${meanEstimate !== null ? '#2e6f40' : '#79766e'};">${meanEstimate !== null ? meanEstimate.toFixed(3) : "---"}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">average of your draws</div>
+  </div>
+  <div style="min-height: 4.6rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Empirical SD</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #1c1c1a;">${sdEstimate !== null ? sdEstimate.toFixed(3) : "---"}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">spread of your draws</div>
+  </div>
+  <div style="min-height: 4.6rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(156, 122, 51, 0.08); border: 1px solid rgba(156, 122, 51, 0.2);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Predicted SD</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #9c7a33;">${predictedSD.toFixed(3)}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">true Neyman SD</div>
+  </div>
+  <div style="min-height: 4.6rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(61, 90, 108, 0.07); border: 1px solid rgba(61, 90, 108, 0.18);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Conservative SD</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #3d5a6c;">${conservativeSD.toFixed(3)}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">what the t-test uses</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+normalThresholds = 30
+
+// Points tracing the Neyman-predicted Normal density, rescaled to the
+// histogram's count axis. Only meaningful once we have a few draws.
+normalCurve = {
+  if (estimates.length < 2 || !(predictedSD > 0)) return [];
+
+  // Match the histogram's binning to convert density -> expected count.
+  const vals = estimates.map(d => d.estimate);
+  const lo = d3.min(vals);
+  const hi = d3.max(vals);
+  const binWidth = (hi - lo) > 0 ? (hi - lo) / normalThresholds : predictedSD / 5;
+
+  const mu = populationMeanTau;
+  const sd = predictedSD;
+  const pdf = (x) => Math.exp(-0.5 * ((x - mu) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+
+  // Draw the curve across +/- 4 SD around the true ATE.
+  const pts = [];
+  const steps = 120;
+  const xmin = mu - 4 * sd;
+  const xmax = mu + 4 * sd;
+  for (let i = 0; i <= steps; i++) {
+    const x = xmin + (i / steps) * (xmax - xmin);
+    pts.push({ x: x, count: estimates.length * binWidth * pdf(x) });
+  }
+  return pts;
+}
+
+estimates.length > 0 ? Plot.plot({
+  width: Math.min(640, width),
+  height: 260,
+  marginTop: 28,
+  marginRight: 70,
+  marginBottom: 44,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    label: "Estimated effect on falls (injuries per facility)",
+    grid: true
+  },
+  y: {
+    label: "Count",
+    grid: true
+  },
+  marks: [
+    Plot.rectY(estimates,
+      Plot.binX(
+        { y: "count" },
+        { x: "estimate", fill: "#990000", fillOpacity: 0.5, thresholds: normalThresholds }
+      )
+    ),
+    Plot.line(normalCurve, {
+      x: "x",
+      y: "count",
+      stroke: "#3d5a6c",
+      strokeWidth: 2.5,
+      curve: "natural"
+    }),
+    Plot.ruleX([populationMeanTau], {
+      stroke: "#9c7a33",
+      strokeWidth: 2.5,
+      strokeDasharray: "6,3"
+    }),
+    Plot.text(
+      normalCurve.length > 0 ? [{ label: "Neyman Normal (prediction)" }] : [],
+      { frameAnchor: "top-right", dx: -6, dy: 6, text: "label", fill: "#3d5a6c", fontWeight: 600, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    ),
+    Plot.text(
+      [{ label: "true ATE" }],
+      { frameAnchor: "top-left", dx: 6, dy: 6, text: "label", fill: "#9c7a33", fontWeight: 600, textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    ),
+    Plot.ruleY([0])
+  ]
+}) : html`<div style="text-align: center; color: #79766e; padding: 2rem 0; font-family: 'Inter', sans-serif; font-size: 0.9rem;">Click a button above to begin drawing random allocations.</div>`
+```
+
+Click "Randomize once" to see individual draws. Click "Draw 500" to build up the full randomization distribution. The ochre dashed line marks the true ATE (a *reduction* in falls, hence negative), and the slate curve is the **Neyman-predicted Normal** sampling distribution. Notice: the histogram centers on the true value (unbiasedness), tracks the predicted Normal closely once you accumulate draws, and its spread shrinks as you increase the number of facilities $N$ (precision improves with sample size).
+
+Compare the three spread numbers in the cards above. The **Empirical SD** is the spread of the estimates you have actually drawn. The **Predicted SD (Neyman)** is the true sampling SD computed from the (fully known) population --- $\sqrt{S_1^2/N_1 + S_0^2/N_0 - \text{Var}(\tau_i)/N}$. The **Conservative SD** is what the standard estimator $\sqrt{s_1^2/N_1 + s_0^2/N_0}$ targets; it drops the $\text{Var}(\tau_i)/N$ term and is therefore always at least as large. As you draw more allocations, the Empirical SD converges toward the Predicted SD, which sits just below the Conservative SD.
+
+The gap between those two cards has a name. The exact variance of $\hat{\tau}$ splits into the part the $t$-test *can* estimate and a part it *cannot*:
+
+```{ojs}
+//| echo: false
+
+// Color-matched decomposition of Var(τ̂). The first block is colored to match
+// the slate "Conservative SD" card; the subtracted block matches the ochre
+// "Predicted SD" / omitted-term story. Static figure (no inputs).
+html`<div style="font-family:'Inter',sans-serif; background:#f6f5f1; border:1px solid #e6e3db; border-radius:0.5rem; padding:0.9rem 1.1rem; margin:0.5rem 0 0.75rem; line-height:1.6;">
+  <div style="font-size:1.05rem; text-align:center; color:#1c1c1a; font-variant-numeric:tabular-nums;">
+    Var(τ̂)
+    <span style="color:#79766e;">=</span>
+    <span style="color:#3d5a6c; font-weight:700;">S₁²/N₁ + S₀²/N₀</span>
+    <span style="color:#79766e;">−</span>
+    <span style="color:#9c7a33; font-weight:700;">Var(τ&#7522;)/N</span>
+  </div>
+  <div style="display:flex; flex-wrap:wrap; gap:0.6rem 1.4rem; justify-content:center; margin-top:0.6rem; font-size:0.78rem; color:#44443f;">
+    <div style="max-width:21rem;"><span style="color:#3d5a6c; font-weight:700;">■ Conservative term</span> — what <em>s₁²/N₁ + s₀²/N₀</em> estimates from the data (the <strong>Conservative SD</strong> card).</div>
+    <div style="max-width:21rem;"><span style="color:#9c7a33; font-weight:700;">■ Omitted term</span> — the variance of the <em>unit-level</em> effects τ&#7522; = Y&#7522;(1) − Y&#7522;(0). <strong>Unobservable</strong>: it needs both potential outcomes for the same unit, which no experiment ever sees. Dropping it inflates the SE, so the standard estimator is <strong>conservative</strong>.</div>
+  </div>
+</div>`
+```
+
+This is exactly the gap you can read off the cards: the slate **Conservative SD** keeps only the first block, while the ochre **Predicted SD** subtracts the second --- and because that subtracted term is a variance (never negative), the Conservative SD can only ever be the larger of the two.
+
+:::
+
+### How to Read the Randomization Distribution
+
+This first interactive shows what "unbiased but variable" means in practice. Each allocation gives one estimate; many allocations trace out the whole randomization distribution. Work through it in order:
+
+**Step 1: Draw one allocation.** Click **Randomize once**. The facilities are split in half at random, the difference in mean injuries is computed, and a single estimate lands in the histogram. That lone bar is one experiment's answer --- and it need not equal the true ATE.
+
+**Step 2: Build the distribution.** Click **Draw 500**. The histogram fills in and centers on the ochre dashed line (the realized ATE for this population). This centering *is* unbiasedness: no single draw is exact, but the draws average to the truth.
+
+**Step 3: Tighten with sample size.** Slide **Number of facilities (N)** upward and draw again. The histogram keeps its center but narrows --- precision improves with $N$, at the $\sqrt{N}$ rate. Shrink $N$ to 20 and the spread widens noticeably.
+
+**Step 4: Compare the three SDs.** Read the **Empirical SD** (spread of your draws), the **Predicted SD** (the true Neyman SD from the known population), and the **Conservative SD** (what the $t$-test reports). The empirical value converges to the predicted one, which always sits just below the conservative one.
+
+**Step 5: The slate curve is a prediction, not a fit.** The Neyman Normal overlay is computed in advance from the population variances, not fitted to your histogram. That the bars track it is the central-limit story --- an *asymptotic approximation* to the sampling distribution. (Contrast this with the Fisher test below, whose reference distribution is *exact* and makes no normal approximation at all.)
+
+
+::: {.glass-card .glass-card--insight}
+Randomization eliminates selection bias by construction. It guarantees that treated and untreated groups are comparable *on average* across all characteristics --- observed and unobserved. No amount of careful covariate adjustment in an observational study can replicate this guarantee, because we can never condition on variables we do not measure.
+:::
+
+
+## Two Frameworks for Inference
+
+The randomization distribution illustrated above provides the basis for *inference* --- quantifying the uncertainty in our estimate. There are two distinct frameworks for doing so, and the distinction matters for understanding what exactly is random.
+
+The table below previews how the two frameworks differ before we work through each one. They answer different questions and lean on different assumptions, even though both are powered by the same randomization that produced the data.
+
+```{=html}
+<table class="science-table">
+  <thead>
+    <tr>
+      <th style="text-align:left;"></th>
+      <th>Fisher (exact)</th>
+      <th>Neyman (repeated sampling)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align:left; font-weight:600;">What is random?</td>
+      <td>Only the treatment labels; outcomes are fixed constants</td>
+      <td>Both the treatment assignment <em>and</em> the sampled potential outcomes</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">Estimand / target</td>
+      <td>None — it is a test, not an estimate</td>
+      <td>The (super)population ATE, <em>E</em>[Y(1) − Y(0)]</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">Null tested</td>
+      <td>Sharp null: <em>Y&#7522;</em>(1) = <em>Y&#7522;</em>(0) for <em>every</em> unit</td>
+      <td>Weak null: average effect = 0</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">Distributional assumptions</td>
+      <td>None — exact, finite-sample</td>
+      <td>Normal approximation (CLT) for the SE / <em>t</em>-test</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">Main output</td>
+      <td>An exact permutation <em>p</em>-value</td>
+      <td>A point estimate, standard error, and confidence interval</td>
+    </tr>
+  </tbody>
+</table>
+```
+
+### Fisher's Exact Framework
+
+In Fisher's framework, potential outcomes are fixed constants. The only source of randomness is the treatment assignment mechanism itself. Under the **sharp null** $H_0: Y_i(1) = Y_i(0)$ for all $i$ (treatment has zero effect on every unit), we can compute the exact distribution of any test statistic by enumerating all $\binom{N}{N_1}$ possible assignments.
+
+This is the framework underlying Fisher's exact test and permutation tests. It makes no distributional assumptions but tests only the sharp null of no effect whatsoever.
+
+The simulator below turns this idea into a picture. It fixes *one* trial of fall-prevention facilities, then repeatedly **shuffles the treatment labels** under the sharp null --- each shuffle is a treatment assignment that *could have happened* but carries no real effect. The histogram those shuffles trace out is the **randomization (reference) distribution** of $\hat{\tau}$. Overlay the value you actually observed and the share of shuffles at least as extreme *is* the exact permutation $p$-value --- no $t$-distribution, no normal approximation. Then dial in a true effect and watch the observed statistic march into the tail while the $p$-value collapses.
+
+Before the live tool, here is the move in miniature. The **outcomes stay frozen** (the same six numbers in every row); only the <span style="color:#990000; font-weight:700;">T</span>/<span style="color:#3d5a6c; font-weight:700;">C</span> labels are reshuffled. Each relabelling produces a different $\hat{\tau}$, and stacking thousands of them is exactly the reference histogram you build below.
+
+```{ojs}
+//| echo: false
+
+// Static teaser: frozen outcomes, only the labels move. Each row is one
+// label permutation of the SAME six values, yielding a different τ̂. Not an
+// interactive — fixed illustrative rows.
+{
+  const ys = [14, 9, 12, 7, 15, 11];           // frozen outcomes
+  // Three hand-picked label patterns (T = treated, C = control), 3 of each.
+  const rows = [
+    ["T", "C", "T", "C", "T", "C"],
+    ["C", "T", "C", "T", "T", "C"],
+    ["T", "T", "C", "C", "C", "T"]
+  ];
+  const tauOf = (labels) => {
+    let st = 0, sc = 0, nt = 0, nc = 0;
+    labels.forEach((l, i) => { if (l === "T") { st += ys[i]; nt++; } else { sc += ys[i]; nc++; } });
+    return st / nt - sc / nc;
+  };
+  const cell = (txt, color, bg) =>
+    `<td style="text-align:center; padding:0.18rem 0.45rem; font-variant-numeric:tabular-nums; color:${color}; ${bg ? `background:${bg};` : ""} border-radius:0.25rem;">${txt}</td>`;
+
+  const headVals = `<tr><td style="padding:0.18rem 0.5rem; color:#79766e; font-weight:600;">Outcome y&#7522;</td>${ys.map(v => cell(v, "#1c1c1a", "#f6f5f1")).join("")}<td></td></tr>`;
+  const labelRows = rows.map((r, k) => {
+    const tau = tauOf(r);
+    const cells = r.map(l => l === "T"
+      ? cell("T", "#990000", "rgba(153,0,0,0.10)")
+      : cell("C", "#3d5a6c", "rgba(61,90,108,0.10)")).join("");
+    return `<tr><td style="padding:0.18rem 0.5rem; color:#79766e;">shuffle ${k + 1}</td>${cells}<td style="padding:0.18rem 0.6rem; font-weight:700; color:#1c1c1a; white-space:nowrap;">τ̂ = ${tau >= 0 ? "+" : ""}${tau.toFixed(1)}</td></tr>`;
+  }).join("");
+
+  return html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem; background:#fff; border:1px solid #e6e3db; border-radius:0.5rem; padding:0.7rem 0.9rem; margin:0.6rem 0 1rem;">
+    <table style="border-collapse:separate; border-spacing:3px; margin:0 auto;">${headVals}${labelRows}</table>
+    <div style="text-align:center; color:#79766e; font-size:0.72rem; margin-top:0.4rem;">Same outcomes, different labels → a whole distribution of τ̂ under "no effect on anyone."</div>
+  </div>`;
+}
+```
+
+::: {.interactive-container}
+
+#### Fisher Permutation Test: Shuffling the Labels Under the Sharp Null
+
+::: {.start-here}
+**Start here:** leave the injected effect at 0 and watch the p-value stay large; then drag it toward −6 and watch the observed line slide into the tail and the p-value collapse.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rndx_trueEffect = Inputs.range([-6, 6], {
+  value: 0,
+  step: 0.25,
+  label: "Injected true effect on falls (τ) — negative helps, positive harms"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rndx_permN = Inputs.range([20, 120], {
+  value: 40,
+  step: 4,
+  label: "Number of facilities (N)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rndx_nPerms = Inputs.select([200, 500, 1000, 2000], {
+  value: 1000,
+  label: "Number of label shuffles"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rndx_newTrial = Inputs.button("Draw a new trial", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// One fixed trial. We build N facilities, assign half to treatment, and bake
+// in the slider's true effect for the TREATED units' observed outcome. The
+// reader's "Draw a new trial" button reshuffles which facilities are treated
+// and redraws their baseline noise (referencing rndx_newTrial re-runs this).
+// Everything downstream treats these observed Y as fixed constants — exactly
+// Fisher's stance: only the labels are random from here on.
+rndx_trial = {
+  rndx_newTrial;                      // re-run on "Draw a new trial"
+  const N = rndx_permN;
+  const tau = rndx_trueEffect;        // injected effect (<= 0 helps)
+  const n1 = Math.floor(N / 2);
+
+  // Baseline injuries per facility ~ N(12, 4), clamped at 0 (counts).
+  const rndn = () => {
+    const u1 = Math.random(), u2 = Math.random();
+    return Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2);
+  };
+
+  // Random allocation: shuffle indices, first n1 are treated.
+  const idx = Array.from({ length: N }, (_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  const treated = new Set(idx.slice(0, n1));
+
+  const units = [];
+  for (let i = 0; i < N; i++) {
+    const base = Math.max(0, 12 + 4 * rndn());
+    const d = treated.has(i) ? 1 : 0;
+    // Observed outcome: control sees baseline; treated sees baseline + tau.
+    const y = Math.max(0, base + (d === 1 ? tau : 0));
+    units.push({ id: i, d, y });
+  }
+  return units;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Test statistic: difference in observed means (treated − control), in the
+// fixed trial. This is the OBSERVED τ̂ we will compare against the reference
+// distribution.
+rndx_obsTau = {
+  const tr = rndx_trial.filter(u => u.d === 1);
+  const ct = rndx_trial.filter(u => u.d === 0);
+  const mt = tr.reduce((s, u) => s + u.y, 0) / tr.length;
+  const mc = ct.reduce((s, u) => s + u.y, 0) / ct.length;
+  return mt - mc;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The randomization (reference) distribution under the SHARP NULL.
+// Outcomes y are now frozen constants. We repeatedly RE-LABEL: pick a random
+// subset of size n1 to be "treated", recompute the difference in means. Under
+// H0 (no effect on anyone), the labels are exchangeable, so this set of
+// recomputed statistics is the exact null distribution of τ̂.
+rndx_permDist = {
+  rndx_newTrial;                      // redraw when the trial changes
+  const units = rndx_trial;
+  const N = units.length;
+  const ys = units.map(u => u.y);
+  const n1 = units.filter(u => u.d === 1).length;
+  const total = ys.reduce((s, y) => s + y, 0);
+  const B = rndx_nPerms;
+
+  const idx = Array.from({ length: N }, (_, i) => i);
+  const stats = [];
+  for (let b = 0; b < B; b++) {
+    // Partial Fisher-Yates: shuffle just enough to draw n1 "treated".
+    for (let i = N - 1; i >= N - n1; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [idx[i], idx[j]] = [idx[j], idx[i]];
+    }
+    let sumT = 0;
+    for (let i = N - 1; i >= N - n1; i--) sumT += ys[idx[i]];
+    const sumC = total - sumT;
+    stats.push(sumT / n1 - sumC / (N - n1));
+  }
+  return stats;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Exact (two-sided) permutation p-value: fraction of shuffles whose statistic
+// is at least as extreme (in absolute value) as the observed τ̂.
+rndx_pValue = {
+  const obs = Math.abs(rndx_obsTau);
+  const B = rndx_permDist.length;
+  let count = 0;
+  for (const s of rndx_permDist) if (Math.abs(s) >= obs - 1e-9) count++;
+  return count / B;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Stat cards in the page's house style.
+html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.5rem; margin-bottom: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.82rem;">
+  <div style="min-height: 4.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(153, 0, 0, 0.06); border: 1px solid rgba(153, 0, 0, 0.15);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Observed τ̂</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #990000;">${rndx_obsTau >= 0 ? "+" : ""}${rndx_obsTau.toFixed(2)}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">this trial</div>
+  </div>
+  <div style="min-height: 4.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(156, 122, 51, 0.08); border: 1px solid rgba(156, 122, 51, 0.2);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Injected τ</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #9c7a33;">${rndx_trueEffect.toFixed(2)}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">true effect set</div>
+  </div>
+  <div style="min-height: 4.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Shuffles</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #1c1c1a;">${rndx_permDist.length}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">relabellings</div>
+  </div>
+  <div style="min-height: 4.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: ${rndx_pValue < 0.05 ? 'rgba(46, 111, 64, 0.08)' : 'rgba(61, 90, 108, 0.07)'}; border: 1px solid ${rndx_pValue < 0.05 ? 'rgba(46, 111, 64, 0.2)' : 'rgba(61, 90, 108, 0.18)'};">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Exact p-value</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: ${rndx_pValue < 0.05 ? '#2e6f40' : '#3d5a6c'};">${rndx_pValue < 0.001 ? "< 0.001" : rndx_pValue.toFixed(3)}</div>
+    <div style="font-size: 0.6rem; color: #79766e;">${rndx_pValue < 0.05 ? "reject sharp null" : "cannot reject"}</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// The randomization distribution with the observed τ̂ overlaid. Shuffles at
+// least as extreme as |τ̂| (the tail that defines the p-value) are tinted red.
+{
+  const obs = rndx_obsTau;
+  const absObs = Math.abs(obs);
+  const rows = rndx_permDist.map(s => ({ s, tail: Math.abs(s) >= absObs - 1e-9 }));
+
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 280,
+    marginTop: 28,
+    style: {
+      fontFamily: "'Inter', sans-serif",
+      fontSize: "12px",
+      background: "transparent"
+    },
+    x: { label: "Difference in mean falls under shuffled labels (τ̂)", grid: true },
+    y: { label: "Count", grid: true },
+    color: {
+      domain: [false, true],
+      range: ["#3d5a6c", "#990000"]
+    },
+    marks: [
+      Plot.rectY(rows,
+        Plot.binX(
+          { y: "count" },
+          { x: "s", fill: "tail", fillOpacity: 0.55, thresholds: 36 }
+        )
+      ),
+      Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1, strokeDasharray: "2,3" }),
+      Plot.ruleX([obs], { stroke: "#1c1c1a", strokeWidth: 3 }),
+      Plot.text([{ x: obs }], {
+        x: "x",
+        frameAnchor: "top",
+        text: () => `observed τ̂ = ${obs >= 0 ? "+" : ""}${obs.toFixed(2)}`,
+        fill: "#1c1c1a",
+        fontWeight: "bold",
+        fontSize: 11,
+        dy: -14,
+        dx: obs <= 0 ? -4 : 4,
+        textAnchor: obs <= 0 ? "end" : "start",
+        stroke: "white",
+        strokeWidth: 3,
+        paintOrder: "stroke"
+      }),
+      Plot.ruleY([0])
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line plain-language verdict tied to the p-value.
+{
+  const p = rndx_pValue;
+  let msg, color;
+  if (p < 0.01) {
+    msg = `Only ${(p * 100).toFixed(1)}% of label shuffles are as extreme as what we observed — the data are very hard to reconcile with "no effect on anyone." Reject the sharp null.`;
+    color = "#2e6f40";
+  } else if (p < 0.05) {
+    msg = `${(p * 100).toFixed(1)}% of shuffles are as extreme as the observed τ̂ — below the 5% bar. The sharp null is rejected, but not overwhelmingly.`;
+    color = "#2e6f40";
+  } else {
+    msg = `${(p * 100).toFixed(1)}% of shuffles are as extreme as the observed τ̂ — an estimate this size happens routinely just by relabelling. We cannot reject the sharp null of no effect.`;
+    color = "#990000";
+  }
+  return html`<div style="
+      margin-top: 0.5rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 0.5rem;
+      border-left: 3px solid ${color};
+      background: #f6f5f1;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Fisher Permutation Test
+
+This interactive fixes one trial and then asks a single, sharp question: *if the program truly did nothing to anyone, how often would random label-shuffling alone produce an estimate as big as the one we saw?* Work through it in order:
+
+**Step 1: Start at the null.** Leave **Injected true effect** at 0. The treated facilities are nothing but relabelled controls, so the observed $\hat{\tau}$ (black line) sits in the fat middle of the blue histogram. The **permutation p-value** card is large and the verdict bar is red --- with no real effect, an estimate this size is utterly ordinary. Notice the histogram is centered on 0 and roughly symmetric: that is the reference distribution the sharp null predicts.
+
+**Step 2: See what "exact" means.** The histogram is built entirely by *reshuffling the treatment labels* on the fixed outcomes --- no $t$-distribution, no normal approximation, no standard-error formula. The coral bars are the shuffles at least as extreme as $|\hat{\tau}|$; their share of all shuffles *is* the p-value reported in the card. Bump **Number of label shuffles** from 200 to 2000 and watch the p-value steady as the reference distribution fills in.
+
+**Step 3: Inject a real effect.** Drag **Injected true effect** toward $-6$ (the program now genuinely prevents falls). The black observed line slides left into the thin tail, the coral tail shrinks to a sliver, and the p-value plunges --- often past 0.05 (verdict turns green) and on toward "< 0.001." You are watching a true effect push the observed statistic out of the range that label-shuffling can explain.
+
+**Step 4: Feel the role of sample size.** Set a modest effect (say $\tau = -2$) and slide **Number of facilities** from 20 up to 120. The reference distribution narrows as $N$ grows, so the *same* effect lands further into the tail and the p-value falls. A real effect that is invisible in a tiny trial becomes unmistakable in a larger one --- the same precision story as the randomization distribution above, now seen through the lens of a test.
+
+**Step 5: Appreciate the honesty of the design.** Click **Draw a new trial** a few times with the effect at 0. The p-value bounces around but is large *most* of the time, and dips below 0.05 only about 1 trial in 20 --- exactly the 5% false-positive rate the test promises. The permutation test makes no distributional assumptions at all; its validity comes entirely from the randomization that produced the data.
+
+
+### Neyman's Repeated Sampling Framework
+
+In Neyman's framework, we assume the $N$ units are a random sample from a superpopulation. Both the potential outcomes *and* the treatment assignment are random. The estimand is the superpopulation ATE: $E[Y(1) - Y(0)]$.
+
+Neyman showed that the variance of $\hat{\tau}$ under repeated sampling is:
+
+$$
+\text{Var}(\hat{\tau}) = \frac{S_1^2}{N_1} + \frac{S_0^2}{N_0}
+$$
+
+where $S_1^2 = \text{Var}(Y_i(1))$ and $S_0^2 = \text{Var}(Y_i(0))$ are the population variances of the potential outcomes. Since we cannot observe both potential outcomes, we estimate this with the sample analog:
+
+$$
+\widehat{\text{Var}}(\hat{\tau}) = \frac{s_1^2}{N_1} + \frac{s_0^2}{N_0}
+$$
+
+This is the familiar formula behind the two-sample $t$-test. It is conservative: it overestimates the true variance because it omits a term equal to $\text{Var}(\tau_i)/N$ --- the variance of the individual treatment effects $\tau_i = Y_i(1) - Y_i(0)$, divided by $N$. That term is non-negative and unobservable (it depends on both potential outcomes for the same unit), so dropping it can only inflate the estimated variance. The Math Details below derive this exactly.
+
+
+## Practical Considerations
+
+Random assignment in principle solves the identification problem. In practice, several issues arise.
+
+**Balance checks.** After randomization, researchers typically check whether treated and untreated groups are balanced on observable covariates. If the randomization worked, *some* imbalances are expected by chance --- testing 20 covariates at the 5% level will produce about one significant difference under the null. Balance checks are useful for detecting procedural failures, but their absence should not be treated as evidence that the randomization failed.
+
+The scanner below shows what balance checks can and cannot see --- and why randomization is uniquely powerful. It tracks *two* covariates for each *äldrevård* facility: an **observed** one, $X$ (say, the share of frail residents, which a researcher can measure), and a **hidden confounder** $U$ (say, baseline staff quality, which never makes it into the data). Switch between random assignment and a self-selection rule and watch the standardized mean differences live: random assignment drives the imbalance in *both* $X$ and $U$ toward zero, while self-selection biases both --- and you would only ever catch the imbalance in $X$.
+
+The metric the bars report is the **standardized mean difference (SMD)**: the gap between the treated and control group means, *measured in standard-deviation units* (so it is unit-free and comparable across variables). The convention is that $|\text{SMD}| < 0.1$ counts as "balanced" --- a widely used rule of thumb, not a hard law.
+
+::: {.interactive-container}
+
+#### Balance Scanner: Random Assignment vs. Self-Selection
+
+::: {.start-here}
+**Start here:** keep **Random assignment** and click **Draw new randomization** a few times — both bars stay inside the green zone. Then switch to **Self-selection** and watch both bars (including the hidden one) swing out.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rndx_balRule = Inputs.radio(
+  ["Random assignment", "Self-selection (facilities opt in)"],
+  { label: "Assignment rule", value: "Random assignment" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof rndx_balN = Inputs.range([40, 600], {
+  value: 200,
+  step: 20,
+  label: "Number of facilities (N)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rndx_balSelStrength = Inputs.range([0, 1], {
+  value: 0.7,
+  step: 0.05,
+  label: "Self-selection strength (active only under self-selection)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rndx_balDraw = Inputs.button("Draw new randomization", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build N facilities, each with an OBSERVED covariate X (share of frail
+// residents) and a HIDDEN confounder U (baseline staff quality). Both are
+// standard normal. Under "Self-selection", facilities with better staff (high
+// U) AND more frail residents (high X) are the ones that opt in — so BOTH
+// covariates end up imbalanced, but a researcher only ever sees X. Under
+// "Random assignment", a coin flip decides, independent of X and U.
+// Referencing rndx_balDraw makes the whole sample (and assignment) redraw on
+// each click — a fresh randomization, no mutable accumulation.
+rndx_balData = {
+  rndx_balDraw;                       // redraw on button click
+  const N = rndx_balN;
+  const rule = rndx_balRule;
+  const sel = rndx_balSelStrength;
+
+  const rndn = () => {
+    const u1 = Math.random(), u2 = Math.random();
+    return Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2);
+  };
+
+  const units = [];
+  for (let i = 0; i < N; i++) {
+    const x = rndn();                 // observed covariate (frailty share)
+    const u = rndn();                 // hidden confounder (staff quality)
+    units.push({ id: i, x, u });
+  }
+
+  if (rule === "Random assignment") {
+    // Coin flip independent of X and U: shuffle and split in half.
+    const idx = units.map((_, i) => i);
+    for (let i = idx.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [idx[i], idx[j]] = [idx[j], idx[i]];
+    }
+    const n1 = Math.floor(N / 2);
+    const treated = new Set(idx.slice(0, n1));
+    units.forEach((m, i) => { m.d = treated.has(i) ? 1 : 0; });
+  } else {
+    // Self-selection: opt-in score rises with BOTH X and U (plus noise).
+    // Facilities above the median score enroll, so ~half are treated but the
+    // treated are systematically higher on X and U.
+    const scored = units.map(m => ({
+      m,
+      score: sel * (m.x + m.u) + (1 - sel) * rndn() + 0.4 * rndn()
+    }));
+    const cutoff = d3.median(scored, s => s.score);
+    scored.forEach(s => { s.m.d = s.score >= cutoff ? 1 : 0; });
+  }
+  return units;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standardized mean difference (treated − control), in pooled-SD units, for
+// each covariate. SMD near 0 = balanced; |SMD| > ~0.1 is the conventional
+// "imbalance" flag. We report it for the OBSERVED X and the HIDDEN U.
+rndx_balSMD = {
+  const tr = rndx_balData.filter(m => m.d === 1);
+  const ct = rndx_balData.filter(m => m.d === 0);
+  const mean = (arr, k) => arr.reduce((s, m) => s + m[k], 0) / arr.length;
+  const varOf = (arr, k, mu) => arr.reduce((s, m) => s + (m[k] - mu) ** 2, 0) / Math.max(1, arr.length - 1);
+
+  const smd = (k) => {
+    const mt = mean(tr, k), mc = mean(ct, k);
+    const vt = varOf(tr, k, mt), vc = varOf(ct, k, mc);
+    const pooled = Math.sqrt((vt + vc) / 2);
+    return pooled > 0 ? (mt - mc) / pooled : 0;
+  };
+  return ({ X: smd("x"), U: smd("u"), nTr: tr.length, nCt: ct.length });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Two stat cards: SMD for observed X and hidden U, color-coded by balance.
+{
+  const s = rndx_balSMD;
+  const balanced = v => Math.abs(v) < 0.1;
+  const card = (name, sub, value, accent) => {
+    const ok = balanced(value);
+    const color = ok ? "#2e6f40" : "#990000";
+    return html`<div style="
+        flex: 1 1 0; min-width: 9rem; text-align: center;
+        padding: 0.6rem 0.5rem; border-radius: 0.5rem;
+        background: ${ok ? 'rgba(46,111,64,0.08)' : 'rgba(153,0,0,0.06)'};
+        border: 1px solid ${ok ? 'rgba(46,111,64,0.2)' : 'rgba(153,0,0,0.15)'};">
+      <div style="font-family: 'Inter', sans-serif; font-size: 0.66rem;
+          font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: ${accent};">${name}</div>
+      <div style="font-family: 'Inter', sans-serif; font-size: 0.62rem; color: #79766e; margin-bottom: 0.15rem;">${sub}</div>
+      <div style="font-family: 'Inter', sans-serif; font-size: 1.35rem; font-weight: 700; color: ${color}; font-variant-numeric: tabular-nums;">${value >= 0 ? "+" : ""}${value.toFixed(3)}</div>
+      <div style="font-family: 'Inter', sans-serif; font-size: 0.62rem; font-weight: 600; color: ${color};">${ok ? "balanced" : "imbalanced"}</div>
+    </div>`;
+  };
+  return html`<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+    ${card("X — observed covariate", "share of frail residents (you can measure this)", s.X, "#3d5a6c")}
+    ${card("U — hidden confounder", "baseline staff quality (never in your data)", s.U, "#9c7a33")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Diverging bar chart of the two SMDs. The shaded band ±0.1 is the
+// conventional balance tolerance; bars inside it are "balanced".
+{
+  const s = rndx_balSMD;
+  const rows = [
+    { cov: "U (hidden)", smd: s.U, fill: "#9c7a33" },
+    { cov: "X (observed)", smd: s.X, fill: "#3d5a6c" }
+  ];
+  const span = Math.max(0.6, Math.abs(s.X), Math.abs(s.U)) * 1.2;
+
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 150,
+    marginLeft: 90,
+    marginRight: 40,
+    marginTop: 40,
+    style: {
+      fontFamily: "'Inter', sans-serif",
+      fontSize: "12px",
+      background: "transparent"
+    },
+    x: {
+      label: "Standardized mean difference (treated − control)  →",
+      domain: [-span, span],
+      grid: true
+    },
+    y: { label: null, domain: ["U (hidden)", "X (observed)"] },
+    marks: [
+      // ±0.1 balance tolerance band, drawn as two green guide lines.
+      Plot.ruleX([-0.1, 0.1], { stroke: "#2e6f40", strokeWidth: 1.5, strokeDasharray: "4,3", strokeOpacity: 0.7 }),
+      Plot.ruleX([0], { stroke: "#1c1c1a", strokeWidth: 1.5 }),
+      Plot.barX(rows, {
+        x: "smd", y: "cov", fill: "fill", fillOpacity: 0.8,
+        insetTop: 14, insetBottom: 14
+      }),
+      Plot.text(rows, {
+        x: "smd", y: "cov",
+        text: d => `${d.smd >= 0 ? "+" : ""}${d.smd.toFixed(3)}`,
+        fill: "#1c1c1a", fontWeight: "bold", fontSize: 11,
+        dx: d => d.smd >= 0 ? 6 : -6,
+        textAnchor: d => d.smd >= 0 ? "start" : "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ label: "balanced zone (±0.1)" }], {
+        frameAnchor: "top",
+        text: "label",
+        fill: "#2e6f40", fontSize: 10, dy: -22, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Plain-language verdict that updates with the rule and the draw.
+{
+  const s = rndx_balSMD;
+  const xBad = Math.abs(s.X) >= 0.1;
+  const uBad = Math.abs(s.U) >= 0.1;
+  let msg, color;
+  if (rndx_balRule === "Random assignment") {
+    msg = `Random assignment: the coin flip ignores both covariates, so X (${s.X >= 0 ? "+" : ""}${s.X.toFixed(3)}) and the hidden U (${s.U >= 0 ? "+" : ""}${s.U.toFixed(3)}) both hover near zero. Any residual gap is just chance — click "Draw new randomization" and it jumps to a new small value, averaging out. This balance on the UNOBSERVED U is what no observational method can buy.`;
+    color = "#2e6f40";
+  } else {
+    msg = `Self-selection: facilities that opt in are systematically different. X is imbalanced (${s.X >= 0 ? "+" : ""}${s.X.toFixed(3)}) — and so is the hidden U (${s.U >= 0 ? "+" : ""}${s.U.toFixed(3)}). A balance check would flag X and you could adjust for it, but the imbalance in U is invisible and uncorrectable. That residual confounding is exactly the selection bias randomization eliminates.`;
+    color = "#990000";
+  }
+  return html`<div style="
+      margin-top: 0.5rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 0.5rem;
+      border-left: 3px solid ${color};
+      background: #f6f5f1;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Balance Scanner
+
+The whole promise of randomization is balance on *everything*, observed or not. This scanner lets you watch that promise hold --- and watch self-selection break it on a variable you can never see. Work through it in order:
+
+**Step 1: Randomize and read the two bars.** Start with **Random assignment**. Both standardized mean differences --- for the observed covariate $X$ and the hidden confounder $U$ --- sit inside the green $\pm 0.1$ "balanced zone," and both cards read *balanced* in green. The coin flip did not know or care about either variable, so neither group is systematically different.
+
+**Step 2: See balance is on-average, not exact.** Click **Draw new randomization** several times. The two SMDs jitter to new small values each draw --- sometimes $+0.04$, sometimes $-0.06$ --- but they bounce around zero rather than drifting away. This is the honest picture: a single randomization need not be *perfectly* balanced, but imbalances are small, random, and average out. Shrink **Number of facilities** to 40 and the jitter grows; push it to 600 and the bars pin tightly to zero (balance improves with $N$).
+
+**Step 3: Switch to self-selection.** Choose **Self-selection (facilities opt in)**. Now the facilities that enroll are the ones with both more frail residents (high $X$) *and* better baseline staff (high $U$). Both bars swing out of the green zone and both cards flip to *imbalanced* red. Crucially, the *hidden* $U$ is just as biased as the observed $X$.
+
+**Step 4: Confront the blind spot.** Here is the lesson. Under self-selection you could run a balance check, spot the imbalance in $X$, and statistically adjust for it. But $U$ never appears in your data --- there is no column for "baseline staff quality" --- so its imbalance is invisible and uncorrectable. The naive comparison is contaminated by a confounder you cannot even name. Drag **Self-selection strength** from 0 to 1 and watch both bars fan outward together: stronger self-selection means worse hidden confounding.
+
+**Step 5: Tie it back to the guarantee.** Flip back to **Random assignment** and click **Draw new randomization** once more. Both bars snap back inside the green band, including the one for $U$. *This* is what the Key Insight box above meant by "balanced on average across all characteristics --- observed and unobserved." Random assignment balances the variable you forgot to measure; self-selection cannot, and neither can any adjustment that conditions only on what you happened to record.
+
+
+**Stratification.** When the sample is small or a particular covariate is strongly prognostic, stratified (or blocked) randomization --- randomizing separately within strata defined by that covariate --- can improve precision without introducing bias.
+
+**Compliance.** Randomization determines treatment *assignment*, but subjects may not comply. Some assigned to treatment may refuse; some assigned to control may find a way to get treated. The intention-to-treat (ITT) analysis compares groups as randomized. Recovering the effect of actual treatment requires additional assumptions (monotonicity) and methods (instrumental variables), discussed in later modules.
+
+
+## Limitations
+
+Randomization is the gold standard for internal validity, but it has real constraints:
+
+- **Ethics.** We cannot randomly assign smoking, poverty, or violence.
+- **External validity.** The population willing to participate in an experiment may differ from the policy-relevant population.
+- **Cost and feasibility.** Randomization at scale (e.g., across municipalities or countries) is expensive and logistically challenging.
+- **Time horizon.** Experiments run for finite periods; long-run effects may differ from short-run impacts.
+
+These limitations are why the rest of this book exists. When randomization is not possible, we turn to quasi-experimental methods --- designs that approximate the logic of random assignment using observational data and identifying assumptions.
+
+
+<details>
+<summary>Math Details: Unbiasedness Proof</summary>
+<div class="details-content">
+
+### Proof that $E[\hat{\tau}] = \text{ATE}$ Under Random Assignment
+
+Let treatment be randomly assigned with $P(D_i = 1) = p$ independently across units. The difference in means is:
+
+$$
+\hat{\tau} = \frac{1}{N_1} \sum_{i: D_i = 1} Y_i - \frac{1}{N_0} \sum_{i: D_i = 0} Y_i
+$$
+
+By the switching equation and independence:
+
+$$
+E[\hat{\tau}] = E\!\left[\frac{1}{N_1} \sum_{i: D_i = 1} Y_i(1)\right] - E\!\left[\frac{1}{N_0} \sum_{i: D_i = 0} Y_i(0)\right]
+$$
+
+Because $D \perp (Y(0), Y(1))$, each treated observation is a random draw from the population distribution of $Y(1)$, and each control observation from $Y(0)$. Therefore:
+
+$$
+E[\hat{\tau}] = E[Y_i(1)] - E[Y_i(0)] = \text{ATE}
+$$
+
+### Variance of $\hat{\tau}$ (Neyman)
+
+Under completely random assignment of $N_1$ units to treatment out of $N$ total:
+
+$$
+\text{Var}(\hat{\tau}) = \frac{S_1^2}{N_1} + \frac{S_0^2}{N_0} - \frac{S_{01}^2}{N}
+$$
+
+where $S_{01}^2 = \text{Var}(\tau_i) = \text{Var}(Y_i(1) - Y_i(0))$ is the variance of individual treatment effects. The last term is non-negative and unobservable, so the standard estimator $s_1^2/N_1 + s_0^2/N_0$ is conservative.
+
+Under constant treatment effects ($\tau_i = \tau$ for all $i$), $S_{01}^2 = 0$ and the standard estimator is exact.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+set.seed(42)
+N <- 200            # äldrevård facilities
+true_ate <- -4.0    # program reduces fall injuries per facility (6 months)
+
+# Fixed population of facilities with heterogeneous effects.
+# y0 = injuries without the program; counts are clamped at 0.
+pop <- tibble(
+  id  = 1:N,
+  y0  = pmax(0, rnorm(N, 12, 4)),
+  tau = rnorm(N, true_ate, 3),
+  y1  = pmax(0, y0 + tau)
+)
+
+# Single experiment: randomly assign half to treatment
+pop <- pop |>
+  mutate(
+    treated = sample(rep(c(0, 1), each = N / 2)),
+    y_obs   = if_else(treated == 1, y1, y0)
+  )
+
+# Difference in means
+dim_est <- mean(pop$y_obs[pop$treated == 1]) -
+           mean(pop$y_obs[pop$treated == 0])
+
+# t-test (Neyman inference)
+t_result <- t.test(y_obs ~ treated, data = pop)
+
+cat("True ATE:     ", true_ate, "\n")
+cat("Estimate:     ", round(dim_est, 3), "\n")
+cat("SE:           ", round(t_result$stderr, 3), "\n")
+cat("95% CI:       [", round(t_result$conf.int[1], 3), ",",
+                        round(t_result$conf.int[2], 3), "]\n")
+cat("p-value:      ", round(t_result$p.value, 4), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy import stats
+
+np.random.seed(42)
+N = 200             # äldrevård facilities
+true_ate = -4.0     # program reduces fall injuries per facility (6 months)
+
+# Fixed population of facilities with heterogeneous effects.
+# y0 = injuries without the program; counts are clamped at 0.
+y0 = np.clip(np.random.normal(12, 4, N), 0, None)
+tau = np.random.normal(true_ate, 3, N)
+y1 = np.clip(y0 + tau, 0, None)
+
+# Random assignment: half treated
+assignment = np.random.permutation(
+    np.repeat([0, 1], N // 2)
+)
+y_obs = np.where(assignment == 1, y1, y0)
+
+# Difference in means
+y_treated = y_obs[assignment == 1]
+y_control = y_obs[assignment == 0]
+dim_est = y_treated.mean() - y_control.mean()
+
+# t-test (Neyman inference)
+t_stat, p_value = stats.ttest_ind(y_treated, y_control)
+se = np.sqrt(y_treated.var(ddof=1) / len(y_treated) +
+             y_control.var(ddof=1) / len(y_control))
+
+print(f"True ATE:   {true_ate:.3f}")
+print(f"Estimate:   {dim_est:.3f}")
+print(f"SE:         {se:.3f}")
+print(f"95% CI:     [{dim_est - 1.96*se:.3f}, {dim_est + 1.96*se:.3f}]")
+print(f"p-value:    {p_value:.4f}")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Using the simulation above, set $N = 20$ and draw 500 allocations. Note the standard deviation of the estimates. Now set $N = 200$ and draw 500 again. By what factor did the standard deviation decrease? How does this relate to the $\sqrt{N}$ convergence rate?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Typical results: at $N = 20$, the standard deviation of estimates is around 1.4 (injuries per facility). At $N = 200$, it drops to about 0.6. (These magnitudes match the **Predicted SD (Neyman)** card, which is computed directly from the population, and the **Empirical SD** card converges to them once you have drawn a few hundred allocations.)
+
+The ratio is roughly $1.4 / 0.58 \approx 2.4$. The idealized $\sqrt{N}$ law predicts $\sqrt{200/20} = \sqrt{10} \approx 3.16$. The observed ratio is somewhat smaller than $3.16$ here because the fixed population is *regenerated* at each $N$, so the potential-outcome variances $S_1^2, S_0^2$ (and the clamping of injury counts at zero) shift slightly between the two sample sizes --- the variance is not a clean constant divided by $N$. The qualitative lesson still holds firmly.
+
+That lesson is the $\sqrt{N}$ convergence rate: the standard error of $\hat{\tau}$ scales roughly as $\frac{1}{\sqrt{N}}$. Increasing the sample by a factor of 10 reduces the standard deviation by a factor near $\sqrt{10} \approx 3.16$. This means getting more precise estimates is expensive --- to (approximately) halve the standard error, you need to *quadruple* the sample size.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain why the standard variance estimator $s_1^2/N_1 + s_0^2/N_0$ is conservative (overestimates the true variance of $\hat{\tau}$). Under what conditions is it exactly correct? Why does this conservatism make hypothesis testing using this estimator slightly *more* trustworthy, not less?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The true variance of $\hat{\tau}$ under complete randomization is:
+
+$$
+\text{Var}(\hat{\tau}) = \frac{S_1^2}{N_1} + \frac{S_0^2}{N_0} - \frac{S_{01}^2}{N}
+$$
+
+where $S_{01}^2 = \text{Var}(\tau_i)$ is the variance of individual treatment effects. The standard estimator $s_1^2/N_1 + s_0^2/N_0$ omits the third term $S_{01}^2/N$, which is always non-negative (it's a variance). So the estimator overestimates the true variance.
+
+**Exactly correct when**: $S_{01}^2 = 0$, which means $\text{Var}(\tau_i) = 0$ --- i.e., treatment effects are **constant** ($\tau_i = \tau$ for all $i$). Under constant effects, the omitted term vanishes.
+
+**Why conservatism is good for testing**: If we overestimate the variance, we overestimate the standard error, which makes our $t$-statistic *smaller* and our $p$-value *larger*. This means we reject the null *less often* than we should. In other words, the test has actual size smaller than nominal size --- if we set $\alpha = 0.05$, we reject under the null less than 5% of the time. The test is valid (controls Type I error) but slightly under-powered. This is far preferable to the reverse: an anti-conservative estimator would reject too often, leading to false positives.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher randomizes 100 patients to drug vs. placebo. She then tests 20 baseline covariates for balance and finds that age differs significantly ($p = 0.03$) between arms. She concludes the randomization failed. Evaluate her reasoning. What would you expect under a correct randomization?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Her reasoning is flawed. Under a correct randomization with 20 independent balance tests at $\alpha = 0.05$, we *expect* about $20 \times 0.05 = 1$ false positive. Finding one significant result out of 20 tests is entirely consistent with a successful randomization.
+
+The probability of finding *at least one* significant result out of 20 independent tests is $1 - (1 - 0.05)^{20} = 1 - 0.95^{20} \approx 0.64$. So there's a 64% chance of finding at least one "significant" imbalance even when the randomization is perfect. This is the **multiple testing problem**.
+
+A single $p = 0.03$ result among 20 tests provides essentially no evidence against the randomization. If the researcher is concerned, she could: (1) apply a Bonferroni correction (the threshold becomes $0.05/20 = 0.0025$, and $0.03$ is nowhere near that); (2) conduct a joint $F$-test of all covariates simultaneously; or (3) simply note the imbalance and control for age in the analysis as a robustness check.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In an experiment, 30% of subjects assigned to treatment refuse to take the drug, while 5% of subjects assigned to control obtain the drug through other channels. The intention-to-treat estimate is $\hat{\tau}^{ITT} = 2.1$. If these are the only two compliance types, what can you say about the effect of actually taking the drug? What additional assumption would you need?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The share who actually take the drug among those assigned to treatment is $1 - 0.30 = 0.70$. Among those assigned to control, $0.05$ take the drug anyway. The "first stage" --- the difference in take-up rates between assigned-to-treatment and assigned-to-control --- is $0.70 - 0.05 = 0.65$.
+
+Under the **monotonicity assumption** (no "defiers" --- no one who would take the drug if assigned to control but refuse if assigned to treatment), we can use the **Wald/IV estimator**:
+
+$$
+\hat{\tau}^{LATE} = \frac{\hat{\tau}^{ITT}}{\text{First stage}} = \frac{2.1}{0.65} \approx 3.23
+$$
+
+This estimates the **Local Average Treatment Effect (LATE)**: the average effect of actually taking the drug *for the compliers* --- those whose drug-taking behavior is changed by the randomized assignment.
+
+The additional assumption needed is **monotonicity**: assignment to treatment can only increase (never decrease) the probability of taking the drug. This rules out "defiers" who perversely take the drug only when told not to.
+
+Note: the LATE (3.23) is larger than the ITT (2.1) because the ITT is "diluted" by non-compliance --- it averages the drug's effect over compliers and zero effect over non-compliers.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Random assignment makes treatment status independent of potential outcomes, zeroing out selection bias so the naive difference in means identifies the ATE.
+- The difference-in-means estimator is unbiased but not precise in any one trial; its spread is the randomization distribution, which narrows at the $\sqrt{N}$ rate.
+- Fisher's permutation test gives an *exact* $p$-value for the sharp null by reshuffling labels — no $t$-distribution or normal approximation required.
+- Neyman's variance estimator $s_1^2/N_1 + s_0^2/N_0$ is conservative because it drops the unobservable $\text{Var}(\tau_i)/N$ term; it is exact only under constant treatment effects.
+- Randomization's unique power is balance on *unobserved* confounders too; balance checks only see measured covariates, so they cannot rescue a self-selected comparison.
+:::
+
+## What Comes Next
+
+Randomization is the ideal. It eliminates selection bias by design and provides a clear basis for inference. But for most policy-relevant questions, randomization is not feasible. The remainder of this book develops strategies for recovering causal effects from observational data --- starting with the graphical language of **DAGs** for encoding causal assumptions, then building up the econometric tools (regression, panel methods, difference-in-differences) that exploit these assumptions for identification.
+
+The key insight to carry forward: every quasi-experimental method in this book is an attempt to *approximate* what a randomized experiment would have delivered. Understanding what randomization achieves is the benchmark against which every other design must be judged.

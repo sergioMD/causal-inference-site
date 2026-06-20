@@ -1,0 +1,1167 @@
+---
+title: "Classic 2x2 Difference-in-Differences"
+subtitle: "The simplest case: two groups, two periods"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Compute the 2x2 DiD estimate from four group-by-period means as a difference of two differences
+- Explain how each difference cancels a distinct confounder (time-invariant group differences and the common time shock)
+- Construct the DiD counterfactual and read the treatment effect as the gap between the observed and counterfactual treated outcome
+- Connect the DiD estimand to the ATT in potential-outcomes notation
+- Diagnose how a parallel-trends violation biases DiD by exactly the size of the differential trend
+:::
+
+## A Reform That Some Regions Adopted
+
+In 2018, several of Sweden's 21 *regioner* (regions) launched a structured **diabetes coordination program** (*Diabetessamordning*) across their *vårdcentraler* (primary care centers). The program assigns each Type 2 diabetes patient a dedicated *distriktssköterska* (district nurse) who tracks blood sugar, coordinates appointments, and flags patients drifting out of control. Other regions kept their existing care model unchanged. The natural question for *Socialstyrelsen* (the National Board of Health and Welfare) is the obvious one: did the program lower the average HbA1c of patients in the regions that adopted it?
+
+A naive analyst might compare HbA1c in the adopting regions *after* the reform against HbA1c in the non-adopting regions in the same year. But the [Selection Bias](../01-fundamental-problem/selection-bias.qmd) page already warned us that regions which choose to adopt a coordination program are not exchangeable with those that do not (*exchangeable* means the two groups are interchangeable for the comparison --- swapping which one got the program would not change the outcomes we would expect to see). Perhaps they had sicker patient populations to begin with, or wealthier tax bases, or more *läkare* (physicians) per capita. A simple cross-sectional gap conflates the program's effect with these pre-existing differences.
+
+A second naive analyst might instead compare HbA1c in the adopting regions *before* and *after* the reform. But Sweden's diabetes care was improving everywhere over this period --- new drugs, new guidelines, secular trends (*secular* here means a broad, gradual drift over calendar time affecting everyone, not anything to do with religion). A simple before--after gap conflates the program's effect with this common time shock.
+
+**Difference-in-differences (DiD)** is the idea that combining these two flawed comparisons --- across groups *and* across time --- cancels out exactly the two things that contaminate each one alone. It is the workhorse of applied policy evaluation, and the cleanest place to learn it is the 2x2 case: **two groups, two periods**.
+
+
+## The Setup: Two Groups, Two Periods
+
+We observe HbA1c outcomes at two points in time and for two groups of regions.
+
+- **Periods.** A **pre** period (2017, before the reform) and a **post** period (2019, after the reform). We index period by $t \in \{\text{pre}, \text{post}\}$.
+- **Groups.** A **treated** group (the regions that adopted the program, $G_i = 1$) and a **control** group (the regions that did not, $G_i = 0$).
+
+Crucially, the treated group is treated *only in the post period*. In the pre period, nobody has the program yet --- the reform has not happened. This is what makes the design work: we get to see the treated group *before* its own treatment, which gives us a baseline.
+
+::: {.glass-card .glass-card--definition}
+Let $\bar{Y}_{gt}$ denote the **average outcome** (mean regional HbA1c, measured in *percentage points* --- HbA1c is reported on a percent scale, so a move from 7.9 to 7.4 is a drop of 0.5 percentage points, not a 0.5% relative change) for group $g \in \{T, C\}$ in period $t \in \{\text{pre}, \text{post}\}$. There are exactly four such means, which we arrange in a **2x2 table**:
+
+| | **Pre (2017)** | **Post (2019)** |
+|:---|:---:|:---:|
+| **Treated (adopted)** | $\bar{Y}_{T,\text{pre}}$ | $\bar{Y}_{T,\text{post}}$ |
+| **Control (did not)** | $\bar{Y}_{C,\text{pre}}$ | $\bar{Y}_{C,\text{post}}$ |
+
+These four numbers are *all* you need to compute the classic DiD estimate. Everything that follows is arithmetic on this table.
+:::
+
+To make it concrete, suppose our data look like this (lower HbA1c is better, so a *negative* effect means the program helped):
+
+| | **Pre (2017)** | **Post (2019)** | Row change |
+|:---|:---:|:---:|:---:|
+| **Treated** | $7.9$ | $7.4$ | $-0.5$ |
+| **Control** | $7.5$ | $7.3$ | $-0.2$ |
+| Column gap | $+0.4$ | $+0.1$ | |
+
+The treated regions started *worse* (7.9 vs 7.5) --- exactly the kind of baseline imbalance that would wreck a cross-sectional comparison. Watch how DiD handles it.
+
+The diagram below turns that table into the "difference of two differences" picture. Each row is differenced first (treated changed by $-0.5$, control by $-0.2$), and the DiD is the gap between those two row-changes: $(-0.5) - (-0.2) = -0.3$. The figure is the same bookkeeping you will do symbolically in a moment, drawn so the two differences are visible at a glance.
+
+```{ojs}
+//| echo: false
+
+// Static annotated 2x2 diagram: the two row-differences and the DiD as the
+// difference between them. Self-contained SVG (p2_ prefix), uses only d3.
+p2_tableDiagram = {
+  const W = Math.min(520, width), H = 230;
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2t-red", "#990000"], ["p2t-slate", "#3d5a6c"], ["p2t-green", "#2e6f40"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  // Column x-centres for Pre and Post cells; row y-centres for Treated/Control.
+  const xPre = 0.30 * W, xPost = 0.58 * W;
+  const yT = 70, yC = 140;
+  const cells = [
+    { x: xPre,  y: yT, v: "7.9", col: "#990000" },
+    { x: xPost, y: yT, v: "7.4", col: "#990000" },
+    { x: xPre,  y: yC, v: "7.5", col: "#3d5a6c" },
+    { x: xPost, y: yC, v: "7.3", col: "#3d5a6c" }
+  ];
+
+  // Column headers
+  for (const [x, t] of [[xPre, "Pre (2017)"], [xPost, "Post (2019)"]]) {
+    svg.append("text").attr("x", x).attr("y", 30).attr("text-anchor", "middle")
+      .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#79766e").text(t);
+  }
+  // Row labels
+  svg.append("text").attr("x", 14).attr("y", yT).attr("dominant-baseline", "central")
+    .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#990000").text("Treated");
+  svg.append("text").attr("x", 14).attr("y", yC).attr("dominant-baseline", "central")
+    .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#3d5a6c").text("Control");
+
+  // Cells
+  for (const c of cells) {
+    svg.append("circle").attr("cx", c.x).attr("cy", c.y).attr("r", 21)
+      .attr("fill", "#eef0ee").attr("stroke", c.col).attr("stroke-width", 2);
+    svg.append("text").attr("x", c.x).attr("y", c.y)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 13).attr("font-weight", 700).attr("fill", "#1c1c1a").text(c.v);
+  }
+
+  // Row-difference arrows (pre -> post) with labels above/below the row.
+  const rowArrow = (y, col, marker, lab, labDy) => {
+    svg.append("line").attr("x1", xPre + 23).attr("y1", y).attr("x2", xPost - 25).attr("y2", y)
+      .attr("stroke", col).attr("stroke-width", 2).attr("marker-end", `url(#${marker})`);
+    svg.append("text").attr("x", (xPre + xPost) / 2).attr("y", y + labDy)
+      .attr("text-anchor", "middle").attr("font-size", 11).attr("font-weight", 700)
+      .attr("fill", col).attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+      .text(lab);
+  };
+  rowArrow(yT, "#990000", "p2t-red", "treated change = −0.5", -14);
+  rowArrow(yC, "#3d5a6c", "p2t-slate", "control change = −0.2", 18);
+
+  // The DiD bracket on the right: difference between the two row-changes.
+  const xb = xPost + 40;
+  svg.append("path")
+    .attr("d", `M ${xb} ${yT} H ${xb + 14} V ${yC} H ${xb}`)
+    .attr("fill", "none").attr("stroke", "#2e6f40").attr("stroke-width", 2);
+  svg.append("text").attr("x", xb + 22).attr("y", (yT + yC) / 2)
+    .attr("dominant-baseline", "central").attr("font-size", 12).attr("font-weight", 800)
+    .attr("fill", "#2e6f40")
+    .text("DiD = (−0.5) − (−0.2) = −0.3");
+
+  return svg.node();
+}
+```
+
+::: {.figure-caption}
+Difference the two rows first (<span style="color:#990000; font-weight:700;">treated</span> changed by $-0.5$, <span style="color:#3d5a6c; font-weight:700;">control</span> by $-0.2$); the DiD is the <span style="color:#2e6f40; font-weight:700;">difference between those two differences</span>, $-0.3$. Exercise 3 shows you can instead difference the columns first and land on the same number.
+:::
+
+
+## The DiD Estimator
+
+The estimator is a *difference of two differences*. There are two equivalent ways to write it, and reading both aloud builds the intuition.
+
+::: {.glass-card .glass-card--definition}
+The **difference-in-differences estimator** is
+
+$$
+\widehat{\text{DiD}} = \underbrace{\big(\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}}\big)}_{\text{change in treated}} - \underbrace{\big(\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}}\big)}_{\text{change in control}}
+$$
+
+**Read this as**: "Take how much the *treated* group changed from pre to post, then subtract how much the *control* group changed over the same span. What is left over is the part of the treated group's change that the control group did *not* experience."
+:::
+
+Plugging in our table:
+
+$$
+\widehat{\text{DiD}} = (7.4 - 7.9) - (7.3 - 7.5) = (-0.5) - (-0.2) = -0.3.
+$$
+
+The estimated effect of the diabetes coordination program is a **0.3 percentage point reduction** in average HbA1c. Note how the answer differs from both naive comparisons: the before--after gap in the treated group alone was $-0.5$ (it overstates the effect by crediting the program with the secular improvement), and the cross-sectional post gap was $7.4 - 7.3 = +0.1$ (it has the wrong sign entirely, because treated regions were sicker at baseline).
+
+### The two differences cancel two confounders
+
+Why does subtracting two differences work? Because each difference removes one source of contamination.
+
+**The first difference removes time-invariant group differences.** When we compute $\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}}$ *within* the treated group, anything about that group that is *fixed over time* --- a sicker baseline population, a poorer tax base, fewer physicians per capita --- is present in both terms and subtracts away. The same holds inside the control group's difference. Each group is its own baseline.
+
+**The second difference removes the common time shock.** Both groups lived through the same calendar years: the same new drugs, the same updated national guidelines, the same secular trend in diabetes care. The control group's change, $\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}} = -0.2$, is a *measurement* of that common shock --- the change a region experiences when it does nothing special. Subtracting it from the treated group's change strips the shock out, leaving only the incremental effect of the program.
+
+There is a second, algebraically identical way to write the estimator that some find more memorable:
+
+$$
+\widehat{\text{DiD}} = \underbrace{\big(\bar{Y}_{T,\text{post}} - \bar{Y}_{C,\text{post}}\big)}_{\text{cross-section, post}} - \underbrace{\big(\bar{Y}_{T,\text{pre}} - \bar{Y}_{C,\text{pre}}\big)}_{\text{cross-section, pre}}
+$$
+
+**Read this as**: "Take the treated--control gap *after* the reform, and subtract the treated--control gap that already existed *before* the reform." Here the first difference is cross-sectional (it removes the common time shock by comparing within a period), and the second difference removes the *pre-existing* gap between the groups. You can verify it gives the same number: $(7.4 - 7.3) - (7.9 - 7.5) = (+0.1) - (+0.4) = -0.3$. $\checkmark$ Whether you difference across time first or across groups first, you land on the same DiD.
+
+The picture below puts the two confounders DiD defeats into one causal diagram. The outcome $\bar{Y}_{gt}$ has three inputs: a **group effect** (the time-invariant thing that makes treated regions sicker at baseline), a **time effect** (the common shock both groups lived through), and the **program** itself (which only switches on for the treated group in the post period). The two confounders are drawn in red because, in either naive comparison, they leak into the estimate; only the green program arrow is the effect we want. DiD's two differences are exactly what *close* the two red arrows --- the first difference nets out the group effect, the second nets out the time effect --- leaving only the green path.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG drawing component for this page (p2_ prefix). Pure function of
+// its arguments (depends only on global d3); builds an SVG with d3.create and
+// returns the node. nodes: [{id,x,y,label}] with x,y normalized in [0,1].
+// conditioned ids draw as a rounded SQUARE. edges: [{source,target,kind}] with
+// kind 'causal' = green, 'biasing'/'backdoor-open' = red, 'blocked' = grey dashed.
+p2_drawDAG = function ({ nodes, edges, width = 460, height = 220, conditioned = [] }) {
+  const pad = 52;
+  const r = 26;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerFor = k =>
+    k === "causal" ? "p2-arrow-green" :
+    (k === "biasing" || k === "backdoor-open") ? "p2-arrow-red" : "p2-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2-arrow-green", "#2e6f40"], ["p2-arrow-red", "#b3000b"], ["p2-arrow-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerFor(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 13).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 14)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+p2_drawDAG({
+  width: Math.min(480, width),
+  height: 210,
+  nodes: [
+    { id: "G",  x: 0.10, y: 0.12, label: "G",  caption: "group effect" },
+    { id: "T",  x: 0.10, y: 0.88, label: "T",  caption: "time effect" },
+    { id: "Rx", x: 0.50, y: 0.50, label: "G×P", caption: "program" },
+    { id: "Y",  x: 0.92, y: 0.50, label: "Y",  caption: "HbA1c" }
+  ],
+  edges: [
+    { source: "G",  target: "Y", kind: "biasing" },
+    { source: "T",  target: "Y", kind: "biasing" },
+    { source: "Rx", target: "Y", kind: "causal" }
+  ]
+})
+```
+
+::: {.figure-caption}
+The DiD outcome has three inputs. <span style="color:#b3000b; font-weight:700;">Red</span> = a confounder DiD must net out: the time-invariant **group effect** $G$ (removed by the first difference, *within* group) and the common **time effect** $T$ (removed by the second difference, the control group's change). <span style="color:#2e6f40; font-weight:700;">Green</span> = the **program** ($G\times P$, the treated-and-post interaction), the only path we want to keep. DiD is the recipe that closes both red arrows and leaves the green one.
+:::
+
+
+## The Implied Counterfactual
+
+The deepest way to understand DiD is through the **counterfactual** it constructs. The fundamental problem (Module 1) is that we never observe what the treated regions' HbA1c *would have been* in 2019 had they not adopted the program. DiD fills in that missing potential outcome with a specific, transparent guess.
+
+::: {.glass-card .glass-card--insight}
+**The DiD counterfactual.** What would the treated group's post outcome have been *without* the program? DiD answers: take the treated group's *own* pre-period level, and move it by the *same amount the control group moved*.
+
+$$
+\widehat{Y}_{T,\text{post}}^{\,(0)} = \bar{Y}_{T,\text{pre}} + \underbrace{\big(\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}}\big)}_{\text{control's change}}
+$$
+
+In our example: $\widehat{Y}_{T,\text{post}}^{\,(0)} = 7.9 + (-0.2) = 7.7$.
+
+The DiD estimate is then simply the **gap** between what we actually observed for the treated group and this counterfactual:
+
+$$
+\widehat{\text{DiD}} = \bar{Y}_{T,\text{post}} - \widehat{Y}_{T,\text{post}}^{\,(0)} = 7.4 - 7.7 = -0.3. \quad \checkmark
+$$
+:::
+
+**Read the counterfactual formula as**: "If the treated regions had been left alone, they would have drifted by the same amount the control regions drifted. So their hypothetical no-program 2019 level is their 2017 level plus the control group's drift." The treated group's observed 2019 outcome (7.4) came in *below* that counterfactual (7.7), and the 0.3-point shortfall is what we attribute to the program.
+
+This is exactly what the dashed line in the interactive below draws: a line starting at the treated group's pre level and running *parallel* to the control group's trajectory. The vertical distance between that dashed counterfactual and the treated group's actual post point *is* the DiD estimate.
+
+
+## See It: The DiD Engine
+
+The plot below shows the two observed trajectories --- treated (red) and control (slate) --- across the pre and post periods. The dashed red line is the **counterfactual**: where the treated group would have landed if it had simply followed the control group's trend. The shaded region is the estimated treatment effect.
+
+Use the sliders to build intuition. The **common time trend** moves both groups together. The **true treatment effect** --- which we denote $\tau$ (the Greek letter "tau"), the size of the program's real causal effect that the simulation bakes in so we can check the estimate against it --- shifts only the treated group's post point. The **parallel-trends violation** knob introduces a *differential* trend --- a reason the treated group was already moving differently from the control group *for reasons other than the program* --- and you will watch the DiD estimate drift away from the truth.
+
+::: {.interactive-container}
+
+#### Difference-in-Differences with a Parallel-Trends Violation
+
+::: {.start-here}
+**Start here:** drag the three sliders below and watch the red (treated) line, the dashed counterfactual, and the True / Estimate / Bias readout respond. A step-by-step tour follows the plot.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof did_timeTrend = Inputs.range([-0.6, 0.6], {
+  value: -0.2,
+  step: 0.05,
+  label: "Common time trend (both groups)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof did_trueEffect = Inputs.range([-1.0, 0.4], {
+  value: -0.3,
+  step: 0.05,
+  label: "True treatment effect (τ, on treated post)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof did_violation = Inputs.range([-0.6, 0.6], {
+  value: 0,
+  step: 0.05,
+  label: "Parallel-trends violation (differential trend)"
+})
+
+// Note: the counterfactual + effect-gap marks below are drawn only when the
+// toggle is on; the violation slider is "active" in the sense that the bias
+// readout responds to it whether or not the counterfactual is shown.
+```
+
+```{ojs}
+//| echo: false
+
+viewof did_showCounterfactual = Inputs.toggle({
+  label: "Show counterfactual + effect gap",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-size: 0.78rem; color: #79766e; margin: -0.2rem 0 0.4rem;">
+The dashed counterfactual line, the shaded effect band, and the on-chart labels appear only when the toggle above is on. The True / Estimate / Bias readout always tracks all three sliders.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed baseline levels (HbA1c, %). Treated starts WORSE than control
+// to demonstrate that DiD survives time-invariant baseline differences.
+did_baseTreatedPre = 7.9
+did_baseControlPre = 7.5
+
+// The four observed group-by-period means, as a function of the sliders.
+// Control:  pre = base;  post = base + common time trend.
+// Treated:  pre = base;  post = base + common time trend
+//                                    + true effect          (the program)
+//                                    + violation            (differential trend, a CONFOUND)
+did_means = {
+  const cPre  = did_baseControlPre;
+  const cPost = did_baseControlPre + did_timeTrend;
+  const tPre  = did_baseTreatedPre;
+  const tPost = did_baseTreatedPre + did_timeTrend + did_trueEffect + did_violation;
+  return { cPre, cPost, tPre, tPost };
+}
+
+// The estimator and the implied counterfactual.
+did_estimate = (did_means.tPost - did_means.tPre) - (did_means.cPost - did_means.cPre)
+
+did_counterfactualPost = did_means.tPre + (did_means.cPost - did_means.cPre)
+
+// Bias = estimate - truth. Equals exactly the violation knob (see Math Details).
+did_bias = did_estimate - did_trueEffect
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Data shaped for Plot: x is a categorical period turned into a number
+// so we can draw straight line segments between pre (0) and post (1).
+did_lineData = [
+  { period: 0, label: "Pre (2017)",  y: did_means.tPre,  group: "Treated (adopted)" },
+  { period: 1, label: "Post (2019)", y: did_means.tPost, group: "Treated (adopted)" },
+  { period: 0, label: "Pre (2017)",  y: did_means.cPre,  group: "Control (did not)" },
+  { period: 1, label: "Post (2019)", y: did_means.cPost, group: "Control (did not)" }
+]
+
+did_counterfactualData = [
+  { period: 0, y: did_means.tPre },
+  { period: 1, y: did_counterfactualPost }
+]
+
+// The treated group's TRUE untreated trajectory: its own pre level moved by
+// the common trend PLUS the differential (violation) trend, but WITHOUT the
+// program. When the violation knob is 0 this coincides with the DiD
+// counterfactual; when it is nonzero, the vertical gap between this line and
+// the DiD counterfactual at the post period IS the bias.
+did_trueUntreatedPost = did_means.tPre + did_timeTrend + did_violation
+
+did_trueUntreatedData = [
+  { period: 0, y: did_means.tPre },
+  { period: 1, y: did_trueUntreatedPost }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 380,
+  marginLeft: 64,
+  marginRight: 96,
+  marginTop: 28,
+  marginBottom: 44,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: "#1c1c1a"
+  },
+  x: {
+    domain: [-0.25, 1.4],
+    ticks: [0, 1],
+    tickFormat: d => d === 0 ? "Pre (2017)" : "Post (2019)",
+    label: null,
+    grid: false
+  },
+  y: {
+    // Domain wide enough to contain every point reachable by the sliders:
+    // treated-post can fall to 7.9 − 0.6 − 1.0 − 0.6 = 5.7 and rise to 9.5,
+    // so a tighter window would clip the very lines the tour asks you to watch.
+    label: "Mean HbA1c (%)",
+    domain: [5.4, 9.7],
+    grid: true
+  },
+  color: {
+    domain: ["Treated (adopted)", "Control (did not)"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    // Shaded effect gap between observed treated-post and the counterfactual.
+    // Explicit x1/x2 endpoints (both at the post period) so the vertical band
+    // is unambiguous across Plot versions.
+    did_showCounterfactual ? Plot.link([{
+      x1: 1, x2: 1, y1: did_means.tPost, y2: did_counterfactualPost
+    }], {
+      x1: "x1", x2: "x2", y1: "y1", y2: "y2",
+      stroke: did_estimate <= 0 ? "#2e6f40" : "#b3000b",
+      strokeWidth: 14,
+      strokeOpacity: 0.22,
+      strokeLinecap: "butt",
+      title: () => `Estimated effect (DiD) = ${did_estimate.toFixed(2)}`
+    }) : null,
+
+    // Treated group's TRUE untreated trajectory (ochre). Drawn only when the
+    // violation knob is nonzero; the gap between this line and the DiD
+    // counterfactual at the post period is the bias.
+    (did_showCounterfactual && Math.abs(did_violation) > 1e-9) ? Plot.line(did_trueUntreatedData, {
+      x: "period", y: "y",
+      stroke: "#9c7a33",
+      strokeWidth: 2,
+      strokeDasharray: "2,3",
+      strokeOpacity: 0.85
+    }) : null,
+    (did_showCounterfactual && Math.abs(did_violation) > 1e-9) ? Plot.dot([did_trueUntreatedData[1]], {
+      x: "period", y: "y",
+      stroke: "#9c7a33", fill: "white", strokeWidth: 2, r: 4,
+      title: d => `True untreated (no program): ${d.y.toFixed(2)}`
+    }) : null,
+
+    // Counterfactual line for the treated group (parallel to control)
+    did_showCounterfactual ? Plot.line(did_counterfactualData, {
+      x: "period", y: "y",
+      stroke: "#990000",
+      strokeWidth: 2,
+      strokeDasharray: "5,4"
+    }) : null,
+    did_showCounterfactual ? Plot.dot([did_counterfactualData[1]], {
+      x: "period", y: "y",
+      stroke: "#990000", fill: "white", strokeWidth: 2, r: 5,
+      title: d => `Counterfactual (no program): ${d.y.toFixed(2)}`
+    }) : null,
+
+    // Observed trajectories
+    Plot.line(did_lineData, {
+      x: "period", y: "y", stroke: "group", strokeWidth: 3
+    }),
+    Plot.dot(did_lineData, {
+      x: "period", y: "y", fill: "group", r: 6,
+      title: d => `${d.group}\n${d.label}: ${d.y.toFixed(2)}`
+    }),
+
+    // End-of-line labels, pinned to the post period (x=1) and pushed by a small
+    // fixed pixel offset (dx:8) into the generous right margin (marginRight:96)
+    // so they never clip the frame at any responsive width. A white halo keeps
+    // them legible where lines cross. Separation is VERTICAL-only (dx is the same
+    // for all three) so it is width-independent.
+    //
+    // Counterfactual and DiD labels are the always-on pair. They are staggered
+    // against each other by the SIGN of the gap (counterfactual rides above its
+    // own dot, DiD below the observed point, or vice versa) so the two estimate
+    // readouts fan apart and never converge when the effect is small.
+    did_showCounterfactual ? Plot.text([{x: 1, y: did_counterfactualPost}], {
+      x: "x", y: "y",
+      text: ["counterfactual"],
+      dx: 8, dy: did_means.tPost <= did_counterfactualPost ? -10 : 10,
+      textAnchor: "start",
+      fill: "#990000", fontSize: 11, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+    did_showCounterfactual ? Plot.text([{x: 1, y: did_means.tPost}], {
+      x: "x", y: "y",
+      text: [`DiD = ${did_estimate.toFixed(2)}`],
+      dx: 8, dy: did_means.tPost <= did_counterfactualPost ? 12 : -12,
+      textAnchor: "start",
+      fill: did_estimate <= 0 ? "#2e6f40" : "#b3000b",
+      fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+    // True-untreated label (only shown when the violation is active). Its anchor
+    // is the counterfactual anchor shifted by the violation, so as |violation|->0
+    // it converges on the counterfactual anchor. It is pushed HARD in the sign of
+    // the violation (±28) so that even when the anchors coincide it clears both
+    // the counterfactual band (±10) and the DiD band (±12) by a full line height,
+    // staying in the same narrow dx:8 slot (no horizontal overflow at small width).
+    (did_showCounterfactual && Math.abs(did_violation) > 1e-9) ? Plot.text([{x: 1, y: did_trueUntreatedPost}], {
+      x: "x", y: "y",
+      text: ["true untreated"],
+      dx: 8, dy: did_violation > 0 ? -28 : 28,
+      textAnchor: "start",
+      fill: "#9c7a33", fontSize: 11, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+
+    // Baseline rule at the bottom of the (widened) y-axis.
+    Plot.ruleY([5.4], { stroke: "#e6e3db" })
+  ]
+})
+```
+
+::: {.figure-caption}
+Mean HbA1c, % --- lower is better. Red is the treated (adopting) group, slate the control group. The dashed red line is the DiD counterfactual; when parallel trends is violated, the dotted ochre line shows the treated group's *true* untreated path, and the gap between the two dashed lines is the bias. The effect band is green when the estimate is a reduction (good for HbA1c) and red when it is an increase --- sign-of-effect coloring specific to this lower-is-better outcome.
+:::
+
+```{ojs}
+//| echo: false
+
+// Numeric readout: true effect vs estimate vs bias
+html`
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-top: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.82rem;">
+  <div style="padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db; min-height: 3.4rem;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; min-height: 1.8em;">True effect (τ)</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #990000;">${did_trueEffect.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: #ffffff; border: 1px solid #e6e3db; min-height: 3.4rem;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; min-height: 1.8em;">DiD estimate</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #1c1c1a;">${did_estimate.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: ${Math.abs(did_bias) < 1e-9 ? 'rgba(46, 111, 64, 0.08)' : 'rgba(179, 0, 11, 0.06)'}; border: 1px solid ${Math.abs(did_bias) < 1e-9 ? 'rgba(46, 111, 64, 0.25)' : 'rgba(179, 0, 11, 0.2)'}; min-height: 3.4rem;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; min-height: 1.8em;">Bias = est − truth</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: ${Math.abs(did_bias) < 1e-9 ? '#2e6f40' : '#b3000b'};">${Math.abs(did_bias) < 1e-9 ? '0.00' : (did_bias > 0 ? '+' : '') + did_bias.toFixed(2)}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+
+// Live four-cell-means readout (the 2x2 table the whole chapter rests on),
+// so readers can verify the DiD arithmetic and check Exercises 1-2 as they drag.
+html`
+<div style="margin-top: 0.6rem; font-family: 'Inter', sans-serif;">
+  <div style="font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #79766e; margin-bottom: 0.3rem;">Current 2x2 cell means (HbA1c %)</div>
+  <table style="border-collapse: collapse; font-size: 0.82rem; color: #1c1c1a;">
+    <tr>
+      <th style="text-align: left; padding: 0.2rem 0.7rem 0.2rem 0; color: #79766e; font-weight: 600;"></th>
+      <th style="text-align: right; padding: 0.2rem 0.7rem; color: #79766e; font-weight: 600;">Pre (2017)</th>
+      <th style="text-align: right; padding: 0.2rem 0.7rem; color: #79766e; font-weight: 600;">Post (2019)</th>
+      <th style="text-align: right; padding: 0.2rem 0 0.2rem 0.7rem; color: #79766e; font-weight: 600;">Row change</th>
+    </tr>
+    <tr>
+      <td style="padding: 0.2rem 0.7rem 0.2rem 0; color: #990000; font-weight: 600;">Treated</td>
+      <td style="text-align: right; padding: 0.2rem 0.7rem;">${did_means.tPre.toFixed(2)}</td>
+      <td style="text-align: right; padding: 0.2rem 0.7rem;">${did_means.tPost.toFixed(2)}</td>
+      <td style="text-align: right; padding: 0.2rem 0 0.2rem 0.7rem; font-weight: 600;">${(did_means.tPost - did_means.tPre).toFixed(2)}</td>
+    </tr>
+    <tr>
+      <td style="padding: 0.2rem 0.7rem 0.2rem 0; color: #3d5a6c; font-weight: 600;">Control</td>
+      <td style="text-align: right; padding: 0.2rem 0.7rem;">${did_means.cPre.toFixed(2)}</td>
+      <td style="text-align: right; padding: 0.2rem 0.7rem;">${did_means.cPost.toFixed(2)}</td>
+      <td style="text-align: right; padding: 0.2rem 0 0.2rem 0.7rem; font-weight: 600;">${(did_means.cPost - did_means.cPre).toFixed(2)}</td>
+    </tr>
+  </table>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Dynamic verdict that names the MECHANISM, not just the number — surfacing the
+// page's central lesson (bias = the differential trend) without touching the
+// widget's DGP or controls. Reads existing reactive cells only (no mutation).
+p2_verdict = {
+  if (Math.abs(did_violation) < 1e-9)
+    return { text: "Parallel trends holds (violation = 0): the ochre 'true untreated' line sits on top of the dashed counterfactual, so DiD lands exactly on the true effect — bias is 0.", color: "#2e6f40", bg: "rgba(46,111,64,0.06)", border: "#2e6f40" };
+  const dir = did_violation > 0 ? "above" : "below";
+  return {
+    text: `Parallel trends is broken. The treated group's TRUE untreated path (ochre) now sits ${dir} the dashed counterfactual, and DiD borrows the control's slope instead of the treated group's real one. The gap between the two dashed lines is the bias — and it equals the violation knob (${did_violation.toFixed(2)}) exactly: DiD credits the program with a trend it did not cause.`,
+    color: "#b3000b", bg: "rgba(179,0,11,0.06)", border: "#b3000b"
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem; line-height:1.45; font-weight:600; color:${p2_verdict.color}; background:${p2_verdict.bg}; border-left:3px solid ${p2_verdict.border}; border-radius:0 0.35rem 0.35rem 0; padding:0.55rem 0.8rem; margin-top:0.7rem;">${p2_verdict.text}</div>`
+```
+
+:::
+
+### How to Read the DiD Plot
+
+Work through these steps in order; each one isolates a single idea.
+
+**Step 1: Read the four points.** With the violation knob at 0, the solid red line is the treated regions and the solid slate line is the control regions. Notice the red line *starts higher* (7.9 vs 7.5): the treated regions are sicker at baseline. Hover any point to read its exact mean. These four points are the 2x2 table, also printed live below the plot.
+
+**Step 2: Find the counterfactual.** The dashed red line starts at the treated group's pre point and runs *parallel* to the slate control line. It is the answer to "where would the treated regions have ended up if the program had done nothing and they had simply tracked the control trend?" The hollow dot is the counterfactual post outcome (7.7 in the default).
+
+**Step 3: Read the effect as a gap.** The shaded vertical band at the post period is the distance between the *observed* treated point (solid red, 7.4) and the *counterfactual* point (hollow, 7.7). That gap, $-0.3$, is the DiD estimate, printed in green (a reduction is good for HbA1c). The readout below confirms: true effect $-0.30$, estimate $-0.30$, bias $0.00$.
+
+**Step 4: Move the common time trend.** Drag the *common time trend* slider. Both solid lines tilt together, and the dashed counterfactual tilts with the control line --- so the *gap stays fixed*. This is the whole point: DiD is immune to any shock both groups share. The estimate does not budge from the true effect.
+
+**Step 5: Change the true effect.** Drag *true treatment effect*. Only the treated post point moves, the shaded gap grows or shrinks, and the estimate tracks the truth exactly. Bias remains 0.
+
+**Step 6: Break parallel trends.** Now drag the *parallel-trends violation* knob away from 0. This adds a trend to the treated group that has *nothing to do with the program* --- say, the adopting regions were already on a steeper improvement path because they were independently hiring more nurses. A dotted **ochre "true untreated" line** now appears: the path the treated group would *really* have taken with no program. DiD instead borrows the control group's slope (the dashed red counterfactual), so the two dashed lines fan apart --- and the vertical gap between them at the post period *is* the bias. The estimate separates from the true effect and the **bias readout turns red**. The bias equals the violation knob *exactly*: DiD silently attributes the differential trend to the program. This single failure mode is the assumption we name next, and dissect two pages from now.
+
+
+## Connecting to Potential Outcomes
+
+DiD is not a new theory of causality --- it is a strategy for recovering a potential-outcomes estimand from observational data. Recall from [Potential Outcomes](../01-fundamental-problem/potential-outcomes.qmd) that each unit has $Y_i(1)$ and $Y_i(0)$, and that the **ATT** (average treatment effect on the treated) is
+
+$$
+\text{ATT} = E\big[\,Y_i(1) - Y_i(0) \mid G_i = 1, \, t = \text{post}\,\big].
+$$
+
+**Read this as**: "Among the regions that actually adopted the program, in the post period, the average difference between their outcome *with* the program and what their outcome *would have been without* it." The first term, $Y_i(1)$, we observe --- it is the treated group's actual post outcome, $\bar{Y}_{T,\text{post}}$. The second term, the untreated potential outcome for the treated group in the post period, is the missing counterfactual. DiD's entire job is to estimate that one missing quantity, and it does so with the control group's change. Under the assumption named below, the DiD *estimand* (the population quantity we are trying to learn, as opposed to the *estimate* --- the number our sample actually produces) *identifies* the ATT, meaning that if the assumption holds the estimand equals the ATT exactly (and its sample analog $\widehat{\text{DiD}}$ estimates it).
+
+
+## The Key Assumption: Parallel Trends
+
+Everything hinges on whether the dashed counterfactual line is the *right* line. DiD assumes that, absent the program, the treated group's untreated outcome would have moved *in parallel* with the control group's.
+
+::: {.glass-card .glass-card--assumption}
+**Parallel Trends.** In the absence of treatment, the average untreated outcome of the treated group and that of the control group would have changed by the *same amount* between the pre and post periods:
+
+$$
+E\big[Y_{i,\text{post}}(0) - Y_{i,\text{pre}}(0) \mid G_i = 1\big] = E\big[Y_{i,\text{post}}(0) - Y_{i,\text{pre}}(0) \mid G_i = 0\big].
+$$
+
+**Read this as**: "The change in the *no-program* potential outcome over time is the same, on average, for the regions that adopted the program as for those that did not." It does *not* require the two groups to be at the same level --- the treated group can be sicker at baseline forever. It requires only that, without the program, they would have *trended* together.
+:::
+
+This is the violation knob in the interactive. When it is zero, parallel trends holds and DiD nails the ATT. When it is nonzero, the treated group's untreated potential outcome was on a different trajectory, the counterfactual line points the wrong way, and the bias is exactly the size of the differential trend.
+
+Parallel trends is fundamentally **untestable** in the 2x2 case, because it is a statement about a counterfactual trend we never observe (the treated group's outcome had it not been treated, in the post period). We can make it *more credible* by examining pre-reform trends across multiple periods --- the subject of the next two pages --- but with only one pre period and one post period, it is an article of faith, defended by argument rather than proven by data.
+
+::: {.glass-card .glass-card--warning}
+**Parallel trends can fail in quiet ways.** The most dangerous violations are not random noise but systematic forces that move the groups apart for reasons unrelated to the program:
+
+- **Differential trends.** Regions that adopt a coordination program may be those whose diabetes care was *already* improving fastest (an ambitious *region* reforms on many fronts at once). The program then gets credit for momentum it did not create.
+- **Mean reversion (Ashenfelter's dip).** If regions adopt *because* their HbA1c spiked in 2017, they would have partly reverted in 2019 even with no program --- and DiD would mistake that reversion for an effect.
+- **Compositional change.** If the adopting regions' patient mix shifted (e.g., healthier patients moved in) between periods, the "same units over time" logic breaks.
+
+None of these are detectable from the 2x2 table alone. They are defeated by design and by domain knowledge, not by arithmetic.
+:::
+
+Each failure mode has a *shape*. The three small schematics below show what the treated (red) and control (slate) trajectories look like in each case, so you can recognise the pattern when you see real pre/post data. In all three the program's true effect is zero, yet DiD reports a spurious effect because the dashed counterfactual --- the control's slope carried over to the treated group --- is the wrong line.
+
+```{ojs}
+//| echo: false
+
+// Three static schematics of the named parallel-trends failure modes.
+// Self-contained SVG (p2_ prefix); no slider dependence, no shared mutable.
+p2_failureModes = {
+  const panelW = 168, panelH = 132, gap = 16;
+  const totalW = panelW * 3 + gap * 2;
+  const W = Math.min(totalW, width);
+  const scale = W / totalW;
+  const H = panelH * scale + 4;
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${totalW} ${panelH}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // Each panel: pre/post on x; we draw control (slate), observed treated (red),
+  // and the DiD counterfactual (dashed red = treated-pre + control change).
+  const px = 0, py = 0;
+  const drawPanel = (ox, title, treated, control) => {
+    const g = svg.append("g").attr("transform", `translate(${ox},0)`);
+    const plotX0 = 22, plotX1 = panelW - 12, plotY0 = panelH - 26, plotY1 = 30;
+    const xAt = t => plotX0 + t * (plotX1 - plotX0);          // t in {0,1}
+    // shared y-range across the three values used
+    const ys = [treated.pre, treated.post, control.pre, control.post,
+                treated.pre + (control.post - control.pre)];
+    const ymin = Math.min(...ys) - 0.4, ymax = Math.max(...ys) + 0.4;
+    const yAt = v => plotY0 + (v - ymin) / (ymax - ymin) * (plotY1 - plotY0);
+
+    // axis baseline
+    g.append("line").attr("x1", plotX0).attr("y1", plotY0).attr("x2", plotX1).attr("y2", plotY0)
+      .attr("stroke", "#e6e3db").attr("stroke-width", 1);
+    g.append("text").attr("x", xAt(0)).attr("y", plotY0 + 14).attr("text-anchor", "middle")
+      .attr("font-size", 9).attr("fill", "#79766e").text("pre");
+    g.append("text").attr("x", xAt(1)).attr("y", plotY0 + 14).attr("text-anchor", "middle")
+      .attr("font-size", 9).attr("fill", "#79766e").text("post");
+
+    // control line (slate)
+    g.append("line").attr("x1", xAt(0)).attr("y1", yAt(control.pre))
+      .attr("x2", xAt(1)).attr("y2", yAt(control.post))
+      .attr("stroke", "#3d5a6c").attr("stroke-width", 2.2);
+    // observed treated line (red)
+    g.append("line").attr("x1", xAt(0)).attr("y1", yAt(treated.pre))
+      .attr("x2", xAt(1)).attr("y2", yAt(treated.post))
+      .attr("stroke", "#990000").attr("stroke-width", 2.2);
+    // DiD counterfactual (dashed red): treated-pre moved by control change
+    const cf = treated.pre + (control.post - control.pre);
+    g.append("line").attr("x1", xAt(0)).attr("y1", yAt(treated.pre))
+      .attr("x2", xAt(1)).attr("y2", yAt(cf))
+      .attr("stroke", "#990000").attr("stroke-width", 1.6).attr("stroke-dasharray", "4,3");
+    // spurious-effect mark: gap between observed treated-post and counterfactual
+    g.append("line").attr("x1", xAt(1) + 0).attr("y1", yAt(treated.post))
+      .attr("x2", xAt(1) + 0).attr("y2", yAt(cf))
+      .attr("stroke", "#b3000b").attr("stroke-width", 5).attr("stroke-opacity", 0.25);
+
+    // dots
+    for (const [t, v, c] of [[0, treated.pre, "#990000"], [1, treated.post, "#990000"],
+                             [0, control.pre, "#3d5a6c"], [1, control.post, "#3d5a6c"]]) {
+      g.append("circle").attr("cx", xAt(t)).attr("cy", yAt(v)).attr("r", 3).attr("fill", c);
+    }
+
+    g.append("text").attr("x", panelW / 2).attr("y", 16).attr("text-anchor", "middle")
+      .attr("font-size", 10.5).attr("font-weight", 700).attr("fill", "#1c1c1a").text(title);
+  };
+
+  // Differential trend: treated was already improving faster (steeper down).
+  drawPanel(0, "Differential trend",
+    { pre: 3.0, post: 1.4 }, { pre: 2.4, post: 2.0 });
+  // Ashenfelter's dip: treated dips at pre (selected after a bad spike), reverts.
+  drawPanel(panelW + gap, "Ashenfelter's dip",
+    { pre: 1.2, post: 2.2 }, { pre: 2.2, post: 2.0 });
+  // Compositional change: treated jumps because the unit mix changed, not program.
+  drawPanel((panelW + gap) * 2, "Compositional change",
+    { pre: 2.2, post: 3.2 }, { pre: 2.2, post: 2.0 });
+
+  return svg.node();
+}
+```
+
+::: {.figure-caption}
+<span style="color:#990000; font-weight:700;">Red</span> = observed treated, <span style="color:#3d5a6c; font-weight:700;">slate</span> = control, dashed red = the DiD counterfactual (control's slope applied to the treated group). The faint red band is the *spurious* effect DiD reports even though the program did nothing. **Differential trend:** the treated group was already on a steeper path. **Ashenfelter's dip:** the treated group was unusually low at "pre" (it was selected right after a bad spike) and partly reverts. **Compositional change:** the treated group's unit mix shifted between periods, breaking the "same units over time" logic.
+:::
+
+
+<details>
+<summary>Math Details: DiD = ATT under Parallel Trends</summary>
+<div class="details-content">
+
+### From potential outcomes to the estimand
+
+Index potential outcomes by both treatment status and period. For a region $i$ in period $t$, let $Y_{it}(0)$ be its outcome if untreated in $t$ and $Y_{it}(1)$ its outcome if treated. Only the treated group in the post period is actually treated, so the observed means are:
+
+$$
+\bar{Y}_{T,\text{pre}} = E[Y_{i,\text{pre}}(0)\mid G_i=1], \qquad
+\bar{Y}_{T,\text{post}} = E[Y_{i,\text{post}}(1)\mid G_i=1],
+$$
+$$
+\bar{Y}_{C,\text{pre}} = E[Y_{i,\text{pre}}(0)\mid G_i=0], \qquad
+\bar{Y}_{C,\text{post}} = E[Y_{i,\text{post}}(0)\mid G_i=0].
+$$
+
+(The treated group's pre outcome is untreated because the reform has not happened yet; the control group is untreated in both periods.)
+
+### The population DiD
+
+Take expectations of the estimator:
+
+$$
+\text{DiD} = \Big(E[Y_{i,\text{post}}(1)\mid G_i{=}1] - E[Y_{i,\text{pre}}(0)\mid G_i{=}1]\Big)
+            - \Big(E[Y_{i,\text{post}}(0)\mid G_i{=}0] - E[Y_{i,\text{pre}}(0)\mid G_i{=}0]\Big).
+$$
+
+Now perform the key trick: **add and subtract** the treated group's *unobserved* untreated post outcome, $E[Y_{i,\text{post}}(0)\mid G_i{=}1]$:
+
+$$
+\begin{aligned}
+\text{DiD} = \;& \underbrace{\Big(E[Y_{i,\text{post}}(1)\mid G_i{=}1] - E[Y_{i,\text{post}}(0)\mid G_i{=}1]\Big)}_{=\;\text{ATT}} \\[4pt]
+& + \underbrace{\Big(E[Y_{i,\text{post}}(0)\mid G_i{=}1] - E[Y_{i,\text{pre}}(0)\mid G_i{=}1]\Big)}_{\text{treated's untreated trend}} \\[4pt]
+& - \underbrace{\Big(E[Y_{i,\text{post}}(0)\mid G_i{=}0] - E[Y_{i,\text{pre}}(0)\mid G_i{=}0]\Big)}_{\text{control's untreated trend}}.
+\end{aligned}
+$$
+
+The first bracket is the ATT by definition. The remaining two brackets are the *untreated trend* of the treated group and the untreated trend of the control group.
+
+The diagram below shows the three brackets as colour-coded segments. The green ATT segment is the quantity we want. The two trend segments are added and subtracted; when parallel trends holds they are equal in length and cancel exactly (right panel), leaving DiD = ATT. When they differ, the leftover is the bias.
+
+```{ojs}
+//| echo: false
+
+// Static color-coded decomposition of DiD = ATT + (treated trend) − (control trend).
+// Self-contained SVG (p2_ prefix). Two stacked rows: "parallel trends fails"
+// (trends differ -> leftover bias) and "parallel trends holds" (trends cancel).
+p2_decomp = {
+  const W = Math.min(540, width), H = 188;
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 540 ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const x0 = 12, unit = 70, barH = 26;
+  const seg = (g, x, w, fill, label, sub) => {
+    g.append("rect").attr("x", x).attr("y", 0).attr("width", w).attr("height", barH)
+      .attr("rx", 4).attr("fill", fill).attr("stroke", "#1c1c1a").attr("stroke-opacity", 0.18);
+    g.append("text").attr("x", x + w / 2).attr("y", barH / 2)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 10.5).attr("font-weight", 700).attr("fill", "#fff")
+      .attr("stroke", "rgba(0,0,0,0.25)").attr("stroke-width", 2.5).attr("paint-order", "stroke")
+      .text(label);
+    if (sub) g.append("text").attr("x", x + w / 2).attr("y", barH + 13)
+      .attr("text-anchor", "middle").attr("font-size", 9).attr("fill", "#79766e").text(sub);
+  };
+
+  const row = (oy, title, treatedTrend, note) => {
+    const g = svg.append("g").attr("transform", `translate(${x0},${oy})`);
+    g.append("text").attr("x", 0).attr("y", -8).attr("font-size", 10.5)
+      .attr("font-weight", 700).attr("fill", "#1c1c1a").text(title);
+    let x = 0;
+    // ATT (green)
+    seg(g, x, unit * 1.4, "#2e6f40", "ATT", "what we want"); x += unit * 1.4 + 8;
+    // + treated untreated trend (slate)
+    g.append("text").attr("x", x + 4).attr("y", barH / 2).attr("dominant-baseline", "central")
+      .attr("font-size", 13).attr("font-weight", 700).attr("fill", "#1c1c1a").text("+"); x += 16;
+    seg(g, x, unit * treatedTrend, "#3d5a6c", "treated trend", null); x += unit * treatedTrend + 8;
+    // − control untreated trend (slate, hatched look via opacity)
+    g.append("text").attr("x", x + 4).attr("y", barH / 2).attr("dominant-baseline", "central")
+      .attr("font-size", 13).attr("font-weight", 700).attr("fill", "#1c1c1a").text("−"); x += 16;
+    seg(g, x, unit * 1.0, "#9c7a33", "control trend", null); x += unit * 1.0 + 8;
+    g.append("text").attr("x", 0).attr("y", barH + 30).attr("font-size", 9.5)
+      .attr("fill", "#79766e").attr("font-style", "italic").text(note);
+  };
+
+  row(28, "Parallel trends FAILS  (trends differ → bias)", 1.7,
+    "treated trend ≠ control trend  ⇒  they do not cancel  ⇒  DiD = ATT + bias");
+  row(120, "Parallel trends HOLDS  (trends equal → cancel)", 1.0,
+    "treated trend = control trend  ⇒  +trend − trend = 0  ⇒  DiD = ATT");
+
+  return svg.node();
+}
+```
+
+::: {.figure-caption}
+DiD decomposes into three pieces: the <span style="color:#2e6f40; font-weight:700;">ATT</span> (kept), plus the treated group's untreated <span style="color:#3d5a6c; font-weight:700;">trend</span>, minus the control group's untreated <span style="color:#9c7a33; font-weight:700;">trend</span>. **Top row:** when the two trends differ, the +trend and −trend do not cancel and the leftover is bias. **Bottom row:** under parallel trends the two trend bars are the same length, cancel exactly, and DiD lands on the pure ATT.
+:::
+
+### Where parallel trends enters
+
+Parallel trends asserts precisely that those last two brackets are **equal**:
+
+$$
+E[Y_{i,\text{post}}(0)\mid G_i{=}1] - E[Y_{i,\text{pre}}(0)\mid G_i{=}1]
+= E[Y_{i,\text{post}}(0)\mid G_i{=}0] - E[Y_{i,\text{pre}}(0)\mid G_i{=}0].
+$$
+
+When this holds, the second and third brackets cancel, leaving
+
+$$
+\boxed{\;\text{DiD} = \text{ATT}.\;}
+$$
+
+### The bias when parallel trends fails
+
+Define the **differential trend** as the gap between the two untreated trends:
+
+$$
+\Delta_{\text{trend}} = \Big(E[Y_{i,\text{post}}(0)\mid G_i{=}1] - E[Y_{i,\text{pre}}(0)\mid G_i{=}1]\Big)
+- \Big(E[Y_{i,\text{post}}(0)\mid G_i{=}0] - E[Y_{i,\text{pre}}(0)\mid G_i{=}0]\Big).
+$$
+
+Then in general $\text{DiD} = \text{ATT} + \Delta_{\text{trend}}$. The bias of DiD is *exactly* the differential trend --- which is precisely why, in the interactive, the bias readout equals the violation knob to the decimal. Parallel trends is the single assumption that sets $\Delta_{\text{trend}} = 0$.
+
+</div>
+</details>
+
+
+## Computing the 2x2 DiD by Hand
+
+The classic DiD is just arithmetic on four group means. Both implementations below compute it directly from the cell means, then confirm the same number via a regression with an interaction term (the bridge to the next page).
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(fixest)
+
+# --- Long panel: 21 regioner observed in 2017 (pre) and 2019 (post) ---
+# `treated` = 1 for regions that adopted the diabetes coordination program.
+# `post`    = 1 in 2019.  `rx = treated * post` is the program indicator.
+set.seed(2018)
+
+regions <- tibble(region = 1:21, treated = as.integer(1:21 <= 9))  # 9 adopters
+
+panel <- expand_grid(region = 1:21, year = c(2017, 2019)) |>
+  left_join(regions, by = "region") |>
+  mutate(
+    post = as.integer(year == 2019),
+    rx   = treated * post,
+    # Data-generating process: treated baseline worse (+0.4),
+    # common time trend -0.2, true program effect -0.3, plus noise.
+    hba1c = 7.5 + 0.4 * treated - 0.2 * post - 0.3 * rx +
+            rnorm(n(), 0, 0.15)
+  )
+
+# --- 2x2 table of group-by-period means ---
+cell_means <- panel |>
+  group_by(treated, post) |>
+  summarise(ybar = mean(hba1c), .groups = "drop")
+
+ybar <- function(g, p) cell_means$ybar[cell_means$treated == g & cell_means$post == p]
+
+did_by_hand <- (ybar(1, 1) - ybar(1, 0)) - (ybar(0, 1) - ybar(0, 0))
+
+cat("2x2 cell means:\n"); print(cell_means)
+cat("\nCounterfactual (treated post | no program):",
+    round(ybar(1, 0) + (ybar(0, 1) - ybar(0, 0)), 3), "\n")
+cat("DiD by hand:", round(did_by_hand, 3), "\n")
+
+# --- Same estimate via the interaction regression (next page) ---
+# Cluster SEs by region since the same units recur across periods.
+m <- feols(hba1c ~ treated + post + treated:post, data = panel,
+           cluster = ~region)
+cat("\nDiD from regression (treated:post coefficient):\n")
+print(coef(m)["treated:post"])
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# --- Long panel: 21 regioner observed in 2017 (pre) and 2019 (post) ---
+rng = np.random.default_rng(2018)
+
+regions = pd.DataFrame({"region": range(1, 22)})
+regions["treated"] = (regions["region"] <= 9).astype(int)   # 9 adopters
+
+panel = (
+    pd.MultiIndex.from_product([range(1, 22), [2017, 2019]],
+                               names=["region", "year"])
+      .to_frame(index=False)
+      .merge(regions, on="region")
+)
+panel["post"] = (panel["year"] == 2019).astype(int)
+panel["rx"]   = panel["treated"] * panel["post"]
+# treated baseline +0.4, common trend -0.2, true effect -0.3, plus noise
+panel["hba1c"] = (7.5 + 0.4 * panel["treated"] - 0.2 * panel["post"]
+                  - 0.3 * panel["rx"] + rng.normal(0, 0.15, len(panel)))
+
+# --- 2x2 table of group-by-period means ---
+cell = panel.groupby(["treated", "post"])["hba1c"].mean().unstack()
+ybar = lambda g, p: cell.loc[g, p]
+
+did_by_hand = (ybar(1, 1) - ybar(1, 0)) - (ybar(0, 1) - ybar(0, 0))
+
+print("2x2 cell means:\n", cell.round(3))
+print("\nCounterfactual (treated post | no program):",
+      round(ybar(1, 0) + (ybar(0, 1) - ybar(0, 0)), 3))
+print("DiD by hand:", round(did_by_hand, 3))
+
+# --- Same estimate via the interaction regression (next page) ---
+# Cluster SEs by region.
+m = smf.ols("hba1c ~ treated + post + treated:post", data=panel).fit(
+    cov_type="cluster", cov_kwds={"groups": panel["region"]})
+print("\nDiD from regression (treated:post coefficient):")
+print(m.params["treated:post"])
+```
+
+:::
+
+Both routes return the same number --- close to $-0.30$, the true effect baked into the simulation --- because the DiD estimator and the coefficient on the $\text{treated} \times \text{post}$ interaction are *algebraically identical* in the 2x2 case. The next page proves that equivalence.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region launches a **fall-prevention program** at its vårdcentraler. The outcome is the number of fall-related emergency visits per 1,000 elderly residents per year. The 2x2 table of group means is:
+
+| | Pre | Post |
+|:---|:---:|:---:|
+| **Treated** | 42 | 31 |
+| **Control** | 38 | 35 |
+
+(a) Compute the DiD estimate. (b) Compute the implied counterfactual for the treated group's post outcome. (c) What would a naive before--after analysis of the treated group alone have concluded, and by how much would it have overstated the effect?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** DiD $= (31 - 42) - (35 - 38) = (-11) - (-3) = -8$ fall-related visits per 1,000 residents. The program *reduced* falls by 8 per 1,000.
+
+**(b)** The control group fell by 3 (from 38 to 35), so the counterfactual treated post outcome is $42 + (-3) = 39$. The treated group actually reached 31, which is $31 - 39 = -8$ below counterfactual --- matching the DiD. $\checkmark$
+
+**(c)** The naive before--after analysis of the treated group would report the full $31 - 42 = -11$ reduction. But $-3$ of that was a secular decline that the control group also experienced (better hip protectors, milder winters, whatever). The naive estimate overstates the program's effect by $|{-11}| - |{-8}| = 3$ visits per 1,000 --- it credits the program with the common time trend.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Consider the diabetes program from the chapter, with treated regions starting at HbA1c 7.9 and control regions at 7.5 in the pre period. Suppose, unknown to the analyst, the adopting regions were *independently* on a steeper improvement path: even without the program, their HbA1c would have fallen by 0.5 between pre and post, while the control group's fell by only 0.2. The program's *true* effect is $-0.3$.
+
+(a) What untreated post outcome would the treated group have reached? (b) What treated post outcome does the analyst actually observe (true effect plus the differential trend)? (c) Compute the DiD the analyst reports, and state its bias. (d) Which slider in the interactive reproduces this scenario, and at what value?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Treated untreated post $= 7.9 + (-0.5) = 7.4$. This is what the treated regions would have reached with *no* program, given their steeper underlying trend.
+
+**(b)** The program subtracts a further $0.3$: observed treated post $= 7.4 + (-0.3) = 7.1$.
+
+**(c)** Control change $= -0.2$, so the analyst's counterfactual is $7.9 + (-0.2) = 7.7$. The reported DiD is observed minus counterfactual $= 7.1 - 7.7 = -0.6$. The true effect is $-0.3$, so the **bias is** $-0.6 - (-0.3) = -0.3$. The analyst overstates the benefit twofold.
+
+The bias equals the differential trend: treated's untreated change $(-0.5)$ minus control's change $(-0.2)$ is $-0.3$. This matches the boxed result $\text{DiD} = \text{ATT} + \Delta_{\text{trend}}$ from the Math Details.
+
+**(d)** The *parallel-trends violation* knob, set to $-0.3$. With the common trend at $-0.2$ and true effect at $-0.3$, the violation of $-0.3$ pushes the treated post point down to $7.5 + 0.4 - 0.2 - 0.3 - 0.3 = 7.1$, exactly part (b), and the bias readout shows $-0.30$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Show algebraically that the two ways of writing the 2x2 DiD --- differencing across time first, versus differencing across groups first --- always give the same number:
+
+$$
+\big(\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}}\big) - \big(\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}}\big)
+\;\stackrel{?}{=}\;
+\big(\bar{Y}_{T,\text{post}} - \bar{Y}_{C,\text{post}}\big) - \big(\bar{Y}_{T,\text{pre}} - \bar{Y}_{C,\text{pre}}\big).
+$$
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Expand both sides into the four cell means. The left-hand side is
+
+$$
+\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}} - \bar{Y}_{C,\text{post}} + \bar{Y}_{C,\text{pre}}.
+$$
+
+The right-hand side is
+
+$$
+\bar{Y}_{T,\text{post}} - \bar{Y}_{C,\text{post}} - \bar{Y}_{T,\text{pre}} + \bar{Y}_{C,\text{pre}}.
+$$
+
+Both are the same four terms with the same signs --- $+\bar{Y}_{T,\text{post}}$, $-\bar{Y}_{T,\text{pre}}$, $-\bar{Y}_{C,\text{post}}$, $+\bar{Y}_{C,\text{pre}}$ --- merely listed in a different order. Addition is commutative, so the two expressions are identically equal. $\checkmark$
+
+The intuition: the 2x2 DiD is the single number $\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}} - \bar{Y}_{C,\text{post}} + \bar{Y}_{C,\text{pre}}$. "Difference of two differences" can be sliced along either axis first; the bookkeeping is symmetric.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A health economist evaluates a program that lowered *waiting times* (in days) for a diabetes nurse appointment. She finds the treated regions' waiting times rose from 12 to 14 days, while control regions rose from 12 to 18 days. A colleague objects: "Waiting times went *up* in the treated group --- the program failed." (a) Compute the DiD and explain why the colleague is wrong. (b) The colleague then says, "Fine, but parallel trends surely fails here --- demand for nurses was exploding everywhere." Does a *common* surge in demand threaten the DiD? Explain.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** DiD $= (14 - 12) - (18 - 12) = (+2) - (+6) = -4$ days. Despite waiting times *rising* in absolute terms in the treated group, they rose by 4 days *less* than they would have absent the program (the control group's surge of +6 days is the counterfactual change). The program prevented 4 days of waiting-time growth. The colleague's error is comparing the treated group only to its own past, ignoring that *everyone's* waiting times were climbing --- exactly the common time shock DiD is built to net out. The counterfactual treated post is $12 + 6 = 18$; observed is 14; the effect is $14 - 18 = -4$.
+
+**(b)** A *common* surge in demand --- one that hits treated and control regions equally --- is precisely the kind of shock DiD removes, because it enters both groups' first differences and cancels in the second difference. It does **not** threaten parallel trends. What *would* threaten it is a *differential* surge: if demand grew faster (or slower) in the adopting regions for reasons unrelated to the program (say, they are urban regions with faster population growth), then the control group's +6 is the wrong counterfactual change and the estimate is biased. Parallel trends is about equality of *trends across groups*, not about the absence of trends.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The 2x2 DiD is the single number $\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}} - \bar{Y}_{C,\text{post}} + \bar{Y}_{C,\text{pre}}$ --- you can difference across time first or across groups first and land on the same answer.
+- The first difference removes any time-invariant group differences (a sicker baseline); the second difference removes the common time shock both groups lived through.
+- DiD builds an explicit counterfactual: the treated group's pre level moved by the control group's change. The effect is the vertical gap between the observed treated point and that counterfactual.
+- Under parallel trends, the DiD estimand identifies the ATT. When it fails, the bias is *exactly* the differential trend --- DiD silently credits the program with momentum it did not create.
+- Parallel trends is untestable in the 2x2 case; quiet violations (differential trends, Ashenfelter's dip, compositional change) are defeated by design and domain knowledge, not arithmetic.
+:::
+
+## What Comes Next
+
+We computed the 2x2 DiD as arithmetic on four group means, read it as a difference of two differences, and saw that it identifies the ATT exactly when parallel trends holds. We even hinted that an interaction-term regression returns the same number. The next page, [Regression DiD](regression-did.qmd), makes that connection rigorous: it shows that the coefficient on $\text{treated} \times \text{post}$ in the model $Y = \beta_0 + \beta_1\,\text{treated} + \beta_2\,\text{post} + \beta_3\,(\text{treated} \times \text{post}) + \varepsilon$ *is* the DiD estimate, explains why this opens the door to covariates, multiple periods, and proper standard errors, and sets up the move from two periods to a full event-study with staggered adoption.

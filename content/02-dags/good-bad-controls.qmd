@@ -1,0 +1,1759 @@
+---
+title: "Good and Bad Controls"
+subtitle: "When conditioning helps, and when it hurts"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Classify a candidate control by its causal role --- confounder, proxy, mediator, collider, collider descendant, or precision variable --- rather than by its correlation with treatment and outcome
+- Distinguish good controls (block a backdoor) from bad controls that cause overcontrol bias (conditioning on a mediator) or collider/selection bias
+- Explain why "control for everything pre-treatment" fails, using M-bias (the butterfly structure) where a baseline collider opens a path
+- Separate bias from sampling noise by reading the center versus the spread of an estimator's sampling distribution
+- Apply a step-by-step decision framework for any candidate control and recognize the Table 2 fallacy --- that one regression answers only one causal question
+:::
+
+## The Stakes of Getting It Wrong
+
+A Swedish researcher wants to know whether a new antihypertensive drug ($D$) reduces stroke risk ($Y$). She has data on thousands of patients from the Swedish National Patient Register (*Patientregistret*), with dozens of covariates. Her plan: "I'll just control for everything I have."
+
+This is one of the most common --- and most dangerous --- strategies in applied research. Whether a variable should be in your regression depends on its *causal role*, not on its predictive power or its correlation with treatment and outcome. The previous pages gave you the tools: DAGs and d-separation. This page applies those tools to the six most common adjustment patterns, organized as **good controls** (variables that reduce bias) and **bad controls** (variables that introduce or amplify bias). Each pattern is paired with a small **DAG figure** that color-codes which paths are open and which are blocked, and three live simulations let you experience the consequences: a redesigned **Control Laboratory** that separates bias from sampling noise, an **"Explaining-Away" demo** that manufactures a correlation from thin air by conditioning on a collider, and a **butterfly / M-bias demo** showing how even a *pre-treatment* control can open a biasing path.
+
+::: {.glass-card .glass-card--insight}
+**The core principle**: A control variable is "good" if conditioning on it blocks a non-causal path (reducing bias) without opening other non-causal paths or blocking causal paths. A control variable is "bad" if conditioning on it opens a non-causal path, blocks a causal path you wanted open, or does both. The DAG tells you which is which.
+:::
+
+
+## Good Controls
+
+### 1. The Classic Confounder
+
+$$
+D \leftarrow C \rightarrow Y
+$$
+
+$C$ is a common cause of both treatment and outcome. This is the fork structure from the basics page. The backdoor path $D \leftarrow C \rightarrow Y$ is open, creating a spurious association.
+
+**Action**: Condition on $C$. This blocks the backdoor path.
+
+**Healthcare example**: Studying the effect of physical therapy ($D$) on recovery time ($Y$) after hip replacement in a Swedish hospital. Patients' pre-operative fitness ($C$) affects both whether they receive intensive therapy (fitter patients are more likely to be offered it) and how quickly they recover. Conditioning on pre-operative fitness removes this confounding.
+
+::: {.glass-card .glass-card--definition}
+**The Confounder Pattern**
+
+- **Structure**: $D \leftarrow C \rightarrow Y$ (fork)
+- **Without conditioning**: $D$ and $Y$ are spuriously associated through $C$
+- **With conditioning on $C$**: Backdoor path blocked, only causal association remains
+- **Rule**: Always condition on common causes of treatment and outcome
+:::
+
+The figure below renders this structure. Throughout this page, a small DAG accompanies each pattern: **green** arrows are open *causal* paths, **red** arrows are open *non-causal* (biasing) paths, **gray dashed** arrows are blocked, and a **boxed** node is one you are conditioning on.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ─── Shared DAG component for all control-pattern figures on this page ───
+// Pure function: builds an SVG with d3.create and returns the DOM node.
+// nodes: [{id, x, y, label}] with x,y in normalized [0,1] coordinates.
+// edges: [{source, target, status}] status ∈ "open-causal"|"open-noncausal"|"blocked".
+// conditioned: [id, ...] — those nodes render as boxed squares, others as circles.
+gdag_drawDAG = function({nodes, edges, width = 440, height = 230, conditioned = []}) {
+  const pad = 38;                 // keep nodes off the edges
+  const r = 20;                   // node radius
+  const sx = x => pad + x * (width - 2 * pad);
+  const sy = y => pad + y * (height - 2 * pad);
+
+  const colorFor = status =>
+    status === "open-causal" ? "#2e6f40"
+    : status === "open-noncausal" ? "#b3000b"
+    : "#79766e";
+
+  const byId = new Map(nodes.map(n => [n.id, n]));
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  // One arrowhead marker per edge color (defined once).
+  const defs = svg.append("defs");
+  for (const [name, col] of [["causal", "#2e6f40"], ["noncausal", "#b3000b"], ["blocked", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", `gdag-arrow-${name}`)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9)
+      .attr("refY", 0)
+      .attr("markerWidth", 7)
+      .attr("markerHeight", 7)
+      .attr("orient", "auto")
+      .append("path")
+      .attr("d", "M0,-5L10,0L0,5")
+      .attr("fill", col);
+  }
+
+  // ─ Edges first (drawn under the nodes) ─
+  const gEdges = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    // Trim the line to the node borders so the arrowhead sits on the rim.
+    const fx = x1 + ux * r, fy = y1 + uy * r;
+    const tx = x2 - ux * (r + 4), ty = y2 - uy * (r + 4);
+    const markerName = e.status === "open-causal" ? "causal"
+      : e.status === "open-noncausal" ? "noncausal" : "blocked";
+    if (e.curve) {
+      // Bow the edge into an arc so it reads as distinct from any node/edge
+      // running through the straight corridor between source and target. The
+      // sign of e.curve (perpendicular offset, px) sets the bow direction.
+      const mx = (fx + tx) / 2, my = (fy + ty) / 2;
+      const px = -uy, py = ux;            // unit normal to the edge
+      const cxp = mx + px * e.curve, cyp = my + py * e.curve;
+      gEdges.append("path")
+        .attr("d", `M${fx},${fy} Q${cxp},${cyp} ${tx},${ty}`)
+        .attr("fill", "none")
+        .attr("stroke", colorFor(e.status))
+        .attr("stroke-width", e.status === "blocked" ? 2 : 2.6)
+        .attr("stroke-dasharray", e.status === "blocked" ? "5,4" : null)
+        .attr("marker-end", `url(#gdag-arrow-${markerName})`);
+    } else {
+      gEdges.append("line")
+        .attr("x1", fx).attr("y1", fy)
+        .attr("x2", tx).attr("y2", ty)
+        .attr("stroke", colorFor(e.status))
+        .attr("stroke-width", e.status === "blocked" ? 2 : 2.6)
+        .attr("stroke-dasharray", e.status === "blocked" ? "5,4" : null)
+        .attr("marker-end", `url(#gdag-arrow-${markerName})`);
+    }
+  }
+
+  // ─ Nodes on top ─
+  const gNodes = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const isCond = conditioned.includes(n.id);
+    const g = gNodes.append("g");
+    if (isCond) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 5)
+        .attr("fill", "#f6f5f1")
+        .attr("stroke", "#1c1c1a")
+        .attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#f6f5f1")
+        .attr("stroke", "#1c1c1a")
+        .attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "central")
+      .attr("font-size", 14)
+      .attr("font-weight", 700)
+      .attr("fill", "#1c1c1a")
+      .text(n.label);
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(420, width), height: 170,
+  conditioned: ["C"],
+  nodes: [
+    {id: "C", x: 0.5, y: 0.12, label: "C"},
+    {id: "D", x: 0.18, y: 0.85, label: "D"},
+    {id: "Y", x: 0.82, y: 0.85, label: "Y"}
+  ],
+  edges: [
+    {source: "C", target: "D", status: "blocked"},
+    {source: "C", target: "Y", status: "blocked"},
+    {source: "D", target: "Y", status: "open-causal"}
+  ]
+})
+```
+
+::: {.glass-card .glass-card--insight}
+**How to read this figure (and every DAG on this page).** $C$ is drawn as a **box** because we are conditioning on it. The two arrows out of $C$ are **gray dashed** — the backdoor path $D \leftarrow C \rightarrow Y$ is *blocked* at the fork. The only surviving open path is the **green** causal arrow $D \rightarrow Y$. That is exactly what a good confounder control achieves: kill the red, keep the green.
+:::
+
+
+### 2. The Indirect Confounder (Proxy for an Unobserved Confounder)
+
+$$
+D \leftarrow U \rightarrow Y, \quad U \rightarrow W
+$$
+
+$U$ is an unobserved confounder, and $W$ is a measured variable caused by $U$ (a "proxy" or descendant of $U$). You cannot condition on $U$ directly, but conditioning on $W$ can *partially* block the backdoor path.
+
+**Important caveat**: Conditioning on $W$ does *not* fully block the path through $U$ unless $W$ perfectly captures all variation in $U$. It reduces confounding but does not eliminate it. This is called **partial adjustment** or **imperfect proxy control**.
+
+**Healthcare example**: Studying the effect of a hospital's infection control protocol ($D$) on patient outcomes ($Y$). The hospital's organizational culture ($U$) is unobserved but affects both protocol adoption and patient care quality. The hospital's staff turnover rate ($W$) is observable and caused by organizational culture. Conditioning on turnover rate partially blocks the confounding, though some residual bias remains.
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(440, width), height: 200,
+  conditioned: ["W"],
+  nodes: [
+    {id: "U", x: 0.5, y: 0.1, label: "U"},
+    {id: "W", x: 0.5, y: 0.92, label: "W"},
+    {id: "D", x: 0.12, y: 0.5, label: "D"},
+    {id: "Y", x: 0.88, y: 0.5, label: "Y"}
+  ],
+  edges: [
+    {source: "U", target: "D", status: "open-noncausal"},
+    {source: "U", target: "Y", status: "open-noncausal"},
+    {source: "U", target: "W", status: "blocked"},
+    {source: "D", target: "Y", status: "open-causal"}
+  ]
+})
+```
+
+The proxy $W$ is **boxed** (we condition on it), so the arrow $U \rightarrow W$ is blocked. But the backdoor $D \leftarrow U \rightarrow Y$ stays **red**: conditioning on a noisy descendant of $U$ only *partially* deconfounds. Unlike the previous figure, the red path never fully closes — exactly the "imperfect proxy" caveat in prose.
+
+
+### 3. Blocking a Longer Backdoor Path
+
+$$
+D \leftarrow A \rightarrow B \rightarrow Y
+$$
+
+Sometimes the confounder does not directly cause both $D$ and $Y$. Instead, the backdoor path runs through multiple variables. You can block it by conditioning on *any* variable on the backdoor path (as long as it's not a collider or a descendant of treatment).
+
+**Healthcare example**: A study of how a structured diabetes program ($D$) affects HbA1c ($Y$). Regional healthcare budget ($A$) determines which vårdcentraler adopt the program. Budget also determines staffing levels ($B$), and better staffing independently improves HbA1c. The backdoor path is $D \leftarrow A \rightarrow B \rightarrow Y$. Conditioning on either $A$ (budget) or $B$ (staffing) blocks this path.
+
+::: {.glass-card .glass-card--insight}
+You don't need to condition on the "source" confounder. Any non-collider on the backdoor path will do. This is especially useful when the true confounder is unmeasured but a variable further along the path is observed.
+:::
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(460, width), height: 190,
+  conditioned: ["B"],
+  nodes: [
+    {id: "A", x: 0.32, y: 0.12, label: "A"},
+    {id: "B", x: 0.68, y: 0.12, label: "B"},
+    {id: "D", x: 0.1, y: 0.85, label: "D"},
+    {id: "Y", x: 0.9, y: 0.85, label: "Y"}
+  ],
+  edges: [
+    {source: "A", target: "D", status: "blocked"},
+    {source: "A", target: "B", status: "blocked"},
+    {source: "B", target: "Y", status: "blocked"},
+    {source: "D", target: "Y", status: "open-causal"}
+  ]
+})
+```
+
+The backdoor here is the chain $D \leftarrow A \rightarrow B \rightarrow Y$. Boxing $B$ (staffing) breaks the chain at its middle, so all three backdoor arrows go **gray dashed** — even though we never touched the original source $A$ (budget). Boxing $A$ instead would close the same path one step earlier.
+
+
+## Bad Controls
+
+### 4. The Mediator (Overcontrol Bias)
+
+$$
+D \rightarrow M \rightarrow Y
+$$
+
+$M$ lies on the causal path from $D$ to $Y$. Conditioning on $M$ blocks part of the causal mechanism, so the estimated effect reflects only the *direct* effect ($D \rightarrow Y$), not the *total* effect.
+
+**Action**: Do **not** condition on $M$ if you want the total effect. Only condition on it if you specifically want the controlled direct effect.
+
+**Healthcare example**: A Swedish region implements a new digital health platform ($D$) for managing chronic heart failure. The platform increases medication adherence ($M$), which reduces hospital readmissions ($Y$). If the researcher controls for medication adherence, she blocks the main causal mechanism. She would conclude the platform "doesn't work" --- when in fact it works precisely *through* adherence.
+
+$$
+\text{Platform} \rightarrow \text{Adherence} \rightarrow \text{Readmissions}
+$$
+
+::: {.glass-card .glass-card--warning}
+**Overcontrol bias** is one of the most common mistakes in applied health research. When a policy or treatment works through an intermediate mechanism, controlling for that mechanism makes the treatment appear ineffective. If you find that adding a covariate to your regression makes a significant treatment effect disappear, ask yourself: could this covariate be a *mediator* rather than a *confounder*?
+:::
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(420, width), height: 150,
+  conditioned: ["M"],
+  nodes: [
+    {id: "D", x: 0.1, y: 0.5, label: "D"},
+    {id: "M", x: 0.5, y: 0.5, label: "M"},
+    {id: "Y", x: 0.9, y: 0.5, label: "Y"}
+  ],
+  edges: [
+    {source: "D", target: "M", status: "blocked"},
+    {source: "M", target: "Y", status: "blocked"}
+  ]
+})
+```
+
+This is the mirror image of a confounder. $M$ sits *on* the causal path, so boxing it turns the green mechanism **gray dashed** — you have switched off the very channel through which the treatment works. The total effect now reads as smaller (or zero), not because of bias in the statistical sense but because you changed the *estimand* --- the quantity you are trying to estimate --- from the total effect to the direct effect.
+
+The bar below decomposes that total effect for the heart-failure platform story. The **total** effect (0.50) splits into a **direct** channel $D \rightarrow Y$ (0.30) and an **indirect** channel through the mediator $D \rightarrow M \rightarrow Y$ (0.50 × 0.40 = 0.20). Conditioning on the mediator $M$ erases the indirect slice, leaving only the direct slice --- which is why a platform that truly works can look weak once you "adjust for" adherence.
+
+```{ojs}
+//| echo: false
+
+// Static decomposition figure: total effect (0.50) = direct (0.30) + indirect
+// (0.20 = 0.5 × 0.4). A single stacked horizontal bar makes the overcontrol
+// point concrete BEFORE the reader meets it as arithmetic in Exercise 2.
+gdag_decompPlot = {
+  const segs = [
+    {y: "Total effect", part: "Direct  D → Y", v: 0.30, x0: 0.0,  x1: 0.30},
+    {y: "Total effect", part: "Indirect  D → M → Y", v: 0.20, x0: 0.30, x1: 0.50}
+  ];
+  return Plot.plot({
+    width: Math.min(620, width),
+    height: 150,
+    marginLeft: 90,
+    marginBottom: 45,
+    marginTop: 28,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Effect of D on Y (path coefficient)", domain: [0, 0.56], grid: true },
+    y: { label: null },
+    color: {
+      domain: ["Direct  D → Y", "Indirect  D → M → Y"],
+      range: ["#9c7a33", "#2e6f40"],
+      legend: true
+    },
+    marks: [
+      Plot.barX(segs, { y: "y", x1: "x0", x2: "x1", fill: "part", stroke: "white", strokeWidth: 1.5 }),
+      Plot.text(segs, {
+        x: d => (d.x0 + d.x1) / 2, y: "y", text: d => d.v.toFixed(2),
+        fill: "white", fontWeight: "bold", fontSize: 13,
+        stroke: d => d.part.startsWith("Direct") ? "#9c7a33" : "#2e6f40",
+        strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{x: 0.50, label: "total = 0.50"}], {
+        x: "x", text: "label", frameAnchor: "top", dy: -18, dx: 30,
+        fill: "#1c1c1a", fontWeight: "bold", fontSize: 11,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.ruleX([0.50], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "3,3" })
+    ]
+  });
+}
+```
+
+::: {.glass-card .glass-card--insight}
+**The overcontrol trade in one line.** Controlling for the mediator $M$ deletes the green slice (0.20) and reports only the ochre slice (0.30). That is not a "more accurate" total effect --- it is a *different* number answering a *different* question.
+:::
+
+
+### 5. The Collider (Selection Bias / Collider Bias)
+
+$$
+D \rightarrow L \leftarrow Y
+$$
+
+$L$ is a common *effect* of $D$ and $Y$. Without conditioning, $D$ and $Y$ are independent through this path (the collider is blocked by default). Conditioning on $L$ opens this path and creates a spurious association.
+
+**Action**: Do **not** condition on $L$ or on any descendant of $L$.
+
+**Healthcare example**: Studying whether a new cancer treatment ($D$) affects 5-year survival ($Y$). Both the treatment and the patient's overall prognosis affect whether the patient is hospitalized ($L$) in year 1:
+
+$$
+\text{Treatment} \rightarrow \text{Hospitalization} \leftarrow \text{5-year survival}
+$$
+
+If the researcher restricts the analysis to hospitalized patients only (conditioning on $L$), she opens the collider. Among hospitalized patients, those who received the new treatment but were still hospitalized must have had particularly poor prognoses. This creates a *spurious negative* association between treatment and survival --- collider bias.
+
+::: {.glass-card .glass-card--definition}
+**Common forms of collider conditioning in healthcare research:**
+
+- **Restricting the sample**: Analyzing only hospitalized patients, only survivors, only patients who completed treatment
+- **Adjusting for post-treatment variables**: Controlling for side effects, compliance, or intermediate test results
+- **Selection into the study**: If both treatment and outcome affect who ends up in your dataset (e.g., referral bias), the sample itself is conditioned on a collider
+:::
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(420, width), height: 170,
+  conditioned: ["L"],
+  nodes: [
+    {id: "D", x: 0.12, y: 0.18, label: "D"},
+    {id: "Y", x: 0.88, y: 0.18, label: "Y"},
+    {id: "L", x: 0.5, y: 0.88, label: "L"}
+  ],
+  edges: [
+    {source: "D", target: "L", status: "open-noncausal"},
+    {source: "Y", target: "L", status: "open-noncausal"},
+    {source: "D", target: "Y", status: "open-causal"}
+  ]
+})
+```
+
+The danger of a collider is the *opposite* of a confounder. Left alone, the path $D \rightarrow L \leftarrow Y$ is already blocked — colliders block by default. **Boxing** $L$ *opens* it, which is why both arrows into $L$ are drawn **red**: conditioning manufactures a spurious association between $D$ and $Y$ on top of the genuine green effect. You will watch this spurious association appear from scratch in the "Explaining-Away" demo further down the page.
+
+
+### 6. The Descendant of a Collider
+
+$$
+D \rightarrow L \leftarrow Y, \quad L \rightarrow S
+$$
+
+$S$ is a descendant of the collider $L$. Conditioning on $S$ partially opens the collider path, because knowing $S$ gives information about $L$.
+
+**Healthcare example**: In the cancer treatment example above, suppose hospitalization ($L$) leads to a specific billing code ($S$). Conditioning on the billing code partially opens the collider path, introducing a weaker but still present version of collider bias.
+
+**Action**: Do not condition on descendants of colliders either. Any variable that is caused (directly or indirectly) by a collider should be treated with suspicion.
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(440, width), height: 200,
+  conditioned: ["S"],
+  nodes: [
+    {id: "D", x: 0.12, y: 0.14, label: "D"},
+    {id: "Y", x: 0.88, y: 0.14, label: "Y"},
+    {id: "L", x: 0.5, y: 0.55, label: "L"},
+    {id: "S", x: 0.5, y: 0.92, label: "S"}
+  ],
+  edges: [
+    {source: "D", target: "L", status: "open-noncausal"},
+    {source: "Y", target: "L", status: "open-noncausal"},
+    {source: "L", target: "S", status: "open-noncausal"},
+    {source: "D", target: "Y", status: "open-causal"}
+  ]
+})
+```
+
+Notice $L$ itself is a **circle** here — we never condition on the collider directly. We box only its descendant $S$ (the billing code). Yet the collider path still lights up **red**, because knowing $S$ leaks information about $L$. A descendant is a back door into the collider.
+
+
+## See It: How Controls Change Your Estimate
+
+The interactive below simulates data from a DAG where you can add or remove controls and watch the estimated treatment effect change in real time.
+
+::: {.interactive-container}
+
+#### The Control Variable Laboratory
+
+**DAG**: $C \rightarrow D$, $C \rightarrow Y$, $D \rightarrow M \rightarrow Y$, $D \rightarrow Y$, $D \rightarrow L \leftarrow Y$
+
+- **C** = Confounder (e.g., disease severity)
+- **D** = Treatment
+- **M** = Mediator (e.g., biomarker improvement)
+- **L** = Collider (e.g., hospitalization, caused by both $D$ and $Y$)
+- **Y** = Outcome
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.9rem; color: #1c1c1a; background: #f6f5f1; border-left: 3px solid #990000; padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 0.75rem;"><strong>Start here:</strong> tick a box to add that variable to the regression, then watch the DAG recolor and the estimate cards update. Begin with nothing checked, then try <strong>C alone</strong>.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof controls = Inputs.checkbox(
+  ["C — Confounder (severity)", "M — Mediator (biomarker)", "L — Collider (hospitalization)"],
+  {
+    label: "Include in regression:",
+    value: []
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.8rem; color: #79766e; margin: -0.35rem 0 0.6rem;">Checkboxes update the DAG and the single fixed-sample cards instantly; the <strong>Draw new sample (×200)</strong> button further down resamples 200 datasets for the strip only.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Reactive edge/conditioning state for the lab's DAG: recolor live as the
+// reader toggles controls. Open causal = green, open non-causal = red,
+// blocked = gray dashed. The collider L → red ONLY when L is conditioned on.
+gdag_labGraph = {
+  const condC = controls.includes("C — Confounder (severity)");
+  const condM = controls.includes("M — Mediator (biomarker)");
+  const condL = controls.includes("L — Collider (hospitalization)");
+
+  const conditioned = [];
+  if (condC) conditioned.push("C");
+  if (condM) conditioned.push("M");
+  if (condL) conditioned.push("L");
+
+  // Backdoor D ← C → Y: open (red) unless C is boxed.
+  const cToD = condC ? "blocked" : "open-noncausal";
+  const cToY = condC ? "blocked" : "open-noncausal";
+  // Mediated causal path D → M → Y: green unless M is boxed (then the
+  // mechanism is switched off → gray dashed).
+  const dToM = condM ? "blocked" : "open-causal";
+  const mToY = condM ? "blocked" : "open-causal";
+  // Collider D → L ← Y: harmless until L is boxed, then both arrows go red.
+  const dToL = condL ? "open-noncausal" : "blocked";
+  const yToL = condL ? "open-noncausal" : "blocked";
+  // Direct causal arrow D → Y: always open and causal.
+  const dToY = "open-causal";
+
+  return {
+    conditioned,
+    nodes: [
+      {id: "C", x: 0.5, y: 0.08, label: "C"},
+      {id: "M", x: 0.5, y: 0.52, label: "M"},
+      {id: "D", x: 0.12, y: 0.5, label: "D"},
+      {id: "Y", x: 0.88, y: 0.5, label: "Y"},
+      {id: "L", x: 0.5, y: 0.93, label: "L"}
+    ],
+    edges: [
+      {source: "C", target: "D", status: cToD},
+      {source: "C", target: "Y", status: cToY},
+      {source: "D", target: "M", status: dToM},
+      {source: "M", target: "Y", status: mToY},
+      {source: "D", target: "L", status: dToL},
+      {source: "Y", target: "L", status: yToL},
+      // Bow the direct D → Y arrow downward (curve +44px) so it is visibly
+      // separate from the straight D → M → Y mediated path that runs through
+      // node M in the mid-band; otherwise the two paths overlap.
+      {source: "D", target: "Y", status: dToY, curve: 44}
+    ]
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(460, width), height: 230,
+  conditioned: gdag_labGraph.conditioned,
+  nodes: gdag_labGraph.nodes,
+  edges: gdag_labGraph.edges
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randn(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+controlData = {
+  const rng = mulberry32(77);
+  const n = 600;
+  const obs = [];
+
+  for (let i = 0; i < n; i++) {
+    const C = randn(rng);                          // Confounder
+    const D = C * 0.5 + randn(rng) * 0.6;          // Treatment (confounded)
+    const M = D * 0.5 + randn(rng) * 0.5;          // Mediator
+    const Y_star = D * 0.3 + M * 0.4 + C * 0.6 + randn(rng) * 0.4; // Outcome
+    // Total causal: D→Y (0.3) + D→M→Y (0.5*0.4=0.20) = 0.50
+    const L = D * 0.4 + Y_star * 0.4 + randn(rng) * 0.5; // Collider
+    obs.push({ C, D, M, Y: Y_star, L });
+  }
+  return obs;
+}
+
+// True effects
+trueEffects = {
+  return {
+    total: 0.50,  // D→Y + D→M→Y
+    direct: 0.30  // D→Y only
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+controlRegression = {
+  const condC = controls.includes("C — Confounder (severity)");
+  const condM = controls.includes("M — Mediator (biomarker)");
+  const condL = controls.includes("L — Collider (hospitalization)");
+
+  const d = controlData;
+
+  // Residualize against the FULL control set (proper multiple-regression
+  // partialling, via Frisch–Waugh). The controls are first Gram–Schmidt
+  // orthogonalized so that correlated controls (e.g. C and M, which are both
+  // downstream of the same variables) are partialled out jointly, not one at a
+  // time. A naive one-control-at-a-time residualization equals OLS only when
+  // the controls are mutually orthogonal; here they are not, so it would bias
+  // the multi-control estimates (e.g. the C+M controlled direct effect).
+  function residualize(outcome, ctrls) {
+    if (ctrls.length === 0) return outcome.slice();
+    // Build an orthogonal (centered) basis spanning the controls.
+    const basis = [];
+    for (const raw of ctrls) {
+      const mv = d3.mean(raw);
+      let v = raw.map(x => x - mv);
+      for (const b of basis) {
+        const denom = d3.sum(b, x => x * x);
+        if (denom === 0) continue;
+        const coef = d3.sum(b.map((x, i) => x * v[i])) / denom;
+        v = v.map((x, i) => x - coef * b[i]);
+      }
+      basis.push(v);
+    }
+    // Project the outcome onto the orthogonal basis and subtract.
+    let resid = outcome.slice();
+    for (const b of basis) {
+      const denom = d3.sum(b, x => x * x);
+      if (denom === 0) continue;
+      const coef = d3.sum(b.map((x, i) => x * resid[i])) / denom;
+      resid = resid.map((x, i) => x - coef * b[i]);
+    }
+    return resid;
+  }
+
+  const ctrlArrays = [];
+  if (condC) ctrlArrays.push(d.map(v => v.C));
+  if (condM) ctrlArrays.push(d.map(v => v.M));
+  if (condL) ctrlArrays.push(d.map(v => v.L));
+
+  const residD = residualize(d.map(v => v.D), ctrlArrays);
+  const residY = residualize(d.map(v => v.Y), ctrlArrays);
+
+  const mrD = d3.mean(residD);
+  const mrY = d3.mean(residY);
+  const cov = d3.sum(residD.map((rd, i) => (rd - mrD) * (residY[i] - mrY)));
+  const varD = d3.sum(residD.map(rd => (rd - mrD) ** 2));
+  const beta = cov / varD;
+
+  // Determine what this estimate represents
+  let interpretation = "";
+  let biasDirection = "";
+
+  if (!condC && !condM && !condL) {
+    interpretation = "Confounded estimate (backdoor open through C)";
+    biasDirection = "upward";
+  } else if (condC && !condM && !condL) {
+    interpretation = "✓ Total causal effect (backdoor blocked, causal path intact)";
+    biasDirection = "none";
+  } else if (!condC && condM && !condL) {
+    interpretation = "Neither total nor direct effect (backdoor open + mediator blocked)";
+    biasDirection = "mixed";
+  } else if (!condC && !condM && condL) {
+    interpretation = "Confounded + collider bias (both bias sources active)";
+    biasDirection = "unpredictable";
+  } else if (condC && condM && !condL) {
+    interpretation = "Controlled direct effect (backdoor blocked, mediator blocked)";
+    biasDirection = "none";
+  } else if (condC && !condM && condL) {
+    interpretation = "Total effect + collider bias introduced";
+    biasDirection = "collider";
+  } else if (!condC && condM && condL) {
+    interpretation = "Confounded + mediator blocked + collider bias";
+    biasDirection = "multiple";
+  } else {
+    interpretation = "Direct effect + collider bias introduced";
+    biasDirection = "collider";
+  }
+
+  return { beta, interpretation, biasDirection };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div>
+  <div style="font-family: 'Inter'; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #79766e; margin-bottom: 0.3rem;">One fixed sample (n = 600)</div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-bottom: 0.75rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid #990000;">
+    <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Your estimate</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #1c1c1a;">${controlRegression.beta.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid #2e6f40;">
+    <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">True total</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #2e6f40;">${trueEffects.total.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid #9c7a33;">
+    <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">True direct</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #9c7a33;">${trueEffects.direct.toFixed(3)}</div>
+  </div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; border-left: 4px solid ${controlRegression.biasDirection === 'none' ? '#2e6f40' : '#b3000b'};">
+  <div style="font-family: 'Inter'; font-size: 0.7rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Interpretation</div>
+  <div style="font-size: 0.9rem; line-height: 1.4; font-weight: 600; color: ${controlRegression.biasDirection === 'none' ? '#2e6f40' : '#b3000b'};">
+    ${controlRegression.interpretation}
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="margin: 1rem 0 0.4rem; border-top: 1px dashed #e6e3db; padding-top: 0.85rem;">
+  <div style="font-family: 'Inter'; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #990000; margin-bottom: 0.15rem;">200 random samples — bias vs. sampling noise</div>
+  <div style="font-size: 0.86rem; color: #79766e;">Each draw resimulates the same DAG with a fresh random sample of n = 600. The strip below shows where the estimate lands across many draws under your <em>current</em> control set: the <strong>cloud's center</strong> is the bias, the <strong>cloud's width</strong> is sampling noise.</div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof gdag_draw = Inputs.button("Draw new sample (×200)", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Estimator factored out of controlRegression so it can run on any sample.
+// Same residualize-then-regress OLS as the live point estimate above.
+gdag_estimate = function(sample, condC, condM, condL) {
+  // Same proper Frisch–Waugh partialling as controlRegression: orthogonalize
+  // the controls (Gram–Schmidt) before residualizing, so multi-control sets
+  // (C+M, C+L) recover the true OLS coefficient rather than a one-at-a-time
+  // approximation.
+  function residualize(outcome, ctrls) {
+    if (ctrls.length === 0) return outcome.slice();
+    const basis = [];
+    for (const raw of ctrls) {
+      const mv = d3.mean(raw);
+      let v = raw.map(x => x - mv);
+      for (const b of basis) {
+        const denom = d3.sum(b, x => x * x);
+        if (denom === 0) continue;
+        const coef = d3.sum(b.map((x, i) => x * v[i])) / denom;
+        v = v.map((x, i) => x - coef * b[i]);
+      }
+      basis.push(v);
+    }
+    let resid = outcome.slice();
+    for (const b of basis) {
+      const denom = d3.sum(b, x => x * x);
+      if (denom === 0) continue;
+      const coef = d3.sum(b.map((x, i) => x * resid[i])) / denom;
+      resid = resid.map((x, i) => x - coef * b[i]);
+    }
+    return resid;
+  }
+  const ctrlArrays = [];
+  if (condC) ctrlArrays.push(sample.map(v => v.C));
+  if (condM) ctrlArrays.push(sample.map(v => v.M));
+  if (condL) ctrlArrays.push(sample.map(v => v.L));
+  const residD = residualize(sample.map(v => v.D), ctrlArrays);
+  const residY = residualize(sample.map(v => v.Y), ctrlArrays);
+  const mrD = d3.mean(residD), mrY = d3.mean(residY);
+  const cov = d3.sum(residD.map((rd, i) => (rd - mrD) * (residY[i] - mrY)));
+  const varD = d3.sum(residD.map(rd => (rd - mrD) ** 2));
+  return cov / varD;
+}
+
+// Generate ONE fresh sample from the same DGP as controlData, given a seed.
+gdag_simSample = function(seed) {
+  const rng = mulberry32(seed);
+  const n = 600;
+  const obs = [];
+  for (let i = 0; i < n; i++) {
+    const C = randn(rng);
+    const D = C * 0.5 + randn(rng) * 0.6;
+    const M = D * 0.5 + randn(rng) * 0.5;
+    const Y_star = D * 0.3 + M * 0.4 + C * 0.6 + randn(rng) * 0.4;
+    const L = D * 0.4 + Y_star * 0.4 + randn(rng) * 0.5;
+    obs.push({ C, D, M, Y: Y_star, L });
+  }
+  return obs;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Button-driven reactive cell: re-runs on each click of gdag_draw and on any
+// change to `controls`. Each run draws 200 INDEPENDENT samples (fresh seeds)
+// and estimates the effect under the current control set. No mutable / no
+// accumulation across clicks — the whole batch is recomputed every time.
+gdag_samplingDist = {
+  gdag_draw;                       // re-run when "Draw new sample" is clicked
+  const condC = controls.includes("C — Confounder (severity)");
+  const condM = controls.includes("M — Mediator (biomarker)");
+  const condL = controls.includes("L — Collider (hospitalization)");
+  const reps = 200;
+  const estimates = [];
+  for (let k = 0; k < reps; k++) {
+    const seed = (Math.random() * 2147483647) | 0;
+    estimates.push(gdag_estimate(gdag_simSample(seed), condC, condM, condL));
+  }
+  const mean = d3.mean(estimates);
+  const sd = d3.deviation(estimates);
+  return { estimates, mean, sd, condC, condM, condL };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Sampling-distribution strip: a dot/histogram cloud of the 200 estimates,
+// with the green true-total and ochre true-direct reference lines, and an
+// ink marker at the mean of the cloud (the bias center). The x-domain is
+// computed from the estimates AND the reference lines (with 10% padding) so
+// collider-bias draws are never silently clipped.
+gdag_stripDomain = {
+  const xs = gdag_samplingDist.estimates
+    .concat([trueEffects.total, trueEffects.direct, gdag_samplingDist.mean]);
+  let [lo, hi] = d3.extent(xs);
+  const pad = Math.max(0.1, (hi - lo) * 0.1);
+  return [lo - pad, hi + pad];
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 160,
+  marginTop: 22,
+  marginLeft: 60,
+  marginBottom: 34,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Estimated effect of D on Y (200 fresh samples)", domain: gdag_stripDomain, grid: true },
+  y: { label: null, ticks: [] },
+  marks: [
+    Plot.dot(gdag_samplingDist.estimates.map(e => ({ e })), Plot.dodgeY({
+      x: "e", r: 3.2, fill: "#3d5a6c", fillOpacity: 0.5, stroke: "#3d5a6c", strokeOpacity: 0.4
+    })),
+    Plot.ruleX([trueEffects.total], { stroke: "#2e6f40", strokeWidth: 2.5, strokeDasharray: "5,3" }),
+    Plot.ruleX([trueEffects.direct], { stroke: "#9c7a33", strokeWidth: 2.5, strokeDasharray: "5,3" }),
+    Plot.ruleX([gdag_samplingDist.mean], { stroke: "#1c1c1a", strokeWidth: 2.5 }),
+    // Reference labels: anchored to each line's x but staggered in dy and
+    // given a white halo so they never collide even when the mean lands on a
+    // reference line (e.g. C+M case mean ≈ 0.30 sits on "true direct").
+    Plot.text([{ x: trueEffects.total, label: "true total" }], {
+      x: "x", text: "label", fill: "#2e6f40", fontWeight: "bold", fontSize: 10, dy: 12,
+      frameAnchor: "top", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: trueEffects.direct, label: "true direct" }], {
+      x: "x", text: "label", fill: "#9c7a33", fontWeight: "bold", fontSize: 10, dy: 26,
+      frameAnchor: "top", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: gdag_samplingDist.mean, label: "mean" }], {
+      x: "x", text: "label", fill: "#1c1c1a", fontWeight: "bold", fontSize: 10, dy: -8,
+      frameAnchor: "bottom", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Summary of the sampling distribution: center (bias) and spread (noise).
+{
+  const m = gdag_samplingDist.mean;
+  const sd = gdag_samplingDist.sd;
+  const biasTotal = m - trueEffects.total;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  return html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-top: 0.4rem;">
+    <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid #1c1c1a;">
+      <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Mean (center)</div>
+      <div style="font-size: 1.2rem; font-weight: 800; color: #1c1c1a;">${m.toFixed(3)}</div>
+    </div>
+    <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid ${Math.abs(biasTotal) < 0.03 ? '#2e6f40' : '#b3000b'};">
+      <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Bias vs. total</div>
+      <div style="font-size: 1.2rem; font-weight: 800; color: ${Math.abs(biasTotal) < 0.03 ? '#2e6f40' : '#b3000b'};">${fmt(biasTotal)}</div>
+    </div>
+    <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid #3d5a6c;">
+      <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Sampling SD (spread)</div>
+      <div style="font-size: 1.2rem; font-weight: 800; color: #3d5a6c;">${sd.toFixed(3)}</div>
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Control Laboratory
+
+The laboratory has three linked pieces: a **live DAG** at the top, a **single-sample estimate** in the middle, and a **sampling-distribution strip** at the bottom. Here is the guided tour:
+
+**Step 1: Watch the DAG recolor.** Toggle the checkboxes and look at the DAG first, before the numbers. When you box $C$, the two red backdoor arrows turn gray (blocked). When you box $M$, the green mediator arrows turn gray (mechanism switched off). When you box $L$, the two collider arrows flip from gray to *red* (a spurious path opens). The colors are the same legend used by all six pattern figures above.
+
+**Step 2: Read the single-sample estimate.** The "Your Estimate" card is computed on one fixed dataset (seed-locked) so the page's worked numbers in *What to Try* never drift. Every checked control enters a single *multiple* regression jointly (not one at a time), so combinations like C + M behave exactly like a real fitted model. Compare it to the true total (green) and direct (ochre) values.
+
+**Step 3: Separate bias from noise.** Click **Draw new sample (×200)**. The strip resimulates the DAG 200 times and plots where the estimate lands each time. Two distinct things to read:
+
+- The **center** of the cloud (dark "Mean estimate" line) is the *bias*. If it sits on the green "true total" line, the control set is unbiased for the total effect; if it sits away from it, you have systematic bias.
+- The **width** of the cloud (and the "Sampling SD" card) is *sampling noise* — the spread you would see even with a perfectly unbiased estimator, just from finite data.
+
+**Step 4: Diagnose each control set.** With **nothing controlled**, the cloud centers well above the green line (confounding bias). With **C alone**, the cloud snaps onto the green line — center on target, narrow spread. With **L added**, the center drifts off again (collider bias) — *even though the spread barely changes*. This is the whole point: more controls did not make the estimate noisier, they made it *wrong*. Bias and noise are different failures, and only the strip lets you see both at once.
+
+### What to Try
+
+Work through each combination systematically:
+
+1. **Nothing controlled**: The estimate (~1.0) is inflated by confounding through $C$ --- roughly double the true total effect of 0.50.
+
+2. **Only C (Confounder)**: The estimate drops to ~0.50 --- the true total causal effect. The backdoor is blocked and the causal path is intact. ✓
+
+3. **Only M (Mediator)**: The estimate drops, but the backdoor is still open. You get something uninterpretable --- neither the total effect nor the direct effect.
+
+4. **Only L (Collider)**: The estimate changes unpredictably. You've opened a collider path *and* the backdoor is still open. Two sources of bias.
+
+5. **C + M (Confounder + Mediator)**: The estimate drops to ≈ 0.30 --- the **controlled direct effect**. The backdoor is blocked *and* the mediator path is blocked, so this targets the direct effect $D \rightarrow Y$ rather than the total effect --- a *different causal question*, not a biased version of the same one. (Draw a new sample a few times: the cloud centers right on the ochre "true direct" line, with only sampling noise around it.)
+
+6. **C + L (Confounder + Collider)**: The estimate deviates from 0.50. The backdoor is blocked (good), but the collider is opened (bad). A new source of bias is introduced.
+
+::: {.glass-card .glass-card--insight}
+The only combination that recovers the total causal effect is conditioning on **C alone**. Adding any other variable either changes what you're estimating (M) or introduces new bias (L). More controls ≠ less bias.
+:::
+
+
+## See It: The Collider "Explaining-Away" Effect
+
+The lab above mixes confounding and collider bias together. To see collider bias in its *purest* form, the next demo strips everything else away. We generate treatment $D$ and outcome $Y$ to be **completely independent** — no causal arrow between them, no common cause. Then we form a collider $L$ as a threshold on $D + Y$ (think: "admitted to a specialist clinic if your combined treatment dose and symptom score is high enough") and look only at the selected subsample.
+
+::: {.interactive-container}
+
+#### Conditioning on a Collider Manufactures a Correlation
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.9rem; color: #1c1c1a; background: #f6f5f1; border-left: 3px solid #990000; padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 0.75rem;"><strong>Start here:</strong> with the toggle off the fitted line is flat (D and Y are unrelated). Flip the toggle on to keep only the selected subsample and watch the line tilt — a correlation made from nothing.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof gdag_collCondition = Inputs.toggle({
+  label: "Condition on the collider L (keep only the selected subsample)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof gdag_collDraw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.8rem; color: #79766e; margin: -0.35rem 0 0.6rem;">n = 400 patients per sample. The button draws a fresh independent sample; the toggle decides whether you keep all of them or only the selected subsample.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// D and Y are generated INDEPENDENTLY (true correlation 0). L is a collider:
+// selected = 1 when D + Y exceeds a threshold (top ~45% by D+Y). Conditioning
+// on L = looking only at the selected points induces a spurious NEGATIVE slope.
+gdag_collData = {
+  gdag_collDraw;                   // re-draw on button click
+  const n = 400;
+  const rng = mulberry32((Math.random() * 2147483647) | 0);
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const D = randn(rng);
+    const Y = randn(rng);          // INDEPENDENT of D
+    pts.push({ D, Y, sum: D + Y });
+  }
+  // Threshold at a quantile of (D + Y) so roughly the upper portion is selected.
+  const thr = d3.quantile(pts.map(p => p.sum), 0.55);
+  for (const p of pts) p.selected = p.sum > thr;
+  return pts;
+}
+
+// OLS slope of Y on D over a given point set.
+gdag_slope = function(pts) {
+  if (pts.length < 2) return 0;
+  const mx = d3.mean(pts, p => p.D);
+  const my = d3.mean(pts, p => p.Y);
+  const cov = d3.sum(pts, p => (p.D - mx) * (p.Y - my));
+  const vx = d3.sum(pts, p => (p.D - mx) ** 2);
+  return vx === 0 ? 0 : cov / vx;
+}
+
+gdag_collFit = {
+  const all = gdag_collData;
+  const used = gdag_collCondition ? all.filter(p => p.selected) : all;
+  const b = gdag_slope(used);
+  const mx = d3.mean(used, p => p.D);
+  const my = d3.mean(used, p => p.Y);
+  const xs = d3.extent(used, p => p.D);
+  const line = xs.map(x => ({ D: x, Y: my + b * (x - mx) }));
+  return { b, line, nUsed: used.length };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 360,
+  marginTop: 26,
+  marginLeft: 60,
+  grid: true,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "D (treatment) →", domain: [-3.4, 3.4] },
+  y: { label: "↑ Y (outcome)", domain: [-3.4, 3.4] },
+  marks: [
+    // Unselected points: faded hairline-grey when conditioning, muted otherwise.
+    Plot.dot(gdag_collData.filter(p => !p.selected), {
+      x: "D", y: "Y", r: 3,
+      fill: gdag_collCondition ? "#e6e3db" : "#79766e",
+      fillOpacity: gdag_collCondition ? 0.45 : 0.7
+    }),
+    // Selected (collider = 1) points: highlighted slate.
+    Plot.dot(gdag_collData.filter(p => p.selected), {
+      x: "D", y: "Y", r: 3.4,
+      fill: "#3d5a6c",
+      fillOpacity: gdag_collCondition ? 0.85 : 0.7
+    }),
+    // Fitted line on the subsample actually used: ink when flat, alarm red when tilted.
+    Plot.line(gdag_collFit.line, {
+      x: "D", y: "Y",
+      stroke: gdag_collCondition ? "#b3000b" : "#1c1c1a",
+      strokeWidth: 3
+    }),
+    // Slope readout anchored to a FIXED frame corner (top-left) with a white
+    // halo, so it never overlaps the dense selected-point triangle that fills
+    // the upper-left of the data region when conditioning is on.
+    Plot.text([{
+      label: `slope = ${gdag_collFit.b >= 0 ? "+" : ""}${gdag_collFit.b.toFixed(3)}`
+    }], {
+      text: "label",
+      frameAnchor: "top-left", dx: 10, dy: 6,
+      fill: gdag_collCondition ? "#b3000b" : "#1c1c1a",
+      fontSize: 15, fontWeight: "bold", textAnchor: "start",
+      stroke: "white", strokeWidth: 4, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.78rem; color: #79766e; margin: 0.35rem 0 0;">
+  <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#3d5a6c;margin-right:4px;"></span>selected (collider = 1)</span>
+  <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#79766e;margin-right:4px;"></span>not selected</span>
+  <span><span style="display:inline-block;width:14px;height:3px;background:${gdag_collCondition ? '#b3000b' : '#1c1c1a'};margin-right:4px;vertical-align:middle;"></span>fitted line</span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div class="glass-card" style="margin: 0.5rem 0 0; padding: 0.6rem 0.8rem; border-left: 4px solid ${gdag_collCondition ? '#b3000b' : '#2e6f40'};">
+  <div style="font-family: 'Inter'; font-size: 0.7rem; text-transform: uppercase; color: #79766e; font-weight: 700;">What the slope means</div>
+  <div style="font-size: 0.9rem; line-height: 1.4; font-weight: 600; color: ${gdag_collCondition ? '#b3000b' : '#2e6f40'};">
+    ${gdag_collCondition
+      ? `Among the ${gdag_collFit.nUsed} selected patients, D and Y look NEGATIVELY related (slope ≈ ${gdag_collFit.b.toFixed(2)}) — a spurious association created entirely by selection.`
+      : `Across all patients, D and Y are unrelated (slope ≈ ${gdag_collFit.b.toFixed(2)}) — exactly as built. No causal link, no common cause.`}
+  </div>
+</div>`
+```
+
+:::
+
+### How to Read the Explaining-Away Demo
+
+**Step 1: Start with the toggle off.** Every point is plotted and the fitted line is essentially flat (slope near 0). This is the truth: $D$ and $Y$ were generated independently. Knowing a patient's treatment $D$ tells you nothing about their outcome $Y$.
+
+**Step 2: Look at the slate points.** The darker slate points are the "selected" subsample — patients for whom $D + Y$ cleared the admission threshold. They form a triangular cloud cut off along a diagonal line $D + Y = \text{constant}$. That diagonal boundary is the collider doing its work.
+
+**Step 3: Flip the toggle on.** Now we condition on $L$ by keeping *only* the selected (slate) points, and the fitted line tilts **downward**. Among the selected, a patient with a high $D$ must have a *low* $Y$ to have made the cut — and vice versa. High $D$ "explains away" the need for high $Y$. A negative correlation appears out of nothing.
+
+**Step 4: Re-draw to confirm it is not a fluke.** Click **Draw new sample** a few times. The flat line stays flat; the conditioned line stays tilted. The spurious negative slope is *structural*, not sampling noise — it returns on every draw. This is exactly the cancer-survival trap from pattern 5: restrict to hospitalized patients and an effective treatment can look harmful.
+
+
+## See It: M-Bias and the Pre-Treatment Collider "Butterfly"
+
+Here is the pattern that breaks the comforting rule "just control for anything measured *before* treatment." Consider a variable $Z$ that is measured at baseline — genuinely pre-treatment — yet is a **collider** between two unobserved causes. Its DAG is the famous **butterfly** (or **M-structure**):
+
+$$
+D \leftarrow U_1 \rightarrow Z \leftarrow U_2 \rightarrow Y
+$$
+
+Both $U_1$ and $U_2$ are unobserved. $Z$ is a pre-treatment collider sitting between them. Leave $Z$ alone and there is *no* open path from $D$ to $Y$ — the collider blocks it. Control for $Z$ "to be safe" and you *open* a biasing path that did not exist before.
+
+::: {.interactive-container}
+
+#### One Toggle: Controlling for a "Safe" Baseline Variable Opens a Path
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.9rem; color: #1c1c1a; background: #f6f5f1; border-left: 3px solid #990000; padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 0.75rem;"><strong>Start here:</strong> the true effect of D on Y is exactly zero. With the toggle off the DAG is all blocked and both estimates sit at 0. Flip it on to control for the "safe" baseline Z and watch a biasing path open.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof gdag_mbiasCondition = Inputs.toggle({
+  label: "Control for the pre-treatment variable Z",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Butterfly / M-structure live graph. D and Y have NO causal link here, so the
+// only question is whether a non-causal path is open. Conditioning on Z (a
+// pre-treatment collider) opens U1 → Z ← U2 and hence D ⋯ Y.
+gdag_mbiasGraph = {
+  const cond = gdag_mbiasCondition;
+  // Collider arrows U1 → Z and U2 → Z: open (red) only when Z is boxed.
+  const u1z = cond ? "open-noncausal" : "blocked";
+  const u2z = cond ? "open-noncausal" : "blocked";
+  // U1 → D and U2 → Y: these become part of the open biasing path once the
+  // collider is opened; otherwise they go nowhere useful (gray).
+  const u1d = cond ? "open-noncausal" : "blocked";
+  const u2y = cond ? "open-noncausal" : "blocked";
+  return {
+    conditioned: cond ? ["Z"] : [],
+    nodes: [
+      {id: "U1", x: 0.28, y: 0.12, label: "U₁"},
+      {id: "U2", x: 0.72, y: 0.12, label: "U₂"},
+      {id: "Z",  x: 0.5,  y: 0.5,  label: "Z"},
+      {id: "D",  x: 0.12, y: 0.9,  label: "D"},
+      {id: "Y",  x: 0.88, y: 0.9,  label: "Y"}
+    ],
+    edges: [
+      {source: "U1", target: "Z", status: u1z},
+      {source: "U2", target: "Z", status: u2z},
+      {source: "U1", target: "D", status: u1d},
+      {source: "U2", target: "Y", status: u2y}
+    ]
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+gdag_drawDAG({
+  width: Math.min(480, width), height: 250,
+  conditioned: gdag_mbiasGraph.conditioned,
+  nodes: gdag_mbiasGraph.nodes,
+  edges: gdag_mbiasGraph.edges
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.78rem; color: #79766e; margin: -0.2rem 0 0.4rem; font-style: italic;">Note: there is deliberately <strong>no</strong> green D → Y arrow here — the true effect is zero by construction. Unlike the five pattern figures above, the only question is whether a non-causal path opens.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Numerical companion: simulate the butterfly and estimate D→Y, which is
+// truly ZERO. The naive (no-control) estimate is unbiased; controlling for the
+// pre-treatment collider Z induces bias. We also keep a thinned point set and
+// the two fitted lines so a companion scatter can SHOW the manufactured
+// correlation appear only when Z is residualized out.
+gdag_mbiasFit = {
+  const n = 4000;
+  const rng = mulberry32(20240619);  // seed-locked: stable cards across renders
+  const D = [], Y = [], Z = [];
+  for (let i = 0; i < n; i++) {
+    const U1 = randn(rng), U2 = randn(rng);
+    Z.push(U1 + U2 + randn(rng) * 0.5);   // pre-treatment collider of U1, U2
+    D.push(U1 + randn(rng));               // D driven by U1 only (NOT by Y)
+    Y.push(U2 + randn(rng));               // Y driven by U2 only (NOT by D) → true D→Y = 0
+  }
+  // Slope of Y on D, optionally residualizing out Z.
+  function resid(v, ctrl) {
+    const mc = d3.mean(ctrl), vc = d3.sum(ctrl, c => (c - mc) ** 2);
+    const cov = d3.sum(ctrl.map((c, i) => (c - mc) * v[i]));
+    const b = cov / vc;
+    return v.map((x, i) => x - b * (ctrl[i] - mc));
+  }
+  function slope(x, y) {
+    const mx = d3.mean(x), my = d3.mean(y);
+    const cov = d3.sum(x.map((xi, i) => (xi - mx) * (y[i] - my)));
+    const vx = d3.sum(x.map(xi => (xi - mx) ** 2));
+    return cov / vx;
+  }
+  const naive = slope(D, Y);
+  const rD = resid(D, Z), rY = resid(Y, Z);
+  const controlled = slope(rD, rY);
+  // Thin to ~500 points for a readable scatter. "raw" = D vs Y; "ctrl" = the
+  // Z-residualized D vs Y (what the regression actually sees once Z is added).
+  const step = Math.ceil(n / 500);
+  const rawPts = [], ctrlPts = [];
+  for (let i = 0; i < n; i += step) {
+    rawPts.push({ x: D[i], y: Y[i] });
+    ctrlPts.push({ x: rD[i], y: rY[i] });
+  }
+  function lineFor(pts, b) {
+    const mx = d3.mean(pts, p => p.x), my = d3.mean(pts, p => p.y);
+    const xs = d3.extent(pts, p => p.x);
+    return xs.map(x => ({ x, y: my + b * (x - mx) }));
+  }
+  return {
+    naive, controlled, rawPts, ctrlPts,
+    naiveLine: lineFor(rawPts, naive),
+    ctrlLine: lineFor(ctrlPts, controlled)
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Companion scatter for the butterfly, mirroring the Explaining-Away plot:
+// with Z left alone the D–Y cloud is round and the fit is flat (true effect 0);
+// once Z is controlled (residualized out) the residual D–Y cloud tilts and the
+// fitted line picks up the manufactured slope. This makes M-bias VISIBLE rather
+// than numbers-only.
+Plot.plot({
+  width: Math.min(480, width),
+  height: 300,
+  marginTop: 26,
+  marginLeft: 60,
+  grid: true,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: gdag_mbiasCondition ? "D, after removing Z →" : "D (treatment) →" },
+  y: { label: gdag_mbiasCondition ? "↑ Y, after removing Z" : "↑ Y (outcome)" },
+  marks: [
+    Plot.dot(gdag_mbiasCondition ? gdag_mbiasFit.ctrlPts : gdag_mbiasFit.rawPts, {
+      x: "x", y: "y", r: 2.6,
+      fill: gdag_mbiasCondition ? "#3d5a6c" : "#79766e",
+      fillOpacity: 0.55
+    }),
+    Plot.line(gdag_mbiasCondition ? gdag_mbiasFit.ctrlLine : gdag_mbiasFit.naiveLine, {
+      x: "x", y: "y",
+      stroke: gdag_mbiasCondition ? "#b3000b" : "#1c1c1a",
+      strokeWidth: 3
+    }),
+    Plot.text([{
+      label: `slope = ${(gdag_mbiasCondition ? gdag_mbiasFit.controlled : gdag_mbiasFit.naive) >= 0 ? "+" : ""}${(gdag_mbiasCondition ? gdag_mbiasFit.controlled : gdag_mbiasFit.naive).toFixed(3)}`
+    }], {
+      text: "label",
+      frameAnchor: "top-left", dx: 10, dy: 6,
+      fill: gdag_mbiasCondition ? "#b3000b" : "#1c1c1a",
+      fontSize: 15, fontWeight: "bold", textAnchor: "start",
+      stroke: "white", strokeWidth: 4, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.78rem; color: #79766e; margin: 0.35rem 0 0;">${gdag_mbiasCondition
+  ? "Conditioning on Z manufactures a tilt: D and Y look related even though the true effect is zero."
+  : "With Z left alone, D and Y form a round, slope-free cloud — exactly the true zero effect."}</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div>
+  <div style="font-family: 'Inter'; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #79766e; margin: 0.5rem 0 0.3rem;">One fixed sample (n = 4000)</div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid #2e6f40;">
+    <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">True D → Y</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #2e6f40;">0.000</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid #3d5a6c;">
+    <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Z not controlled</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: #3d5a6c;">${gdag_mbiasFit.naive.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.5rem 0.7rem; min-height: 3.4rem; border-left: 4px solid ${gdag_mbiasCondition ? '#b3000b' : '#79766e'};">
+    <div style="font-family: 'Inter'; font-size: 0.6rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Z controlled</div>
+    <div style="font-size: 1.2rem; font-weight: 800; color: ${gdag_mbiasCondition ? '#b3000b' : '#79766e'};">${gdag_mbiasFit.controlled.toFixed(3)}</div>
+  </div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<div class="glass-card" style="margin: 0.5rem 0 0; padding: 0.6rem 0.8rem; border-left: 4px solid ${gdag_mbiasCondition ? '#b3000b' : '#2e6f40'};">
+  <div style="font-family: 'Inter'; font-size: 0.7rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Verdict</div>
+  <div style="font-size: 0.9rem; line-height: 1.4; font-weight: 600; color: ${gdag_mbiasCondition ? '#b3000b' : '#2e6f40'};">
+    ${gdag_mbiasCondition
+      ? `Controlling for the pre-treatment collider Z OPENED a biasing path: the estimate is now ${gdag_mbiasFit.controlled.toFixed(2)} instead of 0. "Pre-treatment" did not make it safe.`
+      : `With Z left alone, both estimates are ≈ 0 — correct. The "Z controlled" card shows what you would get if you added Z, and the scatter above tilts only once the toggle is on. The collider keeps the only D⋯Y path blocked.`}
+  </div>
+</div>`
+```
+
+:::
+
+### How to Read the Butterfly Demo
+
+**Step 1: Note what is unobserved.** $U_1$ and $U_2$ are confounders you never measure. The *only* variable you can put in a regression here is $Z$ — and it is measured at baseline, before treatment. Every instinct says it is a safe control.
+
+**Step 2: Leave Z alone (toggle off).** All arrows are gray: the path $D \leftarrow U_1 \rightarrow Z \leftarrow U_2 \rightarrow Y$ is blocked at the collider $Z$. The numeric cards confirm both estimates sit at $0.00$, matching the true zero effect. Doing nothing is correct.
+
+**Step 3: Control for Z (toggle on).** The four arrows light up **red**: boxing the collider $Z$ opens $U_1 \rightarrow Z \leftarrow U_2$, which links $U_1$ and $U_2$, and through them $D$ and $Y$. The "Z controlled" card jumps away from zero — a bias you *created* by adding a controllably "clean" baseline covariate.
+
+**Step 4: Take the lesson.** Pre-treatment timing is not a license to control. M-bias is the reason "adjust for everything you measured before treatment" is wrong as a blanket rule. You still need the DAG to tell a pre-treatment *confounder* (control it) from a pre-treatment *collider* (leave it alone).
+
+
+## A Decision Framework
+
+The flowchart below turns the whole page into three yes/no questions. Trace a candidate control from the top: a **green** box means *include it*, a **red** box means *exclude it*, an **ochre** box means *optional* (it changes precision, not bias). The prose underneath walks the same three steps in words.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static decision-tree flowchart for the control-selection framework. Pure
+// function built with d3.create, returning the SVG node — same construction
+// style as gdag_drawDAG. Nodes carry a `kind`: "question" (slate), "include"
+// (green), "exclude" (red), "optional" (ochre). Edges carry a Yes/No label.
+gdag_drawFlow = function({width = 680, height = 460}) {
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const fill = { question: "#eef0ee", include: "#2e6f40", exclude: "#b3000b", optional: "#9c7a33" };
+  const textCol = { question: "#1c1c1a", include: "#ffffff", exclude: "#ffffff", optional: "#ffffff" };
+
+  // Normalized [0,1] layout; scaled to the frame with padding.
+  const pad = 14;
+  const sx = x => pad + x * (width - 2 * pad);
+  const sy = y => pad + y * (height - 2 * pad);
+
+  const nodes = [
+    {id: "q1", kind: "question", x: 0.5,  y: 0.06, w: 360, h: 52, lines: ["Q1. Is the variable a descendant", "of the treatment D?"]},
+    {id: "q2", kind: "question", x: 0.30, y: 0.34, w: 320, h: 52, lines: ["Q2. Does it sit on a backdoor", "path from D to Y?"]},
+    {id: "exTreat", kind: "exclude", x: 0.80, y: 0.34, w: 240, h: 64, lines: ["EXCLUDE", "mediator or collider —", "do not condition (total effect)"]},
+    {id: "incBackdoor", kind: "include", x: 0.165, y: 0.66, w: 200, h: 56, lines: ["INCLUDE", "good control:", "blocks the backdoor"]},
+    {id: "q3", kind: "question", x: 0.57, y: 0.62, w: 260, h: 52, lines: ["Q3. Is it a collider on a", "path from D to Y?"]},
+    {id: "exColl", kind: "exclude", x: 0.46, y: 0.90, w: 220, h: 56, lines: ["EXCLUDE", "bad control:", "opens a spurious path"]},
+    {id: "optPrec", kind: "optional", x: 0.80, y: 0.90, w: 215, h: 56, lines: ["OPTIONAL", "off all D–Y paths;", "may add precision"]}
+  ];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+
+  const edges = [
+    {s: "q1", t: "exTreat", label: "Yes", side: "right"},
+    {s: "q1", t: "q2", label: "No", side: "left"},
+    {s: "q2", t: "incBackdoor", label: "Yes", side: "left"},
+    {s: "q2", t: "q3", label: "No", side: "right"},
+    {s: "q3", t: "exColl", label: "Yes", side: "left"},
+    {s: "q3", t: "optPrec", label: "No", side: "right"}
+  ];
+
+  // Arrowhead marker.
+  svg.append("defs").append("marker")
+    .attr("id", "gdag-flow-arrow").attr("viewBox", "0 -5 10 10")
+    .attr("refX", 8).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto").append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#79766e");
+
+  // Edges (orthogonal-ish elbow paths) drawn under the boxes.
+  const gE = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.s), t = byId.get(e.t);
+    const x1 = sx(s.x), y1 = sy(s.y) + s.h / 2;
+    const x2 = sx(t.x), y2 = sy(t.y) - t.h / 2;
+    const my = (y1 + y2) / 2;
+    const path = `M${x1},${y1} L${x1},${my} L${x2},${my} L${x2},${y2}`;
+    gE.append("path").attr("d", path).attr("fill", "none")
+      .attr("stroke", "#79766e").attr("stroke-width", 2)
+      .attr("marker-end", "url(#gdag-flow-arrow)");
+    // Yes/No label on the vertical leg leaving the source.
+    gE.append("text")
+      .attr("x", x1 + (e.side === "right" ? 8 : -8))
+      .attr("y", y1 + 16)
+      .attr("text-anchor", e.side === "right" ? "start" : "end")
+      .attr("font-size", 12).attr("font-weight", 700)
+      .attr("fill", e.label === "Yes" ? "#b3000b" : "#2e6f40")
+      .text(e.label);
+  }
+
+  // Boxes on top.
+  const gN = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = gN.append("g");
+    g.append("rect")
+      .attr("x", cx - n.w / 2).attr("y", cy - n.h / 2)
+      .attr("width", n.w).attr("height", n.h).attr("rx", 8)
+      .attr("fill", fill[n.kind])
+      .attr("stroke", n.kind === "question" ? "#1c1c1a" : "none")
+      .attr("stroke-width", 1.5);
+    const lh = 15;
+    const y0 = cy - (n.lines.length - 1) * lh / 2;
+    n.lines.forEach((ln, i) => {
+      g.append("text")
+        .attr("x", cx).attr("y", y0 + i * lh)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", i === 0 && n.kind !== "question" ? 12.5 : 11.5)
+        .attr("font-weight", i === 0 ? 800 : 500)
+        .attr("fill", textCol[n.kind])
+        .text(ln);
+    });
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+gdag_drawFlow({ width: Math.min(700, width), height: 460 })
+```
+
+When faced with a potential control variable, ask these questions in order:
+
+**Step 1**: Is the variable a **descendant of treatment** ($D$)?
+
+- If yes → it is either a mediator or a collider (or both). Do **not** condition on it for the total effect. Stop here.
+- If no → proceed to Step 2.
+
+**Step 2**: Does the variable lie on a **backdoor path** from $D$ to $Y$?
+
+- If yes → conditioning on it blocks that backdoor path. This is a **good control**. Include it.
+- If no → proceed to Step 3.
+
+**Step 3**: Is the variable a **collider** on any path from $D$ to $Y$?
+
+- If yes → conditioning on it opens a spurious path. This is a **bad control**. Exclude it.
+- If no → the variable is not on any path between $D$ and $Y$. Conditioning on it neither helps nor hurts identification, but may improve precision if it predicts $Y$.
+
+::: {.glass-card .glass-card--definition}
+**Summary Table of Control Types**
+
+| Pattern | Structure | Condition on it? | Why |
+|:--------|:----------|:-----------------|:----|
+| Confounder | $D \leftarrow C \rightarrow Y$ | **Yes** | Blocks the backdoor path |
+| Proxy of confounder | $D \leftarrow U \rightarrow Y$, $U \rightarrow W$ | **Partially** | Reduces but doesn't eliminate confounding |
+| On backdoor path | $D \leftarrow A \rightarrow \dots \rightarrow Y$ | **Yes** | Blocks the path at that point |
+| Mediator | $D \rightarrow M \rightarrow Y$ | **No** (for total effect) | Blocks the causal mechanism |
+| Collider | $D \rightarrow L \leftarrow Y$ | **No** | Opens a spurious path |
+| Collider descendant | $L \rightarrow S$ | **No** | Partially opens the collider path |
+| Pre-treatment collider (M-bias) | $D \leftarrow U_1 \rightarrow Z \leftarrow U_2 \rightarrow Y$ | **No** | Opens a path even though $Z$ precedes $D$ |
+| Precision variable | $W \rightarrow Y$ only | **Optional** | Improves precision, doesn't affect bias |
+:::
+
+
+## The "Table 2 Fallacy"
+
+A widespread practice in medical research is to report a regression table with the treatment effect *and* the coefficients on all control variables, interpreting each coefficient as a causal effect. This is known as the **Table 2 fallacy** (Westreich and Greenland, 2013).
+
+The problem: the adjustment set that identifies the causal effect of $D$ on $Y$ is *not* the same set that identifies the causal effect of $C$ on $Y$. Each causal question requires its own DAG analysis and its own adjustment set. The coefficients on control variables in a single regression have no causal interpretation unless each variable's confounders are also properly controlled.
+
+**Healthcare example**: A study estimates the effect of a diabetes drug ($D$) on HbA1c ($Y$), controlling for BMI ($C$), exercise ($M$), and age ($A$). The coefficient on $D$ may be a valid causal estimate (if $\{C, A\}$ satisfies the backdoor criterion). But the coefficient on BMI from the *same regression* is *not* a valid causal estimate of BMI's effect on HbA1c, because the confounders of BMI-HbA1c may differ entirely from the confounders of $D$-$Y$.
+
+The mock output below shows exactly this trap. Only **one** row is shaded as a license to a causal reading; the rest are adjustment terms that hold no causal interpretation here, even though the software prints them in the same column with the same standard errors.
+
+```{ojs}
+//| echo: false
+
+html`<figure style="margin: 0.5rem 0 0.75rem;">
+  <table style="border-collapse: collapse; width: 100%; font-family: 'Inter', sans-serif; font-size: 0.86rem;">
+    <caption style="caption-side: top; text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; color: #79766e; padding-bottom: 0.35rem;">Table 2. Regression of HbA1c on a diabetes drug and covariates</caption>
+    <thead>
+      <tr style="border-bottom: 2px solid #1c1c1a;">
+        <th style="text-align: left; padding: 0.4rem 0.6rem;">Variable</th>
+        <th style="text-align: right; padding: 0.4rem 0.6rem;">Coefficient</th>
+        <th style="text-align: right; padding: 0.4rem 0.6rem;">95% CI</th>
+        <th style="text-align: left; padding: 0.4rem 0.6rem;">Causal reading?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="background: rgba(46,111,64,0.10); border-bottom: 1px solid #e6e3db;">
+        <td style="padding: 0.4rem 0.6rem; font-weight: 700;">Diabetes drug (D)</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right;">−0.62</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right; color: #79766e;">[−0.80, −0.44]</td>
+        <td style="padding: 0.4rem 0.6rem; color: #2e6f40; font-weight: 700;">&#10003; valid — this is the target estimand</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e6e3db;">
+        <td style="padding: 0.4rem 0.6rem;">BMI (C)</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right;">+0.18</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right; color: #79766e;">[+0.09, +0.27]</td>
+        <td style="padding: 0.4rem 0.6rem; color: #b3000b; font-weight: 700;">&#10007; NOT causal — BMI's own confounders unadjusted</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #e6e3db;">
+        <td style="padding: 0.4rem 0.6rem;">Age (A)</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right;">+0.04</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right; color: #79766e;">[+0.01, +0.07]</td>
+        <td style="padding: 0.4rem 0.6rem; color: #b3000b; font-weight: 700;">&#10007; NOT causal — different backdoor set</td>
+      </tr>
+      <tr>
+        <td style="padding: 0.4rem 0.6rem;">Exercise (M)</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right;">−0.11</td>
+        <td style="padding: 0.4rem 0.6rem; text-align: right; color: #79766e;">[−0.19, −0.03]</td>
+        <td style="padding: 0.4rem 0.6rem; color: #b3000b; font-weight: 700;">&#10007; NOT causal — may be a mediator of D</td>
+      </tr>
+    </tbody>
+  </table>
+  <figcaption style="font-size: 0.78rem; color: #79766e; margin-top: 0.4rem;">Same column, same standard errors — but only the shaded row earns a causal reading. Each other row would need <em>its own</em> DAG and adjustment set.</figcaption>
+</figure>`
+```
+
+::: {.glass-card .glass-card--warning}
+**Rule**: One regression, one causal question. If you want the causal effect of multiple exposures, you need a separate DAG-based analysis for each one. Never interpret control variable coefficients as causal effects in a regression designed to estimate a different treatment effect.
+:::
+
+
+## Common Traps in Healthcare Research
+
+### Trap 1: Controlling for Intermediate Outcomes
+
+A hospital evaluates whether a new care pathway ($D$) reduces 30-day mortality ($Y$). The pathway works by reducing time-to-treatment ($M$). A researcher controls for time-to-treatment, finds "no effect" of the pathway, and concludes it's useless.
+
+**Diagnosis**: $M$ is a mediator. Conditioning on it blocks the mechanism. The pathway does work --- through $M$.
+
+### Trap 2: Restricting to Survivors (Survivorship Bias)
+
+A study of an intensive care intervention ($D$) on long-term quality of life ($Y$) restricts the sample to patients who survived 90 days. Both the intervention and pre-existing health affect 90-day survival ($L$).
+
+**Diagnosis**: 90-day survival is a collider ($D \rightarrow L \leftarrow \text{Pre-existing health} \rightarrow Y$). Conditioning on it opens a spurious path. Among survivors, treated patients with poor outcomes must have had unusually good pre-existing health.
+
+### Trap 3: Controlling for a Variable Affected by Treatment
+
+A trial of a dietary intervention ($D$) measures both weight loss ($M$) at 6 months and cardiovascular events ($Y$) at 2 years. The researcher controls for 6-month weight loss. Depending on the DAG, this could block a mediator *or* open a collider if weight loss is also affected by unmeasured variables that affect $Y$.
+
+**Diagnosis**: Always ask "was this variable measured *after* treatment was assigned?" If yes, it may be a descendant of $D$. Draw the DAG before deciding.
+
+
+<details>
+<summary>Math Details: The do-Calculus and Beyond the Backdoor</summary>
+<div class="details-content">
+
+### When the Backdoor Criterion Is Not Enough
+
+The backdoor criterion is powerful but not universal. Some causal effects can be identified even when no valid backdoor adjustment set exists. Pearl's **do-calculus** (1995) provides three general rules for manipulating interventional distributions:
+
+::: {.glass-card .glass-card--definition}
+**Notation at a glance** (the symbols in the three rules below):
+
+- $do(D)$ --- the *intervention* operator: "set $D$ by force," as in a randomized trial, rather than merely observing the $D$ that nature handed out. $P(Y \mid do(D))$ is the distribution of $Y$ if we reached in and assigned $D$.
+- $\perp$ --- *(conditional) independence*: $Y \perp Z \mid D, W$ reads "once we know $D$ and $W$, learning $Z$ tells us nothing more about $Y$." It is the algebraic side of d-separation.
+- $\mathcal{G}_{\overline{D}}$ --- the DAG with all arrows *into* $D$ deleted (the overline = "incoming arrows cut"). $\mathcal{G}_{\underline{Z}}$ deletes arrows *out of* $Z$ (underline = "outgoing arrows cut"). These "graph surgeries" let you check the d-separation condition on a temporarily edited graph.
+:::
+
+**Rule 1 (Insertion/deletion of observations):**
+$$
+P(Y \mid do(D), Z, W) = P(Y \mid do(D), W) \quad \text{if } Y \perp_{\mathcal{G}_{\overline{D}}} Z \mid D, W
+$$
+
+**How to read this**: "Observing $Z$ doesn't change $Y$'s distribution after intervening on $D$ and conditioning on $W$, provided that $Y$ and $Z$ are d-separated in the modified graph where arrows into $D$ are removed."
+
+**Rule 2 (Action/observation exchange):**
+$$
+P(Y \mid do(D), do(Z), W) = P(Y \mid do(D), Z, W) \quad \text{if } Y \perp_{\mathcal{G}_{\overline{D}\underline{Z}}} Z \mid D, W
+$$
+
+**How to read this**: "Intervening on $Z$ is the same as observing $Z$" under certain d-separation conditions in a modified graph.
+
+**Rule 3 (Insertion/deletion of actions):**
+$$
+P(Y \mid do(D), do(Z), W) = P(Y \mid do(D), W) \quad \text{if } Y \perp_{\mathcal{G}_{\overline{D}\overline{Z(S)}}} Z \mid D, W
+$$
+
+where $S$ is the set of nodes in $Z$ that are not ancestors of any $W$-node in $\mathcal{G}_{\overline{D}}$.
+
+These rules are **complete**: if a causal effect can be identified from observational data given the DAG, the do-calculus can derive the identifying formula. Algorithms like the ID algorithm (Tian and Pearl, 2002) automate this process.
+
+### The Front-Door Criterion
+
+One important special case that goes beyond the backdoor: when an unmeasured confounder exists but the treatment's *entire* effect flows through a measurable mediator:
+
+$$
+D \leftarrow U \rightarrow Y, \quad D \rightarrow M \rightarrow Y
+$$
+
+No backdoor adjustment works (because $U$ is unmeasured). But the **front-door criterion** identifies the effect through:
+
+$$
+P(Y \mid do(D)) = \sum_m P(M = m \mid D) \sum_d P(Y \mid M = m, D = d) P(D = d)
+$$
+
+The front-door criterion is covered in more detail in later modules. For now, the key point is: the backdoor criterion is the first tool to try, but not the last. The DAG can reveal identification strategies you might not have considered.
+
+</div>
+</details>
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+For each of the following variables in a study of how a new surgical technique ($D$) affects post-operative infection rates ($Y$) in Swedish hospitals, classify it as a confounder, mediator, collider, or irrelevant, and state whether you should condition on it:
+
+a) Surgeon's years of experience
+b) Surgical wound healing speed (measured post-operatively)
+c) Whether the patient was transferred to the ICU (caused by both the technique used and infection)
+d) The patient's blood type
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Surgeon's years of experience** → **Confounder**. More experienced surgeons may both adopt the new technique more readily *and* have better outcomes independently. This creates a fork: $D \leftarrow \text{Experience} \rightarrow Y$. **Condition on it** ✓.
+
+**(b) Surgical wound healing speed** → **Mediator**. The new technique may cause faster wound healing, which in turn reduces infections: $D \rightarrow \text{Healing speed} \rightarrow Y$. Conditioning on it blocks the causal mechanism and gives you the direct effect only. **Do not condition on it** for the total effect ✗.
+
+**(c) ICU transfer** → **Collider**. Both the technique and the infection outcome can affect whether the patient goes to the ICU: $D \rightarrow \text{ICU} \leftarrow Y$. Conditioning on it (or restricting to ICU patients) opens a spurious path. **Do not condition on it** ✗.
+
+**(d) Blood type** → **Irrelevant** (precision variable). Blood type plausibly does not affect the choice of surgical technique and has at most a minor effect on infection risk. If it affects $Y$ but not $D$, it can be included for precision but is not required for identification. **Optional** — including it may slightly improve efficiency.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the interactive above, find the combination of controls that estimates the **controlled direct effect** (the effect of $D$ on $Y$ *not* through $M$). What value should the estimate be close to? Why is this a different quantity from the total effect?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+To estimate the **controlled direct effect**, condition on **C (Confounder) and M (Mediator)**:
+
+- Conditioning on $C$ blocks the backdoor path $D \leftarrow C \rightarrow Y$ → removes confounding.
+- Conditioning on $M$ blocks the indirect causal path $D \rightarrow M \rightarrow Y$ → removes the mediated effect.
+
+What remains is only the direct path $D \rightarrow Y$, which has a coefficient of 0.30 in the data-generating process. So the estimate should be close to **0.30**.
+
+This differs from the total effect (0.50) because the total effect includes *both* the direct and indirect pathways:
+
+- Direct: $D \rightarrow Y = 0.30$
+- Indirect: $D \rightarrow M \rightarrow Y = 0.50 \times 0.40 = 0.20$
+- Total: $0.30 + 0.20 = 0.50$
+
+The controlled direct effect answers: "What would happen if the treatment changed but the mediator was held fixed?" The total effect answers: "What would happen if the treatment changed, allowing all mechanisms to operate?" These are different causal questions with different policy implications. A platform that improves outcomes only through adherence ($M$) has a total effect but zero direct effect.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A Swedish epidemiologist studies whether air pollution ($D$) increases asthma hospitalizations ($Y$) using registry data. She has the following variables available:
+
+- Temperature (affects both pollution levels and respiratory health)
+- Pollen count (affects respiratory health independently)
+- Medication use (affected by pollution exposure and asthma severity)
+- Number of ER visits in the last month (affected by both medication use and asthma severity)
+
+Draw a plausible DAG for this setting. Then identify which variables are good controls, which are bad controls, and which are optional.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Plausible DAG:**
+
+- Temperature → $D$ (pollution), Temperature → $Y$ (hospitalizations)
+- Pollen → $Y$
+- $D$ → Medication use, $Y$ (asthma severity) → Medication use
+- Medication use → ER visits, $Y$ (asthma severity) → ER visits
+
+**Classification:**
+
+- **Temperature** → **Confounder** (fork: $D \leftarrow \text{Temp} \rightarrow Y$). **Good control** — condition on it ✓.
+
+- **Pollen count** → **Precision variable** ($\text{Pollen} \rightarrow Y$ only, no arrow to $D$). **Optional** — including it does not reduce confounding but may improve statistical precision.
+
+- **Medication use** → **Collider** ($D \rightarrow \text{Medication} \leftarrow Y$). Both pollution exposure and asthma severity cause changes in medication use. **Bad control** — conditioning on it opens a spurious path ✗.
+
+- **ER visits** → **Descendant of collider** (since Medication → ER visits, and Medication is a collider). Also receives a direct arrow from $Y$. **Bad control** — conditioning on it partially opens the collider path ✗.
+
+**Optimal adjustment set**: $\{\text{Temperature}\}$, optionally adding Pollen for precision.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Explain the **Table 2 fallacy** in your own words. Then give a concrete example where a single regression produces a valid causal estimate for one coefficient but not for another, even though both variables appear in the same model.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**The Table 2 fallacy** occurs when researchers interpret *all* coefficients in a regression as causal effects, when the regression was designed to identify the causal effect of *one specific variable*. The adjustment set that blocks all backdoor paths for the treatment of interest does not automatically block all backdoor paths for the control variables.
+
+**Concrete example**: A researcher estimates the effect of a new rehabilitation program ($D$) on physical function ($Y$), controlling for patient age ($A$) and pre-existing diabetes status ($C$).
+
+- DAG: $A \rightarrow D$, $A \rightarrow Y$, $C \rightarrow Y$, and also an unobserved variable $U$ such that $U \rightarrow C$ and $U \rightarrow Y$.
+
+- For the **treatment effect** ($D \rightarrow Y$): The adjustment set $\{A, C\}$ satisfies the backdoor criterion. The coefficient on $D$ is a valid causal estimate ✓.
+
+- For the **age effect** ($A \rightarrow Y$): The backdoor criterion for $A$ requires blocking any backdoor paths from $A$ to $Y$. If there are unobserved common causes of $A$ and $Y$ (e.g., birth cohort effects, genetic factors) that are *not* in the model, the coefficient on $A$ is confounded. Invalid ✗.
+
+- For the **diabetes effect** ($C \rightarrow Y$): The unobserved confounder $U$ creates a backdoor $C \leftarrow U \rightarrow Y$. Since $U$ is not in the model, the coefficient on $C$ is confounded. Invalid ✗.
+
+**Lesson**: Each causal question requires its own DAG analysis. You cannot "read off" causal effects for multiple variables from a single regression.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A control is "good" only if it blocks a non-causal path without opening another or closing a causal one --- the causal role, not the correlation with $D$ and $Y$, decides.
+- Conditioning on a mediator causes overcontrol bias: it switches off the mechanism and changes the estimand from the total effect to the direct effect.
+- Conditioning on a collider --- or its descendant, or by sample restriction (only survivors, only hospitalized) --- manufactures a spurious association out of nothing.
+- "Pre-treatment" is no guarantee of safety: in the M-bias butterfly $D \leftarrow U_1 \rightarrow Z \leftarrow U_2 \rightarrow Y$, controlling for the baseline collider $Z$ opens a biasing path.
+- More controls do not mean less bias --- adding the wrong variable shifts the estimate's center (bias) without shrinking its spread --- and the Table 2 fallacy reminds you each coefficient needs its own DAG.
+:::
+
+## What Comes Next
+
+You now have the complete DAG toolkit: the visual language of nodes and edges, the d-separation algorithm for reading conditional independencies, the backdoor criterion for selecting adjustment sets, and a catalog of good and bad control patterns. This is the foundation for everything that follows.
+
+The next module --- [Statistical Foundations](../03-statistical-foundations/index.qmd) --- equips you with the inferential machinery (sampling distributions, hypothesis tests, and confidence intervals) needed to turn causal estimates into defensible claims, before we put it to work in regression and the quasi-experimental designs. The deeper problem this page raised but could not solve --- what to do when a confounder is *unobserved* and no observed variable can block the back door --- is taken up later by those designs, especially [Instrumental Variables](../07-iv/index.qmd), which find identification through a natural experiment hidden within observational data.

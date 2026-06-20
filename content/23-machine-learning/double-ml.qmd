@@ -1,0 +1,702 @@
+---
+title: "Double and Debiased Machine Learning"
+subtitle: "Using ML for nuisance functions without breaking inference"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain why naively plugging a flexible ML prediction into a regression injects *regularization bias* into the treatment effect
+- Write the partially-linear model and recognise its Frisch--Waugh--Robinson "partialling-out" structure
+- Define a **Neyman-orthogonal** moment condition and state precisely why orthogonality makes the estimate first-order insensitive to nuisance error
+- Combine orthogonalization with **cross-fitting** to also remove the overfitting (own-observation) bias, restoring valid root-$n$ inference
+- Read post-double-selection LASSO as the canonical DML estimator and run it in R (`DoubleML`) and Python (`doubleml` / `econml`)
+:::
+
+## The Question Behind Every High-Dimensional Effect
+
+A health-economics team at Region Uppsala wants one number: the causal effect of enrolling a Type 2 diabetes patient in a structured *Diabetessamordning* (diabetes coordination program) on their HbA1c twelve months later, measured in mmol/mol. Call that effect $\theta_0$. The complication is the confounding. Whether a patient enrolls depends on dozens of things that *also* drive their HbA1c: age, baseline severity, comorbidities, *vårdcentral* (primary care center) of registration, neighbourhood deprivation index, prior medication history, even the wording of the referral. There are far more candidate confounders than the analyst can sensibly put in a linear regression by hand.
+
+The modern temptation is obvious: hand the confounders to a flexible machine-learning model --- a gradient-boosted forest, a deep net, a LASSO over hundreds of interactions --- let it soak up the confounding, and read off $\theta_0$. This instinct is *right in spirit and wrong in execution*. A black-box predictor optimised for out-of-sample accuracy is **regularized**: it deliberately shrinks and trades a little bias for a lot of variance. That shrinkage is invisible when you only care about prediction, but it is poison for a causal coefficient, because the bias does not vanish at the $1/\sqrt{n}$ rate that valid confidence intervals require.
+
+Double/debiased machine learning (DML), formalised by Chernozhukov, Chetverikov, Demirer, Duflo, Hansen, Newey and Robins (2018), is the repair. It keeps the ML flexibility but reorganises the estimation around two ideas you already half-know: the **partialling-out** logic of [Frisch--Waugh--Lovell](../04-regression/frisch-waugh-lovell.qmd) from Module 4, and the [moment-condition](../11-mle-gmm/likelihood.qmd) machinery of Module 11. This page builds the repair from the ground up and lets you watch the bias appear and disappear.
+
+## Where the Naive Estimate Goes Wrong
+
+Write the data-generating process as a **partially-linear model** (Robinson, 1988):
+
+$$
+Y = \theta_0\, D + g_0(X) + U, \qquad E[U \mid D, X] = 0,
+$$
+$$
+D = m_0(X) + V, \qquad E[V \mid X] = 0.
+$$
+
+**Read the first line as**: "the outcome $Y$ equals the treatment effect $\theta_0$ times the treatment $D$, plus a flexible function $g_0$ of the confounders $X$, plus mean-zero noise $U$." **Read the second as**: "the treatment $D$ equals its own flexible function $m_0(X)$ --- the *propensity*, the part of treatment explained by confounders --- plus mean-zero noise $V$." The parameter of interest is the scalar $\theta_0$; the functions $g_0$ and $m_0$ are **nuisance functions** --- we do not care about them for their own sake, only insofar as getting them wrong contaminates $\theta_0$.
+
+Here is the naive recipe and why it fails. Fit one flexible ML model $\hat g$ for $E[Y \mid X]$, form the residualised outcome, and regress it on $D$ --- a "single-ML" plug-in. Because $\hat g$ is regularized, it carries a systematic error $\hat g - g_0$ that does not shrink fast enough. That error leaks *directly* into $\hat\theta$ along the part of $D$ that the model can predict from $X$, and the resulting bias is of order $n^{-1/2} \times (\text{rate of } \hat g)$ --- large enough to swamp the $n^{-1/2}$ sampling fluctuation the confidence interval is built on. The interval ends up centred on the wrong number.
+
+::: {.glass-card .glass-card--warning}
+**Regularization bias is not sampling noise.** A regularized learner shrinks toward simplicity on purpose. When you plug its prediction into a downstream regression, that deliberate shrinkage shows up as a *systematic* offset in $\hat\theta$ --- it does not average out as $n$ grows, and it does not show up in the naive standard error. Bigger samples give you a tight confidence interval around the *wrong* value. More flexible/more regularized learners make it worse, not better.
+:::
+
+There is a second, subtler leak even if the rate were fine: **overfitting**. If the *same* observations are used both to fit $\hat g$ and to estimate $\theta_0$, the learner has partly memorised each point's noise, so the residuals are correlated with the fit. That own-observation bias is what cross-fitting will kill.
+
+## Fix One: Orthogonalize (Partial Out Both Sides)
+
+The cure for regularization bias is to change the *moment condition* we solve, so that small errors in the nuisance functions cancel to first order. The trick is pure Frisch--Waugh--Robinson: do not residualise only $Y$ --- residualise **both** $Y$ and $D$ against $X$, then relate the two residuals.
+
+Define the two residuals by subtracting off the *conditional means* given the confounders. Let $\ell_0(X) = E[Y\mid X]$ be the **outcome regression** and $m_0(X) = E[D\mid X]$ the **propensity**, and set
+
+$$
+\tilde Y = Y - \ell_0(X), \qquad \tilde D = D - m_0(X).
+$$
+
+Robinson's insight is that taking $E[\cdot\mid X]$ of the outcome equation gives $\ell_0(X) = \theta_0 m_0(X) + g_0(X)$, and subtracting recovers a clean linear relation in the residuals:
+
+$$
+\tilde Y = \theta_0\, \tilde D + U.
+$$
+
+**Read this as**: "the part of the outcome that confounders cannot explain equals $\theta_0$ times the part of treatment that confounders cannot explain, plus noise." The confounding $X$ has been swept out of *both* variables, so a simple residual-on-residual regression identifies $\theta_0$. The corresponding **Neyman-orthogonal score** is
+
+$$
+\psi(W;\,\theta,\eta) = \big(Y - \ell(X) - \theta\,[D - m(X)]\big)\,\big(D - m(X)\big),
+$$
+
+with nuisances $\eta = (\ell, m)$ and $E[\psi(W;\theta_0,\eta_0)] = 0$. Solving $\frac1n\sum_i \hat\psi_i = 0$ gives the closed form
+
+$$
+\hat\theta = \frac{\frac1n\sum_i (Y_i - \hat\ell_i)(D_i - \hat m_i)}{\frac1n\sum_i (D_i - \hat m_i)^2}
+= \frac{\sum_i \tilde Y_i\,\tilde D_i}{\sum_i \tilde D_i^{\,2}}.
+$$
+
+::: {.glass-card .glass-card--definition}
+A moment condition $E[\psi(W;\theta_0,\eta_0)] = 0$ is **Neyman-orthogonal** if its Gateaux derivative with respect to the nuisance $\eta$, evaluated at the truth, vanishes:
+
+$$
+\partial_\eta\, E\big[\psi(W;\theta_0,\eta_0)\big]\,[\eta - \eta_0] = 0
+\quad\text{for all admissible directions } \eta - \eta_0.
+$$
+
+**Read this as**: "if you nudge the nuisance functions away from the truth, the *expected* moment does not move, to first order." Because the moment is flat in $\eta$ at $\eta_0$, a nuisance error of size $\varepsilon$ perturbs $\hat\theta$ only by order $\varepsilon^2$ --- the first-order leak that sank the naive estimator is gone.
+:::
+
+This orthogonality is exactly why we partial out *both* sides. The naive single-ML score $(Y-\ell(X))\,D$ is **not** orthogonal: nudging $\ell$ moves its expectation linearly through the predictable part of $D$. Multiplying by the *treatment residual* $D - m(X)$ instead of $D$ projects that leak onto the part of $D$ that is orthogonal to $X$ by construction --- and it is gone.
+
+## Fix Two: Cross-Fitting (Never Score on Your Own Fold)
+
+Orthogonality handles regularization bias but not overfitting. **Cross-fitting** handles overfitting by a sample-splitting scheme that is the moral cousin of $k$-fold cross-validation.
+
+::: {.glass-card .glass-card--definition}
+**Cross-fitting** ($K$-fold, typically $K=5$). Split the sample into $K$ folds. For each fold $k$:
+
+1. Fit the nuisance learners $\hat\ell^{(-k)}, \hat m^{(-k)}$ on **all data except fold $k$**.
+2. Form the residuals $\tilde Y_i, \tilde D_i$ for the held-out observations $i \in$ fold $k$ using those *out-of-fold* predictions.
+
+Then estimate $\theta_0$ from the orthogonal moment using the pooled out-of-fold residuals across all folds.
+
+**Read this as**: "predict every observation with a model that never saw it." Because $\hat\ell^{(-k)}$ and $\hat m^{(-k)}$ are statistically independent of the held-out points, the residuals carry no memorised noise --- the own-observation correlation that biases the in-sample estimator is broken.
+:::
+
+Putting the two fixes together gives the **DML theorem**: with a Neyman-orthogonal score and cross-fitting, if *each* nuisance learner converges at the mild rate $o(n^{-1/4})$ --- so that the *product* of the two errors converges faster than $n^{-1/2}$ --- then
+
+$$
+\sqrt{n}\,(\hat\theta - \theta_0) \;\xrightarrow{d}\; \mathcal N\!\big(0,\ \sigma^2\big),
+$$
+
+with a sandwich variance you can estimate directly and turn into a textbook confidence interval. The $n^{-1/4}$ requirement is what makes DML practical: $n^{-1/4}$ is *slow*, comfortably within reach of forests, boosting, LASSO, and neural nets, even though none of them attains the $n^{-1/2}$ rate a plug-in would need.
+
+## See It: Naive ML Bias vs. Orthogonalized, Cross-Fit DML
+
+The lab below simulates the partially-linear model for the diabetes program. The true effect is fixed at $\theta_0 = -4.0$ mmol/mol (a beneficial reduction). As you raise the **number of confounders** $p$ and the **ML regularization strength** $\lambda$, the *naive single-ML* estimate (slate) drifts away from the truth --- that is regularization bias accumulating. The *orthogonalized, cross-fit DML* estimate (red) stays pinned on the ochre truth line, with an honest confidence interval. Toggle the two fixes off one at a time to see which leak each one plugs.
+
+::: {.interactive-container}
+
+#### Regularization bias: naive ML vs. orthogonal cross-fit DML
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette tokens, shared across this page's interactives.
+mldml_pal = ({
+  focal:   "#990000",   // DML estimate (focal series, Uppsala red)
+  compare: "#3d5a6c",   // naive single-ML estimate (slate)
+  good:    "#2e6f40",   // on-target / unbiased green
+  truth:   "#9c7a33",   // true value θ₀ (ochre highlight)
+  ink:     "#1c1c1a",   // ink / reference lines
+  axis:    "#79766e",   // axis text
+  hair:    "#e6e3db",   // gridlines
+  muted:   "#79766e",   // muted ink
+  bad:     "#b3000b",   // alarm / bias present
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+mldml_theta0 = -4.0   // true causal effect of the program on HbA1c (mmol/mol)
+```
+
+```{ojs}
+//| echo: false
+viewof mldml_p = Inputs.range([2, 200], {
+  value: 40,
+  step: 1,
+  label: "Number of confounders p"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mldml_lambda = Inputs.range([0, 0.9], {
+  value: 0.45,
+  step: 0.01,
+  label: "ML regularization strength λ"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mldml_orthog = Inputs.toggle({
+  label: "Fix 1: orthogonalize (partial out D too)",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mldml_crossfit = Inputs.toggle({
+  label: "Fix 2: cross-fit (out-of-fold residuals)",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sample size held fixed; the story is about p and λ, not n.
+mldml_n = 600
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A transparent analytic stand-in for the bias of each estimator. We do not run
+// a real learner in the browser; instead we model the two well-understood bias
+// channels so the reader can see HOW they combine. Magnitudes are calibrated to
+// be didactically clear, not to match any specific simulation.
+//
+//   regBias  — regularization bias: grows with how much of D the learner must
+//              soak up. Scales with p (richer confounding) and λ (more shrinkage),
+//              damped by 1/√n. This is the leak that ORTHOGONALITY removes: when
+//              orthogonalize is ON, partialling out D kills the first-order term,
+//              leaving only a tiny O(ε²) remainder.
+//   ofBias   — overfitting (own-observation) bias: grows with model complexity
+//              p/n. This is the leak CROSS-FITTING removes.
+mldml_bias = function (orthog, crossfit) {
+  const n = mldml_n, p = mldml_p, lam = mldml_lambda;
+  // First-order regularization leak (sign: pulls the estimate toward 0, i.e.
+  // less negative — the program looks weaker than it is).
+  const regLeak = 3.2 * (p / n) * (0.25 + lam) / Math.sqrt(0.04 + (1 - lam));
+  // Orthogonality leaves only a second-order remainder of the leak.
+  const reg = orthog ? 0.05 * regLeak * regLeak : regLeak;
+  // Overfitting leak (also pulls toward 0); cross-fitting removes it.
+  const ofLeak = 1.6 * (p / n) * (0.4 + 0.6 * lam);
+  const of = crossfit ? 0.04 * ofLeak : ofLeak;
+  // Both biases push the (negative) θ̂ toward zero -> add positive amount.
+  return reg + of;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sandwich-style standard error of the residual-on-residual estimator, growing
+// gently with p (more nuisance variance) and shrinking with the treatment-
+// residual variance. Used to draw honest 95% bands.
+mldml_se = function () {
+  const n = mldml_n, p = mldml_p;
+  return 0.42 * Math.sqrt((1 + 0.9 * p / n) / n) * 8;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The two point estimates and their 95% intervals at the current settings.
+mldml_est = {
+  const se = mldml_se();
+  const naiveBias = mldml_bias(false, false);            // no fixes
+  const dmlBias   = mldml_bias(mldml_orthog, mldml_crossfit);
+  const naive = mldml_theta0 + naiveBias;
+  const dml   = mldml_theta0 + dmlBias;
+  const z = 1.96;
+  return {
+    naive, dml, se,
+    naiveLo: naive - z * se, naiveHi: naive + z * se,
+    dmlLo:   dml   - z * se, dmlHi:   dml   + z * se,
+    naiveBias, dmlBias
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sweep p across its range to draw the two bias TRAJECTORIES at the current λ
+// and toggle settings — so the reader sees the divergence, not just two points.
+mldml_traj = d3.range(2, 201, 2).map(pp => {
+  const n = mldml_n, lam = mldml_lambda;
+  const regLeak = 3.2 * (pp / n) * (0.25 + lam) / Math.sqrt(0.04 + (1 - lam));
+  const ofLeak  = 1.6 * (pp / n) * (0.4 + 0.6 * lam);
+  const naive = mldml_theta0 + regLeak + ofLeak;
+  const reg = mldml_orthog ? 0.05 * regLeak * regLeak : regLeak;
+  const of  = mldml_crossfit ? 0.04 * ofLeak : ofLeak;
+  const dml = mldml_theta0 + reg + of;
+  return { p: pp, naive, dml };
+})
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginTop: 28,
+  marginRight: 24,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: mldml_pal.axis
+  },
+  x: { label: "Number of confounders  p  →", domain: [2, 200] },
+  y: {
+    label: "↑ Estimated effect  θ̂  (mmol/mol HbA1c)",
+    domain: [mldml_theta0 - 0.6, mldml_theta0 + 4.2],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: mldml_pal.hair }),
+    // True value θ₀ — ochre reference.
+    Plot.ruleY([mldml_theta0], {
+      stroke: mldml_pal.truth, strokeWidth: 2, strokeDasharray: "6,4"
+    }),
+    Plot.text([{ p: 200, y: mldml_theta0 }], {
+      x: "p", y: "y", text: () => `truth  θ₀ = ${mldml_theta0.toFixed(1)}`,
+      fill: mldml_pal.truth, fontWeight: 700, fontSize: 11,
+      textAnchor: "end", dy: -8,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Naive single-ML trajectory (slate) — drifts up (toward 0) as p grows.
+    Plot.line(mldml_traj, {
+      x: "p", y: "naive", stroke: mldml_pal.compare, strokeWidth: 2
+    }),
+    // DML trajectory (red) — stays on the truth.
+    Plot.line(mldml_traj, {
+      x: "p", y: "dml", stroke: mldml_pal.focal, strokeWidth: 2.5
+    }),
+    // Current p: 95% intervals as vertical rules + point estimates.
+    Plot.ruleX([mldml_p], { stroke: mldml_pal.hair, strokeWidth: 1 }),
+    Plot.link([{}], {
+      x1: mldml_p, x2: mldml_p, y1: mldml_est.naiveLo, y2: mldml_est.naiveHi,
+      stroke: mldml_pal.compare, strokeWidth: 2
+    }),
+    Plot.link([{}], {
+      x1: mldml_p, x2: mldml_p, y1: mldml_est.dmlLo, y2: mldml_est.dmlHi,
+      stroke: mldml_pal.focal, strokeWidth: 2.5
+    }),
+    Plot.dot([{ p: mldml_p, y: mldml_est.naive }], {
+      x: "p", y: "y", fill: "white", stroke: mldml_pal.compare, strokeWidth: 2, r: 5
+    }),
+    Plot.dot([{ p: mldml_p, y: mldml_est.dml }], {
+      x: "p", y: "y", fill: mldml_pal.focal, r: 6
+    }),
+    // Labels flip to the left of the marker once p is in the right third, so they
+    // never overflow the right margin as the reader drags p toward 200.
+    Plot.text([{ p: mldml_p, y: mldml_est.naive }], {
+      x: "p", y: "y", text: () => "naive ML", fill: mldml_pal.compare,
+      fontSize: 11, fontWeight: 600,
+      dx: mldml_p > 134 ? -8 : 8,
+      textAnchor: mldml_p > 134 ? "end" : "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ p: mldml_p, y: mldml_est.dml }], {
+      x: "p", y: "y", text: () => "DML", fill: mldml_pal.focal,
+      fontSize: 11, fontWeight: 700, dy: 12,
+      dx: mldml_p > 134 ? -8 : 8,
+      textAnchor: mldml_p > 134 ? "end" : "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tying the picture to the numbers. Built inside an ojs cell with
+// html`` so reactive values interpolate (markdown ${...} would render literally).
+{
+  const e = mldml_est;
+  const covered = e.dmlLo <= mldml_theta0 && mldml_theta0 <= e.dmlHi;
+  const naiveCovered = e.naiveLo <= mldml_theta0 && mldml_theta0 <= e.naiveHi;
+  const tile = (label, value, color, sub) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${mldml_pal.fill}; border: 1px solid ${mldml_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${mldml_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        color:${mldml_pal.muted}; margin-top:0.1rem;">${sub}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("True θ₀", mldml_theta0.toFixed(2), mldml_pal.truth, "mmol/mol")}
+    ${tile("Naive ML θ̂", e.naive.toFixed(2), mldml_pal.compare,
+        `bias ${e.naiveBias >= 0 ? "+" : ""}${e.naiveBias.toFixed(2)}`)}
+    ${tile("DML θ̂", e.dml.toFixed(2), mldml_pal.focal,
+        `bias ${e.dmlBias >= 0 ? "+" : ""}${e.dmlBias.toFixed(2)}`)}
+    ${tile("Naive 95% CI covers truth?", naiveCovered ? "yes" : "NO",
+        naiveCovered ? mldml_pal.good : mldml_pal.bad,
+        `[${e.naiveLo.toFixed(2)}, ${e.naiveHi.toFixed(2)}]`)}
+    ${tile("DML 95% CI covers truth?", covered ? "yes" : "NO",
+        covered ? mldml_pal.good : mldml_pal.bad,
+        `[${e.dmlLo.toFixed(2)}, ${e.dmlHi.toFixed(2)}]`)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// Verdict line that reacts to which fixes are enabled.
+{
+  const both = mldml_orthog && mldml_crossfit;
+  let msg, color;
+  if (both) {
+    msg = "Both fixes ON: the orthogonal score removes regularization bias and cross-fitting removes overfitting. The DML estimate (red) tracks the truth and its 95% interval has honest coverage even as p and λ climb.";
+    color = mldml_pal.good;
+  } else if (!mldml_orthog && !mldml_crossfit) {
+    msg = "Both fixes OFF: this is the naive single-ML plug-in. As p and λ grow, regularization bias pulls θ̂ toward zero — the program looks weaker than it is, and the interval misses the truth.";
+    color = mldml_pal.bad;
+  } else if (mldml_orthog && !mldml_crossfit) {
+    msg = "Orthogonal but NOT cross-fit: the big first-order regularization leak is gone, but the residuals are still computed on their own fold, so an overfitting bias remains. Cross-fitting closes it.";
+    color = mldml_pal.truth;
+  } else {
+    msg = "Cross-fit but NOT orthogonal: own-observation overfitting is gone, yet the non-orthogonal score still leaks regularization bias at first order. Partialling out D too is what removes it.";
+    color = mldml_pal.truth;
+  }
+  return html`<div style="
+      margin-top:0.75rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+      border-left:3px solid ${color}; background:${mldml_pal.fill};
+      font-family:'Inter',system-ui,sans-serif; font-size:0.86rem;
+      line-height:1.45; color:${mldml_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Bias Chart
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Find the truth.** The ochre dashed horizontal line is the true effect $\theta_0 = -4.0$ mmol/mol --- the program lowers HbA1c by four units. Any honest estimator should sit on this line, and any honest 95% interval should cover it about 95% of the time.
+
+**Step 2: Read the two trajectories.** The slate curve is the *naive single-ML* estimate as a function of the number of confounders $p$; the red curve is the *orthogonalized, cross-fit DML* estimate. At small $p$ they nearly coincide. As $p$ grows, the slate curve climbs *toward zero* --- regularization bias makes the program look weaker than it truly is --- while the red curve hugs the ochre truth.
+
+**Step 3: Inspect the current point.** The two vertical bars at your chosen $p$ are the 95% confidence intervals: hollow slate dot for naive, solid red dot for DML. Check the two right-hand tiles below the chart: the DML interval keeps covering the truth ("yes", green); the naive interval increasingly does not ("NO", red).
+
+**Step 4: Crank up regularization.** Raise the **regularization strength $\lambda$**. The slate naive curve bends further from the truth --- more shrinkage means more leaked bias. The red DML curve barely moves: orthogonality has made it first-order insensitive to exactly this kind of nuisance error.
+
+**Step 5: Remove the fixes one at a time.** Turn **Fix 1 (orthogonalize)** off: the red curve jumps toward the slate one --- the first-order leak is back. Turn it on and turn **Fix 2 (cross-fit)** off instead: the red curve drifts up more gently --- that residual gap is the overfitting bias. Only with *both* fixes on does DML stay on target. The verdict line under the chart names which leak is active.
+
+## Post-Double-Selection LASSO: The Canonical Case
+
+The cleanest concrete instance of DML is **post-double-selection** (Belloni, Chernozhukov & Hansen, 2014), built on LASSO. Suppose the nuisances are sparse linear functions of many candidate confounders. The naive "single-selection" approach runs one LASSO of $Y$ on $X$, keeps the selected controls, and regresses $Y$ on $D$ and those controls. It fails because LASSO, tuned for prediction, *drops* confounders that have a weak effect on $Y$ but a strong effect on $D$ --- and an omitted strong predictor of treatment is exactly an omitted-variable-bias generator.
+
+Post-double-selection runs *two* LASSOs and takes the **union** of what they select:
+
+::: {.glass-card .glass-card--insight}
+**Why select twice.** Run LASSO of $Y$ on $X$ (the outcome equation) *and* LASSO of $D$ on $X$ (the treatment equation), then regress $Y$ on $D$ controlling for the **union** of variables selected by either. A confounder is dangerous if it predicts the outcome *or* the treatment; selecting on both equations guarantees no strong confounder is dropped. This double selection is the partialling-out-both-sides idea in variable-selection clothing --- it is Neyman-orthogonal, and it delivers valid confidence intervals for $\theta_0$ even after data-driven model selection.
+:::
+
+Single selection (one LASSO) is to double selection what naive single-ML is to DML: the same regularization leak, the same broken inference, and the same cure --- attend to the treatment equation, not just the outcome.
+
+<details>
+<summary>Math Details: the partially-linear DML score and why orthogonality kills first-order bias</summary>
+<div class="details-content">
+
+### Setup
+
+The partially-linear model is
+
+$$
+Y = \theta_0 D + g_0(X) + U,\quad E[U\mid D,X]=0;\qquad
+D = m_0(X) + V,\quad E[V\mid X]=0.
+$$
+
+Let $\ell_0(X) = E[Y\mid X]$. Taking $E[\cdot\mid X]$ of the outcome equation,
+$\ell_0(X) = \theta_0 m_0(X) + g_0(X)$. Subtracting from the outcome equation,
+
+$$
+\underbrace{Y-\ell_0(X)}_{\tilde Y} = \theta_0\underbrace{(D-m_0(X))}_{\tilde D} + U.
+$$
+
+### The orthogonal score
+
+Use the Robinson score with nuisance $\eta=(\ell,m)$:
+
+$$
+\psi(W;\theta,\eta) = \big(Y-\ell(X) - \theta\,[D-m(X)]\big)\,\big(D-m(X)\big).
+$$
+
+At the truth, $Y-\ell_0(X)-\theta_0[D-m_0(X)] = U$ and $D-m_0(X)=V$, so
+$E[\psi(W;\theta_0,\eta_0)] = E[UV] = E\big[E[U\mid D,X]\,V\big]=0$. The moment identifies $\theta_0$.
+
+### Neyman orthogonality: the derivative check
+
+Write the expected moment as $M(\theta,\eta)=E[\psi(W;\theta,\eta)]$. Orthogonality requires the Gateaux derivative in $\eta$ at $(\theta_0,\eta_0)$ to vanish in every direction $(\ell-\ell_0,\,m-m_0)$.
+
+**Direction $\ell$.** $\partial_\ell \psi = -(D-m(X))$, a function of $X$ and $V$ only. Its expectation at the truth,
+
+$$
+E\big[-(D-m_0(X))\big] = -E[V] = -E\big[E[V\mid X]\big] = 0. \checkmark
+$$
+
+**Direction $m$.** Differentiating in $m$ produces two terms,
+
+$$
+\partial_m\psi = \theta_0\,(D-m(X)) - \big(Y-\ell(X)-\theta_0[D-m(X)]\big),
+$$
+
+which at the truth equals $\theta_0 V - U$. Its expectation is
+$\theta_0 E[V] - E[U] = 0$ since both residuals are mean-zero. $\checkmark$
+
+Both directional derivatives vanish, so the score is Neyman-orthogonal:
+$\partial_\eta M(\theta_0,\eta_0)[\eta-\eta_0]=0$.
+
+### Why this kills first-order bias
+
+Expand the estimating equation $\frac1n\sum_i \psi(W_i;\hat\theta,\hat\eta)=0$ around $(\theta_0,\eta_0)$. A first-order Taylor expansion gives, schematically,
+
+$$
+0 \approx \underbrace{\tfrac1n\textstyle\sum_i \psi(W_i;\theta_0,\eta_0)}_{O_p(n^{-1/2})}
++ \partial_\theta M\,(\hat\theta-\theta_0)
++ \underbrace{\partial_\eta M[\hat\eta-\eta_0]}_{=\,0\ \text{by orthogonality}}
++ \underbrace{O_p\big(\|\hat\eta-\eta_0\|^2\big)}_{\text{second order}}.
+$$
+
+The dangerous middle term --- the one that injects the *first-order* nuisance error $\hat\eta-\eta_0$ into $\hat\theta$ --- is annihilated by orthogonality. What remains is the *product/squared* error $\|\hat\eta-\eta_0\|^2 = \|\hat\ell-\ell_0\|\cdot\|\hat m-m_0\|$. If each learner converges at $o(n^{-1/4})$, this product is $o(n^{-1/2})$ and is dominated by the $O_p(n^{-1/2})$ leading term. Hence
+
+$$
+\sqrt n(\hat\theta-\theta_0) = -\,\big(\partial_\theta M\big)^{-1}\frac{1}{\sqrt n}\sum_i \psi(W_i;\theta_0,\eta_0) + o_p(1)
+\ \xrightarrow{d}\ \mathcal N(0,\sigma^2),
+$$
+
+with $\sigma^2 = E[\psi^2]/(\partial_\theta M)^2 = E[U^2V^2]/E[V^2]^2$ under homoskedasticity. **Cross-fitting** is what makes the remainder legitimately second-order: scoring each observation with out-of-fold nuisances removes the own-observation correlation that would otherwise inflate the cross term beyond $\|\hat\eta-\eta_0\|^2$.
+
+### Contrast: the non-orthogonal naive score
+
+The single-ML score $\psi^{\text{naive}} = (Y-\ell(X))\,D$ has $\partial_\ell\psi^{\text{naive}} = -D$, with expectation $-E[D]=-E[m_0(X)]\neq 0$ in general. The first-order leak survives, and the plug-in inherits a bias of order $\|\hat\ell-\ell_0\|$ --- not its square. That single power of the (slow) ML rate is precisely why naive single-ML inference is invalid.
+
+</div>
+</details>
+
+## Running DML
+
+Both panels fit the partially-linear DML estimator for the diabetes program: nuisances by random forest, the orthogonal Robinson score, 5-fold cross-fitting, and a valid 95% confidence interval for $\theta_0$. The idiomatic packages are `DoubleML` in R and `doubleml` / `econml` in Python.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("DoubleML", "mlr3", "mlr3learners", "ranger", "data.table"))
+library(DoubleML)
+library(mlr3); library(mlr3learners)
+lgr::get_logger("mlr3")$set_threshold("warn")
+
+set.seed(2024)
+
+## ---- Simulate the partially-linear model (Region Uppsala diabetes program) ----
+n <- 600L; p <- 40L
+X  <- matrix(rnorm(n * p), n, p)              # p candidate confounders
+g0 <- 2.0 * X[, 1] + 1.2 * X[, 2] - 0.8 * X[, 3]   # outcome confounding
+m0 <- 0.9 * X[, 1] - 0.7 * X[, 2] + 0.5 * X[, 4]   # treatment (propensity index)
+D  <- m0 + rnorm(n)                            # continuous enrollment intensity
+theta0 <- -4.0                                 # true effect on HbA1c (mmol/mol)
+Y  <- theta0 * D + g0 + rnorm(n)
+
+dat <- data.frame(Y, D, X)
+dml_data <- double_ml_data_from_data_frame(
+  dat, y_col = "Y", d_cols = "D",
+  x_cols = grep("^X", names(dat), value = TRUE)
+)
+
+## ---- Nuisances by random forest; orthogonal PLR score; 5-fold cross-fitting ----
+ml_l <- lrn("regr.ranger", num.trees = 500)   # learner for E[Y | X]  (ℓ₀)
+ml_m <- lrn("regr.ranger", num.trees = 500)   # learner for E[D | X]  (m₀)
+
+dml_plr <- DoubleMLPLR$new(dml_data, ml_l = ml_l, ml_m = ml_m,
+                           n_folds = 5, score = "partialling out")
+dml_plr$fit()
+
+dml_plr$summary()           # estimate, SE, t, p, 95% CI for θ₀
+dml_plr$confint(level = 0.95)
+cat("True theta0 =", theta0, "\n")
+
+## ---- For contrast: the BIASED naive single-ML plug-in ----
+library(ranger)
+l_hat <- ranger(Y ~ ., data = data.frame(Y, X))$predictions   # in-sample, no cross-fit
+naive <- coef(lm(I(Y - l_hat) ~ D))["D"]      # residualise Y only, regress on D
+cat("Naive single-ML theta_hat =", round(naive, 3), " (biased toward 0)\n")
+```
+
+### Python
+
+```python
+# pip install doubleml scikit-learn numpy
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from doubleml import DoubleMLData, DoubleMLPLR
+
+rng = np.random.default_rng(2024)
+
+# ---- Simulate the partially-linear model (Region Uppsala diabetes program) ----
+n, p = 600, 40
+X  = rng.normal(size=(n, p))                       # p candidate confounders
+g0 = 2.0 * X[:, 0] + 1.2 * X[:, 1] - 0.8 * X[:, 2] # outcome confounding
+m0 = 0.9 * X[:, 0] - 0.7 * X[:, 1] + 0.5 * X[:, 3] # treatment (propensity index)
+D  = m0 + rng.normal(size=n)                       # continuous enrollment intensity
+theta0 = -4.0                                       # true effect on HbA1c (mmol/mol)
+Y  = theta0 * D + g0 + rng.normal(size=n)
+
+dml_data = DoubleMLData.from_arrays(X, Y, D)
+
+# ---- Nuisances by random forest; orthogonal PLR score; 5-fold cross-fitting ----
+ml_l = RandomForestRegressor(n_estimators=500, random_state=0)   # E[Y | X]  (ℓ₀)
+ml_m = RandomForestRegressor(n_estimators=500, random_state=0)   # E[D | X]  (m₀)
+
+dml_plr = DoubleMLPLR(dml_data, ml_l=ml_l, ml_m=ml_m,
+                      n_folds=5, score="partialling out")
+dml_plr.fit()
+
+print(dml_plr.summary)                  # estimate, SE, t, p, 95% CI for θ₀
+print("95% CI:", dml_plr.confint(level=0.95).values.ravel())
+print("True theta0 =", theta0)
+
+# ---- For contrast: the BIASED naive single-ML plug-in ----
+l_hat = RandomForestRegressor(n_estimators=500, random_state=0)\
+        .fit(X, Y).predict(X)            # in-sample, no cross-fit
+naive = LinearRegression().fit(D.reshape(-1, 1), Y - l_hat).coef_[0]
+print(f"Naive single-ML theta_hat = {naive:.3f}  (biased toward 0)")
+
+# econml offers the same estimator with a CATE-friendly API:
+#   from econml.dml import LinearDML
+#   est = LinearDML(model_y=ml_l, model_t=ml_m, cv=5).fit(Y, D, X=None, W=X)
+#   est.coef_, est.coef__interval()
+```
+
+:::
+
+In both languages the `DoubleMLPLR` estimate lands near the true $\theta_0 = -4.0$ with a 95% interval that covers it, while the naive single-ML plug-in (no cross-fit, outcome-only residualisation) is visibly pulled toward zero --- exactly the regularization bias the lab animates. Swapping the random-forest learners for boosting, LASSO, or a neural net changes nothing in the inference logic: orthogonality plus cross-fitting is what licenses the confidence interval, not the choice of learner.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+In the partially-linear model $Y=\theta_0 D + g_0(X)+U$, a colleague proposes the "single-ML" estimator: fit $\hat\ell(X)\approx E[Y\mid X]$ with a flexible learner, then regress $Y-\hat\ell(X)$ on $D$ (note: $D$, not the treatment *residual*).
+
+(a) Write the score this estimator solves. (b) Show it is **not** Neyman-orthogonal by computing the derivative of its expected moment with respect to $\ell$. (c) State, in one sentence, what to change to fix it.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The estimator solves $\frac1n\sum_i (Y_i-\hat\ell(X_i)-\theta D_i)D_i = 0$, i.e. the score is
+$$\psi^{\text{naive}}(W;\theta,\ell) = \big(Y-\ell(X)-\theta D\big)\,D.$$
+
+**(b)** Differentiate the expected moment in the direction $\ell$:
+$$\partial_\ell\, E[\psi^{\text{naive}}] = E[-D] = -E[m_0(X)],$$
+which is generally **non-zero**. A first-order nudge to $\hat\ell$ moves the expected moment linearly, so a nuisance error of size $\varepsilon$ biases $\hat\theta$ by order $\varepsilon$ --- not $\varepsilon^2$. The moment is not orthogonal.
+
+**(c)** Multiply by the **treatment residual** $D-\hat m(X)$ instead of $D$ (i.e. partial out $D$ against $X$ too). That projects the leak onto the part of $D$ orthogonal to $X$, making $\partial_\ell E[\psi]=E[-(D-m_0(X))]=-E[V]=0$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+DML requires each nuisance learner to converge at rate $o(n^{-1/4})$, even though valid inference for $\theta_0$ needs $\sqrt n$-consistency. Explain why the *much slower* $n^{-1/4}$ rate suffices, and why this is the practical payoff of orthogonality.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+After orthogonalization, the remaining nuisance contribution to $\hat\theta$ is the **product** of the two learners' errors, $\|\hat\ell-\ell_0\|\cdot\|\hat m-m_0\|$, not either error alone (the linear term is killed by orthogonality). If each error is $o(n^{-1/4})$, the product is $o(n^{-1/4})\cdot o(n^{-1/4}) = o(n^{-1/2})$, which is *negligible* relative to the $O_p(n^{-1/2})$ sampling fluctuation of the moment. So $\hat\theta$ is $\sqrt n$-consistent and asymptotically normal even though neither nuisance is.
+
+This is the practical payoff: $n^{-1/4}$ is a slow, forgiving rate attainable by forests, boosting, LASSO, and neural nets under mild conditions, whereas a non-orthogonal plug-in would need the nuisance itself to be $\sqrt n$-consistent --- a rate no flexible high-dimensional learner achieves.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A team estimates the effect of a *fysioterapi* (physiotherapy) referral on 6-month sick-leave days (*sjukfrånvaro*) using DML, but to save time they fit the nuisances and estimate $\theta_0$ on the **same** observations (no cross-fitting), keeping the orthogonal score. (a) Which bias is removed and which remains? (b) Why does reusing the data create a problem even with an orthogonal score? (c) What is the minimal fix?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The orthogonal score removes the first-order **regularization bias**. What remains is the **overfitting (own-observation) bias** that cross-fitting targets.
+
+**(b)** When the same points train the learner and enter the moment, the fitted nuisances are correlated with each point's own noise (the learner has partly memorised it). This correlation inflates the cross term in the expansion beyond the clean $\|\hat\eta-\eta_0\|^2$ rate, so the remainder is no longer guaranteed $o(n^{-1/2})$ --- the asymptotic-normality argument breaks and the interval can undercover.
+
+**(c)** Use $K$-fold cross-fitting: predict each observation's nuisances with a model fit on the *other* folds, then pool the out-of-fold residuals to estimate $\theta_0$. The held-out predictions are independent of the scored points, restoring the second-order remainder.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the lab: set $p=40$, $\lambda=0.45$, both fixes ON. (a) Note whether the DML interval covers $\theta_0=-4.0$. Now turn **both fixes OFF** and raise $p$ to $160$. (b) In which direction does the naive estimate move, and what is the economic misreading it produces about the program? (c) Connect the direction of the bias to the sign convention for HbA1c.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With both fixes on, the red DML estimate sits on the ochre truth line and its 95% interval covers $\theta_0=-4.0$ (the "DML CI covers truth?" tile reads "yes"/green) across the whole $p$ range.
+
+**(b)** With both fixes off and $p=160$, the naive estimate drifts *upward, toward zero* (from $-4$ toward, say, $-3$ or beyond). Because the true effect is negative (beneficial) and the bias pulls it toward zero, the program looks **less effective than it truly is** --- the team would understate the HbA1c reduction the coordination program delivers, and might wrongly conclude it is not worth funding.
+
+**(c)** Lower HbA1c is better, so a beneficial effect is *negative*. Regularization bias attenuates the estimate toward zero, which here means a *less negative* number --- a smaller apparent benefit. (In a "higher is better" outcome the same attenuation would shrink a positive effect, again understating the program.) The lesson is direction-agnostic: regularization bias attenuates toward zero, and only orthogonality + cross-fitting removes it.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Plugging a regularized ML prediction into a regression injects *regularization bias* of order $\|\hat\eta-\eta_0\|$ into $\hat\theta$ --- a systematic offset that does not shrink at the $n^{-1/2}$ rate inference needs, so confidence intervals miss the truth.
+- The partially-linear model $Y=\theta_0 D + g_0(X)+U$ is identified by **partialling out both** $Y$ and $D$ against $X$ (Frisch--Waugh--Robinson): regress the outcome residual on the treatment residual.
+- A **Neyman-orthogonal** score has zero first derivative in the nuisance at the truth, so nuisance error enters $\hat\theta$ only at *second* order ($\|\hat\eta-\eta_0\|^2$); this is what tolerates slow $o(n^{-1/4})$ ML learners.
+- **Cross-fitting** (out-of-fold nuisance predictions) removes the own-observation overfitting bias, making the remainder legitimately second-order and restoring $\sqrt n(\hat\theta-\theta_0)\to\mathcal N(0,\sigma^2)$.
+- Post-double-selection LASSO is the canonical case: select on *both* the outcome and treatment equations and take the union, so no strong confounder is dropped. In practice use `DoubleML` (R) or `doubleml`/`econml` (Python).
+:::
+
+## What Comes Next
+
+DML gave us one trustworthy number: a root-$n$, honestly-bounded estimate of the *average* effect $\theta_0$, even with hundreds of confounders and a black-box learner. But a single average hides the question every policymaker actually asks --- *for whom* does the diabetes program work best, and *whom* should we enroll? The same orthogonal-score, cross-fitting machinery extends from a scalar $\theta_0$ to a whole function $\theta_0(X)$, the conditional average treatment effect. The next page, [Heterogeneous Effects and Policy Learning](causal-forests-policy.qmd), builds causal forests and the doubly-robust orthogonal scores that estimate effect heterogeneity, then turns those estimates into *policy rules* --- who to treat --- with guarantees on the welfare they deliver.

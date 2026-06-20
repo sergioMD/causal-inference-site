@@ -1,0 +1,621 @@
+---
+title: "Maximum Likelihood: The Likelihood Principle"
+subtitle: "Finding the parameters that make the data most probable"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Distinguish a *probability* (data varying, parameter fixed) from a *likelihood* (data fixed, parameter varying)
+- Write the likelihood $L(\theta;\,\text{data}) = \prod_i f(y_i;\theta)$ and its log, and explain why we maximize the log
+- Define the maximum likelihood estimator as the argmax of the log-likelihood and find it by setting the score to zero
+- Derive the Bernoulli MLE and show it equals the sample proportion $\hat p = k/n$
+- Derive the Normal MLEs $\hat\mu = \bar y$ and $\hat\sigma^2 = \frac1n\sum_i (y_i-\bar y)^2$, and read off why $\hat\sigma^2$ is biased
+:::
+
+## The Question Behind Every Estimate
+
+A *vårdcentral* (primary care center) in Region Uppsala runs a structured Type 2 diabetes program. The clinical target is an HbA1c at or below 52 mmol/mol --- "on target." Of the $n = 40$ patients enrolled last year, $k = 26$ reached the target. The *verksamhetschef* (clinic manager) needs a single number for the regional dashboard: **what is the underlying probability $p$ that a patient in this program reaches the target?**
+
+The obvious answer is "$26/40 = 0.65$." But *why* is that the right answer rather than, say, $0.60$ or $0.70$? Maximum likelihood gives a principled reason. It asks: among all the values $p$ could take, **which one would have made the data we actually saw the most probable?** That value --- the one under which our 26-out-of-40 is least surprising --- is the maximum likelihood estimate.
+
+This is the same logic that powers logistic regression, Poisson models, survival analysis, and structural econometrics. Almost every estimator you will meet beyond ordinary least squares is, under the hood, a maximum likelihood estimator. This page builds the machinery from the ground up; the [next page](properties-asymptotics.qmd) shows that it is also, in a precise sense, the *best possible* machinery.
+
+## Probability vs. Likelihood: A Crucial Flip
+
+Begin with a model: a probability density (or mass) function $f(y;\theta)$ that says how likely each possible outcome $y$ is, given a parameter $\theta$. For a single coin-flip-style outcome --- does this patient reach the target? --- the model is Bernoulli:
+
+$$
+f(y;p) = p^{\,y}(1-p)^{1-y}, \qquad y \in \{0, 1\}.
+$$
+
+**Read this as**: "the probability of outcome $y$, given success probability $p$, equals $p$ raised to the $y$ times $(1-p)$ raised to the $(1-y)$." Plug in $y=1$ and it returns $p$ (the patient hit the target); plug in $y=0$ and it returns $1-p$ (they did not). One compact expression covers both cases.
+
+Now hold the formula fixed and ask two different questions about it.
+
+::: {.glass-card .glass-card--definition}
+The same function $f(y;\theta)$ wears two hats depending on what we treat as fixed and what we treat as variable.
+
+- **Probability**: fix the parameter $\theta$, let the data $y$ vary. $f(y;\theta)$ answers *"given this $p$, how probable is each possible outcome?"* It is a function of $y$ and sums (or integrates) to 1.
+
+- **Likelihood**: fix the observed data $y$, let the parameter $\theta$ vary. $L(\theta;y) = f(y;\theta)$ answers *"given the outcome we actually saw, how well does each candidate $\theta$ explain it?"* It is a function of $\theta$ and does **not** integrate to 1.
+
+Numerically they are the same surface $f$; conceptually they read it along different axes.
+:::
+
+This flip is the entire idea. Before collecting data, $p$ is fixed by nature and the outcome is random --- that is probability. After collecting data, the outcome is a fixed fact (26 of 40 hit target) and $p$ is the unknown we want to learn --- that is likelihood. Maximum likelihood walks along the $\theta$-axis of the *same* function and stops at its highest point.
+
+## The Likelihood Function
+
+We rarely have just one observation. With $n$ patients $y_1, \dots, y_n$ that are independent and identically distributed (i.i.d.) draws from $f(\cdot;\theta)$, the joint probability of seeing *all* of them is the product of the individual probabilities.
+
+::: {.glass-card .glass-card--definition}
+The **likelihood function** of an i.i.d. sample is the product of the per-observation densities, viewed as a function of $\theta$:
+
+$$
+L(\theta;\,y_1,\dots,y_n) \;=\; \prod_{i=1}^{n} f(y_i;\theta).
+$$
+
+**Read this as**: "the likelihood of $\theta$ equals the product, over all $n$ observations, of $f$ evaluated at each $y_i$." Because the observations are independent, their joint probability factors into a product, and "how well $\theta$ explains the whole sample" is "how well it explains observation 1, times observation 2, times ..., times observation $n$."
+:::
+
+Products of many small numbers underflow to zero and are awkward to differentiate. So we almost always work with the **log-likelihood**, which turns the product into a sum:
+
+$$
+\ell(\theta) \;=\; \log L(\theta) \;=\; \sum_{i=1}^{n} \log f(y_i;\theta).
+$$
+
+**Read this as**: "the log-likelihood is the sum, over all observations, of the log of $f$ at each $y_i$." Because $\log$ is a strictly increasing (monotone) transformation, *the value of $\theta$ that maximizes $\ell(\theta)$ is exactly the value that maximizes $L(\theta)$* --- taking logs never moves the location of the peak, it only reshapes the climb. We get sums instead of products, numerical stability, and (for the exponential family) tidy derivatives, all for free.
+
+::: {.glass-card .glass-card--insight}
+**Why the log is not a compromise.** Maximizing $\ell$ gives the *identical* answer as maximizing $L$, because $\log$ is monotone: if $L(\theta_1) > L(\theta_2)$ then $\log L(\theta_1) > \log L(\theta_2)$. The log is pure convenience --- sums differentiate term by term, and the per-observation contributions $\log f(y_i;\theta)$ add up so each patient's evidence enters additively.
+:::
+
+## The MLE and the Score
+
+We now have a target to climb. The **maximum likelihood estimator** is whatever value of $\theta$ sits at the top.
+
+::: {.glass-card .glass-card--definition}
+The **maximum likelihood estimator** (MLE) is the parameter value that maximizes the (log-)likelihood:
+
+$$
+\hat\theta_{\text{MLE}} \;=\; \arg\max_{\theta} \; \ell(\theta).
+$$
+
+**Read this as**: "$\hat\theta$ is the *arg max* of $\ell$ --- the argument (the value of $\theta$) at which the log-likelihood attains its maximum." Not the height of the peak, but its *location* on the $\theta$-axis.
+:::
+
+For a smooth log-likelihood, the peak is found by calculus: differentiate, set the derivative to zero, and solve. That derivative has a name.
+
+::: {.glass-card .glass-card--definition}
+The **score** is the derivative of the log-likelihood with respect to the parameter:
+
+$$
+s(\theta) \;=\; \frac{\partial \ell(\theta)}{\partial \theta}.
+$$
+
+The MLE solves the **score equation** $s(\hat\theta) = 0$ --- the first-order condition for a maximum. (A negative second derivative, $\partial^2\ell/\partial\theta^2 < 0$, confirms the stationary point is a *maximum* rather than a minimum or saddle.)
+:::
+
+**Read the score equation as**: "set the slope of the log-likelihood to zero." At the peak, the curve is momentarily flat. The score measures the slope; the MLE is where that slope vanishes. We now apply this recipe twice.
+
+## Worked Example 1: Bernoulli (the diabetes target)
+
+Return to the clinic. Each patient $i$ contributes $y_i = 1$ if they reach the HbA1c target and $y_i = 0$ if not, with $\sum_i y_i = k$ successes out of $n$. The log-likelihood is
+
+$$
+\ell(p) \;=\; \sum_{i=1}^{n}\Big[\,y_i \log p + (1-y_i)\log(1-p)\,\Big]
+\;=\; k\log p + (n-k)\log(1-p).
+$$
+
+**Read this as**: "the log-likelihood is the number of successes times $\log p$, plus the number of failures times $\log(1-p)$." Each patient who hit target rewards higher $p$; each who missed rewards lower $p$. The MLE balances the two. Differentiating and setting the score to zero,
+
+$$
+s(p) = \frac{k}{p} - \frac{n-k}{1-p} = 0
+\quad\Longrightarrow\quad
+\boxed{\;\hat p = \frac{k}{n}\;}.
+$$
+
+The MLE of the success probability is just the **sample proportion**. For our clinic, $\hat p = 26/40 = 0.65$. The "obvious" estimate is not arbitrary at all --- it is the value under which the observed 26-of-40 is most probable. The full derivation (including the second-order check) is in the Math Details below.
+
+## See It: The Log-Likelihood Curve and Its Peak
+
+The interactive below makes the likelihood principle visible. Fix a sample of $n$ patients with $k$ on target; then sweep a candidate value of $p$ and watch the log-likelihood curve. The curve peaks *exactly* at the sample proportion $k/n$, no matter where you drag the candidate slider --- the data, not the slider, decides the MLE. The sample-size control raises $n$ (with $k$ auto-tracking the observed proportion near $k/n$): as data accumulate, the curve grows **sharper**, pinning $p$ into an ever-narrower band. That sharpening is the visual signature of information accumulating --- the seed of the next page on asymptotics.
+
+::: {.interactive-container}
+
+#### The Bernoulli log-likelihood for the HbA1c target
+
+```{ojs}
+//| echo: false
+viewof mlelik_n = Inputs.range([10, 400], {
+  value: 40,
+  step: 1,
+  label: "Sample size n (patients enrolled)"
+})
+```
+
+```{ojs}
+//| echo: false
+// k tracks the chosen sample size at the fixed clinic proportion 0.65,
+// but the reader can override it. Re-created when n changes so it never
+// exceeds n. (Reading mlelik_n here, writing mlelik_k — no cycle.)
+viewof mlelik_k = Inputs.range([0, mlelik_n], {
+  value: Math.round(0.65 * mlelik_n),
+  step: 1,
+  label: "Successes k (reached target)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mlelik_pGuess = Inputs.range([0.02, 0.98], {
+  value: 0.5,
+  step: 0.01,
+  label: "Your candidate p (drag to explore)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The MLE is the sample proportion; guard the k = 0 and k = n corners.
+mlelik_phat = mlelik_n > 0 ? mlelik_k / mlelik_n : 0.5
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Per-observation AVERAGE log-likelihood, (1/n) * ell(p). Depends only on the
+// observed proportion r = k/n, so it is INVARIANT to n — useful as a building
+// block, but it cannot show the peak sharpening with sample size. Clamp p away
+// from {0,1} so the logs stay finite across the whole sweep.
+mlelik_avgLL = function (p) {
+  const eps = 1e-9;
+  const pc = Math.min(1 - eps, Math.max(eps, p));
+  const r = mlelik_k / mlelik_n;        // observed proportion
+  return r * Math.log(pc) + (1 - r) * Math.log(1 - pc);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// TOTAL log-likelihood ell(p) = k*log(p) + (n-k)*log(1-p) = n * avgLL(p).
+// This is what the chart plots: because it scales WITH n, the peak genuinely
+// sharpens (its curvature -ell''(p̂) = n / [p̂(1-p̂)] grows linearly in n) as the
+// sample grows — the visual seed of Fisher information on the next page.
+mlelik_totLL = p => mlelik_n * mlelik_avgLL(p)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sample the total log-likelihood curve on a fine grid for plotting.
+mlelik_curve = d3.range(0.01, 0.991, 0.005).map(p => ({
+  p,
+  ll: mlelik_totLL(p)
+}))
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: 640,
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: "#79766e"
+  },
+  x: {
+    label: "Candidate success probability  p  →",
+    domain: [0, 1],
+    grid: false
+  },
+  y: {
+    label: "↑ Log-likelihood  ℓ(p)",
+    grid: true,
+    // A FIXED-DEPTH window below the peak (5 log-likelihood units), independent
+    // of n. Because the curve's total height scales with n, holding the window
+    // depth fixed makes the peak look ever sharper as n grows — the descent that
+    // took most of the x-range at n=40 plunges within a sliver at n=400. The
+    // steep tails fall below the floor on purpose, keeping focus on the peak.
+    domain: [mlelik_totLL(mlelik_phat) - 5, mlelik_totLL(mlelik_phat) + 0.6]
+  },
+  marks: [
+    Plot.gridY({ stroke: "#e6e3db" }),
+    // The log-likelihood curve (focal series — Uppsala red).
+    Plot.line(mlelik_curve, {
+      x: "p", y: "ll",
+      stroke: "#990000", strokeWidth: 2.5
+    }),
+    // Vertical reference at the MLE (the sample proportion) — ochre annotation.
+    Plot.ruleX([mlelik_phat], {
+      stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    Plot.dot([{ p: mlelik_phat, ll: mlelik_totLL(mlelik_phat) }], {
+      x: "p", y: "ll", fill: "#990000", r: 6
+    }),
+    Plot.text([{ p: mlelik_phat, ll: mlelik_totLL(mlelik_phat) }], {
+      x: "p", y: "ll",
+      text: d => `MLE  p̂ = ${mlelik_phat.toFixed(3)}`,
+      fill: "#990000", fontWeight: 700, fontSize: 12,
+      dy: -14, textAnchor: "middle"
+    }),
+    // The reader's candidate p — slate marker on the curve.
+    Plot.ruleX([mlelik_pGuess], {
+      stroke: "#3d5a6c", strokeWidth: 1.5
+    }),
+    Plot.dot([{ p: mlelik_pGuess, ll: mlelik_totLL(mlelik_pGuess) }], {
+      x: "p", y: "ll",
+      fill: "white", stroke: "#3d5a6c", strokeWidth: 2, r: 5
+    }),
+    Plot.text([{ p: mlelik_pGuess, ll: mlelik_totLL(mlelik_pGuess) }], {
+      x: "p", y: "ll",
+      text: d => `your p = ${mlelik_pGuess.toFixed(2)}`,
+      fill: "#3d5a6c", fontSize: 11, fontWeight: 600,
+      dy: 18, textAnchor: "middle"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tying the picture to the numbers. Built inside an ojs cell with
+// html`` so the reactive values interpolate (markdown ${...} would render
+// literally). Compares the reader's candidate against the MLE.
+{
+  const llHat = mlelik_totLL(mlelik_phat);   // total ℓ at MLE
+  const llYou = mlelik_totLL(mlelik_pGuess); // total ℓ at candidate
+  const gap = llHat - llYou;
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("MLE  p̂ = k/n", mlelik_phat.toFixed(3), "#990000")}
+    ${tile("ℓ at the MLE", llHat.toFixed(2), "#1c1c1a")}
+    ${tile("ℓ at your p", llYou.toFixed(2), "#3d5a6c")}
+    ${tile("Evidence lost", "−" + gap.toFixed(2), gap < 0.01 ? "#2e6f40" : "#9c7a33")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Log-Likelihood Curve
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the curve.** The red curve is the log-likelihood $\ell(p) = k\log p + (n-k)\log(1-p)$ for every candidate $p$ from 0 to 1. Higher is better: a higher point means that value of $p$ makes the observed $k$-of-$n$ more probable. The curve is a smooth hill with a single summit. (The vertical window tracks a fixed depth below the peak, so only the region near the summit is shown --- the steep tails run off the bottom on purpose.)
+
+**Step 2: Find the peak.** The ochre dashed line and the solid red dot sit at the summit. Read its location off the $x$-axis: it is exactly $k/n$. With the defaults ($n=40$, $k=26$) the peak sits at $\hat p = 0.650$. This *is* the MLE --- the value under which the data are least surprising.
+
+**Step 3: Move your candidate.** Drag **your candidate $p$**. The hollow slate dot slides along the curve and the "Evidence lost" tile grows. Any $p \ne \hat p$ sits *below* the peak, so it explains the data worse; "Evidence lost" is how many log-likelihood units you forfeit by guessing wrong. It reads $-0.00$ (green) only when you land on the MLE.
+
+**Step 4: Change what the data say.** Drag **successes $k$**. The whole hill slides: more successes push the peak right (higher $\hat p$), fewer push it left. The MLE follows the data, never the candidate slider --- exactly the probability-to-likelihood flip in action.
+
+**Step 5: Watch the curve sharpen.** Now increase **sample size $n$** from 40 toward 400 (with $k$ auto-tracking the 0.65 proportion). The peak stays near $0.65$, but the hill becomes dramatically **narrower and steeper**. A sharper peak means the data rule out distant values of $p$ much more decisively --- there is more *information* in a larger sample. This curvature at the peak is precisely the Fisher information that governs the MLE's precision on the next page.
+
+## Worked Example 2: Normal (HbA1c on a continuous scale)
+
+The Bernoulli model collapses each patient to a yes/no. Often we keep the full measurement. Suppose the *actual* HbA1c values (mmol/mol) of the on-program patients are i.i.d. Normal with unknown mean $\mu$ and variance $\sigma^2$:
+
+$$
+f(y;\mu,\sigma^2) = \frac{1}{\sqrt{2\pi\sigma^2}}\,\exp\!\Big(-\frac{(y-\mu)^2}{2\sigma^2}\Big).
+$$
+
+The log-likelihood over $n$ patients is
+
+$$
+\ell(\mu,\sigma^2) = -\frac{n}{2}\log(2\pi) - \frac{n}{2}\log\sigma^2 - \frac{1}{2\sigma^2}\sum_{i=1}^{n}(y_i-\mu)^2.
+$$
+
+**Read this as**: "a constant, minus a penalty that grows with $\log\sigma^2$, minus the total squared distance of the data from $\mu$ scaled by $1/(2\sigma^2)$." Two forces compete: $\mu$ wants to sit where the squared distances are smallest, and $\sigma^2$ wants to be large enough to absorb the spread but no larger (the $\log\sigma^2$ term punishes inflated variance). Taking partial derivatives and setting both scores to zero gives the two MLEs:
+
+$$
+\boxed{\;\hat\mu = \bar y = \frac{1}{n}\sum_{i=1}^{n} y_i\;}
+\qquad\text{and}\qquad
+\boxed{\;\hat\sigma^2 = \frac{1}{n}\sum_{i=1}^{n}(y_i-\bar y)^2\;}.
+$$
+
+The MLE of the mean is the **sample mean**; the MLE of the variance is the average squared deviation --- but note the divisor is $n$, not $n-1$. The MLE of $\sigma^2$ is therefore **biased downward** in finite samples: it divides by the wrong number because it reuses the estimated $\hat\mu$ as if it were the true $\mu$. This is the first crack in the MLE's armor, and the next page measures it precisely. The full two-variable derivation is in the Math Details.
+
+::: {.glass-card .glass-card--insight}
+**OLS is hiding a likelihood.** Under Normal, i.i.d. errors, maximizing the likelihood over $\mu$ is the *same* problem as minimizing $\sum_i (y_i-\mu)^2$ --- the $1/(2\sigma^2)$ factor and the constants do not depend on $\mu$. Least squares is maximum likelihood with a Normal noise assumption. Every regression you ran in [Module 3](../03-statistical-foundations/reading-output.qmd) was, implicitly, an MLE.
+:::
+
+## Assumptions Behind the Likelihood
+
+The product $L(\theta) = \prod_i f(y_i;\theta)$ is not free. It rests on two pillars that are easy to forget.
+
+::: {.glass-card .glass-card--assumption}
+**The likelihood requires:**
+
+1. **Correct model specification.** $f(\cdot;\theta)$ must be (close to) the true data-generating density. If the patients' HbA1c outcomes are not really Bernoulli/Normal --- e.g., there is overdispersion, or a fat tail --- the likelihood maximizes the *wrong* surface. MLE is only as good as its model.
+
+2. **Independence (or a correctly modeled dependence).** The factorization into a product assumes the observations are independent given $\theta$. If patients cluster by *läkare* (physician) or by clinic, their outcomes are correlated, the naive product overstates the information, and standard errors will be too small unless the dependence is built into $f$.
+:::
+
+::: {.glass-card .glass-card--warning}
+**A flat or unbounded likelihood means no usable MLE.** If every patient reaches target ($k=n$), the Bernoulli score $k/p - (n-k)/(1-p)$ pushes $\hat p$ to the boundary $1$ --- the likelihood has no interior maximum and the usual standard error is undefined. Likelihoods can also be multimodal (mixture models) or ridge-shaped (near-collinear parameters), where "the" MLE is not unique. Always confirm the peak is interior, finite, and unique before trusting it.
+:::
+
+<details>
+<summary>Math Details: Deriving the Bernoulli and Normal MLEs</summary>
+<div class="details-content">
+
+### Bernoulli MLE
+
+With $k = \sum_i y_i$ successes in $n$ trials, the log-likelihood is
+
+$$
+\ell(p) = k\log p + (n-k)\log(1-p).
+$$
+
+Differentiate with respect to $p$ to get the score, and set it to zero:
+
+$$
+s(p) = \frac{d\ell}{dp} = \frac{k}{p} - \frac{n-k}{1-p} = 0.
+$$
+
+Multiply through by $p(1-p)$:
+
+$$
+k(1-p) - (n-k)p = 0 \;\Longrightarrow\; k - kp - np + kp = 0 \;\Longrightarrow\; k = np,
+$$
+
+so $\hat p = k/n$. Confirm it is a maximum via the second derivative:
+
+$$
+\frac{d^2\ell}{dp^2} = -\frac{k}{p^2} - \frac{n-k}{(1-p)^2} < 0
+$$
+
+for any interior $p \in (0,1)$ with $0 < k < n$. The function is strictly concave, so the stationary point is the unique global maximum. $\checkmark$
+
+### Normal MLE
+
+Start from
+
+$$
+\ell(\mu,\sigma^2) = -\frac{n}{2}\log(2\pi) - \frac{n}{2}\log\sigma^2 - \frac{1}{2\sigma^2}\sum_{i=1}^n (y_i-\mu)^2.
+$$
+
+**For $\mu$**, the first two terms are constant in $\mu$, so
+
+$$
+\frac{\partial \ell}{\partial \mu} = \frac{1}{\sigma^2}\sum_{i=1}^n (y_i - \mu) = 0
+\;\Longrightarrow\; \sum_{i=1}^n y_i = n\mu \;\Longrightarrow\; \hat\mu = \bar y.
+$$
+
+The $1/\sigma^2$ factor is positive and cancels, so $\hat\mu = \bar y$ regardless of $\sigma^2$. The sample mean is the variance-minimizing center of the data.
+
+**For $\sigma^2$**, treat $v = \sigma^2$ as the variable and differentiate:
+
+$$
+\frac{\partial \ell}{\partial v} = -\frac{n}{2v} + \frac{1}{2v^2}\sum_{i=1}^n (y_i-\mu)^2 = 0.
+$$
+
+Multiply by $2v^2$ and substitute the already-solved $\hat\mu = \bar y$:
+
+$$
+-nv + \sum_{i=1}^n (y_i-\bar y)^2 = 0
+\;\Longrightarrow\; \hat\sigma^2 = \frac{1}{n}\sum_{i=1}^n (y_i-\bar y)^2.
+$$
+
+### Why $\hat\sigma^2$ is biased
+
+Taking expectations, $E[\hat\sigma^2] = \frac{n-1}{n}\sigma^2 < \sigma^2$. The MLE uses $\hat\mu = \bar y$ in place of the true $\mu$; because $\bar y$ is, by construction, the point that *minimizes* $\sum_i (y_i - \cdot)^2$, the residual sum of squares is systematically a touch too small, costing exactly one degree of freedom. The unbiased estimator divides by $n-1$ instead. MLE optimizes for likelihood, not for unbiasedness --- the two goals do not always coincide in finite samples, though they agree as $n \to \infty$.
+
+</div>
+</details>
+
+## Computing the MLE Numerically
+
+For the Bernoulli and Normal we have closed forms. In general we do not, and we hand the negative log-likelihood to a numerical optimizer. Both panels below verify the analytic answer against the optimizer on the clinic's $k=26$, $n=40$ data, then fit a Normal to simulated HbA1c values. By convention optimizers *minimize*, so we minimize $-\ell(\theta)$.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("bbmle", "stats4"))  # if needed
+library(bbmle)
+
+## ---- Bernoulli: 26 of 40 patients reached the HbA1c target ----
+k <- 26L; n <- 40L
+
+# Negative log-likelihood as a function of p (use logit-free direct param,
+# bounded by L-BFGS-B). Constant binomial coefficient is dropped — it does
+# not depend on p and so cannot move the argmax.
+negloglik_bern <- function(p) -(k * log(p) + (n - k) * log(1 - p))
+
+fit_bern <- mle2(negloglik_bern,
+                 start  = list(p = 0.5),
+                 method = "L-BFGS-B",
+                 lower  = 1e-6, upper = 1 - 1e-6)
+
+coef(fit_bern)          # ~ 0.65
+cat("Closed form k/n =", k / n, "\n")   # 0.65 exactly
+
+## ---- Normal: fit mu and sigma to simulated HbA1c (mmol/mol) ----
+set.seed(2024)
+y <- rnorm(40, mean = 53, sd = 7)       # on-program HbA1c
+
+negloglik_norm <- function(mu, logsigma) {
+  sigma <- exp(logsigma)                # optimize on log scale: sigma > 0
+  -sum(dnorm(y, mean = mu, sd = sigma, log = TRUE))
+}
+
+fit_norm <- mle2(negloglik_norm,
+                 start = list(mu = mean(y), logsigma = log(sd(y))))
+
+mu_hat    <- coef(fit_norm)["mu"]
+sigma_hat <- exp(coef(fit_norm)["logsigma"])
+
+cat("MLE mu     =", round(mu_hat, 3),
+    " (mean y =",  round(mean(y), 3), ")\n")
+cat("MLE sigma2 =", round(sigma_hat^2, 3),
+    " (1/n SS  =",  round(mean((y - mean(y))^2), 3), ")\n")
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy.optimize import minimize
+from scipy.stats import norm
+
+# ---- Bernoulli: 26 of 40 patients reached the HbA1c target ----
+k, n = 26, 40
+
+# Negative log-likelihood of p. Drop the constant binomial coefficient:
+# it does not depend on p and cannot shift the argmax.
+def negloglik_bern(p):
+    p = p[0]
+    return -(k * np.log(p) + (n - k) * np.log(1 - p))
+
+res_b = minimize(negloglik_bern, x0=[0.5], method="L-BFGS-B",
+                 bounds=[(1e-6, 1 - 1e-6)])
+print(f"MLE p     = {res_b.x[0]:.4f}")
+print(f"Closed k/n = {k / n:.4f}")        # 0.65 exactly
+
+# ---- Normal: fit mu and sigma to simulated HbA1c (mmol/mol) ----
+rng = np.random.default_rng(2024)
+y = rng.normal(loc=53, scale=7, size=40)  # on-program HbA1c
+
+# Optimize over (mu, log sigma) so sigma stays positive.
+def negloglik_norm(theta):
+    mu, log_sigma = theta
+    sigma = np.exp(log_sigma)
+    return -np.sum(norm.logpdf(y, loc=mu, scale=sigma))
+
+res_n = minimize(negloglik_norm, x0=[y.mean(), np.log(y.std())])
+mu_hat, sigma_hat = res_n.x[0], np.exp(res_n.x[1])
+
+print(f"MLE mu     = {mu_hat:.3f}   (mean y = {y.mean():.3f})")
+print(f"MLE sigma2 = {sigma_hat**2:.3f}   "
+      f"(1/n SS = {np.mean((y - y.mean())**2):.3f})")
+```
+
+:::
+
+In both languages the optimizer lands on the closed-form answers: $\hat p = 0.65$ for the Bernoulli, and $\hat\mu = \bar y$, $\hat\sigma^2 = \frac1n\sum_i(y_i-\bar y)^2$ for the Normal. When a model has no analytic MLE --- logistic regression, Poisson, Tobit --- this *same* `minimize`/`mle2` call is the entire fitting procedure.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A fall-prevention program at vårdcentraler in Region Uppsala follows $n = 50$ elderly patients for one year; $k = 8$ suffer a fall. Assume falls are i.i.d. Bernoulli with fall probability $p$.
+
+(a) Write the log-likelihood $\ell(p)$. (b) Derive the MLE $\hat p$ from the score equation. (c) Compute $\hat p$ numerically.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $k=8$ falls and $n-k=42$ non-falls,
+$$
+\ell(p) = 8\log p + 42\log(1-p).
+$$
+
+**(b)** The score is $s(p) = \frac{8}{p} - \frac{42}{1-p}$. Setting $s(p)=0$ and multiplying by $p(1-p)$:
+$$
+8(1-p) - 42p = 0 \;\Longrightarrow\; 8 = 50p \;\Longrightarrow\; \hat p = \frac{8}{50}.
+$$
+
+**(c)** $\hat p = 8/50 = 0.16$. The MLE is again the sample proportion --- here a 16% annual fall rate.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain in your own words why we are free to maximize the log-likelihood $\ell(\theta)$ instead of the likelihood $L(\theta)$, and give two concrete reasons it is preferable to do so.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The logarithm is a strictly increasing (monotone) function: if $L(\theta_1) > L(\theta_2)$ then $\log L(\theta_1) > \log L(\theta_2)$. A monotone transformation never changes *where* a function reaches its maximum --- only the height of the peak, not its location on the $\theta$-axis. So $\arg\max_\theta \ell(\theta) = \arg\max_\theta L(\theta)$; the MLE is identical either way.
+
+Two reasons to prefer the log:
+
+1. **Numerical stability.** $L(\theta) = \prod_i f(y_i;\theta)$ is a product of many numbers each below 1, which underflows to machine zero for large $n$. The sum $\ell(\theta) = \sum_i \log f(y_i;\theta)$ stays in a representable range.
+
+2. **Tractable derivatives.** The derivative of a product is messy (product rule across $n$ terms); the derivative of a sum is the sum of derivatives. The score $\sum_i \partial_\theta \log f(y_i;\theta)$ differentiates term by term, and for exponential-family models each term is simple.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Five patients have measured HbA1c values (mmol/mol): $48, 52, 55, 49, 56$. Assuming a Normal model, compute the MLEs $\hat\mu$ and $\hat\sigma^2$. Then state the unbiased variance estimate and explain why it differs.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Mean:** $\hat\mu = \bar y = (48+52+55+49+56)/5 = 260/5 = 52$ mmol/mol.
+
+**Squared deviations from 52:** $(48-52)^2=16$, $(52-52)^2=0$, $(55-52)^2=9$, $(49-52)^2=9$, $(56-52)^2=16$. Sum of squares $= 16+0+9+9+16 = 50$.
+
+**MLE variance** (divide by $n=5$): $\hat\sigma^2 = 50/5 = 10$, so $\hat\sigma \approx 3.16$ mmol/mol.
+
+**Unbiased variance** (divide by $n-1=4$): $s^2 = 50/4 = 12.5$.
+
+They differ because the MLE reuses $\hat\mu=\bar y$, the point that *minimizes* the sum of squared deviations, as if it were the true mean. That makes the residual sum of squares systematically a little too small, so dividing by $n$ underestimates $\sigma^2$. Dividing by $n-1$ corrects for the one degree of freedom spent estimating the mean; here that is the difference between $10$ and $12.5$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set $n=40$, $k=26$ and note the width of the peak; then raise $n$ to $360$ with $k$ tracking the same proportion. The curve sharpens. (a) What does a *sharper* peak tell you about how confidently the data pin down $p$? (b) Which quantity from the next page does the curvature of the log-likelihood at its peak correspond to? (c) If instead you held $n$ fixed and dragged $k$ from 26 toward 20, what happens to the *location* of the peak, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** A sharper (more steeply curved) peak means that values of $p$ even a little away from $\hat p$ make the data substantially less probable --- the data *rule out* distant values decisively, so $p$ is pinned into a narrow band. A flat peak means many values of $p$ explain the data almost equally well, so we are uncertain. More data ⇒ sharper peak ⇒ more precise estimate.
+
+**(b)** The curvature of the log-likelihood at its maximum is the (observed) **Fisher information**. The negative second derivative $-\ell''(\hat\theta)$ measures how sharply the peak bends; its inverse is (approximately) the variance of the MLE. This is the central object of the next page.
+
+**(c)** The peak moves *left*, toward the smaller proportion. The MLE is $\hat p = k/n$, so dropping $k$ from 26 to 20 (with $n=40$) moves $\hat p$ from $0.65$ to $0.50$. The location of the peak is governed entirely by the data ($k/n$), never by where you set the candidate slider.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A *probability* fixes the parameter and varies the data; a *likelihood* fixes the data and varies the parameter. They are the same function read along different axes.
+- The likelihood of an i.i.d. sample is $L(\theta) = \prod_i f(y_i;\theta)$; we maximize its log $\ell(\theta) = \sum_i \log f(y_i;\theta)$ because $\log$ is monotone (same argmax) and turns products into stable, differentiable sums.
+- The MLE is $\hat\theta = \arg\max_\theta \ell(\theta)$, found by setting the score $s(\theta)=\partial\ell/\partial\theta$ to zero and checking concavity.
+- For Bernoulli the MLE is the sample proportion $\hat p = k/n$; for Normal it is $\hat\mu = \bar y$ and $\hat\sigma^2 = \frac1n\sum_i(y_i-\bar y)^2$, the latter biased downward by one degree of freedom.
+- A larger sample sharpens the log-likelihood peak --- the curvature at the peak is the Fisher information that sets the MLE's precision.
+:::
+
+## What Comes Next
+
+We can now write down a likelihood for any model, take its log, and climb to the MLE by setting the score to zero --- by hand for the Bernoulli and Normal, or with an optimizer for everything else. But two questions are still open: *how precise* is $\hat\theta$, and *can we do better?* The sharpening of the log-likelihood peak already hinted at the answer. The next page, [Properties and Asymptotics of MLE](properties-asymptotics.qmd), makes it rigorous: it defines the Fisher information from the curvature you just watched, proves that the MLE is consistent, asymptotically normal, and asymptotically efficient (the Cramér–Rao bound), and shows exactly how to turn the curvature at the peak into a standard error and a confidence interval for $\hat\theta$.

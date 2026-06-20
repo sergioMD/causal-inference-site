@@ -1,0 +1,1192 @@
+---
+title: "Propensity Scores"
+subtitle: "The balancing score and how to use it"
+---
+
+## The Curse That Matching Inherits
+
+On the previous page, [Matching Methods](matching-methods.qmd), we learned to estimate a treatment effect by pairing each treated unit with control units that look like it on the observed covariates $X$. For a Swedish *vårdcentral* (primary care center) evaluating its structured **diabetes coordination program** (*Diabetessamordning*), "looks like it" might mean: same age band, same sex, same baseline HbA1c, same body-mass index, same number of comorbidities, same neighbourhood deprivation index, same distance to the nearest clinic. Match a treated patient to controls who share all of those, average the within-pair differences, and --- under conditional independence --- you have an estimate of the program's effect on the patients who enrolled.
+
+The trouble is arithmetic. Suppose we want to match exactly on just seven covariates, each coarsened into a handful of bins. With, say, five age bands, two sexes, four HbA1c categories, three BMI categories, four comorbidity counts, three distance bands, and five deprivation deciles, the covariate space already has $5 \times 2 \times 4 \times 3 \times 4 \times 3 \times 5 = 7{,}200$ distinct cells. A region with a few thousand diabetes patients will leave most of those cells empty, or holding a single treated patient with *no* control who matches exactly. This is the **curse of dimensionality**: as the number of covariates grows, exact matches become impossible, and even approximate matches force us to throw information away.
+
+What if there were a way to collapse all seven covariates --- or seventy --- into a *single number*, such that matching on that one number were just as good, for the purpose of removing bias, as matching on the entire vector $X$? That number exists. It is the **propensity score**, and the theorem that licenses its use is one of the most elegant results in all of causal inference.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define the propensity score $e(X) = P(D=1 \mid X)$ and explain why it is a *balancing score*.
+- State and read the Rosenbaum--Rubin theorem, and understand why conditioning on the scalar $e(X)$ suffices to remove bias under conditional independence.
+- Estimate $e(X)$ with a logit model and use it to match, stratify, or weight in Swedish primary-care data.
+- Diagnose overlap (common support) from overlapping propensity-score histograms.
+- Recognize the King--Nielsen "propensity-score paradox" and when it bites.
+:::
+
+
+## The Propensity Score
+
+::: {.glass-card .glass-card--definition}
+The **propensity score** is the probability of receiving treatment given the observed covariates:
+
+$$
+e(X_i) = P(D_i = 1 \mid X_i = x).
+$$
+
+**Read this as**: "$e$ of $X_i$ is the probability that patient $i$ enrolls in the program, *given everything we have measured about them*." It is a single number between 0 and 1 --- a patient with $e(X_i) = 0.8$ is, conditional on their covariates, the kind of patient who enrolls four times out of five; a patient with $e(X_i) = 0.1$ rarely enrolls.
+:::
+
+Notice that the propensity score is a property of the *covariates*, not of the outcome. It says nothing about HbA1c. It only summarizes how a patient's measured characteristics translate into a probability of treatment. In an observational study we never see the true function $e(\cdot)$ --- we have to *estimate* it. But for the moment, suppose a benevolent oracle hands us the true $e(X_i)$ for every patient. The remarkable claim is that this one number is all we need.
+
+Two assumptions carry over from the matching page; we restate them because everything below depends on them.
+
+::: {.glass-card .glass-card--assumption}
+**Conditional Independence (Unconfoundedness, CIA).** Given the observed covariates, treatment is as good as randomly assigned:
+
+$$
+\big(Y_i(0),\, Y_i(1)\big) \perp\!\!\!\perp D_i \mid X_i.
+$$
+
+**Read this as**: "Within the group of patients who share the same covariate vector $X$, who actually enrolled is unrelated to what their outcomes would have been." There is no *unmeasured* confounder driving both enrollment and HbA1c.
+
+**Overlap (Common Support).** Every covariate profile has a chance of appearing in both arms:
+
+$$
+0 < e(X_i) < 1 \quad \text{for all } X_i.
+$$
+
+**Read this as**: "No type of patient is *guaranteed* to enroll, and none is *guaranteed* to stay out." If some kind of patient always enrolls ($e = 1$), there is no comparable control for them and their effect is unidentified.
+:::
+
+
+## The Balancing-Score Theorem
+
+Here is the result that makes propensity scores indispensable. It comes in two parts, both due to Rosenbaum and Rubin (1983).
+
+::: {.glass-card .glass-card--insight}
+**Rosenbaum--Rubin, Part 1 (the balancing property).** The propensity score is a *balancing score*: conditional on $e(X)$, treatment status is independent of the covariates,
+
+$$
+D \perp\!\!\!\perp X \mid e(X).
+$$
+
+**Read this as**: "Among patients who share the *same propensity score*, the treated and the untreated have the *same distribution of covariates*." Even though high-$e$ patients differ from low-$e$ patients, *within a slice of constant $e$* the treated and control groups look alike on every component of $X$ --- same average age, same average HbA1c, same everything.
+:::
+
+This is genuinely surprising. The covariate vector $X$ might be twenty-dimensional, yet the scalar $e(X)$ "carries" all the information about treatment assignment that $X$ contains. Slice the data by $e$, and inside each slice the treatment looks randomized *with respect to the covariates*. That is exactly the situation a matched or stratified design wants to engineer --- and it can be engineered along one axis instead of twenty.
+
+The second part connects the balancing property to bias removal.
+
+::: {.glass-card .glass-card--insight}
+**Rosenbaum--Rubin, Part 2 (unconfoundedness given the score).** If treatment is unconfounded given $X$, then it is also unconfounded given the propensity score alone:
+
+$$
+\big(Y(0),\, Y(1)\big) \perp\!\!\!\perp D \mid X
+\quad\Longrightarrow\quad
+\big(Y(0),\, Y(1)\big) \perp\!\!\!\perp D \mid e(X).
+$$
+
+**Read this as**: "If adjusting for the full covariate vector $X$ would suffice to remove bias, then adjusting for the single number $e(X)$ suffices too." The high-dimensional adjustment problem collapses to a one-dimensional one.
+:::
+
+The practical payoff is enormous. To estimate the average treatment effect on the treated (ATT) --- our **estimand**, the population quantity we are trying to learn (as opposed to the *estimator*, the formula we compute, or the *estimate*, the number it returns) ---
+
+$$
+\text{ATT} = E\big[\,Y_i(1) - Y_i(0) \mid D_i = 1\,\big],
+$$
+
+we no longer need to find, for each enrolled patient, a control patient identical on all of $X$. We only need a control patient with the *same propensity score*. By Part 2, conditioning on $e(X)$ is enough; by Part 1, matching on $e(X)$ automatically balances every covariate. Seven thousand cells become one continuous dimension we can stratify into five or ten bins.
+
+::: {.glass-card .glass-card--warning}
+**The score does not create comparability --- it reveals it.** The theorem assumes CIA holds *given the measured $X$*. If a patient's motivation, diet, or an unrecorded comorbidity drives both enrollment and HbA1c, that confounder is absent from $X$, absent from $e(X)$, and absent from your adjustment. A propensity score built from the wrong covariates balances the wrong things perfectly. The score is a dimension-reduction device, not a substitute for measuring confounders.
+:::
+
+The whole machinery exists to close one picture. The covariate $X$ (baseline severity) sits *behind* both enrollment $D$ and the outcome $Y$, opening a **back-door path** $D \leftarrow X \rightarrow Y$ --- a non-causal route that makes the naive comparison confound the program with severity. (A *back-door path* is any route from $D$ to $Y$ that starts with an arrow *into* $D$.) Conditioning on $X$ --- equivalently, on the scalar $e(X)$ by Rosenbaum--Rubin --- **blocks** that path while leaving the causal arrow $D \rightarrow Y$ untouched. Toggle the adjustment below and watch the red back-door go grey.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Self-contained static DAG drawer for this page (ps_ prefix). ──
+// Pure function of d3 only; builds an SVG via d3.create and returns the node.
+//   nodes: [{id,x,y,label,caption}]  x,y normalized to [0,1] (padded so labels
+//          never clip); conditioned ids are drawn as rounded SQUARES.
+//   edges: [{source,target,kind}]  kind ∈
+//          "causal"  → green  (#2e6f40)
+//          "backdoor"→ red    (#b3000b)  open non-causal / back-door edge
+//          "blocked" → grey   (#79766e, dashed)
+ps_drawDAG = function ({ nodes, edges, width = 460, height = 230, conditioned = [] }) {
+  const pad = 52;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "backdoor" ? "#b3000b" : "#79766e";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  const markers = [
+    ["ps-arrow-green", "#2e6f40"],
+    ["ps-arrow-red", "#b3000b"],
+    ["ps-arrow-gray", "#79766e"]
+  ];
+  const markerId = k =>
+    k === "causal" ? "ps-arrow-green" :
+    k === "backdoor" ? "ps-arrow-red" : "ps-arrow-gray";
+  for (const [id, col] of markers) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+viewof ps_dagAdjust = Inputs.toggle({
+  label: "Condition on X  (≡ condition on the score ê)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Static selection-on-observables DAG. The back-door D ← X → Y is open (red)
+// until X is conditioned on, when both its edges go grey/dashed (blocked) and
+// X is boxed; the causal arrow D → Y stays green throughout.
+html`<div style="display:flex; flex-direction:column; align-items:center; margin:0.25rem 0 0.5rem;">
+  <div style="font-family:'Inter',sans-serif; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; color:#79766e; font-weight:700; margin-bottom:0.25rem;">
+    ${ps_dagAdjust ? "Back-door BLOCKED — X (≡ ê) conditioned on (boxed)" : "Back-door OPEN — naive comparison is confounded"}
+  </div>
+  ${ps_drawDAG({
+    width: Math.min(460, width),
+    height: 215,
+    conditioned: ps_dagAdjust ? ["X"] : [],
+    nodes: [
+      { id: "X", x: 0.5,  y: 0.12, label: "X", caption: "Baseline severity" },
+      { id: "D", x: 0.10, y: 0.82, label: "D", caption: "Enrolled" },
+      { id: "Y", x: 0.90, y: 0.82, label: "Y", caption: "HbA1c" }
+    ],
+    edges: [
+      { source: "X", target: "D", kind: ps_dagAdjust ? "blocked" : "backdoor" },
+      { source: "X", target: "Y", kind: ps_dagAdjust ? "blocked" : "backdoor" },
+      { source: "D", target: "Y", kind: "causal" }
+    ]
+  })}
+  <div style="display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:center; font-family:'Inter',sans-serif; font-size:0.68rem; color:#79766e; margin-top:0.35rem;">
+    <span style="color:#2e6f40; font-weight:700; white-space:nowrap;">━ causal D → Y (keep open)</span>
+    <span style="color:#b3000b; font-weight:700; white-space:nowrap;">━ back-door via X (block this)</span>
+    <span style="color:#79766e; font-weight:700; white-space:nowrap;">┄ blocked</span>
+  </div>
+</div>`
+```
+
+
+## Estimating the Score: Logistic Regression
+
+In practice the oracle is unavailable and we estimate $e(X)$. The default workhorse is **logistic regression**, which models the log-odds of enrollment as a linear function of the covariates:
+
+$$
+\log\!\left(\frac{e(X_i)}{1 - e(X_i)}\right) = \beta_0 + \beta_1 X_{1i} + \beta_2 X_{2i} + \cdots + \beta_k X_{ki}.
+$$
+
+**Read this as**: "The log-odds of enrolling is a weighted sum of the patient's covariates." Solving for $e$ gives the familiar logistic (sigmoid) curve $e(X_i) = 1 / \big(1 + e^{-(\beta_0 + \beta'X_i)}\big)$, which is guaranteed to land between 0 and 1 --- as a probability must.
+
+The S-curve below shows that squashing in action: the *unbounded* linear predictor (log-odds, $-\infty$ to $+\infty$) on the horizontal axis is mapped to a *bounded* probability on the vertical axis. A log-odds of 0 maps to $\hat e = 0.5$; large positive log-odds saturate toward 1, large negative toward 0. One example patient is marked.
+
+```{ojs}
+//| echo: false
+
+// Static annotated logistic (sigmoid) figure: linear predictor → ê on [0,1].
+{
+  const xs = d3.range(-6, 6.01, 0.1).map(z => ({ z, e: 1 / (1 + Math.exp(-z)) }));
+  const ex = 1.4;                       // one example patient's log-odds
+  const ee = 1 / (1 + Math.exp(-ex));
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 280,
+    marginLeft: 62,
+    marginBottom: 48,
+    title: "The logistic curve maps log-odds → probability ê(X)",
+    x: { label: "Linear predictor  β₀ + β′X  (log-odds) →", domain: [-6, 6], grid: true },
+    y: { label: "↑ Estimated propensity ê(X)", domain: [0, 1], grid: true },
+    marks: [
+      Plot.ruleY([0.5], { stroke: "#79766e", strokeDasharray: "4,4" }),
+      Plot.ruleX([0], { stroke: "#79766e", strokeDasharray: "4,4" }),
+      Plot.line(xs, { x: "z", y: "e", stroke: "#990000", strokeWidth: 2.5 }),
+      // Guide lines from the example patient to both axes.
+      Plot.ruleX([ex], { y1: 0, y2: ee, stroke: "#3d5a6c", strokeDasharray: "3,3" }),
+      Plot.ruleY([ee], { x1: -6, x2: ex, stroke: "#3d5a6c", strokeDasharray: "3,3" }),
+      Plot.dot([{ z: ex, e: ee }], { x: "z", y: "e", r: 5, fill: "#3d5a6c" }),
+      Plot.text([{ z: ex, e: ee }], {
+        x: "z", y: "e", dy: -14, dx: 6,
+        text: () => `patient: log-odds ${ex.toFixed(1)} → ê ${ee.toFixed(2)}`,
+        fill: "#3d5a6c", fontSize: 11, fontWeight: 700, textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ z: -3.4, e: 0.55 }], {
+        x: "z", y: "e", text: () => "log-odds 0 → ê 0.5",
+        fill: "#79766e", fontSize: 10.5, fontWeight: 600,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+The fitted $\hat e(X_i)$ is each patient's *estimated* probability of enrolling. We then use these estimates one of three ways:
+
+1. **Matching on the score.** Pair each treated patient with the control patient (or $k$ controls) whose $\hat e$ is closest. This is one-dimensional nearest-neighbour matching.
+2. **Stratification (subclassification).** Sort patients into strata of the score --- a classic choice is quintiles --- and compare treated vs. control outcomes *within* each stratum, then average across strata weighting by stratum size. Cochran (1968) showed that five strata remove roughly 90% of the bias from a continuous confounder.
+3. **Weighting.** Reweight units by functions of $\hat e$ so the weighted treated and control samples are balanced. This is inverse-probability weighting, the subject of the [next page](weighting-ipw.qmd).
+
+A crucial point about model selection: we tune the propensity model to achieve **covariate balance**, *not* to maximize predictive accuracy. A score that predicts treatment perfectly ($\hat e$ near 0 or 1 for everyone) is a *disaster* --- it means there is no overlap and no comparable controls. The goal is balance, not classification skill.
+
+The two thumbnails below make the trade-off visible. On the **left**, a *modest* classifier (low AUC --- the share of treated/control pairs the score ranks correctly) leaves the two score distributions heavily overlapping: plenty of comparable controls at every score. On the **right**, a *near-perfect* classifier (AUC $\approx 1$) drives the treated to $\hat e \approx 1$ and the controls to $\hat e \approx 0$ --- spectacular prediction, but the two distributions barely touch, so almost no patient has a comparable counterpart. Excellent prediction *is* poor overlap.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two synthetic score distributions: "good overlap" (low separation) vs
+// "perfect separation" (high AUC, no overlap). Self-contained, ps_-prefixed.
+ps_overlapData = {
+  let a = 7777;
+  const unif = () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  const norm = () => Math.sqrt(-2 * Math.log(unif())) * Math.cos(2 * Math.PI * unif());
+  const sig = z => 1 / (1 + Math.exp(-z));
+  const rows = [];
+  for (let i = 0; i < 260; i++) {
+    const d = i % 2;                                   // alternate arms
+    const sep = d === 1 ? 0.7 : -0.7;
+    rows.push({ panel: "Good overlap (low AUC)", arm: d ? "Enrolled" : "Control",
+      e: sig(sep + norm() * 0.9) });
+    const sepHi = d === 1 ? 4.2 : -4.2;
+    rows.push({ panel: "Perfect separation (AUC ≈ 1)", arm: d ? "Enrolled" : "Control",
+      e: sig(sepHi + norm() * 0.7) });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 230,
+  marginLeft: 60,
+  marginBottom: 46,
+  facet: { data: ps_overlapData, x: "panel" },
+  x: { label: "Estimated propensity score ê →", domain: [0, 1] },
+  y: { label: "Patients", grid: true },
+  color: {
+    domain: ["Enrolled", "Control"], range: ["#990000", "#3d5a6c"], legend: true
+  },
+  marks: [
+    Plot.rectY(ps_overlapData,
+      Plot.binX({ y: "count" }, { x: "e", fill: "arm", fillOpacity: 0.55, thresholds: 22 })),
+    Plot.ruleY([0])
+  ]
+})
+```
+
+
+## See It: From Covariates to the Balancing Score
+
+The interactive below builds the whole pipeline on a synthetic cohort of diabetes patients at a Swedish vårdcentral. There are 600 patients. A single observed covariate --- standardized **baseline severity** (think of it as a composite of HbA1c, BMI, and comorbidity count) --- drives both who enrolls and how much they would benefit. The slider controls how *strongly* severity drives enrollment.
+
+The left panel shows the covariate distribution by arm. The middle panel shows the estimated propensity-score distributions (overlapping histograms). The right panel shows what happens to covariate *balance* after you match or stratify on the score.
+
+The balance panel reports the **standardized mean difference (SMD)** --- the gap between the treated and control means of a covariate, divided by their pooled standard deviation, $\text{SMD} = (\bar X_t - \bar X_c)\,/\,s_{\text{pooled}}$. Dividing by the spread makes it unitless, so the same $|\text{SMD}| < 0.1$ rule of thumb for "well balanced" applies to age, HbA1c, or any covariate at once.
+
+::: {.interactive-container}
+
+#### Covariate Imbalance, the Score, and Rebalancing
+
+::: {.start-here}
+**Start here:** (1) set the **selection strength**, (2) pick an **adjustment** (this drives Panel C), (3) optionally **resample**. Panel A is always the raw cohort; Panels B and C react to your choices.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof maps_selStrength = Inputs.range([0, 3], {
+  value: 1.4,
+  step: 0.1,
+  label: "Selection strength (how strongly severity drives enrollment)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof maps_adjust = Inputs.radio(
+  ["Raw (no adjustment)", "1:1 match on score", "Stratify on score (quintiles)"],
+  { label: "Adjustment (drives Panel C)", value: "Raw (no adjustment)" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof maps_draw = Inputs.button("Resample cohort (new random draw)", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Generate a synthetic cohort of 600 patients. ──
+// One observed covariate X = standardized baseline severity ~ N(0,1).
+// Enrollment is a logit in X with coefficient = selStrength, so larger
+// selStrength => sicker patients much more likely to enroll => stronger
+// covariate imbalance and more separated propensity-score distributions.
+// `maps_draw` is REFERENCED (not written) so pressing the button resamples.
+maps_cohort = {
+  maps_draw;                                   // reactive dependency: resample on click
+  const n = 600;
+  const k = maps_selStrength;
+  const rnorm = d3.randomNormal(0, 1);
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const x = rnorm();                          // baseline severity (standardized)
+    // True propensity: logistic in x with intercept 0 (so ~half enroll at k=0).
+    const eta = 0 + k * x;
+    const pTrue = 1 / (1 + Math.exp(-eta));
+    const d = Math.random() < pTrue ? 1 : 0;
+    rows.push({ id: i, x, d, pTrue });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fit a logistic regression of D on X by Newton-Raphson (IRLS). ──
+// Returns intercept b0 and slope b1; we then attach a fitted score ehat
+// to every patient. Pure in-browser numerics — no external solver.
+maps_logit = {
+  const data = maps_cohort;
+  let b0 = 0, b1 = 0;
+  for (let iter = 0; iter < 25; iter++) {
+    // Accumulate gradient g and Hessian H of the log-likelihood.
+    let g0 = 0, g1 = 0, h00 = 0, h01 = 0, h11 = 0;
+    for (const r of data) {
+      const eta = b0 + b1 * r.x;
+      const p = 1 / (1 + Math.exp(-eta));
+      const w = p * (1 - p);
+      const resid = r.d - p;
+      g0 += resid;
+      g1 += resid * r.x;
+      h00 += w;
+      h01 += w * r.x;
+      h11 += w * r.x * r.x;
+    }
+    // Newton step:  b <- b + H^{-1} g   (H is the negative Hessian here).
+    const det = h00 * h11 - h01 * h01;
+    if (Math.abs(det) < 1e-10) break;
+    const db0 = (h11 * g0 - h01 * g1) / det;
+    const db1 = (-h01 * g0 + h00 * g1) / det;
+    b0 += db0;
+    b1 += db1;
+    if (Math.abs(db0) + Math.abs(db1) < 1e-8) break;
+  }
+  return { b0, b1 };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Attach the fitted propensity score ehat to every patient.
+maps_scored = maps_cohort.map(r => {
+  const eta = maps_logit.b0 + maps_logit.b1 * r.x;
+  return { ...r, ehat: 1 / (1 + Math.exp(-eta)) };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Build the adjusted sample according to the chosen strategy. ──
+// Each returned record carries a `weight` and a `stratum` so the balance
+// computation downstream is a single weighted formula for all three modes.
+maps_adjusted = {
+  const treated = maps_scored.filter(r => r.d === 1);
+  const control = maps_scored.filter(r => r.d === 0);
+
+  if (maps_adjust === "Raw (no adjustment)") {
+    return maps_scored.map(r => ({ ...r, weight: 1, stratum: 0 }));
+  }
+
+  if (maps_adjust === "1:1 match on score") {
+    // Greedy nearest-neighbour matching of each treated unit to its closest
+    // control on ehat, WITHOUT replacement, WITH a caliper. The caliper is the
+    // Austin (2011) standard, 0.2 × sd(ê): a treated unit whose nearest control
+    // is farther than the caliper is DROPPED (no acceptable match exists). This
+    // is what makes matching actually balance — without a caliper the treated
+    // group is never pruned, so its sicker mean is retained and the covariate
+    // SMD barely moves. With the caliper, every retained pair lives inside the
+    // common support, so the covariate collapses into balance; the price is that
+    // more treated units go unmatched as overlap shrinks (see maps_matchInfo).
+    const allE = maps_scored.map(r => r.ehat);
+    const mE = d3.mean(allE);
+    const sdE = Math.sqrt(d3.mean(allE, e => (e - mE) ** 2));
+    const caliper = 0.2 * sdE;
+    const pool = control.map(c => ({ ...c, used: false }));
+    const out = [];
+    for (const t of treated) {
+      let best = null, bestGap = Infinity;
+      for (const c of pool) {
+        if (c.used) continue;
+        const gap = Math.abs(c.ehat - t.ehat);
+        if (gap < bestGap) { bestGap = gap; best = c; }
+      }
+      if (best && bestGap <= caliper) {
+        best.used = true;
+        out.push({ ...t, weight: 1, stratum: 0 });
+        out.push({ ...best, weight: 1, stratum: 0 });
+      }
+    }
+    return out;
+  }
+
+  // Stratify on score quintiles. Within each quintile we keep all units but
+  // weight them so each stratum contributes in proportion to its treated count
+  // (an ATT-style stratification). Strata with no controls are dropped.
+  const sorted = [...maps_scored].sort((a, b) => a.ehat - b.ehat);
+  const nq = 5;
+  const out = [];
+  for (let q = 0; q < nq; q++) {
+    const lo = Math.floor((q * sorted.length) / nq);
+    const hi = Math.floor(((q + 1) * sorted.length) / nq);
+    const slice = sorted.slice(lo, hi);
+    const tr = slice.filter(r => r.d === 1);
+    const ct = slice.filter(r => r.d === 0);
+    if (tr.length === 0 || ct.length === 0) continue;
+    for (const r of tr) out.push({ ...r, weight: 1, stratum: q });
+    // Controls reweighted so the stratum's control mass equals its treated count.
+    const wc = tr.length / ct.length;
+    for (const r of ct) out.push({ ...r, weight: wc, stratum: q });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Weighted mean helper for the covariate-balance diagnostic.
+maps_wmean = (rows, acc) => {
+  const W = d3.sum(rows, r => r.weight);
+  return W > 0 ? d3.sum(rows, r => r.weight * acc(r)) / W : NaN;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Weighted variance helper.
+maps_wvar = (rows, acc) => {
+  const W = d3.sum(rows, r => r.weight);
+  if (W <= 0) return NaN;
+  const m = maps_wmean(rows, acc);
+  return d3.sum(rows, r => r.weight * (acc(r) - m) ** 2) / W;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standardized mean difference (SMD), the standard balance diagnostic:
+// SMD = (x̄_t − x̄_c) / pooled sd.
+maps_smd = (rows) => {
+  const tr = rows.filter(r => r.d === 1);
+  const ct = rows.filter(r => r.d === 0);
+  const mt = maps_wmean(tr, r => r.x);
+  const mc = maps_wmean(ct, r => r.x);
+  const vt = maps_wvar(tr, r => r.x);
+  const vc = maps_wvar(ct, r => r.x);
+  const sp = Math.sqrt((vt + vc) / 2);
+  return sp > 0 ? (mt - mc) / sp : 0;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+maps_balance = ({
+  rawSMD: maps_smd(maps_scored.map(r => ({ ...r, weight: 1 }))),
+  adjSMD: maps_smd(maps_adjusted)
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// How much of the treated group survives the adjustment. For matching this is
+// the fraction of treated units that found a control inside the caliper; for
+// stratification it is the fraction in strata that had at least one control.
+// Drives the honest "you balanced, but at what cost in sample size?" verdict.
+maps_matchInfo = {
+  const nTreated = maps_scored.filter(r => r.d === 1).length;
+  const nTreatedKept = maps_adjusted.filter(r => r.d === 1).length;
+  const pctKept = nTreated > 0 ? Math.round((100 * nTreatedKept) / nTreated) : 0;
+  return { nTreated, nTreatedKept, pctKept };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Panel A: covariate distribution (baseline severity) by arm. ──
+Plot.plot({
+  width: Math.min(640, width),
+  height: 230,
+  marginLeft: 60,
+  marginTop: 28,
+  title: "A. Baseline severity X, by arm (raw cohort)",
+  x: { label: "Standardized baseline severity X →", domain: [-4, 4] },
+  y: { label: "Patients", grid: true },
+  color: {
+    domain: ["Enrolled (D=1)", "Standard care (D=0)"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    Plot.rectY(
+      maps_scored.map(r => ({ ...r, arm: r.d ? "Enrolled (D=1)" : "Standard care (D=0)" })),
+      Plot.binX({ y: "count" }, { x: "x", fill: "arm", fillOpacity: 0.55, thresholds: 34 })
+    ),
+    Plot.ruleY([0])
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Panel B: estimated propensity-score distributions (overlap). ──
+Plot.plot({
+  width: Math.min(640, width),
+  height: 230,
+  marginLeft: 60,
+  marginTop: 28,
+  title: "B. Estimated propensity score ê(X), by arm",
+  x: { label: "Estimated propensity score ê(X) →", domain: [0, 1] },
+  y: { label: "Patients", grid: true },
+  color: {
+    domain: ["Enrolled (D=1)", "Standard care (D=0)"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    Plot.rectY(
+      maps_scored.map(r => ({ ...r, arm: r.d ? "Enrolled (D=1)" : "Standard care (D=0)" })),
+      Plot.binX({ y: "count" }, { x: "ehat", fill: "arm", fillOpacity: 0.55, thresholds: 30 })
+    ),
+    Plot.ruleY([0])
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Panel C: covariate balance before vs after adjustment. ──
+// A horizontal bar of the standardized mean difference (SMD) on X, with the
+// |SMD| < 0.1 "good balance" band shaded. The whole point of the page made
+// visible: matching/stratifying on the SCALAR score balances the COVARIATE.
+{
+  // Short axis labels for the adjusted bar; long names stay in the radio control.
+  const adjShort = maps_adjust === "Raw (no adjustment)" ? "Adjusted (= raw)"
+    : maps_adjust === "1:1 match on score" ? "Matched (1:1)"
+    : "Stratified (quintiles)";
+  const bars = [
+    { label: "Raw cohort", smd: maps_balance.rawSMD },
+    { label: adjShort, smd: maps_balance.adjSMD }
+  ];
+  const maxAbs = Math.max(0.5, d3.max(bars, b => Math.abs(b.smd)) * 1.2);
+  // Pad the domain so the ±18px value labels never render past the frame.
+  const dom = maxAbs * 1.18;
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 180,
+    marginLeft: 150,
+    title: "C. Covariate balance: standardized mean difference in X",
+    caption: "Responds to the Adjustment control. |SMD| < 0.1 (green band) is the conventional threshold for good balance.",
+    x: { label: "SMD (treated − control) →", domain: [-dom, dom], grid: true },
+    y: { label: null, domain: bars.map(b => b.label) },
+    marks: [
+      // Shaded "well balanced" band |SMD| < 0.1.
+      Plot.rectX([{ x1: -0.1, x2: 0.1 }], {
+        x1: "x1", x2: "x2", fill: "#2e6f40", fillOpacity: 0.10
+      }),
+      Plot.ruleX([0], { stroke: "#1c1c1a", strokeWidth: 1.5 }),
+      Plot.barX(bars, {
+        x: "smd", y: "label",
+        fill: d => Math.abs(d.smd) < 0.1 ? "#2e6f40" : "#990000",
+        fillOpacity: 0.85, insetTop: 14, insetBottom: 14
+      }),
+      Plot.text(bars, {
+        x: "smd", y: "label",
+        text: d => `${d.smd >= 0 ? "+" : ""}${d.smd.toFixed(2)}`,
+        dx: d => d.smd >= 0 ? 18 : -18,
+        fill: "#1c1c1a", fontWeight: "bold", fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line verdict that updates with the controls.
+{
+  const raw = Math.abs(maps_balance.rawSMD);
+  const adj = Math.abs(maps_balance.adjSMD);
+  const pct = maps_matchInfo.pctKept;
+  let msg, color;
+  if (maps_adjust === "Raw (no adjustment)") {
+    msg = raw < 0.1
+      ? `Raw imbalance is small (|SMD| = ${raw.toFixed(2)}): at this selection strength the arms are already comparable.`
+      : `Raw imbalance is large (|SMD| = ${raw.toFixed(2)}): enrolled patients are systematically sicker. A naive difference would confound the program with baseline severity.`;
+    color = raw < 0.1 ? "#2e6f40" : "#990000";
+  } else if (maps_adjust === "1:1 match on score") {
+    // Caliper matching keeps balance among the retained pairs, but discards more
+    // treated units as overlap shrinks. The honest story is the trade-off.
+    if (raw < 0.1) {
+      msg = `The arms were already comparable (|SMD| = ${raw.toFixed(2)}); matching keeps them balanced (${adj.toFixed(2)}) and retains ${pct}% of the treated.`;
+      color = "#2e6f40";
+    } else if (pct >= 75) {
+      msg = `Matching on the scalar score cut imbalance from |SMD| = ${raw.toFixed(2)} to ${adj.toFixed(2)} while keeping ${pct}% of the treated — the Rosenbaum–Rubin balancing property in action, at little cost.`;
+      color = "#2e6f40";
+    } else if (pct >= 40) {
+      msg = `Matching balanced the covariate (|SMD| = ${raw.toFixed(2)} → ${adj.toFixed(2)}), but the caliper had to discard treated units with no comparable control: only ${pct}% of the treated were matched. Balance is bought with sample size.`;
+      color = "#9c7a33";
+    } else {
+      msg = `Overlap is collapsing: the matched pairs are still balanced (|SMD| = ${adj.toFixed(2)}), but only ${pct}% of the treated found a control inside the caliper. The estimate now speaks for a shrinking, unrepresentative slice of the treated.`;
+      color = "#990000";
+    }
+  } else {
+    // Stratification on quintiles: residual imbalance grows as strata thin out.
+    if (adj < 0.1 && raw >= 0.1) {
+      msg = `Stratifying on the score cut imbalance from |SMD| = ${raw.toFixed(2)} to ${adj.toFixed(2)} — five quintiles remove most of the bias (Cochran 1968). This is the balancing property via subclassification.`;
+      color = "#2e6f40";
+    } else if (adj < raw) {
+      msg = `Stratification reduced imbalance from |SMD| = ${raw.toFixed(2)} to ${adj.toFixed(2)}, but with selection this strong the within-quintile groups are no longer comparable, so residual imbalance remains. Coarse strata cannot fix thin overlap.`;
+      color = "#9c7a33";
+    } else {
+      msg = `Stratification did not help (|SMD| = ${adj.toFixed(2)}): overlap has nearly collapsed, so the quintiles contain no comparable controls to balance against.`;
+      color = "#990000";
+    }
+  }
+  return html`<div style="
+      margin-top: 0.75rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 0.5rem;
+      border-left: 3px solid ${color};
+      background: rgba(0,0,0,0.02);
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Three Panels
+
+Work through the interactive in order; each panel isolates one link in the chain.
+
+**Step 1: See the imbalance (Panel A).** With **Selection strength** at its default, look at the raw distribution of baseline severity $X$. The red (enrolled) histogram sits to the *right* of the slate (standard-care) histogram: enrolled patients are sicker on average. This is the confounding the whole machinery must defeat. A naive HbA1c comparison would credit the program with --- or blame it for --- this baseline gap.
+
+**Step 2: Watch the score separate (Panel B).** The estimated propensity score $\hat e(X)$ is, by construction, a monotone transform of $X$ here, so the same imbalance reappears as two histograms on the $[0,1]$ axis. The *region where the two histograms overlap* is the **common support** --- the patients for whom comparable units of the other arm exist. Now drag **Selection strength** higher: the two propensity distributions pull apart, the red (enrolled) mass piles up near $\hat e = 1$ and the slate (standard-care) near $\hat e = 0$, and the overlap region shrinks. This is overlap failing before your eyes.
+
+**Step 3: Rebalance on the scalar (Panel C).** Switch **Adjustment** from "Raw" to **"1:1 match on score."** Panel C reports the *standardized mean difference* (SMD) of $X$ --- the headline balance diagnostic, where $|\text{SMD}| < 0.1$ (the shaded green band) is the conventional threshold for "well balanced." The raw bar is long and red (outside the green band); the adjusted bar collapses into the green band. **You balanced the covariate $X$ by matching on the single number $\hat e$** --- the Rosenbaum--Rubin balancing property made visible. (The match uses a *caliper* of $0.2 \times \text{sd}(\hat e)$: a treated patient with no control inside that distance is left unmatched, which is exactly what forces the retained pairs into the common-support region.) Try **"Stratify on score (quintiles)"** for the same effect via subclassification --- within each quintile the control group is reweighted to match the treated count, so the comparison targets the treated (an ATT-style stratification).
+
+**Step 4: Break it.** Push **Selection strength** toward 3 and watch overlap in Panel B nearly vanish. Now the two adjustments fail in *different* ways, and the verdict line under Panel C reports each. Under **matching**, the retained pairs stay inside the green band --- but read the verdict: the caliper has to discard a growing share of treated patients (often well over half) because they have no comparable control. You bought balance by throwing away the very patients you wanted to learn about. Under **stratification**, no units are dropped, so the imbalance instead leaks back into the bar: the adjusted SMD climbs out of the green band as the within-quintile groups stop being comparable. Either way, no method can manufacture comparisons the data do not contain --- the score *diagnoses* the lack of overlap, it does not cure it.
+
+**Step 5: Resample.** Press **Draw a new cohort** a few times. The exact bars jitter with sampling noise, but the qualitative story is stable: raw imbalance is large and grows with selection, while the adjustment pulls it back --- matching by discarding non-overlapping treated, stratification by averaging within quintiles. The lesson is structural, not an artefact of one draw.
+
+
+## A Caution: The Propensity-Score Paradox
+
+Propensity-score *matching* in particular --- as opposed to stratification or weighting --- carries a subtle trap identified by King and Nielsen (2019). The intuition is this: matching on the propensity score tries to make the two groups resemble a *completely randomized* experiment, in which covariates are balanced only *on average*. But we usually have something better available --- the ideal of a *fully blocked* (exactly matched) experiment, in which covariates are balanced *unit by unit*.
+
+::: {.glass-card .glass-card--warning}
+**The PSM paradox (King & Nielsen, 2019).** When you prune units to improve propensity-score balance, you can *increase* imbalance on the covariates themselves. As you discard units whose scores are far apart, the remaining matched set can still differ on $X$ in ways the scalar score does not see (two patients can share $\hat e = 0.5$ while one is old-and-mild and the other young-and-severe). Past a point, tightening the score-match degrades covariate balance, model dependence, and bias --- the opposite of the goal.
+
+**Practical guidance.** Always check covariate balance *directly* (as Panel C does), not just score balance. Prefer methods that target the covariates --- coarsened exact matching, Mahalanobis matching, or stable inverse-probability weighting --- and treat the propensity score as one tool among several, not the destination. The score is superb for *diagnosing overlap* and for *weighting*; for *matching*, watch the covariate SMDs, not the score gaps.
+:::
+
+**Why the main interactive cannot show this --- and the figure that can.** The interactive above uses a *single* covariate, where the score is a monotone transform of $X$, so score-distance and covariate-distance coincide and the paradox cannot arise. The paradox needs *two or more* covariates that the scalar score blends together. The static figure below makes "same score, different $X$" concrete: each point is a patient in (age, severity) space, coloured by their propensity score. Points of the *same colour* lie along a diagonal **iso-score band** --- patients with identical $\hat e$ but very different covariate profiles. The highlighted pair shares $\hat e \approx 0.5$ yet sits at opposite corners (old-and-mild vs. young-and-severe): matching them on the score alone pairs two patients the covariates say are nothing alike.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Self-contained PRNG + standard normal so the figure is reproducible and
+// independent of the main interactive's cohort.
+ps_rng = {
+  let a = 20190213;
+  const unif = () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  const norm = () => Math.sqrt(-2 * Math.log(unif())) * Math.cos(2 * Math.PI * unif());
+  return { unif, norm };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two covariates (age, severity), both standardized. The score blends them:
+// logit(e) ∝ age + severity, so ê depends only on the SUM — patients on the
+// same anti-diagonal share a score while differing sharply on each covariate.
+ps_iso = {
+  const rows = [];
+  for (let i = 0; i < 320; i++) {
+    const age = ps_rng.norm();
+    const sev = ps_rng.norm();
+    const eta = 0.9 * age + 0.9 * sev;          // score driven by the SUM
+    const e = 1 / (1 + Math.exp(-eta));
+    rows.push({ age, sev, e });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two highlighted patients with (almost) the SAME score ê≈0.5 but opposite
+// covariate corners: old-and-mild vs young-and-severe.
+ps_isoPair = [
+  { age:  1.7, sev: -1.7, e: 0.5, who: "old & mild" },
+  { age: -1.7, sev:  1.7, e: 0.5, who: "young & severe" }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(560, width),
+  height: 360,
+  marginLeft: 62,
+  marginBottom: 48,
+  title: "Same propensity score, different covariates",
+  caption: "Colour = propensity score ê. Same-colour points lie on a diagonal iso-score band: identical ê, very different (age, severity). The two ringed patients share ê ≈ 0.5 yet sit at opposite corners.",
+  x: { label: "Standardized age →", domain: [-3, 3], grid: true },
+  y: { label: "↑ Standardized severity", domain: [-3, 3], grid: true },
+  color: {
+    type: "linear", domain: [0, 1], range: ["#3d5a6c", "#990000"],
+    label: "ê(X)", legend: true
+  },
+  marks: [
+    Plot.dot(ps_iso, { x: "age", y: "sev", fill: "e", r: 3.2, fillOpacity: 0.8 }),
+    // Ring + connect the two same-score, opposite-corner patients.
+    Plot.line(ps_isoPair, { x: "age", y: "sev", stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,3" }),
+    Plot.dot(ps_isoPair, { x: "age", y: "sev", r: 8, stroke: "#1c1c1a", strokeWidth: 2.5, fill: "none" }),
+    Plot.text(ps_isoPair, {
+      x: "age", y: "sev", text: "who", dy: d => d.sev > 0 ? -16 : 16,
+      fill: "#1c1c1a", fontSize: 11, fontWeight: 700,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ age: 1.9, sev: 1.9 }], {
+      x: "age", y: "sev", text: () => "both share ê ≈ 0.5",
+      fill: "#1c1c1a", fontSize: 11, fontWeight: 700, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+This caution does not overturn the Rosenbaum--Rubin theorem --- the theorem is about the *true* score and *exact* conditioning. The paradox is about the finite-sample behaviour of *approximate matching* on an *estimated* score. Both are true at once: the score is the right object to condition on in theory, and naive matching on it can misbehave in practice.
+
+
+<details>
+<summary>Math Details: Proof Sketch of the Balancing Property</summary>
+<div class="details-content">
+
+### Goal
+
+We show Part 1 of Rosenbaum--Rubin: the propensity score $e(X)$ is a *balancing score*, meaning
+
+$$
+D \perp\!\!\!\perp X \mid e(X).
+$$
+
+By a standard characterization, this conditional independence holds if and only if the conditional probability of treatment given *both* $X$ and $e(X)$ does not actually depend on $X$ once $e(X)$ is fixed:
+
+$$
+P\big(D = 1 \mid X,\, e(X)\big) = P\big(D = 1 \mid e(X)\big).
+$$
+
+### Step 1: The left-hand side collapses
+
+Since $e(X)$ is a *deterministic function* of $X$, knowing $X$ already tells you $e(X)$ --- the second conditioning variable is redundant. Hence
+
+$$
+P\big(D = 1 \mid X,\, e(X)\big) = P\big(D = 1 \mid X\big) = e(X),
+$$
+
+where the last equality is simply the *definition* of the propensity score.
+
+**Read this as**: "Given the full covariate vector, the chance of treatment is $e(X)$ by definition; adding $e(X)$ to the conditioning set tells us nothing new."
+
+### Step 2: The right-hand side
+
+Now compute the probability of treatment given *only* the score. Use the law of total expectation (the tower property), averaging the treatment indicator over all covariate profiles that share the same score value:
+
+$$
+P\big(D = 1 \mid e(X)\big) = E\big[\,D \mid e(X)\,\big] = E\big[\,E[D \mid X] \mid e(X)\,\big] = E\big[\,e(X) \mid e(X)\,\big] = e(X).
+$$
+
+**Read this as**: "Average the per-patient treatment probability $e(X)$ over everyone with a given score; but everyone with that score has the *same* $e(X)$, so the average is just that value." The inner expectation $E[D \mid X] = e(X)$ is again the definition; conditioning a constant on itself returns the constant.
+
+### Step 3: Compare
+
+Both sides equal $e(X)$:
+
+$$
+P\big(D = 1 \mid X,\, e(X)\big) = e(X) = P\big(D = 1 \mid e(X)\big).
+$$
+
+So $P(D=1 \mid X, e(X))$ does not depend on $X$ beyond what $e(X)$ already encodes, which is exactly the statement $D \perp\!\!\!\perp X \mid e(X)$. $\qquad\blacksquare$
+
+### Part 2 follows quickly
+
+For unconfoundedness given the score, assume CIA given $X$: $\big(Y(0), Y(1)\big) \perp\!\!\!\perp D \mid X$. We want $\big(Y(0), Y(1)\big) \perp\!\!\!\perp D \mid e(X)$. It suffices to show
+
+$$
+P\big(D = 1 \mid Y(0), Y(1),\, e(X)\big) = P\big(D = 1 \mid e(X)\big).
+$$
+
+Condition further on $X$ inside the left side and use the tower property:
+
+$$
+P\big(D=1 \mid Y(0),Y(1),e(X)\big)
+= E\big[\,P(D=1 \mid Y(0),Y(1),X) \mid Y(0),Y(1),e(X)\,\big].
+$$
+
+By CIA, $P(D=1 \mid Y(0),Y(1),X) = P(D=1 \mid X) = e(X)$ --- the potential outcomes drop out. The outer expectation of the constant $e(X)$ (constant given $e(X)$) is $e(X)$, which by Step 2 equals $P(D=1 \mid e(X))$. The treatment probability is the same with or without the potential outcomes in the conditioning set, so they are independent given $e(X)$. $\qquad\blacksquare$
+
+### Why a *coarser* score also balances
+
+Any *finer* function of $X$ than $e(X)$ is also a balancing score, and $e(X)$ is the *coarsest* one --- the maximal dimension reduction that still balances. This is why a single scalar, rather than the full vector, is enough: $e(X)$ is the smallest summary of $X$ that retains all the information relevant to treatment assignment.
+
+</div>
+</details>
+
+
+## Code: Estimate, Match, and Check Balance
+
+Both implementations simulate a cohort of Swedish diabetes patients, estimate the propensity score with a logit, match 1:1 on it, and --- the step that matters most --- check covariate balance before and after. The data-generating process puts the true ATT at $-0.50$ percentage points of HbA1c. (HbA1c is itself reported as a percentage, so a *percentage-point* change is an absolute move on that scale --- e.g. from 7.6% to 7.1% --- not a 0.50% *relative* reduction, which would be a different and much smaller number.)
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(MatchIt)   # propensity-score matching + balance diagnostics
+library(cobalt)    # standardized mean differences (love.plot, bal.tab)
+
+set.seed(2019)
+n <- 2000
+
+# --- Covariates for diabetes patients at a vårdcentral ---
+sim <- tibble(
+  age       = rnorm(n, 64, 10),                 # years
+  hba1c0    = rnorm(n, 7.6, 1.0),               # baseline HbA1c (%)
+  bmi       = rnorm(n, 29, 4),                  # body-mass index
+  deprived  = rbinom(n, 1, 0.35)                # deprived neighbourhood
+) |>
+  mutate(
+    # Sicker, older, more-deprived patients enroll more (true propensity).
+    # The -11 intercept calibrates enrollment to ~19% (a voluntary program),
+    # leaving a large control pool so every treated patient finds a close match.
+    lp = -11 + 0.04 * age + 0.7 * hba1c0 + 0.05 * bmi + 0.4 * deprived,
+    e_true = plogis(lp),
+    enrolled = rbinom(n, 1, e_true),
+    # Potential outcome under control depends on the SAME covariates
+    # (this is the confounding); program lowers HbA1c by 0.50 (true ATT).
+    y0 = 0.6 * hba1c0 + 0.01 * age + 0.02 * bmi + rnorm(n, 0, 0.5),
+    y1 = y0 - 0.50,
+    hba1c1 = if_else(enrolled == 1, y1, y0)     # observed 12-month HbA1c
+  )
+
+# --- Naive (confounded) difference in means ---
+naive <- with(sim, mean(hba1c1[enrolled == 1]) - mean(hba1c1[enrolled == 0]))
+
+# --- Estimate the propensity score and match 1:1 on it ---
+m.out <- matchit(
+  enrolled ~ age + hba1c0 + bmi + deprived,
+  data = sim, method = "nearest", distance = "glm", estimand = "ATT"
+)
+
+# Covariate balance BEFORE vs AFTER matching (standardized mean differences)
+print(bal.tab(m.out, un = TRUE))   # look for |SMD| < 0.1 after matching
+
+# --- ATT on the matched sample ---
+matched <- match.data(m.out)
+att <- with(matched,
+            weighted.mean(hba1c1[enrolled == 1], weights[enrolled == 1]) -
+            weighted.mean(hba1c1[enrolled == 0], weights[enrolled == 0]))
+
+cat(sprintf("Naive difference: %+.3f\n", naive))   # biased toward 0 (selection masks the benefit)
+cat(sprintf("PS-matched ATT:   %+.3f\n", att))     # close to the true -0.50
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from scipy.spatial import cKDTree
+
+rng = np.random.default_rng(2019)
+n = 2000
+
+# --- Covariates for diabetes patients at a vårdcentral ---
+age      = rng.normal(64, 10, n)
+hba1c0   = rng.normal(7.6, 1.0, n)
+bmi      = rng.normal(29, 4, n)
+deprived = rng.binomial(1, 0.35, n)
+
+# Sicker, older, more-deprived patients enroll more (true propensity).
+# The -11 intercept calibrates enrollment to ~19% (a voluntary program),
+# leaving a large control pool so every treated patient finds a close match.
+lp     = -11 + 0.04*age + 0.7*hba1c0 + 0.05*bmi + 0.4*deprived
+e_true = 1 / (1 + np.exp(-lp))
+enrolled = rng.binomial(1, e_true)
+
+y0 = 0.6*hba1c0 + 0.01*age + 0.02*bmi + rng.normal(0, 0.5, n)
+y1 = y0 - 0.50                                   # program lowers HbA1c by 0.50
+hba1c1 = np.where(enrolled == 1, y1, y0)         # observed 12-month HbA1c
+
+df = pd.DataFrame(dict(age=age, hba1c0=hba1c0, bmi=bmi,
+                       deprived=deprived, enrolled=enrolled, hba1c1=hba1c1))
+
+# --- Naive (confounded) difference in means ---
+naive = df.loc[df.enrolled==1,"hba1c1"].mean() - df.loc[df.enrolled==0,"hba1c1"].mean()
+
+# --- Estimate the propensity score (logit) ---
+X = df[["age", "hba1c0", "bmi", "deprived"]].to_numpy()
+ps = LogisticRegression(max_iter=1000).fit(X, df.enrolled).predict_proba(X)[:, 1]
+df["ps"] = ps
+
+# --- 1:1 nearest-neighbour match on the score (ATT: match each treated) ---
+treated = df[df.enrolled == 1]
+control = df[df.enrolled == 0]
+tree = cKDTree(control[["ps"]].to_numpy())
+_, idx = tree.query(treated[["ps"]].to_numpy(), k=1)
+matched_ctrl = control.iloc[idx]
+
+# Standardized mean difference helper (the balance diagnostic)
+def smd(a, b):
+    return (a.mean() - b.mean()) / np.sqrt((a.var() + b.var()) / 2)
+
+for col in ["age", "hba1c0", "bmi", "deprived"]:
+    before = smd(treated[col], control[col])
+    after  = smd(treated[col], matched_ctrl[col])
+    print(f"SMD {col:8s}  before={before:+.2f}  after={after:+.2f}")
+
+att = treated["hba1c1"].mean() - matched_ctrl["hba1c1"].mean()
+print(f"\nNaive difference: {naive:+.3f}")        # biased toward 0 (selection masks the benefit)
+print(f"PS-matched ATT:   {att:+.3f}")            # close to the true -0.50
+```
+
+:::
+
+Both routes recover an ATT near the true $-0.50$, while the naive difference is badly biased *toward zero* --- the positive selection bias (enrolled patients were sicker at baseline) nearly cancels the program's true benefit, so the raw comparison makes an effective program look like it does almost nothing. The decisive output is the **balance table**: every covariate's standardized mean difference should fall inside $\pm 0.1$ *after* matching. If it does not, the match has failed and the ATT cannot be trusted --- balance, not the point estimate, is the thing to inspect first.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A vårdcentral fits a logistic propensity model for enrollment in a fall-prevention program using a single covariate, age (centered). The fitted model is
+
+$$
+\log\!\left(\frac{\hat e}{1-\hat e}\right) = -0.5 + 0.08\,(\text{age} - 75).
+$$
+
+(a) What is the estimated propensity score for an 80-year-old? (b) For a 70-year-old? (c) A 78-year-old enrolled patient is to be matched 1:1 on the score. Among three available controls aged 72, 79, and 85, which is the propensity-score nearest neighbour?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** For age 80: linear predictor $= -0.5 + 0.08 \times (80 - 75) = -0.5 + 0.40 = -0.10$. Then $\hat e = 1/(1 + e^{0.10}) = 1/(1 + 1.105) = 0.475$.
+
+**(b)** For age 70: linear predictor $= -0.5 + 0.08 \times (70 - 75) = -0.5 - 0.40 = -0.90$. Then $\hat e = 1/(1 + e^{0.90}) = 1/(1 + 2.460) = 0.289$.
+
+**(c)** Because the score is *monotone increasing* in age here (the slope $0.08 > 0$), nearest on the score is the same as nearest in age. The treated patient is 78. The control ages are 72 (gap 6), 79 (gap 1), 85 (gap 7), so the **79-year-old** is the nearest neighbour. (Check via scores: 78 gives LP $= -0.5 + 0.24 = -0.26$, $\hat e = 0.435$; 79 gives LP $= -0.18$, $\hat e = 0.455$, the closest of the three.) With a single monotone covariate, score-matching and covariate-matching coincide --- the divergence the King--Nielsen paradox exploits appears only with *multiple* covariates.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+State the Rosenbaum--Rubin balancing property in words and explain *why* it implies that you can balance a 20-dimensional covariate vector by matching on a single number. Then explain why this does **not** mean you can ignore unmeasured confounders.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Balancing property.** Among units that share the same propensity score $e(X)$, the distribution of the covariates $X$ is identical for the treated and the untreated: $D \perp\!\!\!\perp X \mid e(X)$. Within a slice of constant score, treatment is unrelated to the covariates --- as if randomized with respect to $X$.
+
+**Why one number suffices.** The covariate vector $X$ affects treatment assignment *only through* the scalar $e(X) = P(D=1 \mid X)$; that scalar is a complete summary, with respect to treatment, of everything in $X$. So slicing the data by $e(X)$ creates strata that are internally balanced on *all* of $X$ at once. We reduce a 20-dimensional matching problem to a 1-dimensional one without losing the bias-removing power of the full adjustment (Rosenbaum--Rubin Part 2).
+
+**Why unmeasured confounders still bite.** The theorem assumes conditional independence holds *given the covariates that enter $X$*. The propensity score is built only from measured variables, so $e(X)$ contains no information about anything you did not measure. If an unrecorded confounder (motivation, diet, an undiagnosed comorbidity) drives both enrollment and HbA1c, it is missing from $X$, missing from $e(X)$, and missing from your adjustment. Perfect balance on measured covariates says nothing about balance on unmeasured ones. The score reduces *dimension*; it cannot substitute for *measuring the right confounders*.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Using the interactive, set **Selection strength** to a large value (near 3) and watch Panel B. (a) Describe what happens to the overlap of the two propensity-score histograms. (b) Explain, referencing the overlap assumption, why no amount of clever matching can rescue the estimate in this regime. (c) Why is propensity-score matching *worse* than useless here, rather than merely imprecise?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** As selection strength grows, the red (enrolled) histogram piles up near $\hat e = 1$ and the slate (standard-care) histogram near $\hat e = 0$; the region where both arms have mass --- the common support --- shrinks toward nothing. Almost every enrolled patient has a score for which there is no control patient at a comparable score, and vice versa.
+
+**(b)** The overlap (common-support) assumption requires $0 < e(X) < 1$ for the relevant patients, i.e. that comparable units of the *other* arm actually exist at each score. When the histograms barely overlap, that assumption is violated empirically: for most treated patients there is simply no control with a similar score to compare against. Matching, stratification, and weighting are all ways of *reusing comparable controls*; if there are none, there is nothing to reuse. The ATT for the no-overlap patients is not identified.
+
+**(c)** There are two failure modes, and both are worse than mere imprecision. *Without* a caliper, matching never refuses to run: it returns whatever the nearest control is, even one with a wildly different score, so bad matches are silently treated as good ones and the estimate carries large, hidden bias dressed up as a clean point estimate. *With* a caliper (as in the interactive), matching instead silently *discards* the treated units that have no comparable control --- so it keeps balance, but the estimand quietly drifts from "the ATT for all enrolled patients" to "the ATT for the shrinking, unrepresentative subset that happened to overlap." Either way a poor estimate *looks* clean, which is more dangerous than a wide confidence interval that *announces* the problem. The honest move is to report that the effect is unidentified outside the region of common support, and to say how much of the treated group survived matching.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A colleague tunes their propensity model by maximizing its classification accuracy (AUC), achieving an impressive AUC of 0.98, and reports that the model "almost perfectly predicts who enrolls." (a) Why is a high AUC a *bad* sign for a propensity-score analysis? (b) What should they optimize for instead? (c) Briefly describe the King--Nielsen propensity-score paradox and one practical safeguard against it.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** An AUC near 1 means the score separates treated from control almost perfectly --- $\hat e$ is near 1 for the treated and near 0 for the controls. That is precisely the *no-overlap* situation: the two propensity distributions barely intersect, so there are few comparable units across arms. Excellent prediction of treatment is equivalent to poor overlap, which is fatal for identification. The goal of a propensity model is *comparability*, not *classification*.
+
+**(b)** They should optimize for **covariate balance**: after matching/weighting on the score, the standardized mean differences of every covariate should fall inside roughly $\pm 0.1$, and higher moments / interactions should also be balanced. A "worse-predicting" model that yields good balance and ample overlap is far more useful than a near-perfect classifier.
+
+**(c)** **PSM paradox (King & Nielsen, 2019):** pruning units to tighten propensity-score balance can *increase* imbalance on the covariates themselves (two units with the same score can differ on $X$), so past a point, matching harder on the score raises bias and model dependence rather than lowering them. **Safeguard:** check covariate balance *directly* (SMDs on each covariate, as in Panel C), not just score balance; and prefer methods that target the covariates --- coarsened exact matching, Mahalanobis matching, or stable inverse-probability weighting --- using the score chiefly to diagnose overlap and to weight.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The propensity score $e(X) = P(D=1 \mid X)$ is a *balancing score*: conditional on it, treatment is independent of the covariates, so matching/stratifying on one number balances the whole vector.
+- Rosenbaum--Rubin: if treatment is unconfounded given $X$, it is unconfounded given $e(X)$ alone --- collapsing high-dimensional adjustment to one dimension.
+- Estimate $e(X)$ with a logit, then match, stratify (quintiles), or weight; tune the model for *covariate balance and overlap*, never for predictive accuracy.
+- The score reduces dimension; it cannot conjure comparability the data lack (overlap) or adjust for confounders you never measured (CIA).
+- The King--Nielsen paradox warns that matching harder on an estimated score can worsen covariate balance --- always check the covariate SMDs directly.
+:::
+
+
+## What Comes Next
+
+We reduced high-dimensional matching to a single balancing score, estimated it with a logit, and used it to match and stratify --- always checking that the covariates actually balanced. Matching and stratification, though, *discard* information: unmatched units are dropped, and stratification coarsens the score into a handful of bins. The next page, [Weighting and Doubly Robust Estimation](weighting-ipw.qmd), keeps every unit by turning the very same propensity score into a *weight* --- inverse-probability weighting --- so the whole sample contributes. It then shows how to combine an outcome model with a propensity model into a **doubly robust** estimator that stays consistent if *either* model is correct, the most forgiving use of the propensity score yet.

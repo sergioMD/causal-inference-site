@@ -1,0 +1,1263 @@
+---
+title: "Diagnostics"
+subtitle: "Event studies, pre-trend tests, and sensitivity analysis"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Specify an event study and read its leads as a pre-trend diagnostic and lags as dynamic effects, attending to the reference-period choice
+- Explain why pre-trend tests have low power and why conditioning on passing them (pre-testing) distorts the estimate
+- Apply the Honest-DiD (Rambachan-Roth) relative-magnitudes restriction to form a robust confidence set and compute the breakdown value $\bar{M}^\ast$
+- Design placebo and falsification tests (fake dates, untreated outcomes, never-treated permutations) and interpret what passing or failing each implies
+- Assess specification sensitivity across levels vs. logs, control-group choice, covariate sets, and clustering
+:::
+
+## When the Estimate Is Not Enough
+
+The previous page handed you a toolbox of modern difference-in-differences estimators --- Callaway--Sant'Anna group-time effects, Sun--Abraham interaction-weighted regressions, the stacked design --- each engineered to recover a clean average treatment effect on the treated when treatment timing is staggered and effects are heterogeneous. Run any of them and you get a number, a standard error, and a verdict.
+
+But a DiD estimate is only as good as its identifying assumption, and that assumption --- **parallel trends** --- is fundamentally untestable. It is a claim about a counterfactual: *what would the treated regions' outcomes have done, after treatment, had they not been treated?* Nobody observes that. The entire credibility of the design rests on a premise we can never directly check.
+
+This is the capstone page of the book, and its subject is the discipline that separates a defensible causal claim from a wishful one: **diagnostics**. We will build the central diagnostic tool --- the **event-study plot** --- and then ask the hard question that every honest applied economist must confront. The pre-treatment coefficients look flat; the confidence bands cover zero; the referee is satisfied. *How much should that reassure us?* The modern answer, due to Rambachan and Roth (2023), is humbling and constructive at once: the flat pre-trends do not prove parallel trends, but they do let us **bound** how badly parallel trends could plausibly fail --- and report an estimate that survives that bound.
+
+We stay in the Swedish primary-care world. Our running example: in 2017, several of Sweden's 21 *regioner* rolled out a **fall-prevention program** (*fallpreventionsprogram*) for elderly patients at their *vårdcentraler* --- balance training, medication review by *distriktssköterskor*, home-hazard assessment. The outcome is the regional rate of fall-related hospital admissions per 1,000 residents aged 75+. Some regions adopted in 2017; others never did. Did the program work --- and can we trust the comparison?
+
+
+## The Event-Study Specification
+
+The single most informative thing you can do after a DiD analysis is to stop reporting *one* treatment effect and instead estimate a separate effect for each period **relative to treatment**. This is the **event-study** (or dynamic) specification.
+
+Index calendar years by $t$ and let $E_i$ be the year region $i$ adopted the program (its *event time origin*). Define **relative time** $k = t - E_i$: the number of years since (or until) adoption. Then estimate
+
+$$
+Y_{it} = \alpha_i + \lambda_t + \sum_{k \neq -1} \beta_k \, \mathbf{1}\{t - E_i = k\} + \varepsilon_{it}
+$$
+
+**How to read this formula.** "The fall-admission rate for region $i$ in year $t$ equals a region fixed effect $\alpha_i$ (each region's permanent level), plus a year fixed effect $\lambda_t$ (a shock common to all regions that year), plus a sum of relative-time effects $\beta_k$ --- one coefficient for each number of years $k$ away from the adoption year --- plus noise." The dummy $\mathbf{1}\{t - E_i = k\}$ switches on for region $i$ exactly in the year that is $k$ periods from its own adoption.
+
+The coefficients split into two families:
+
+::: {.glass-card .glass-card--definition}
+**Leads and lags in an event study.**
+
+- **Lead coefficients** ($k < -1$): effects estimated for periods *before* treatment. Under parallel trends these should all be **zero** --- the treated and control groups were moving together before the program. Leads are the *diagnostic*.
+
+- **Lag coefficients** ($k \geq 0$): effects estimated for periods *at and after* treatment. These are the *dynamic treatment effects* --- the object of interest. $\beta_0$ is the impact in the adoption year, $\beta_1$ one year later, and so on.
+
+- **The reference period** ($k = -1$): one period is *omitted* (here, the year just before adoption) to break collinearity with the fixed effects. Every $\beta_k$ is read *relative to* this normalized baseline. By construction $\beta_{-1} = 0$; it is not estimated.
+:::
+
+The picture below makes the relative-time axis concrete *before* you reach the live tool. The **leads** to the left of the dashed adoption line are the diagnostic (they should be flat); the hollow square at $k=-1$ is the omitted **reference period** (an *estimand* is the population quantity you are trying to recover — here each $\beta_k$ is one); the **lags** to the right are the dynamic effects you actually care about.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static annotated relative-time timeline (no interactivity). ──
+// Renders the k-grid as a labelled axis: leads (diagnostic) on the left,
+// the pinned reference period at k=-1, and lags (effect) on the right,
+// with the adoption line drawn between k=-1 and k=0. Pure function of d3.
+diag_drawTimeline = function ({ width = 600, height = 150 } = {}) {
+  const pad = 48;
+  const ks = [-5, -4, -3, -2, -1, 0, 1, 2, 3];
+  const yAxis = height * 0.52;
+  const sx = k => pad + ((k - (-5)) / (3 - (-5))) * (width - 2 * pad);
+
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // Region shading: leads (diagnostic) vs lags (effect).
+  svg.append("rect")
+    .attr("x", sx(-5) - 16).attr("y", yAxis - 30)
+    .attr("width", sx(-1) - sx(-5) + 16).attr("height", 60)
+    .attr("fill", "#990000").attr("fill-opacity", 0.05);
+  svg.append("rect")
+    .attr("x", sx(0) - 16).attr("y", yAxis - 30)
+    .attr("width", sx(3) - sx(0) + 32).attr("height", 60)
+    .attr("fill", "#3d5a6c").attr("fill-opacity", 0.06);
+
+  // The k-axis line.
+  svg.append("line")
+    .attr("x1", sx(-5) - 16).attr("y1", yAxis)
+    .attr("x2", sx(3) + 16).attr("y2", yAxis)
+    .attr("stroke", "#79766e").attr("stroke-width", 1.5);
+
+  // Adoption line between k = -1 and k = 0.
+  const xa = (sx(-1) + sx(0)) / 2;
+  svg.append("line")
+    .attr("x1", xa).attr("y1", yAxis - 34).attr("x2", xa).attr("y2", yAxis + 34)
+    .attr("stroke", "#1c1c1a").attr("stroke-width", 1.5)
+    .attr("stroke-dasharray", "4,4");
+  svg.append("text")
+    .attr("x", xa).attr("y", yAxis - 40).attr("text-anchor", "middle")
+    .attr("font-size", 10).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("adoption");
+
+  // Tick marks + k labels + role dots.
+  for (const k of ks) {
+    const x = sx(k);
+    const isRef = k === -1;
+    const isLead = k < -1;
+    const col = isRef ? "#79766e" : isLead ? "#990000" : "#3d5a6c";
+    if (isRef) {
+      svg.append("rect")
+        .attr("x", x - 6).attr("y", yAxis - 6).attr("width", 12).attr("height", 12)
+        .attr("rx", 3).attr("fill", "white").attr("stroke", col).attr("stroke-width", 2);
+    } else {
+      svg.append("circle")
+        .attr("cx", x).attr("cy", yAxis).attr("r", 5)
+        .attr("fill", col).attr("stroke", "white").attr("stroke-width", 1.5);
+    }
+    svg.append("text")
+      .attr("x", x).attr("y", yAxis + 24).attr("text-anchor", "middle")
+      .attr("font-size", 10).attr("fill", "#44443f")
+      .text(k);
+  }
+
+  // Family labels.
+  svg.append("text")
+    .attr("x", (sx(-5) + sx(-2)) / 2).attr("y", yAxis + 44).attr("text-anchor", "middle")
+    .attr("font-size", 10.5).attr("font-weight", 700).attr("fill", "#990000")
+    .text("leads (diagnostic)");
+  svg.append("text")
+    .attr("x", sx(-1)).attr("y", yAxis + 44).attr("text-anchor", "middle")
+    .attr("font-size", 9.5).attr("font-weight", 700).attr("fill", "#79766e")
+    .text("ref (β₋₁≡0)");
+  svg.append("text")
+    .attr("x", (sx(0) + sx(3)) / 2).attr("y", yAxis + 44).attr("text-anchor", "middle")
+    .attr("font-size", 10.5).attr("font-weight", 700).attr("fill", "#3d5a6c")
+    .text("lags (dynamic effect)");
+
+  // Header.
+  svg.append("text")
+    .attr("x", width / 2).attr("y", 18).attr("text-anchor", "middle")
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("Relative time  k = t − Eᵢ");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+diag_drawTimeline({ width: Math.min(620, width), height: 150 })
+```
+
+::: {.aside}
+<span style="color:#990000; font-weight:700;">Red</span> = lead periods ($k<-1$), the pre-treatment diagnostic. The hollow square at $k=-1$ is the omitted reference period, pinned to zero ($\beta_{-1}\equiv 0$). <span style="color:#3d5a6c; font-weight:700;">Slate</span> = lag periods ($k\ge 0$), the dynamic treatment effects. The dashed line is the adoption moment, falling between $k=-1$ and $k=0$.
+:::
+
+The reference period matters more than it looks. Because all coefficients are measured against $k=-1$, a $\beta_k$ is the *change* in the treated-vs-control gap between period $-1$ and period $k$. If you suspect *anticipation* --- patients or staff changing behavior in the year before the official launch --- then $k=-1$ is contaminated, and you should normalize against an earlier period (say $k=-2$) instead.
+
+::: {.glass-card .glass-card--warning}
+**The reference period is a modeling choice, not a fact of nature.** Two papers analyzing the same data can show event-study plots that look entirely different purely because they normalized to different baseline periods. Always state which period is omitted, plot the reference point explicitly (a zero at $k=-1$), and check that your conclusions are not an artifact of that choice. A "significant pre-trend" can sometimes be made to appear or vanish by re-baselining.
+:::
+
+
+## See It: The Event-Study Diagnostic and Honest-DiD Band
+
+The interactive below is the heart of this page. It simulates the Swedish fall-prevention event study and lets you do two things that mirror the real diagnostic workflow.
+
+First, with the **pre-trend slope** slider, you inject a genuine differential trend between treated and control regions --- the kind of slow divergence that parallel trends rules out. Watch the lead coefficients tilt and, eventually, light up as "significant." Second, the **Honest DiD** controls let you stop *assuming* parallel trends and instead *bound* the violation: you choose how large a post-treatment trend deviation you are willing to allow, expressed as a multiple $\bar{M}$ of the worst pre-trend deviation you actually observed, and the chart returns the **robust confidence set** for the post-treatment effect. As $\bar{M}$ grows, that interval widens; at the **breakdown value** $\bar{M}^\ast$ it first touches zero, and you can no longer claim significance.
+
+::: {.interactive-container}
+
+#### Event Study with Pre-Trend Injection and Robust Confidence Sets
+
+::: {.start-here}
+**Start here:** drag **Pre-trend slope** away from 0 to inject a parallel-trends violation and watch the lead dots tilt; then turn on the **robust band** and raise **M̄** to bound it. The full six-step tour is below the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof diag_preSlope = Inputs.range([-0.5, 0.5], {
+  value: 0,
+  step: 0.02,
+  label: "Pre-trend slope (per year)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof diag_trueEffect = Inputs.range([-3, 0], {
+  value: -1.5,
+  step: 0.1,
+  label: "True post-treatment effect"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof diag_honest = Inputs.toggle({
+  label: "Apply Honest-DiD robust band",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof diag_Mbar = Inputs.range([0, 3], {
+  value: 1,
+  step: 0.05,
+  label: "Allowed violation M̄ (× max pre-trend)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem;
+    color:#79766e; margin:-0.35rem 0 0.4rem 0;">
+  ${diag_honest
+    ? "M̄ is active: it sets how wide the robust band may grow."
+    : "Active only when the robust band is on — turn on “Apply Honest-DiD robust band” above."}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed design constants for the simulated event study ──
+// Relative-time grid: 4 leads (k = -5..-2), reference at -1, 4 lags (k = 0..3).
+diag_kGrid = [-5, -4, -3, -2, -1, 0, 1, 2, 3]
+
+// Standard errors for each event-time coefficient (rise with distance from
+// the reference period, as in real data — fewer effective comparisons).
+diag_seByK = new Map([
+  [-5, 0.55], [-4, 0.48], [-3, 0.42], [-2, 0.40],
+  [-1, 0.0],                                   // reference, not estimated
+  [0, 0.40], [1, 0.44], [2, 0.50], [3, 0.58]
+])
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Build the event-study coefficients ──
+// Leads carry only the injected differential trend (relative to k = -1).
+// Lags carry the true treatment effect PLUS the continuation of that trend
+// (a violation of parallel trends contaminates the post-period too).
+diag_coefs = diag_kGrid.map(k => {
+  const trendComponent = diag_preSlope * (k - (-1));   // linear in (k + 1)
+  let point;
+  if (k === -1) {
+    point = 0;                                  // reference period
+  } else if (k < -1) {
+    point = trendComponent;                     // pre: pure trend
+  } else {
+    point = diag_trueEffect + trendComponent;   // post: effect + trend
+  }
+  const se = diag_seByK.get(k);
+  return {
+    k,
+    estimate: point,
+    se,
+    lo: point - 1.96 * se,
+    hi: point + 1.96 * se,
+    sig: k !== -1 && Math.abs(point) > 1.96 * se,
+    period: k < 0 ? "Pre" : "Post"
+  };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Honest-DiD machinery (relative-magnitudes restriction) ──
+// 1. The "observed" maximal pre-trend deviation: the largest absolute lead
+//    coefficient. This is the empirical yardstick the method uses.
+diag_maxPre = d3.max(
+  diag_coefs.filter(d => d.k < -1),
+  d => Math.abs(d.estimate)
+)
+
+// 2. Pooled post-treatment effect (simple average of the lag coefficients)
+//    and its standard error (treat lags as independent for this teaching demo).
+diag_postCoefs = diag_coefs.filter(d => d.k >= 0)
+
+diag_postEffect = d3.mean(diag_postCoefs, d => d.estimate)
+
+diag_postSE = Math.sqrt(
+  d3.sum(diag_postCoefs, d => d.se * d.se)
+) / diag_postCoefs.length
+
+// 3. Original (parallel-trends-assumed) 95% CI for the post effect.
+diag_origCI = [
+  diag_postEffect - 1.96 * diag_postSE,
+  diag_postEffect + 1.96 * diag_postSE
+]
+
+// 4. Robust CI under the relative-magnitudes restriction: allow the
+//    post-treatment trend to deviate by up to M̄ × (max observed pre-trend).
+//    The identified set for the effect inflates by ± that allowance, then we
+//    add sampling uncertainty on top.
+diag_allowance = diag_Mbar * diag_maxPre
+
+diag_robustCI = [
+  diag_postEffect - diag_allowance - 1.96 * diag_postSE,
+  diag_postEffect + diag_allowance + 1.96 * diag_postSE
+]
+
+// 5. Breakdown value M̄*: the smallest M̄ at which the robust CI first
+//    includes zero (significance is lost). Solve |postEffect| = allowance + 1.96*SE.
+diag_breakdown = diag_maxPre > 1e-9
+  ? Math.max(0, (Math.abs(diag_postEffect) - 1.96 * diag_postSE) / diag_maxPre)
+  : Infinity
+```
+
+```{ojs}
+//| echo: false
+
+// ── The event-study plot ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 360,
+  marginLeft: 68,
+  marginTop: 28,
+  marginRight: 28,
+  marginBottom: 44,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: {
+    label: "Years relative to program adoption (k)",
+    domain: [-5.6, 3.6],
+    grid: true,
+    ticks: diag_kGrid
+  },
+  y: {
+    label: "Effect (admissions / 1,000, 75+)",
+    domain: [-6.5, 3.5],
+    grid: true
+  },
+  color: {
+    domain: ["Pre", "Post"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    Plot.ruleY([0], { stroke: "#79766e", strokeWidth: 1 }),
+    // Treatment onset marker (between k = -1 and k = 0)
+    Plot.ruleX([-0.5], { stroke: "#1c1c1a", strokeDasharray: "4,4", strokeWidth: 1.5 }),
+    // Adoption-line labels: three separately-anchored marks so the segments
+    // never overrun the right edge or overlap the tilted lead rules.
+    Plot.text([{ x: -1.3, y: 3.3, label: "pre ←" }], {
+      x: "x", y: "y", text: "label", fill: "#1c1c1a", fontSize: 10,
+      fontWeight: "bold", textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: -0.5, y: 3.3, label: "adoption" }], {
+      x: "x", y: "y", text: "label", fill: "#1c1c1a", fontSize: 10,
+      fontWeight: "bold", textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: 0.3, y: 3.3, label: "→ post" }], {
+      x: "x", y: "y", text: "label", fill: "#1c1c1a", fontSize: 10,
+      fontWeight: "bold", textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Honest-DiD robust band on the post-treatment region (drawn first, behind points).
+    // Plot.rect is the correct mark for an axis-aligned rectangle given all four bounds
+    // (rectY is for bar-like rects with an implicit baseline).
+    diag_honest ? Plot.rect([{
+      x1: -0.2, x2: 3.4, y1: diag_robustCI[0], y2: diag_robustCI[1]
+    }], {
+      x1: "x1", x2: "x2", y1: "y1", y2: "y2",
+      fill: "#3d5a6c", fillOpacity: 0.08, stroke: "#3d5a6c",
+      strokeOpacity: 0.4, strokeDasharray: "3,3"
+    }) : null,
+    diag_honest ? Plot.ruleY([diag_postEffect], {
+      stroke: "#3d5a6c", strokeWidth: 1.5, strokeDasharray: "2,2"
+    }) : null,
+    // 95% confidence intervals as vertical rules
+    Plot.ruleX(diag_coefs.filter(d => d.k !== -1), {
+      x: "k", y1: "lo", y2: "hi", stroke: "period", strokeWidth: 2
+    }),
+    // Point estimates
+    Plot.dot(diag_coefs.filter(d => d.k !== -1), {
+      x: "k", y: "estimate", fill: "period", r: 5,
+      stroke: "white", strokeWidth: 1.5,
+      title: d => `k = ${d.k}\nestimate = ${d.estimate.toFixed(2)}\n95% CI [${d.lo.toFixed(2)}, ${d.hi.toFixed(2)}]${d.sig ? "\nsignificant" : ""}`
+    }),
+    // Reference period marker at k = -1 (forced to zero)
+    Plot.dot([{ k: -1, y: 0 }], {
+      x: "k", y: "y", fill: "white", stroke: "#79766e", r: 5, strokeWidth: 2
+    }),
+    Plot.text([{ k: -1, y: 0, label: "ref" }], {
+      x: "k", y: "y", text: "label", fill: "#79766e", fontSize: 9, dy: -12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem;
+    color:#79766e; line-height:1.5; margin-top:0.4rem;">
+  <span style="color:#990000; font-weight:700;">Red</span> = pre-period leads (the diagnostic) ·
+  <span style="color:#3d5a6c; font-weight:700;">Slate</span> = post-period lags (the effect).
+  Hover any point for its estimate and 95% CI.
+  Pooled effect = average of the post (slate) dots; its CI assumes independent lags (teaching simplification).
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── Live diagnostic readout ──
+{
+  const anyLeadSig = diag_coefs.some(d => d.k < -1 && d.sig);
+  const robustExcludesZero = diag_robustCI[0] > 0 || diag_robustCI[1] < 0;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
+  const card = (label, value, color, bg) => html`<div style="
+      text-align: center; min-height: 4.4rem;
+      display: flex; flex-direction: column; justify-content: center; gap: 0.25rem;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem;
+      background: ${bg}; border: 1px solid ${color}33;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.05rem;
+        font-weight:700; color:${color}; white-space:nowrap;">${value}</div>
+  </div>`;
+
+  const preCard = card(
+    "Pre-trend test",
+    anyLeadSig ? "FAILS" : "passes",
+    anyLeadSig ? "#990000" : "#2e6f40",
+    anyLeadSig ? "rgba(153,0,0,0.06)" : "rgba(46,111,64,0.06)"
+  );
+  const effCard = card("Pooled effect", fmt(diag_postEffect), "#3d5a6c",
+    "rgba(61,90,108,0.06)");
+  const ciCard = card(
+    diag_honest ? "Robust 95% set" : "Naïve 95% CI",
+    diag_honest
+      ? `[${diag_robustCI[0].toFixed(2)}, ${diag_robustCI[1].toFixed(2)}]`
+      : `[${diag_origCI[0].toFixed(2)}, ${diag_origCI[1].toFixed(2)}]`,
+    diag_honest
+      ? (robustExcludesZero ? "#2e6f40" : "#990000")
+      : "#1c1c1a",
+    diag_honest
+      ? (robustExcludesZero ? "rgba(46,111,64,0.06)" : "rgba(153,0,0,0.06)")
+      : "rgba(28,28,26,0.03)"
+  );
+  const bdCard = card(
+    "Breakdown M̄*",
+    diag_breakdown === Infinity ? "∞" : diag_breakdown.toFixed(2),
+    "#9c7a33", "rgba(156,122,51,0.06)"
+  );
+
+  const note = diag_breakdown === Infinity
+    ? html`<div style="font-family:'Inter',sans-serif; font-size:0.74rem;
+        color:#79766e; margin-top:0.4rem;">
+        M̄* = ∞: no measurable pre-trend yet → nothing to bound against (try injecting a slope).
+      </div>`
+    : html`<div style="font-family:'Inter',sans-serif; font-size:0.74rem;
+        color:#79766e; margin-top:0.4rem;">
+        M̄ = how many times the worst pre-trend you let the post-trend deviate;
+        M̄* = the largest such allowance under which the effect stays significant
+        (teaching-grade approximation of Rambachan–Roth).
+      </div>`;
+
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${preCard}${effCard}${ciCard}${bdCard}
+    </div>
+    ${note}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Additive enrichment: a small "forest" comparison of the naïve vs robust
+// interval against zero, so the honesty PRICE (extra width) is visible directly,
+// not just as bracket text. Reads existing mutables only; defines nothing new
+// that the original cells depend on. ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 132,
+  marginLeft: 132,
+  marginRight: 28,
+  marginTop: 10,
+  marginBottom: 34,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: {
+    label: "Pooled post-treatment effect (admissions / 1,000)",
+    grid: true,
+    domain: [
+      Math.min(diag_honest ? diag_robustCI[0] : diag_origCI[0], diag_origCI[0]) - 0.6,
+      Math.max(diag_honest ? diag_robustCI[1] : diag_origCI[1], diag_origCI[1], 0.6)
+    ]
+  },
+  y: { domain: ["Robust 95% set", "Naïve 95% CI"], label: null },
+  marks: [
+    Plot.ruleX([0], { stroke: "#1c1c1a", strokeDasharray: "4,4", strokeWidth: 1.2 }),
+    // Naïve interval (assumes exact parallel trends).
+    Plot.ruleY([{ y: "Naïve 95% CI", lo: diag_origCI[0], hi: diag_origCI[1] }], {
+      y: "y", x1: "lo", x2: "hi", stroke: "#79766e", strokeWidth: 6, strokeOpacity: 0.55
+    }),
+    // Robust interval (only meaningfully wider when Honest-DiD is on).
+    Plot.ruleY([{
+      y: "Robust 95% set",
+      lo: diag_honest ? diag_robustCI[0] : diag_origCI[0],
+      hi: diag_honest ? diag_robustCI[1] : diag_origCI[1]
+    }], {
+      y: "y", x1: "lo", x2: "hi",
+      stroke: (diag_honest && (diag_robustCI[0] > 0 || diag_robustCI[1] < 0)) ? "#2e6f40"
+        : diag_honest ? "#b3000b" : "#3d5a6c",
+      strokeWidth: 6, strokeOpacity: 0.75
+    }),
+    Plot.dot([
+      { y: "Naïve 95% CI", x: diag_postEffect },
+      { y: "Robust 95% set", x: diag_postEffect }
+    ], { y: "y", x: "x", fill: "#1c1c1a", r: 4, stroke: "white", strokeWidth: 1.5 }),
+    Plot.text([{ x: 0, y: "Robust 95% set", label: "0" }], {
+      x: "x", y: "y", text: "label", fill: "#1c1c1a", fontSize: 10, dy: -22,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Dynamic one-line verdict revealing the WHY behind the two intervals.
+{
+  const robustExcludesZero = diag_robustCI[0] > 0 || diag_robustCI[1] < 0;
+  let text, color, bg, border;
+  if (!diag_honest) {
+    text = "Naïve interval shown for both rows. Turn on the robust band to see how much it must widen once you stop assuming the pre-trend is exactly zero.";
+    color = "#79766e"; bg = "#f6f5f1"; border = "#79766e";
+  } else if (diag_maxPre < 1e-9) {
+    text = "With a flat pre-trend the robust set equals the naïve one — there is no observed violation to bound against, so honesty costs nothing here.";
+    color = "#2e6f40"; bg = "rgba(46,111,64,0.06)"; border = "#2e6f40";
+  } else if (robustExcludesZero) {
+    text = `Robust set still excludes zero at M̄ = ${diag_Mbar.toFixed(2)}: the conclusion survives a violation this large. The extra width over the naïve bar is the honest price of admitting the assumption could fail.`;
+    color = "#2e6f40"; bg = "rgba(46,111,64,0.06)"; border = "#2e6f40";
+  } else {
+    text = `Robust set now touches zero at M̄ = ${diag_Mbar.toFixed(2)} (breakdown M̄* ≈ ${diag_breakdown === Infinity ? "∞" : diag_breakdown.toFixed(2)}): once you allow this much trend violation, significance is gone.`;
+    color = "#b3000b"; bg = "rgba(179,0,11,0.06)"; border = "#b3000b";
+  }
+  return html`<div style="font-family:'Inter',sans-serif; font-size:0.8rem;
+      line-height:1.45; font-weight:600; color:${color}; background:${bg};
+      border-left:3px solid ${border}; border-radius:0 0.35rem 0.35rem 0;
+      padding:0.55rem 0.8rem; margin-top:0.5rem;">${text}</div>`;
+}
+```
+
+:::
+
+### How to Read the Event-Study Plot
+
+Work through these steps in order; each isolates one idea.
+
+**Step 1: Read a clean event study.** Start at the defaults --- pre-trend slope $= 0$, true effect $= -1.5$, Honest-DiD *off*. The dark-red dots to the left of the dashed adoption line are the **lead** coefficients; they sit on the zero line (this is a noiseless teaching simulation, so a zero pre-trend slope places every lead exactly at zero), and their 95% confidence rules all cross the gray zero line. That is what a *passing* pre-trend looks like: no detectable divergence before the program. The slate dots to the right are the **lag** coefficients --- the dynamic effects --- sitting near $-1.5$, indicating fewer fall admissions after adoption. The hollow dot at $k=-1$ is the reference period, pinned to zero by construction. *(Now drag the **True post-treatment effect** slider toward $0$ and back to $-3$: the slate lag dots and the pooled-effect card slide with it, while the red leads stay put --- this slider sets the genuine effect the diagnostics are trying to recover.)*
+
+**Step 2: Inject a pre-trend and watch the diagnostic fail.** Drag the **pre-trend slope** up to about $+0.4$. Now the lead coefficients tilt downward as you move left (they are measured relative to $k=-1$), their magnitudes grow, and the two leftmost ones ($k=-5$ and $k=-4$) turn significant --- their confidence rules no longer cross zero. The "Pre-trend test" card flips from *passes* to **FAILS**. Crucially, notice the lag coefficients moved too: a real differential trend does not politely stop at adoption, it keeps contaminating the post-period. The estimate (the pooled post-effect card) drifts upward toward zero --- it is now biased.
+
+**Step 3: Confront the power problem.** Set the slope to a *small* value like $+0.06$. The leads are visibly tilted --- there genuinely is a violation --- yet the confidence rules still cross zero, so the test *passes*. This is the central lesson: a pre-trend test that passes is **weak evidence**. Small but real violations hide inside wide confidence bands, and a small violation in the pre-period can still imply a large bias in the post-period.
+
+**Step 4: Switch to Honest DiD.** Set a small pre-trend slope --- say $+0.10$ --- then toggle **Apply Honest-DiD robust band** *on*. A shaded slate band appears over the post-treatment region: the **robust confidence set** for the pooled effect. With $\bar{M}=1$ it is wider than the naïve interval, because we are no longer assuming the pre-trend is exactly zero --- we allow the post-treatment trend to deviate by as much as the largest deviation we saw before treatment. (Note the band's extra width is $\pm\,\bar{M}$ times that *observed* pre-trend deviation. With the slope at exactly $0$ every lead is pinned to zero, so the observed deviation is zero, the allowance is $\bar{M}\times 0 = 0$, and the robust band coincides with the naïve one no matter how large $\bar{M}$ is --- that is why the breakdown card reads $\infty$. Honest DiD only "bites" once there is a pre-trend to measure against.)
+
+**Step 5: Find the breakdown value.** Keeping the small slope from Step 4, slowly raise $\bar{M}$. The robust band widens symmetrically. At some point its upper edge crosses zero --- the "Robust 95% set" card turns red and the result is no longer significant. The value of $\bar{M}$ where this happens is the **breakdown value** $\bar{M}^\ast$, reported in the ochre card. Read it aloud as: *"the conclusion that the program reduced fall admissions survives any trend violation up to $\bar{M}^\ast$ times the worst pre-trend we observed."* A large $\bar{M}^\ast$ (say above 2) is reassuring; a breakdown below 1 means the result cannot even withstand a violation the *size of what you already see in the pre-period*.
+
+**Step 6: Combine the two.** Inject a modest slope *and* turn on Honest DiD. You will see the post-effect shift (bias) and the breakdown value collapse. The honest framework makes visible exactly what the pre-trend test hides: when there is a trend, the result is fragile.
+
+
+## Pre-Trend Tests and Their Fundamental Limitation
+
+The natural temptation is to formalize Step 1 into a hypothesis test: jointly test $H_0: \beta_k = 0$ for all leads $k < -1$ with an F-test, and if you fail to reject, declare parallel trends "satisfied." Almost every applied DiD paper does some version of this.
+
+The logic is seductive but backwards. Recall from the [Hypothesis Testing](../03-statistical-foundations/hypothesis-testing.qmd) page that *failing to reject a null is not evidence for the null* --- absence of evidence is not evidence of absence. A pre-trend test inherits this asymmetry in its most damaging form.
+
+::: {.glass-card .glass-card--warning}
+**Pre-trend tests have low power, and the way they fail is dangerous.**
+
+1. **Low power.** Pre-treatment coefficients are estimated on the same noisy data as everything else. A real but modest differential trend will frequently produce confidence bands that still cover zero. You "pass" the test even though parallel trends is violated.
+
+2. **Pre-testing distorts the distribution.** Conditioning your analysis on "the pre-trend test passed" selects for samples where, by chance, the leads happened to look flat. Roth (2022) shows this *exacerbates* bias in the surviving estimates and distorts their confidence-interval coverage --- the studies that clear the pre-test are systematically the ones where the noise happened to mask the trend.
+
+3. **A flat pre-trend does not imply a flat counterfactual.** Even if the trends truly were parallel before treatment, nothing guarantees they would have *remained* parallel afterward. The pre-period is informative, not decisive.
+:::
+
+This is why the field has moved from *testing* parallel trends to *bounding* its failure. We do not pretend the assumption holds exactly; we ask how robust the conclusion is to the assumption failing.
+
+
+## Honest DiD: Bounding the Violation
+
+Rambachan and Roth (2023) propose a reframing that is now the gold standard for credible DiD. Instead of the knife-edge assumption "the post-treatment trend deviation is exactly zero," posit that it lies in a **set** $\Delta$ of plausible violations, and report a confidence interval that is valid for *every* violation in that set.
+
+Let $\delta_k$ denote the unobserved difference, at relative time $k$, between the treated group's *actual* counterfactual trend and the parallel-trends benchmark. Standard DiD assumes $\delta_k = 0$ for all post-periods. The lead coefficients are noisy estimates of $\delta_k$ for the *pre*-periods --- and the key idea is to use the pre-period $\delta_k$'s to discipline the post-period ones.
+
+::: {.glass-card .glass-card--assumption}
+**The relative-magnitudes restriction** $\Delta^{RM}(\bar{M})$.
+
+The magnitude of any post-treatment violation is bounded by $\bar{M}$ times the largest violation observed in the pre-treatment periods:
+
+$$
+|\delta_k| \;\le\; \bar{M} \cdot \max_{s < -1} |\delta_s| \qquad \text{for all post-periods } k \ge 0
+$$
+
+**How to read this.** "However the parallel-trends assumption fails after treatment, it cannot fail by more than $\bar{M}$ times the worst it failed *before* treatment." Setting $\bar{M}=1$ says: *the post-treatment deviation is no larger than the biggest pre-treatment deviation.* Setting $\bar{M}=2$ permits a violation twice as large. As $\bar{M} \to 0$ the restriction collapses to standard DiD (exact parallel trends).
+
+A companion restriction, **smoothness** $\Delta^{SD}(M)$, instead bounds how much the slope of the differential trend can *change* between consecutive periods by $M$ --- ruling out sharp breaks at exactly the moment of treatment. Both deliver the same deliverable: a robust confidence set.
+:::
+
+The picture below shows how the robust interval is *assembled* from three pieces, holding the numbers fixed so you can read the mechanic apart from the live tool. Start from the point estimate, widen by the **identified set** ($\pm\bar{M}\cdot\widehat{\Delta}_{\max}$ --- the residual ambiguity the assumption alone cannot resolve, even with infinite data), then add **sampling uncertainty** ($\pm 1.96\,\widehat{\text{se}}$). The breakdown value $\bar{M}^\ast$ is exactly the $\bar{M}$ at which the growing interval first touches the zero line.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed illustrative numbers (match Exercise 1) so the schematic is stable and
+// independent of the live widget: point estimate, max pre-trend, pooled SE.
+diag_schemBeta = -1.8
+diag_schemDmax = 0.40
+diag_schemSE   = 0.50
+diag_schemRows = [0, 1, 2].map(M => {
+  const idLo = diag_schemBeta - M * diag_schemDmax;
+  const idHi = diag_schemBeta + M * diag_schemDmax;
+  const lo = idLo - 1.96 * diag_schemSE;
+  const hi = idHi + 1.96 * diag_schemSE;
+  return { M, label: `M̄ = ${M}`, idLo, idHi, lo, hi, excludesZero: lo > 0 || hi < 0 };
+})
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 190,
+  marginLeft: 72,
+  marginRight: 30,
+  marginTop: 16,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Effect (admissions / 1,000, 75+)", domain: [-3.6, 1.0], grid: true },
+  y: { domain: ["M̄ = 0", "M̄ = 1", "M̄ = 2"], label: null, reverse: true },
+  marks: [
+    Plot.ruleX([0], { stroke: "#1c1c1a", strokeDasharray: "4,4", strokeWidth: 1.2 }),
+    // Sampling-uncertainty span (full robust interval), thin.
+    Plot.ruleY(diag_schemRows, {
+      y: "label", x1: "lo", x2: "hi", stroke: "#79766e", strokeWidth: 4, strokeOpacity: 0.45
+    }),
+    // Identified set (assumption-only ambiguity), thick + colored by significance.
+    Plot.ruleY(diag_schemRows, {
+      y: "label", x1: "idLo", x2: "idHi",
+      stroke: d => d.excludesZero ? "#2e6f40" : "#b3000b",
+      strokeWidth: 9, strokeOpacity: 0.85
+    }),
+    Plot.dot(diag_schemRows, {
+      y: "label", x: () => diag_schemBeta, fill: "#1c1c1a", r: 4,
+      stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text([{ x: 0, y: "M̄ = 0", label: "zero" }], {
+      x: "x", y: "y", text: "label", fill: "#1c1c1a", fontSize: 9, dy: -20,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Fixed example ($\hat\beta_{\text{post}}=-1.8$, $\widehat{\Delta}_{\max}=0.40$, $\widehat{\text{se}}=0.50$, matching Exercise 1). The thick bar is the **identified set** $\pm\bar{M}\cdot\widehat{\Delta}_{\max}$; the thin extension adds $\pm 1.96\,\widehat{\text{se}}$ of sampling uncertainty. As $\bar{M}$ grows the interval marches toward zero; here it still clears zero at $\bar{M}=2$ (<span style="color:#2e6f40; font-weight:700;">green</span>) — the breakdown value is $\bar{M}^\ast\approx 2.05$.
+:::
+
+The payoff is the **robust confidence set**: the set of effect values consistent with the data *and* with at least one violation $\delta \in \Delta(\bar{M})$. It is wider than the naïve interval --- that width is the honest price of admitting the assumption might fail --- and it is reported alongside the single most useful summary statistic in this entire literature:
+
+::: {.glass-card .glass-card--insight}
+**The breakdown value** $\bar{M}^\ast$ is the largest $\bar{M}$ for which the robust confidence set still excludes zero. It converts an untestable assumption into a quantitative sensitivity statement:
+
+> *"Our finding that the fall-prevention program reduced admissions is significant at the 5% level for any violation of parallel trends up to $\bar{M}^\ast$ times the largest pre-trend deviation we observe."*
+
+Instead of asserting parallel trends, you report exactly how much violation your conclusion can absorb before it dies. A referee can then judge whether a violation of size $\bar{M}^\ast$ is plausible in *this* application --- a substantive judgment, not a statistical ritual.
+:::
+
+
+## Placebo and Falsification Tests
+
+Honest DiD bounds the assumption; placebo tests attack it from a different angle, by checking whether your design produces "effects" where there should be none. A design that finds effects in places it shouldn't is broken.
+
+::: {.glass-card .glass-card--definition}
+**Three classic falsification tests.**
+
+1. **Fake treatment dates.** Re-assign a *placebo* adoption year to the treated regions, *before* their real adoption (e.g., pretend the program started in 2014 instead of 2017), and re-run the analysis on pre-treatment data only. A non-zero "effect" reveals a pre-trend the event study may have missed.
+
+2. **Untreated (placebo) outcomes.** Run the exact same DiD on an outcome the program *cannot* plausibly affect --- say, fall admissions among *15--40 year-olds*, or dental-visit rates. A significant effect signals that something other than the program (a regional shock, differential reporting) is driving your result.
+
+3. **Never-treated as fake-treated.** Among the control regions, pretend some were treated and estimate a placebo effect. The distribution of these placebo estimates is a permutation benchmark: your real estimate should sit in its tail.
+:::
+
+The unifying idea is the **breakdown of identification**: each placebo turns an untestable assumption into a testable implication. A placebo that *should* be zero but isn't is direct evidence that your comparison is contaminated --- and unlike the pre-trend test, a *failed* placebo is strong evidence (rejecting the null here genuinely indicts the design).
+
+The figure below makes Test 3 (the never-treated permutation) tangible. Each grey bar is a *placebo* estimate from pretending an untreated region was treated; together they form the distribution of "effects under the null." The real estimate (red line) should sit far out in the tail --- if it is unremarkable against the placebos, the design manufactures effects of comparable size by chance.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static permutation/placebo distribution (self-contained; its own RNG, shares
+// nothing with the event-study widget). Grey histogram = placebo estimates from
+// never-treated permutations; the real estimate sits in the left tail.
+diag_placeboRng = (function () {
+  let a = 424242;
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+})()
+
+diag_placeboDraws = {
+  const randn = () => {
+    const u1 = diag_placeboRng(), u2 = diag_placeboRng();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  };
+  const draws = [];
+  for (let i = 0; i < 600; i++) draws.push({ effect: randn() * 0.62 });
+  return draws;
+}
+
+diag_placeboReal = -1.5   // the genuine estimate, far in the left tail
+diag_placeboP = d3.mean(diag_placeboDraws, d => Math.abs(d.effect) >= Math.abs(diag_placeboReal))
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 260,
+  marginLeft: 62,
+  marginRight: 28,
+  marginBottom: 46,
+  marginTop: 18,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Placebo estimate (never-treated pretended treated)", domain: [-2.0, 2.0], grid: true },
+  y: { label: "Count of placebo runs", grid: true },
+  marks: [
+    Plot.rectY(diag_placeboDraws, Plot.binX({ y: "count" }, {
+      x: "effect", fill: "#79766e", fillOpacity: 0.45, thresholds: 28
+    })),
+    Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1 }),
+    Plot.ruleX([diag_placeboReal], { stroke: "#990000", strokeWidth: 2.5 }),
+    Plot.text([{ x: diag_placeboReal, label: "real estimate" }], {
+      x: "x", text: "label", fill: "#990000", fontSize: 11, fontWeight: 700,
+      dy: 10, dx: 4, textAnchor: "start", frameAnchor: "top",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e;
+    line-height:1.5; margin-top:0.4rem;">
+  <span style="color:#79766e; font-weight:700;">Grey</span> = distribution of placebo
+  estimates from never-treated permutations (centred on zero, as it should be under the null).
+  <span style="color:#990000; font-weight:700;">Red</span> = the real estimate (−1.5), in the
+  extreme left tail. Roughly <strong>${diag_placeboP.toFixed(3)}</strong> of placebos are as
+  extreme as the real estimate — a randomization-inference p-value well below 0.05, supporting
+  the design.
+</div>`
+```
+
+
+## Specification Sensitivity
+
+The last layer of diagnostics asks whether the headline number is an artifact of arbitrary modeling choices. A credible result is *robust*; a fragile one moves around as you make defensible alternative decisions.
+
+- **Levels vs. logs.** Modeling fall admissions in levels assumes a *constant* additive effect (measured in **percentage points** --- an absolute change in the rate); logs assume a *proportional* effect (a **percent** change relative to baseline --- a very different quantity from percentage points). These are different parallel-trends assumptions --- trends can be parallel in levels but not in logs, or vice versa (Roth & Sant'Anna 2023). If the sign or significance flips between them, say so, and justify which scale the assumption is more credible on.
+
+- **Control-group choice.** Never-treated regions, not-yet-treated regions, or a matched subset? Each implies a different counterfactual. Report the estimate under each; convergent answers build credibility.
+
+- **Covariate sets.** Adjusting for time-varying region characteristics (age structure, *läkare* per capita, baseline morbidity) can relax parallel trends to *conditional* parallel trends --- but adding "bad controls" affected by treatment reintroduces bias. Show the estimate with and without the adjustment set.
+
+- **Clustering and inference.** With few treated clusters, conventional cluster-robust standard errors understate uncertainty. Wild-cluster bootstrap or randomization inference is the honest default.
+
+::: {.glass-card .glass-card--insight}
+A **specification curve** --- plotting the estimate across every reasonable combination of these choices --- is the most transparent way to report sensitivity. If the bulk of specifications cluster on one side of zero, your result is robust. If they straddle zero, the headline number was a choice, not a finding.
+:::
+
+Here is what such a curve looks like for the fall-prevention program. Each dot is one specification (a level/log × control-group × covariate × clustering combination), sorted from most negative to least, with its 95% interval. Toggle between a **robust** result (the whole cloud sits below zero) and a **fragile** one (it straddles zero) to see how the same artifact reads in the two cases.
+
+```{ojs}
+//| echo: false
+
+viewof diag_specCase = Inputs.radio(["Robust result", "Fragile result"], {
+  label: "Specification curve",
+  value: "Robust result"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static specification curve (self-contained RNG). 24 specifications, sorted by
+// estimate; "robust" sits below zero, "fragile" straddles it. No shared state.
+diag_specRng = (function () {
+  let a = 909090;
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+})()
+
+diag_specData = {
+  const randn = () => {
+    const u1 = diag_specRng(), u2 = diag_specRng();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  };
+  const robust = [], fragile = [];
+  for (let i = 0; i < 24; i++) {
+    const se = 0.45 + 0.2 * diag_specRng();
+    robust.push({ est: -1.5 + randn() * 0.35, se });
+    fragile.push({ est: -0.4 + randn() * 0.9, se });
+  }
+  const tag = (arr) => arr
+    .sort((a, b) => a.est - b.est)
+    .map((d, i) => ({
+      rank: i + 1, est: d.est,
+      lo: d.est - 1.96 * d.se, hi: d.est + 1.96 * d.se,
+      sign: d.est < 0 ? "neg" : "pos"
+    }));
+  return { "Robust result": tag(robust), "Fragile result": tag(fragile) };
+}
+
+diag_specRows = diag_specData[diag_specCase]
+diag_specShareNeg = d3.mean(diag_specRows, d => d.est < 0 ? 1 : 0)
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 290,
+  marginLeft: 62,
+  marginRight: 28,
+  marginBottom: 46,
+  marginTop: 16,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Specification (sorted by estimate)", ticks: [] },
+  y: { label: "Estimated effect (admissions / 1,000)", grid: true, domain: [-3.2, 2.2] },
+  color: { domain: ["neg", "pos"], range: ["#3d5a6c", "#990000"] },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a", strokeDasharray: "4,4", strokeWidth: 1.2 }),
+    Plot.ruleX(diag_specRows, {
+      x: "rank", y1: "lo", y2: "hi", stroke: "sign", strokeWidth: 1.5, strokeOpacity: 0.45
+    }),
+    Plot.dot(diag_specRows, {
+      x: "rank", y: "est", fill: "sign", r: 4, stroke: "white", strokeWidth: 1
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e;
+    line-height:1.5; margin-top:0.4rem;">
+  ${diag_specCase === "Robust result"
+    ? `All 24 specifications land below zero (${(diag_specShareNeg * 100).toFixed(0)}% negative): wherever you reasonably move the modeling dials, the program still reduces fall admissions. The headline number is a finding, not a choice.`
+    : `Specifications straddle zero (only ${(diag_specShareNeg * 100).toFixed(0)}% negative): the sign of the "effect" depends on which defensible choices you make. The headline number was a choice, not a finding — and that fragility is itself the result to report.`}
+</div>`
+```
+
+The same logic underlies the **levels-vs-logs** flip from Exercise 4. Parallel trends is *not scale-invariant*: two groups can move together in absolute admissions per 1,000 (levels) yet diverge in proportional terms (logs). The two mini-panels below show exactly that --- identical raw data, parallel on the left, fanning apart on the right.
+
+```{ojs}
+//| echo: false
+
+// Two-panel static figure: same treated/control series, parallel in levels but
+// diverging in logs. Built with d3 so both panels share a frame; pure of d3.
+diag_drawLevelsLogs = (function () {
+  const years = [2013, 2014, 2015, 2016, 2017];
+  // Control has a HIGH baseline, treated a LOW baseline; both add the SAME
+  // absolute increment each year → parallel in levels, but the equal absolute
+  // step is a LARGER proportional step for the low-baseline treated → diverge in logs.
+  const ctrlLevel = years.map((y, i) => 40 + 2 * i);
+  const trtLevel  = years.map((y, i) => 10 + 2 * i);
+
+  const w = Math.min(640, width);
+  const h = 230;
+  const panelW = (w - 20) / 2;
+  const padL = 42, padR = 12, padT = 26, padB = 30;
+
+  const svg = d3.create("svg")
+    .attr("width", w).attr("height", h)
+    .attr("viewBox", `0 0 ${w} ${h}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const panel = (ox, title, ctrl, trt, yLo, yHi, fmt) => {
+    const sx = i => ox + padL + (i / (years.length - 1)) * (panelW - padL - padR);
+    const sy = v => padT + (1 - (v - yLo) / (yHi - yLo)) * (h - padT - padB);
+    // Title.
+    svg.append("text").attr("x", ox + panelW / 2).attr("y", 16)
+      .attr("text-anchor", "middle").attr("font-size", 11).attr("font-weight", 700)
+      .attr("fill", "#1c1c1a").text(title);
+    // Axes (simple baseline + left rule).
+    svg.append("line").attr("x1", ox + padL).attr("y1", padT)
+      .attr("x2", ox + padL).attr("y2", h - padB).attr("stroke", "#e6e3db");
+    svg.append("line").attr("x1", ox + padL).attr("y1", h - padB)
+      .attr("x2", ox + panelW - padR).attr("y2", h - padB).attr("stroke", "#e6e3db");
+    const line = (vals, col) => {
+      const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${sx(i)},${sy(v)}`).join("");
+      svg.append("path").attr("d", d).attr("fill", "none")
+        .attr("stroke", col).attr("stroke-width", 2.5);
+      vals.forEach((v, i) => svg.append("circle").attr("cx", sx(i)).attr("cy", sy(v))
+        .attr("r", 3).attr("fill", col));
+    };
+    line(ctrl, "#79766e");
+    line(trt, "#3d5a6c");
+    // y endpoints labels.
+    svg.append("text").attr("x", ox + padL - 4).attr("y", sy(yHi) + 4)
+      .attr("text-anchor", "end").attr("font-size", 8.5).attr("fill", "#79766e").text(fmt(yHi));
+    svg.append("text").attr("x", ox + padL - 4).attr("y", sy(yLo))
+      .attr("text-anchor", "end").attr("font-size", 8.5).attr("fill", "#79766e").text(fmt(yLo));
+  };
+
+  panel(0, "Levels — parallel", ctrlLevel, trtLevel, 6, 50, v => v.toFixed(0));
+  panel(panelW + 20, "Logs — diverging",
+    ctrlLevel.map(Math.log), trtLevel.map(Math.log), 2.0, 4.0, v => v.toFixed(1));
+
+  // Shared legend.
+  svg.append("text").attr("x", padL + 6).attr("y", h - 6)
+    .attr("font-size", 9).attr("font-weight", 700).attr("fill", "#79766e").text("● control");
+  svg.append("text").attr("x", padL + 70).attr("y", h - 6)
+    .attr("font-size", 9).attr("font-weight", 700).attr("fill", "#3d5a6c").text("● treated");
+
+  return svg.node();
+})()
+```
+
+::: {.aside}
+Both groups gain the **same** number of admissions per 1,000 each year, so in **levels** (left) the gap is constant --- trends are parallel. But the treated group starts from a lower baseline, so that identical absolute step is a *larger* proportional step: in **logs** (right) the lines fan apart --- trends are *not* parallel. Whichever scale you assume parallel trends on is a substantive choice, not a neutral one.
+:::
+
+
+<details>
+<summary>Math Details: How the Robust Confidence Set Is Formed</summary>
+<div class="details-content">
+
+### From the assumption to the interval
+
+Write the vector of event-study coefficients as $\hat{\beta} = (\hat{\beta}_{\text{pre}}, \hat{\beta}_{\text{post}})$ with $\hat{\beta} \sim \mathcal{N}(\beta, \Sigma)$, where $\Sigma$ is the estimated variance-covariance matrix from the regression. The post-treatment coefficients decompose as
+
+$$
+\beta_{\text{post}} = \underbrace{\tau}_{\text{causal effect}} + \underbrace{\delta_{\text{post}}}_{\text{trend violation}},
+$$
+
+and the pre-treatment coefficients are pure violation, $\beta_{\text{pre}} = \delta_{\text{pre}}$. **Read this as:** "what we estimate after treatment is the true effect plus whatever parallel-trends violation persists; what we estimate before treatment is the violation alone, with no causal effect mixed in." Standard DiD sets $\delta_{\text{post}} = 0$ and reads $\tau$ straight off $\hat{\beta}_{\text{post}}$. Honest DiD refuses to do that.
+
+### The identified set
+
+Fix the restriction $\delta \in \Delta(\bar{M})$. For the relative-magnitudes restriction with a single pooled post-effect, $\Delta^{RM}(\bar{M})$ says $|\delta_{\text{post}}| \le \bar{M}\,\max_{s}|\delta_{s,\text{pre}}|$. Because $\tau = \beta_{\text{post}} - \delta_{\text{post}}$, the set of effect values consistent with a given $\delta_{\text{pre}}$ is
+
+$$
+\mathcal{I}(\bar{M}) = \Big[\, \beta_{\text{post}} - \bar{M}\,\textstyle\max_s|\delta_{s,\text{pre}}|,\;\; \beta_{\text{post}} + \bar{M}\,\max_s|\delta_{s,\text{pre}}| \,\Big].
+$$
+
+**Read this as:** "the true effect could be anywhere within $\pm \bar{M}$ times the worst pre-trend of the point estimate." This is the *identified set* --- the residual ambiguity that remains even with infinite data, because the assumption alone does not pin $\tau$ down.
+
+### Adding sampling uncertainty
+
+We do not observe $\beta$; we observe $\hat\beta$ with sampling error. The robust confidence set inflates the identified set to account for it. In the simple pooled case this is approximately
+
+$$
+\text{CI}_{\text{robust}} = \Big[\, \hat{\beta}_{\text{post}} - \bar{M}\widehat{\Delta}_{\max} - z_{0.975}\,\widehat{\text{se}},\;\; \hat{\beta}_{\text{post}} + \bar{M}\widehat{\Delta}_{\max} + z_{0.975}\,\widehat{\text{se}} \,\Big],
+$$
+
+where $\widehat{\Delta}_{\max} = \max_s|\hat\beta_{s,\text{pre}}|$ is the largest observed lead and $\widehat{\text{se}}$ is the standard error of the pooled post-effect. (Rambachan and Roth construct this rigorously via *moment inequalities* --- confidence sets built from "$\le$"/"$\ge$" restrictions on parameters rather than the usual equalities --- and the fixed-length confidence intervals of Armstrong--Kolesár; the additive form here is the teaching-grade approximation the interactive uses.)
+
+### Solving for the breakdown value
+
+The robust CI excludes zero as long as its bound nearest zero stays on the same side. For a negative effect ($\hat\beta_{\text{post}} < 0$) significance is lost when the *upper* bound reaches zero:
+
+$$
+\hat{\beta}_{\text{post}} + \bar{M}^\ast \widehat{\Delta}_{\max} + z_{0.975}\,\widehat{\text{se}} = 0
+\;\;\Longrightarrow\;\;
+\bar{M}^\ast = \frac{|\hat{\beta}_{\text{post}}| - z_{0.975}\,\widehat{\text{se}}}{\widehat{\Delta}_{\max}}.
+$$
+
+**Read this as:** "the breakdown value is how much of the point estimate survives after subtracting sampling uncertainty, expressed in units of the worst observed pre-trend." If $|\hat\beta_{\text{post}}| < z_{0.975}\widehat{\text{se}}$ the estimate was not even significant under exact parallel trends, so $\bar{M}^\ast = 0$. If $\widehat{\Delta}_{\max} \to 0$ (perfectly flat pre-trends) the breakdown value diverges --- the result tolerates arbitrarily large violations because the data give no reason to expect any.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+The R and Python blocks below simulate the fall-prevention panel (12 treated regions, 9 never-treated, 9 years), estimate the event study, and then form the Honest-DiD robust confidence set and breakdown value.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(fixest)
+library(HonestDiD)
+library(dplyr)
+
+set.seed(2017)
+
+# --- Simulate a regional panel: 21 regioner x 9 years (2013-2021) ---
+n_treated <- 12; n_control <- 9; years <- 2013:2021; adopt <- 2017
+regions <- tibble(
+  region   = 1:(n_treated + n_control),
+  treated  = c(rep(1, n_treated), rep(0, n_control)),
+  alpha    = rnorm(n_treated + n_control, 20, 3)   # region fixed effect
+)
+
+panel <- tidyr::expand_grid(region = regions$region, year = years) |>
+  left_join(regions, by = "region") |>
+  mutate(
+    rel_time = ifelse(treated == 1, year - adopt, NA_integer_),
+    post     = as.integer(treated == 1 & year >= adopt),
+    # True dynamic effect: program lowers fall admissions by ~1.5 after adoption
+    effect   = ifelse(post == 1, -1.5, 0),
+    y = alpha + 0.3 * (year - 2013) +            # common time trend
+        effect + rnorm(n(), 0, 1.2)
+  )
+
+# --- Event-study estimation (reference period = -1) ---
+es <- feols(y ~ i(rel_time, treated, ref = -1) | region + year,
+            cluster = ~region, data = panel)
+summary(es)
+iplot(es, main = "Fall-prevention event study", ref.line = -1)
+
+# --- Honest DiD: relative-magnitudes restriction ---
+# Extract event-study coefficients and vcov in (pre, post) order.
+b   <- coef(es)[grepl("rel_time", names(coef(es)))]
+V   <- vcov(es)[names(b), names(b)]
+n_pre <- 4; n_post <- 4   # leads k = -5..-2 ; lags k = 0..3
+
+# l_vec selects the post-period parameter of interest. Use equal weights so the
+# target is the POOLED average post-effect that the prose and interactive discuss
+# (the package default targets only the first post-period, k = 0).
+l_pooled <- rep(1 / n_post, n_post)
+
+rm <- createSensitivityResults_relativeMagnitudes(
+  betahat = b, sigma = V,
+  numPrePeriods = n_pre, numPostPeriods = n_post,
+  l_vec = l_pooled,
+  Mbarvec = seq(0, 2.5, by = 0.25)
+)
+print(rm)                       # robust CIs across Mbar (columns: lb, ub, Mbar)
+# Breakdown value: largest Mbar whose robust CI still excludes 0
+breakdown <- rm |>
+  filter(lb > 0 | ub < 0) |>
+  summarise(Mbar_star = max(Mbar))
+print(breakdown)
+
+# --- Placebo: fake adoption in 2015, pre-period data only ---
+placebo <- panel |>
+  filter(year < adopt) |>
+  mutate(fake_post = as.integer(treated == 1 & year >= 2015))
+feols(y ~ fake_post | region + year, cluster = ~region, data = placebo)
+# A near-zero, non-significant fake_post coefficient supports the design.
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import pyfixest as pf
+
+rng = np.random.default_rng(2017)
+
+# --- Simulate a regional panel: 21 regioner x 9 years ---
+n_treated, n_control = 12, 9
+years = np.arange(2013, 2022)
+adopt = 2017
+n_reg = n_treated + n_control
+
+regions = pd.DataFrame({
+    "region":  np.arange(n_reg),
+    "treated": np.r_[np.ones(n_treated), np.zeros(n_control)].astype(int),
+    "alpha":   rng.normal(20, 3, n_reg),
+})
+
+panel = regions.merge(pd.DataFrame({"year": years}), how="cross")
+panel["rel_time"] = np.where(panel.treated == 1, panel.year - adopt, np.nan)
+panel["post"]     = ((panel.treated == 1) & (panel.year >= adopt)).astype(int)
+panel["effect"]   = np.where(panel.post == 1, -1.5, 0.0)   # true effect
+panel["y"] = (panel.alpha + 0.3 * (panel.year - 2013)
+              + panel.effect + rng.normal(0, 1.2, len(panel)))
+
+# Event study via pyfixest's i() operator (mirrors R's fixest, reference k = -1).
+# Never-treated regions have rel_time = NaN and are absorbed as pure controls.
+es = pf.feols("y ~ i(rel_time, ref=-1) | region + year",
+              data=panel, vcov={"CRV1": "region"})
+print(es.summary())
+
+# --- Honest-DiD style robust CI (relative-magnitudes), teaching version ---
+# i() names the coefficients "rel_time::<k>"; parse the integer k from each.
+coefs = es.coef()
+ses   = es.se()
+k_of  = lambda name: int(name.split("::")[1])
+es_k  = coefs.index[coefs.index.str.startswith("rel_time::")]
+pre_k  = [name for name in es_k if k_of(name) < -1]   # leads  (k <= -2)
+post_k = [name for name in es_k if k_of(name) >= 0]   # lags   (k >=  0)
+
+pre, post = coefs[pre_k], coefs[post_k]
+
+beta_post = post.mean()
+se_post   = np.sqrt((ses[post_k] ** 2).sum()) / len(post_k)
+max_pre   = pre.abs().max()
+
+def robust_ci(Mbar):
+    allow = Mbar * max_pre
+    return (beta_post - allow - 1.96 * se_post,
+            beta_post + allow + 1.96 * se_post)
+
+for Mbar in [0, 0.5, 1.0, 1.5, 2.0]:
+    lo, hi = robust_ci(Mbar)
+    print(f"Mbar={Mbar:>4}: robust 95% CI = [{lo:6.2f}, {hi:6.2f}]")
+
+# Breakdown value M* : largest Mbar whose robust CI excludes zero
+Mstar = max(0.0, (abs(beta_post) - 1.96 * se_post) / max_pre)
+print(f"\nBreakdown value M* = {Mstar:.2f}")
+print("Significant for any parallel-trends violation up to "
+      f"{Mstar:.2f}x the largest observed pre-trend.")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+An event study of the fall-prevention program reports a pooled post-treatment effect of $\hat\beta_{\text{post}} = -1.80$ with standard error $\widehat{\text{se}} = 0.50$. The largest absolute lead coefficient (the worst observed pre-trend) is $\widehat{\Delta}_{\max} = 0.40$.
+
+(a) Is the effect significant at the 5% level under exact parallel trends?
+(b) Using the teaching-grade approximation, compute the robust 95% confidence interval at $\bar{M} = 1$.
+(c) Compute the breakdown value $\bar{M}^\ast$ and state its interpretation in one sentence.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The naïve 95% CI is $-1.80 \pm 1.96 \times 0.50 = [-2.78, -0.82]$. It excludes zero, so the effect is significant under exact parallel trends.
+
+**(b)** At $\bar{M}=1$ the allowance is $\bar{M}\,\widehat{\Delta}_{\max} = 1 \times 0.40 = 0.40$. The robust interval is
+
+$$
+[-1.80 - 0.40 - 0.98,\; -1.80 + 0.40 + 0.98] = [-3.18,\; -0.42].
+$$
+
+It still excludes zero, so the result survives a violation as large as the worst observed pre-trend.
+
+**(c)** Using $\bar{M}^\ast = (|\hat\beta_{\text{post}}| - 1.96\,\widehat{\text{se}})/\widehat{\Delta}_{\max}$:
+
+$$
+\bar{M}^\ast = \frac{1.80 - 1.96 \times 0.50}{0.40} = \frac{1.80 - 0.98}{0.40} = \frac{0.82}{0.40} = 2.05.
+$$
+
+**Interpretation:** the conclusion that the program reduced fall admissions remains significant at the 5% level for any post-treatment parallel-trends violation up to roughly **2.05 times** the largest pre-trend deviation observed in the data --- a comfortably robust finding.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague runs a pre-trend F-test on her four lead coefficients, fails to reject ($p = 0.62$), and writes: *"The parallel-trends assumption is satisfied (F-test $p = 0.62$)."* Using the interactive above, set the pre-trend slope to $+0.06$ and observe the pre-trend card. Then critique your colleague's sentence and propose a better one.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+With a slope of $+0.06$ the leads are visibly tilted --- a genuine violation exists --- yet the confidence rules still cross zero and the test *passes*. This is exactly the low-power trap.
+
+**The critique.** The sentence commits the classic error of treating "failure to reject $H_0$" as "$H_0$ is true." A non-significant pre-trend test is consistent with (i) truly parallel trends, **or** (ii) a real violation that the test is underpowered to detect. Roth (2022) shows that conditioning the analysis on having passed such a test actually *worsens* bias and distorts coverage in the surviving estimates, because passing selects for samples where noise happened to flatten the leads. A small undetectable pre-trend can imply a large post-treatment bias.
+
+**A better sentence.** *"The lead coefficients are individually and jointly insignificant, but the pre-trend test is underpowered. We therefore report Honest-DiD robust confidence sets: the effect remains significant for any violation up to $\bar{M}^\ast = [\text{value}]$ times the largest observed pre-trend, and we report placebo tests on a non-target outcome."* This replaces an unjustified claim of truth with a quantified statement of robustness.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Design three falsification tests for the fall-prevention DiD. For each, state (i) exactly what you would do, (ii) what result would *support* the design, and (iii) what result would *indict* it.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Test 1 --- Fake treatment date.** (i) Re-code adoption to 2015 (two years early) and run the event study on pre-2017 data only. (ii) *Supports:* the fake-post coefficient is small and insignificant --- no divergence before the real program. (iii) *Indicts:* a significant fake effect reveals a pre-existing differential trend the main event study may have masked.
+
+**Test 2 --- Placebo (untreated) outcome.** (i) Run the identical DiD on fall admissions among **15--40 year-olds**, whom an elderly-targeted program cannot plausibly affect. (ii) *Supports:* a null effect on the placebo outcome. (iii) *Indicts:* a significant effect on the placebo outcome implies a region-time shock (e.g., differential coding, a hospital reorganization) is driving the result, not the program.
+
+**Test 3 --- Never-treated as fake-treated (permutation).** (i) Among the 9 control regions, repeatedly assign a placebo adoption year and estimate the placebo effect, building a distribution of "effects under the null." (ii) *Supports:* the real estimate sits in the extreme tail of the placebo distribution (a randomization-inference p-value below 0.05). (iii) *Indicts:* the real estimate is unremarkable relative to placebos --- the design generates "effects" of comparable size by chance.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Two analysts study the same program. Analyst A models fall admissions in **levels** and reports $\hat\beta_{\text{post}} = -1.5$ ($p = 0.01$). Analyst B models the **log** rate and reports a $-2\%$ effect with $p = 0.20$. Both ran clean event studies with flat-looking pre-trends. How can the same data give a significant effect in levels but not in logs, and what should they report?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Why they differ.** Levels and logs encode *different parallel-trends assumptions*. The level specification assumes the treated and control regions would have moved together in *absolute* admissions per 1,000; the log specification assumes they would have moved together in *proportional* terms. Trends can be parallel on one scale and divergent on the other --- as Roth and Sant'Anna (2023) show, parallel trends is **not scale-invariant** except under strong conditions (e.g., when treatment is as-good-as-randomly assigned). Regions with high baseline admission rates contribute differently to a level regression than to a log regression, so the weighting and the implied counterfactual change with the functional form. A real additive effect concentrated in high-baseline regions can be statistically clear in levels yet diluted into an insignificant proportional effect in logs.
+
+**What to report.** Neither analyst should cherry-pick. They should (i) report **both** specifications transparently, (ii) state which scale the parallel-trends assumption is more credible on for *this* outcome and justify it on substantive grounds (is the program's mechanism additive --- a fixed number of falls averted --- or proportional --- a percentage reduction?), and (iii) run Honest-DiD on each to compare breakdown values. If the conclusion hinges entirely on the functional form, that fragility is itself the finding and must be disclosed --- the headline number was a modeling choice, not a robust effect.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The event study is the central DiD diagnostic, but the reference period is a modeling choice --- always state which period is omitted and check conclusions are not an artifact of re-baselining.
+- A passing pre-trend test is weak evidence: failing to reject is not evidence for the null, the test is underpowered against the most biasing trends, and pre-testing itself distorts coverage.
+- Honest DiD replaces "assume parallel trends" with "bound its failure": the breakdown value $\bar{M}^\ast$ states how large a violation (in units of the worst observed pre-trend) the conclusion can absorb before significance dies.
+- A *failed* placebo test (fake dates, untreated outcomes, never-treated permutations) is strong evidence against the design --- unlike a passed pre-trend test.
+- Robust findings survive defensible specification changes; a specification curve that straddles zero means the headline number was a choice, not a finding.
+:::
+
+## What Comes Next
+
+You now hold the full arc of the book. We began with the **fundamental problem of causal inference** --- the missing counterfactual --- and the potential-outcomes language for reasoning about it. We built up the statistical machinery, then the great research designs: randomization, regression, matching, instrumental variables, regression discontinuity, and difference-in-differences. On this page we closed the loop: even the best design rests on an assumption you cannot test, and the mark of a serious analyst is not asserting that assumption but *quantifying how much your conclusion depends on it* --- through event studies, placebo tests, specification curves, and the honest, bounded sensitivity analysis of Rambachan and Roth.
+
+That discipline is portable. The next move is yours. Take a Swedish policy question you actually care about --- a *region* rolling out a new diabetes-coordination model, a *vårdcentral* reform that changed waiting times, a staffing change in *distriktssköterskor*, a reimbursement reform measured in SEK --- and run the whole pipeline: state the estimand in potential-outcomes terms, choose the design the data can support, estimate it with a modern estimator, and then *break it* with the diagnostics from this page. See it, break it, prove it.
+
+Return to the [Home page](../index.qmd) to revisit any module, or start your own analysis. The tools are now yours to wield --- and, just as importantly, to interrogate.

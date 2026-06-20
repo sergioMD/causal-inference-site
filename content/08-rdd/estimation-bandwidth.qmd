@@ -1,0 +1,1321 @@
+---
+title: "Estimation and Bandwidth"
+subtitle: "Local polynomials, kernels, and the bias-variance trade-off"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Estimate the RD jump with **local polynomial regression** in a bandwidth $h$ around the cutoff, and read the estimate as the difference of two boundary intercepts.
+- Explain why **kernel weighting** (the triangular kernel) is the natural way to let nearby points speak louder than distant ones.
+- Decompose the estimator's error into **bias** (from curvature, growing with $h$) and **variance** (from scarce data, shrinking with $h$), and locate the bandwidth that minimizes their sum.
+- Recognize the modern toolkit --- the Imbens-Kalyanaraman MSE-optimal bandwidth and the Calonico-Cattaneo-Titiunik robust bias-corrected confidence intervals behind `rdrobust`.
+- Argue why **high-order global polynomials** (Gelman-Imbens) are a bad idea, and why local linear is the field default.
+:::
+
+## The Tension We Left Open
+
+The [previous page](sharp-rd.qmd) established what a sharp regression discontinuity identifies --- the average treatment effect *at the cutoff*, $\tau_{\text{RD}} = \mu_1(c) - \mu_0(c)$ --- and why: continuity of the potential-outcome curves makes the patients just above and just below the threshold comparable. We deferred one question, and it is the one that actually decides whether your estimate is any good: *how do you estimate that jump?*
+
+Return to the age-70 fall-prevention example. *Socialstyrelsen* (the National Board of Health and Welfare) enrolls every patient at a Swedish *vårdcentral* (primary care center) into a structured **fall-prevention and medication-review program** (*fallprevention och läkemedelsgenomgång*), run by the *distriktssköterskor* (district nurses), starting on their 70th birthday. The outcome is fall-related emergency visits per 1,000 patients per year; lower is better. The running variable is age; the cutoff is $c = 70$.
+
+To estimate the jump we must fit a curve on each side of 70 and read off the two boundary values. But *which* patients do we fit to, and *what shape* do we impose? These two decisions --- the **bandwidth** (how wide a window around the cutoff) and the **polynomial order / kernel** (what shape, with what weights) --- are the entire craft of RD estimation. They trade off against each other in a way that has a precise name.
+
+::: {.glass-card .glass-card--insight}
+**The RD dilemma in one sentence.** Comparability is best *right at* the cutoff --- a 70-year-old and a 69-year-old are nearly the same patient --- but data are *scarcest* right at the cutoff, so the closer you look, the less you see. A **wide** window gives you many patients (low variance) but drags in patients far from 70 whose age-driven fall risk differs systematically, so a straight line through them bends and biases the jump. A **narrow** window keeps only near-identical patients (low bias) but leaves so few of them that the estimate jitters from sample to sample (high variance). Choosing the bandwidth *is* choosing a point on the bias-variance trade-off.
+:::
+
+## Local Polynomial Regression
+
+The workhorse estimator is **local polynomial regression**. "Local" means we use only data within a bandwidth $h$ of the cutoff: patients with $|X_i - c| \le h$. "Polynomial" means that, within that window, we fit a low-order polynomial in the running variable --- almost always a straight line (order 1) or a quadratic (order 2) --- *separately on each side*.
+
+Write the centered running variable as $x = X - c$, so the cutoff sits at $x = 0$. On the right side ($x \ge 0$, treated) and the left side ($x < 0$, untreated) we solve two weighted least-squares problems.
+
+::: {.glass-card .glass-card--definition}
+The **local linear RD estimator** with bandwidth $h$ and kernel $K$ fits, on each side of the cutoff,
+
+$$
+(\hat\alpha_+, \hat\beta_+) = \arg\min_{a, b} \sum_{i:\, 0 \le x_i \le h} K\!\left(\frac{x_i}{h}\right)\big(Y_i - a - b\,x_i\big)^2,
+$$
+
+and the analogous minimization over $-h \le x_i < 0$ for $(\hat\alpha_-, \hat\beta_-)$. The estimated jump is the difference of the two intercepts:
+
+$$
+\hat\tau_{\text{RD}} = \hat\alpha_+ - \hat\alpha_-.
+$$
+
+**Read this as**: "On each side, fit a line by least squares, but weight each patient by a kernel that fades with distance from the cutoff. Because the running variable is *centered* at the cutoff, each side's intercept is exactly that side's predicted outcome *at* the cutoff. The jump is the gap between those two predictions." The slopes $\hat\beta_\pm$ absorb the confounding age-fall gradient; only the gap in *levels* at $x = 0$ is attributed to the program.
+:::
+
+Why a *polynomial* and not just a local average (a "constant" fit, order 0)? Because we are estimating a curve at the *boundary* of its support, not in the interior. A local average centered at the cutoff would pull in points only from one side and systematically mis-estimate the boundary value whenever the curve is sloped --- and the RD curve is *always* sloped, since the running variable confounds the outcome. Adding a linear term lets the fit follow that slope right up to the boundary, removing the first-order bias. This is the classic result that **local linear regression has better boundary behavior than local constant (Nadaraya-Watson) regression** (Fan and Gijbels, 1992): at a boundary the local-constant estimator carries a bias of order $h$, while the local-linear estimator's bias is only of order $h^2$.
+
+## Kernel Weighting: Letting Nearby Points Speak Louder
+
+Inside the window, should a patient one month from the cutoff count as much as one four years away? Intuitively no --- the whole logic of RD is that comparability *decays with distance*. The **kernel** $K(\cdot)$ encodes that decay by assigning each point a weight based on its scaled distance $|x_i|/h$ from the cutoff.
+
+Two kernels dominate practice:
+
+- The **uniform** (rectangular) kernel, $K(u) = \tfrac{1}{2}\,\mathbf{1}\{|u| \le 1\}$, gives every point inside the window the *same* weight and ignores everything outside. This is just ordinary least squares on the windowed subsample --- exactly the "two regressions" estimator from the previous page.
+- The **triangular** kernel, $K(u) = (1 - |u|)\,\mathbf{1}\{|u| \le 1\}$, gives full weight at the cutoff and ramps weight *linearly down to zero* at the bandwidth edge.
+
+**Read the triangular kernel as**: "A patient exactly at age 70 gets weight 1; a patient at the very edge of the window gets weight 0; everyone in between gets a weight that falls off in a straight line with distance." This is the default in `rdrobust`, and for a good reason: the triangular kernel is **boundary-optimal** for local linear estimation --- it minimizes the asymptotic mean squared error of the boundary intercept among all kernels (Cheng, Fan, and Marron, 1997). It also matches the spirit of RD: the estimate leans hardest on the patients who are most comparable.
+
+::: {.glass-card .glass-card--definition}
+A **kernel** $K(u) \ge 0$ assigns weight to a point at scaled distance $u = (X_i - c)/h$ from the cutoff. The two standard choices are
+
+$$
+K_{\text{uniform}}(u) = \tfrac{1}{2}\,\mathbf{1}\{|u| \le 1\}, \qquad
+K_{\text{tri}}(u) = (1 - |u|)\,\mathbf{1}\{|u| \le 1\}.
+$$
+
+**Read these as**: "The uniform kernel is a flat box --- in or out. The triangular kernel is a tent peaked at the cutoff." Both vanish beyond the bandwidth $h$, so only points with $|X_i - c| \le h$ enter the fit. The bandwidth $h$ controls *how far* we look; the kernel controls *how* we discount distance within that window.
+:::
+
+The figure below draws the two shapes side by side so "flat box" and "tent" are concrete before you meet the kernel toggle in the lab. The height at each scaled distance $u = (X_i - c)/h$ *is* the weight that point receives.
+
+```{ojs}
+//| echo: false
+
+// Static side-by-side of the two kernel SHAPES (weight vs scaled distance u).
+// Pure: depends only on Plot. No controls, no shared mutable state.
+ebw_kernelShapes = {
+  const grid = [];
+  for (let u = -1; u <= 1 + 1e-9; u += 0.02) {
+    grid.push({ u, w: 0.5, kernel: "Uniform (flat box)" });
+    grid.push({ u, w: Math.max(0, 1 - Math.abs(u)), kernel: "Triangular (tent)" });
+  }
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 230,
+    marginLeft: 60,
+    marginBottom: 46,
+    marginTop: 24,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Scaled distance from cutoff  u = (Xᵢ − c)/h", domain: [-1.15, 1.15], grid: false },
+    y: { label: "Kernel weight K(u)", domain: [0, 1.08], grid: true },
+    fx: { label: null },
+    facet: { data: grid, x: "kernel" },
+    marks: [
+      Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1, strokeDasharray: "3,3" }),
+      Plot.areaY(grid, { fx: "kernel", x: "u", y: "w", fill: "#9c7a33", fillOpacity: 0.14 }),
+      Plot.line(grid, { fx: "kernel", x: "u", y: "w", stroke: "#9c7a33", strokeWidth: 3 }),
+      Plot.dot([{ u: 0, w: 1, kernel: "Triangular (tent)" }], {
+        fx: "kernel", x: "u", y: "w", fill: "#990000", r: 4
+      }),
+      Plot.text([
+        { u: 0, w: 1, kernel: "Triangular (tent)", t: "full weight at the cutoff" }
+      ], {
+        fx: "kernel", x: "u", y: "w", text: "t", fill: "#990000", fontSize: 10.5,
+        fontWeight: 700, dy: -10, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Both kernels are zero outside $|u| \le 1$ (beyond the bandwidth). The **uniform** kernel is a flat box: every in-window point gets the same weight. The **triangular** kernel is a tent: weight 1 at the cutoff, ramping linearly to 0 at the edge --- which is why the lab fades each point's opacity by its triangular weight.
+:::
+
+The choice of kernel matters far less than the choice of bandwidth. Switching from uniform to triangular nudges the estimate; halving the bandwidth can move it a lot. So we now turn to the bandwidth, which is where the real action is.
+
+## See It: Bandwidth, Order, and the Estimate
+
+The lab below is the heart of this page. It plots the age-70 fall-prevention data --- with a genuine downward program jump and a *curved* age-fall relationship on the older side (risk accelerates in old age, so $\mu_1$ is nonlinear while $\mu_0$ is roughly linear, and both are continuous at the cutoff). Because the two sides curve *differently*, the curvature does not cancel in the difference --- which is exactly what makes a wide-window straight-line fit biased. You control the **bandwidth** $h$, the **polynomial order**, and the **kernel**. The fit uses only patients inside the shaded window, weights them by the kernel, and reports the estimated jump $\hat\tau$ together with a live **95% confidence interval**.
+
+Watch three things move together as you drag $h$: the *width of the shaded window*, the *point estimate*, and the *width of the confidence interval*. The whole bias-variance story is visible in that one slider.
+
+::: {.interactive-container}
+
+#### Local Polynomial RD Lab --- bandwidth, order, and kernel
+
+**Start here.** Try **h ≈ 5**, **Local linear**, **Triangular** to see the sweet spot, then drag the bandwidth slider and watch the shaded window, the point estimate τ̂ ("tau-hat" --- the estimated jump in fall visits at the cutoff), and the confidence-interval width all move together.
+
+```{ojs}
+//| echo: false
+
+viewof rdest_h = Inputs.range([1, 12], {
+  value: 5,
+  step: 0.5,
+  label: "Bandwidth h (years on each side of the cutoff)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdest_order = Inputs.radio(
+  ["Local constant (order 0)", "Local linear (order 1)", "Local quadratic (order 2)"],
+  { label: "Polynomial order", value: "Local linear (order 1)" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdest_kernel = Inputs.radio(
+  ["Triangular", "Uniform"],
+  { label: "Kernel (weighting within the window)", value: "Triangular" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdest_draw = Inputs.button("Draw new sample (resimulate cohort)", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size:0.78rem; color:#79766e; margin:-0.25rem 0 0.25rem;
+    font-family:'Inter',sans-serif;">Each click resimulates the cohort with fresh
+  noise. <em>Draw new sample</em> is most informative at small h (Step 2): watch
+  τ̂ jump around when only a few patients sit near the cutoff.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed design constants for the fall-prevention example. ──
+// NOTE: each OJS cell may hold exactly ONE definition, so the design
+// constants are declared one per cell (a single cell with several bare
+// `name = value` lines is an OJS parse error and breaks the whole page).
+rdest_cutoff = 70        // age threshold
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_baseline = 40      // fall-visit rate (per 1000) at the cutoff, untreated
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_ageMin = 60
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_ageMax = 80
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_trueJump = -6      // true program effect (downward step) at the cutoff
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_curv = 0.18        // curvature of the age-fall relationship (treated side only)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_slope = 1.2        // linear age-fall slope (the confounder)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_sigma = 9          // residual sd of an individual fall-visit count
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+rdest_n = 2400           // number of patients
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Generate patients deterministically (reseeded on "Draw new sample"). ──
+// True conditional mean:
+//     baseline + slope*x + curv*x^2*1{x>=0} + trueJump*1{x>=0},
+// where x = age - 70 is centered. Fall risk ACCELERATES in old age, so the
+// curvature sits on the treated (>=70) side: mu_1''(c) = 2*curv > 0 while
+// mu_0''(c) = 0. The curve is still CONTINUOUS at the cutoff (no baseline
+// jump) — only the program step is discontinuous.
+//
+// CRUCIAL design point: the leading RD bias is (1/2)(mu_1'' - mu_0'') h^2 B_K,
+// so it would CANCEL if both sides shared the same curvature. Putting the
+// curvature on one side only makes (mu_1'' - mu_0'') != 0, so a straight-line
+// fit over a WIDE window genuinely bends and manufactures a biased jump —
+// that is the bias the slider is supposed to expose. (An earlier version put
+// identical curvature on both sides, which silently zeroed out the bias.)
+// rdest_draw is referenced (not mutated) so the click reseeds reactively.
+rdest_data = {
+  rdest_draw;                                  // reactive dependency: reseed on click
+  const rnd = d3.randomNormal.source(d3.randomLcg(Math.random()))(0, 1);
+  const pts = [];
+  for (let i = 0; i < rdest_n; i++) {
+    const age = rdest_ageMin + (rdest_ageMax - rdest_ageMin) * Math.random();
+    const x = age - rdest_cutoff;
+    const treated = x >= 0 ? 1 : 0;
+    const mu = rdest_baseline + rdest_slope * x
+             + rdest_curv * x * x * treated      // curvature on the >=70 side only
+             + rdest_trueJump * treated;
+    pts.push({ age, x, treated, y: mu + rdest_sigma * rnd(),
+               side: treated ? "Treated (≥70, enrolled)" : "Untreated (<70)" });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Weighted polynomial least squares with a kernel, returning the boundary
+// intercept (value at x = 0), its variance, and a predict() function. ──
+// Solves (X'WX) beta = X'WY by Gauss-Jordan elimination, and computes the
+// homoskedastic WLS variance of the intercept via the standard
+// (X'WX)^{-1} (X'W^2 X) (X'WX)^{-1} * sigma^2 form, with sigma^2 a plug-in
+// estimated from the weighted residuals. The [0,0] entry is
+// Var(intercept) = Var(value at cutoff).
+rdest_fitSide = function (rows, degree, h, kernelName) {
+  const k = degree + 1;
+  const kw = u => kernelName === "Uniform"
+    ? (Math.abs(u) <= 1 ? 1 : 0)
+    : Math.max(0, 1 - Math.abs(u));           // triangular
+  // Keep only in-window points with positive weight.
+  const used = rows.filter(r => Math.abs(r.x) <= h);
+  const X = [], W = [], Y = [];
+  for (const r of used) {
+    const basis = [];
+    for (let p = 0; p <= degree; p++) basis.push(Math.pow(r.x, p));
+    X.push(basis); Y.push(r.y); W.push(kw(r.x / h));
+  }
+  const nEff = W.reduce((s, w) => s + w, 0);
+  // Normal equations.
+  const A = Array.from({ length: k }, () => new Array(k).fill(0));
+  const bvec = new Array(k).fill(0);
+  for (let i = 0; i < X.length; i++)
+    for (let a = 0; a < k; a++) {
+      bvec[a] += W[i] * X[i][a] * Y[i];
+      for (let b = 0; b < k; b++) A[a][b] += W[i] * X[i][a] * X[i][b];
+    }
+  // Invert A (= X'WX) by Gauss-Jordan to get Ainv (needed for the variance).
+  const M = A.map((row, i) => row.concat(Array.from({ length: k }, (_, j) => i === j ? 1 : 0)));
+  for (let col = 0; col < k; col++) {
+    let piv = col;
+    for (let r = col + 1; r < k; r++) if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+    [M[col], M[piv]] = [M[piv], M[col]];
+    const d = M[col][col] || 1e-12;
+    for (let cc = 0; cc < 2 * k; cc++) M[col][cc] /= d;
+    for (let r = 0; r < k; r++) {
+      if (r === col) continue;
+      const f = M[r][col];
+      for (let cc = 0; cc < 2 * k; cc++) M[r][cc] -= f * M[col][cc];
+    }
+  }
+  const Ainv = M.map(row => row.slice(k));
+  const beta = Ainv.map(row => row.reduce((s, v, j) => s + v * bvec[j], 0));
+  const predict = x => beta.reduce((s, b, p) => s + b * Math.pow(x, p), 0);
+
+  // Weighted residual variance (homoskedastic plug-in).
+  let rss = 0, wsum = 0;
+  for (let i = 0; i < X.length; i++) {
+    const yhat = beta.reduce((s, b, p) => s + b * X[i][p], 0);
+    rss += W[i] * (Y[i] - yhat) ** 2;
+    wsum += W[i];
+  }
+  const dof = Math.max(1, wsum - k);
+  const sigma2 = rss / dof;
+  // Var(beta) = sigma2 * Ainv (X'W^2 X) Ainv. Build B = X'W^2 X.
+  const B = Array.from({ length: k }, () => new Array(k).fill(0));
+  for (let i = 0; i < X.length; i++)
+    for (let a = 0; a < k; a++)
+      for (let b = 0; b < k; b++) B[a][b] += W[i] * W[i] * X[i][a] * X[i][b];
+  // (Ainv B Ainv)[0,0]
+  const AB = Ainv.map(row => B[0].map((_, j) => row.reduce((s, v, t) => s + v * B[t][j], 0)));
+  let varIntercept = 0;
+  for (let j = 0; j < k; j++) varIntercept += AB[0][j] * Ainv[j][0];
+  varIntercept *= sigma2;
+
+  return { beta, predict, atCutoff: beta[0], varCutoff: Math.max(varIntercept, 1e-9), nEff };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+rdest_degree = rdest_order === "Local constant (order 0)" ? 0
+             : rdest_order === "Local quadratic (order 2)" ? 2
+             : 1
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Per-point kernel weight given the current bandwidth and kernel toggle.
+// Used to drive dot opacity so the triangular tent vs the uniform box is
+// VISIBLE (otherwise the kernel choice barely moves the estimate).
+rdest_kernelWeight = function (x) {
+  const u = x / rdest_h;
+  if (Math.abs(u) > 1) return 0;
+  return rdest_kernel === "Uniform" ? 1 : Math.max(0, 1 - Math.abs(u));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fit both sides, take the jump, and combine the two intercept variances
+// (independent sides) into a standard error and a 95% CI for the jump.
+rdest_fits = {
+  const left  = rdest_fitSide(rdest_data.filter(d => d.treated === 0), rdest_degree, rdest_h, rdest_kernel);
+  const right = rdest_fitSide(rdest_data.filter(d => d.treated === 1), rdest_degree, rdest_h, rdest_kernel);
+  const jump = right.atCutoff - left.atCutoff;
+  const se   = Math.sqrt(left.varCutoff + right.varCutoff);
+  return {
+    left, right, jump, se,
+    lo: jump - 1.96 * se,
+    hi: jump + 1.96 * se,
+    nEff: Math.round(left.nEff + right.nEff)
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Dense prediction curves, drawn only over the in-window region [c-h, c+h]
+// so the plotted fit is exactly the local fit (and quadratics render smoothly).
+rdest_curves = {
+  const pts = [];
+  const lo = rdest_cutoff - rdest_h, hi = rdest_cutoff + rdest_h;
+  for (let age = lo; age <= rdest_cutoff + 1e-9; age += 0.2)
+    pts.push({ age, y: rdest_fits.left.predict(age - rdest_cutoff), grp: "left" });
+  for (let age = rdest_cutoff; age <= hi + 1e-9; age += 0.2)
+    pts.push({ age, y: rdest_fits.right.predict(age - rdest_cutoff), grp: "right" });
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(660, width),
+  height: 430,
+  marginLeft: 64,
+  marginRight: 18,
+  marginTop: 22,
+  marginBottom: 46,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    label: "Age (running variable) →",
+    domain: [rdest_ageMin - 0.5, rdest_ageMax + 0.5],
+    grid: false
+  },
+  y: {
+    label: "Fall ER visits / 1,000 per year",
+    domain: [0, 90],
+    grid: true
+  },
+  color: {
+    domain: ["Untreated (<70)", "Treated (≥70, enrolled)"],
+    range: ["#3d5a6c", "#990000"],
+    legend: true
+  },
+  marks: [
+    // Shaded bandwidth window [c-h, c+h]: the data actually used.
+    Plot.rectX([{ x1: rdest_cutoff - rdest_h, x2: rdest_cutoff + rdest_h }], {
+      x1: "x1", x2: "x2", y1: 0, y2: 90,
+      fill: "#9c7a33", fillOpacity: 0.06
+    }),
+    Plot.ruleX([rdest_cutoff - rdest_h, rdest_cutoff + rdest_h], {
+      stroke: "#9c7a33", strokeWidth: 1, strokeDasharray: "2,3", strokeOpacity: 0.6
+    }),
+
+    // The cutoff line.
+    Plot.ruleX([rdest_cutoff], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+
+    // All patients (points outside the window are faded to show they're unused;
+    // in-window opacity tracks the triangular/uniform kernel weight so the reader
+    // SEES nearby points weighted more heavily than distant ones).
+    Plot.dot(rdest_data, {
+      x: "age", y: "y", fill: "side",
+      r: d => Math.abs(d.x) <= rdest_h ? 2.4 : 1.6,
+      fillOpacity: d => Math.abs(d.x) <= rdest_h ? 0.18 + 0.62 * rdest_kernelWeight(d.x) : 0.1,
+      title: d => `Age ${d.age.toFixed(1)}\nVisits/1000: ${d.y.toFixed(1)}\n${d.side}\nkernel weight: ${rdest_kernelWeight(d.x).toFixed(2)}`
+    }),
+
+    // Local fits within the window.
+    Plot.line(rdest_curves.filter(d => d.grp === "left"), {
+      x: "age", y: "y", stroke: "#3d5a6c", strokeWidth: 3
+    }),
+    Plot.line(rdest_curves.filter(d => d.grp === "right"), {
+      x: "age", y: "y", stroke: "#990000", strokeWidth: 3
+    }),
+
+    // The two boundary limit points.
+    Plot.dot([
+      { age: rdest_cutoff, y: rdest_fits.left.atCutoff },
+      { age: rdest_cutoff, y: rdest_fits.right.atCutoff }
+    ], { x: "age", y: "y", fill: "white", stroke: "#1c1c1a", strokeWidth: 2, r: 5 }),
+
+    // The jump, as a thick vertical band between the limits.
+    Plot.link([{
+      x1: rdest_cutoff, x2: rdest_cutoff,
+      y1: rdest_fits.left.atCutoff, y2: rdest_fits.right.atCutoff
+    }], {
+      x1: "x1", x2: "x2", y1: "y1", y2: "y2",
+      stroke: rdest_fits.jump <= 0 ? "#2e6f40" : "#b3000b",
+      strokeWidth: 12, strokeOpacity: 0.28, strokeLinecap: "butt"
+    }),
+
+    // Jump label (Plot.link carries no text channel). Anchored to the right of
+    // the cutoff line with a sign-dependent dy nudge so it never sits on the
+    // white boundary dots; white halo keeps it legible over points and rules.
+    Plot.text([{
+      age: rdest_cutoff,
+      y: (rdest_fits.left.atCutoff + rdest_fits.right.atCutoff) / 2
+    }], {
+      x: "age", y: "y",
+      text: [`τ̂ = ${rdest_fits.jump >= 0 ? "+" : ""}${rdest_fits.jump.toFixed(1)}`],
+      fill: rdest_fits.jump <= 0 ? "#2e6f40" : "#b3000b",
+      fontWeight: 700, fontSize: 13,
+      dx: 10, dy: rdest_fits.jump <= 0 ? -14 : 14, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // Cutoff caption, anchored to the top frame so it never clips the ceiling.
+    Plot.text([{ age: rdest_cutoff }], {
+      x: "age", frameAnchor: "top", text: ["cutoff c = 70"],
+      fill: "#1c1c1a", fontSize: 11, fontWeight: 600, dx: 5, dy: 4, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// On-chart key for the three custom marks the prose explains (the color
+// legend above only covers the two patient series).
+html`<div style="display:flex; flex-wrap:wrap; gap:0.9rem; margin-top:0.4rem;
+    font-size:0.74rem; color:#79766e; font-family:'Inter',sans-serif;
+    line-height:1.3;">
+  <span><span style="display:inline-block;width:0.72rem;height:0.72rem;
+    border-radius:50%;background:#fff;border:2px solid #1c1c1a;
+    vertical-align:-1px;margin-right:0.3rem;"></span>boundary intercept
+    (value at the cutoff)</span>
+  <span><span style="display:inline-block;width:1.1rem;height:0.42rem;
+    background:#9c7a33;opacity:0.35;vertical-align:0;margin-right:0.3rem;
+    "></span>shaded band = window used (h)</span>
+  <span><span style="display:inline-block;width:0.42rem;height:0.78rem;
+    background:#2e6f40;opacity:0.55;vertical-align:-1px;margin-right:0.3rem;
+    "></span>thick band = estimated jump τ̂</span>
+  <span><span style="display:inline-block;width:1rem;border-top:2px dashed #1c1c1a;
+    vertical-align:4px;margin-right:0.3rem;"></span>central dashed line = cutoff</span>
+  <span style="color:#79766e;">Point opacity tracks each patient's kernel weight.</span>
+  <span style="color:#79766e;">Outcome: fall ER visits per 1,000 per year — lower is better.</span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: estimate ± CI, the true effect, and the effective sample size.
+{
+  const f = rdest_fits;
+  const truth = rdest_trueJump;
+  const covered = truth >= f.lo && truth <= f.hi;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
+  const card = (label, value, color, bg, border) => html`<div style="
+      padding:0.5rem 0.75rem; border-radius:0.5rem; min-height:3.4rem;
+      background:${bg}; border:1px solid ${border};">
+    <div style="font-weight:600; color:#79766e; font-size:0.62rem;
+        text-transform:uppercase; letter-spacing:0.03em; white-space:nowrap;
+        font-family:'Inter',sans-serif;">${label}</div>
+    <div style="font-size:0.98rem; font-weight:700; color:${color};
+        white-space:nowrap; font-family:'JetBrains Mono',monospace;">${value}</div>
+  </div>`;
+  return html`<div style="display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+      gap:0.5rem; margin-top:0.5rem;">
+    ${card("True effect", fmt(truth), "#9c7a33", "rgba(156,122,51,0.07)", "rgba(156,122,51,0.2)")}
+    ${card("Estimate τ̂", fmt(f.jump), "#1c1c1a", "rgba(0,0,0,0.02)", "rgba(0,0,0,0.06)")}
+    ${card("Conventional 95% CI", `[${f.lo.toFixed(1)}, ${f.hi.toFixed(1)}]`,
+        covered ? "#2e6f40" : "#b3000b",
+        covered ? "rgba(46,111,64,0.08)" : "rgba(179,0,11,0.06)",
+        covered ? "rgba(46,111,64,0.2)" : "rgba(179,0,11,0.15)")}
+    ${card("Patients used", `${f.nEff}`, "#1c1c1a", "rgba(0,0,0,0.02)", "rgba(0,0,0,0.06)")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line diagnostic that names the regime the current bandwidth sits in.
+// Order-aware: a local CONSTANT (order 0) fit is biased at the boundary at ANY
+// bandwidth (Step 6 / Exercise 4c), so it must never receive the green
+// "near the truth" verdict — that branch is gated on rdest_degree >= 1.
+{
+  const f = rdest_fits;
+  const truth = rdest_trueJump;
+  const bias = f.jump - truth;           // sampling noise + functional-form bias
+  let msg, color;
+  if (rdest_degree === 0) {
+    msg = `Local constant (order 0): a flat kernel-weighted average at the boundary cannot track the sloped age-fall relationship, so τ̂ (${f.jump.toFixed(1)}) is biased away from the truth (${truth}) at any h — even here. This is exactly why local LINEAR, not local constant, is the RD default.`;
+    color = "#b3000b";
+  } else if (rdest_h <= 2.5) {
+    msg = `Narrow window (h = ${rdest_h}): only ${f.nEff} patients, so the CI is wide (±${(1.96 * f.se).toFixed(1)}) — high variance, low bias. Press "Draw new sample" repeatedly and watch τ̂ jump around.`;
+    color = "#9c7a33";
+  } else if (rdest_h >= 9 && rdest_degree === 1) {
+    msg = `Wide window (h = ${rdest_h}) with a local linear fit: the CI is tight (±${(1.96 * f.se).toFixed(1)}) but the line must bend through the curved age-fall relationship, so τ̂ (${f.jump.toFixed(1)}) is biased away from the truth (${truth}). Low variance, high bias.`;
+    color = "#b3000b";
+  } else {
+    msg = `Moderate window (h = ${rdest_h}): the CI (±${(1.96 * f.se).toFixed(1)}) is reasonably tight and τ̂ (${f.jump.toFixed(1)}) sits near the truth (${truth}). This neighbourhood is roughly where an MSE-optimal selector lands.`;
+    color = "#2e6f40";
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem;
+      border-radius:0.5rem; border-left:3px solid ${color};
+      background:rgba(0,0,0,0.02); font-family:'Inter',sans-serif;
+      font-size:0.86rem; line-height:1.45; color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Note: the card shows the CONVENTIONAL CI — the very interval the next sections
+// argue is mis-centered at a wide bandwidth. The covered/not-covered colour is
+// for a single draw; true coverage needs many draws (see the robust-CI section).
+html`<div style="margin-top:0.5rem; font-size:0.74rem; color:#79766e;
+    font-family:'Inter',sans-serif; line-height:1.4;">The card reports the
+  <strong>conventional</strong> 95% CI (τ̂ ± 1.96·se). The "covers / does not
+  cover" tint is for <em>this one draw</em> only — at a wide bandwidth this CI is
+  mis-centered and under-covers across repeated draws, which is why robust
+  bias-corrected inference (below) is what you should report.</div>`
+```
+
+:::
+
+### How to Read the Bandwidth Lab
+
+Work through these steps in order; each one isolates a single force in the trade-off.
+
+**Step 1: See what the window selects.** The shaded blue band is $[70 - h,\ 70 + h]$ --- the only patients the fit uses. Points outside it are greyed out: they exist in the data but are *thrown away*. Drag **bandwidth** $h$ and watch the band breathe. At $h = 1$ a thin sliver of patients near 70 is kept; at $h = 12$ almost everyone is in.
+
+**Step 2: Feel the variance at small $h$.** Set $h$ to about 1.5 with **Local linear** selected, then press **Draw new sample** five or six times. The estimate $\hat\tau$ bounces around --- sometimes $-4$, sometimes $-8$ --- and the 95% CI is wide. With only a handful of patients near the cutoff, the two boundary intercepts are estimated imprecisely. This is the *variance* cost of looking too closely. The diagnostic line turns orange.
+
+**Step 3: Feel the bias at large $h$.** Now push $h$ to 11 or 12, still **Local linear**. The CI snaps tight --- thousands of patients now inform the fit --- but look at the point estimate: it drifts *away* from the true $-6$ (the diagnostic turns red). Why? The true age-fall curve bends upward (risk accelerates with age), but a straight line cannot follow a curve. Forced across a wide window, each side's line tilts to fit the bulk of its data and misses the boundary value, manufacturing a *biased* jump. This is the *bias* cost of looking too widely.
+
+**Step 4: Find the sweet spot.** Sweep $h$ slowly from 1 to 12 and watch the two readouts. Somewhere in the middle --- around $h = 4$ to $6$ --- the CI is acceptably tight *and* the estimate sits near the truth. That is the bias-variance compromise. It is exactly the quantity an MSE-optimal bandwidth selector (next section) tries to pin down automatically.
+
+**Step 5: Buy back bias with curvature.** Set $h$ wide again (say 10) and switch from **Local linear** to **Local quadratic**. The bias shrinks dramatically: the quadratic can bend to follow the curved baseline even over a wide window, so the boundary intercepts line up again. The price is a slightly wider CI (a quadratic spends more degrees of freedom). This is the order-versus-bandwidth dial: a higher order tolerates a wider window.
+
+**Step 6: See why order 0 fails at a boundary.** Switch to **Local constant (order 0)** at any moderate $h$. The "fits" become flat horizontal segments, and $\hat\tau$ is badly biased even at modest bandwidths --- because a flat local average at the *edge* of the data cannot track the slope of the age-fall relationship. This is the boundary-bias problem that makes local *linear* (not local constant) the RD default.
+
+**Step 7: Compare kernels.** Hold everything fixed and toggle **Triangular** vs **Uniform**. The estimate shifts only slightly: the triangular kernel leans a touch harder on the most-comparable patients near the cutoff. The lesson the lab teaches over and over: *the kernel is a second-order choice; the bandwidth is the first-order choice.*
+
+## The Bias-Variance Trade-off, Made Precise
+
+The lab showed the trade-off; now we name its two halves. For a local linear estimator with bandwidth $h$ on a sample of size $n$, the mean squared error of $\hat\tau_{\text{RD}}$ around the true effect $\tau_{\text{RD}}$ decomposes (to leading order) as
+
+$$
+\text{MSE}(h) = \underbrace{\big[\text{Bias}(h)\big]^2}_{\approx\, (B\,h^2)^2} \;+\; \underbrace{\text{Var}(h)}_{\approx\, V/(n h)}.
+$$
+
+**Read this as**: "The expected squared error is squared bias plus variance. The bias grows like $h^2$ --- widen the window and the straight line must span more curvature, so it bends more. The variance shrinks like $1/(nh)$ --- widen the window and you fold in more patients, so the estimate steadies." The constant $B$ (the *bias constant*) depends on the *curvature* of the response functions at the cutoff --- the second derivative $\mu''(c)$, how sharply the age-fall curve bends; the constant $V$ (the *variance constant*) depends on the *noise* in the outcome and the *density* of running-variable values near the cutoff.
+
+The two terms pull in opposite directions, so there is an interior minimum. The figure below draws all three curves --- the rising squared bias, the falling variance, and their sum --- so the U-shape and its minimizing bandwidth $h^\star$ are visible, not just asserted.
+
+```{ojs}
+//| echo: false
+
+// Canonical bias-variance U-curve: squared bias ~ (B h^2)^2 = B^2 h^4 (rises),
+// variance ~ V/(n h) (falls), and MSE = their sum (U-shaped, interior min at h*).
+// Constants chosen only to place h* in a readable spot; this is a SCHEMATIC of
+// the decomposition, not a fit to the lab's numbers. Pure: depends on Plot/d3.
+ebw_mseCurve = {
+  const B2 = 0.00018;          // squared-bias scale (B^2)
+  const Vn = 14;               // variance scale (V/n)
+  const sqBias = h => B2 * Math.pow(h, 4);
+  const variance = h => Vn / h;
+  const mse = h => sqBias(h) + variance(h);
+  const hStar = Math.pow(Vn / (4 * B2), 1 / 5);   // argmin of B^2 h^4 + V/(nh)
+  const rows = [];
+  for (let h = 1; h <= 14 + 1e-9; h += 0.1) {
+    rows.push({ h, v: sqBias(h),   series: "Squared bias  (B²h⁴)" });
+    rows.push({ h, v: variance(h), series: "Variance  (V/nh)" });
+    rows.push({ h, v: mse(h),      series: "MSE = bias² + variance" });
+  }
+  return Plot.plot({
+    width: Math.min(620, width),
+    height: 360,
+    marginLeft: 62,
+    marginBottom: 48,
+    marginTop: 24,
+    marginRight: 18,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Bandwidth h  (wider window →)", domain: [1, 14], grid: false },
+    y: { label: "Error contribution", domain: [0, 16], grid: true },
+    color: {
+      domain: ["Squared bias  (B²h⁴)", "Variance  (V/nh)", "MSE = bias² + variance"],
+      range: ["#b3000b", "#3d5a6c", "#1c1c1a"],
+      legend: true
+    },
+    marks: [
+      Plot.ruleX([hStar], { stroke: "#2e6f40", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      Plot.line(rows, { x: "h", y: "v", stroke: "series", strokeWidth: d => d.series === "MSE = bias² + variance" ? 3.5 : 2.2 }),
+      Plot.dot([{ h: hStar, v: mse(hStar) }], { x: "h", y: "v", fill: "#2e6f40", r: 5, stroke: "white", strokeWidth: 1.5 }),
+      Plot.text([{ h: hStar, v: mse(hStar) }], {
+        x: "h", y: "v", text: ["h★ = MSE-optimal"], fill: "#2e6f40", fontSize: 11.5,
+        fontWeight: 700, dy: -14, dx: 4, textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ h: 12.5, v: sqBias(12.5) }], {
+        x: "h", y: "v", text: ["bias² climbs ~h⁴"], fill: "#b3000b", fontSize: 10.5,
+        fontWeight: 700, dy: -8, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ h: 2.0, v: variance(2.0) }], {
+        x: "h", y: "v", text: ["variance blows up ~1/h"], fill: "#3d5a6c", fontSize: 10.5,
+        fontWeight: 700, dy: -8, dx: 6, textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Schematic of $\text{MSE}(h) = B^2 h^4 + V/(nh)$. Too **narrow** (left) and variance dominates; too **wide** (right) and squared bias dominates; the **MSE-optimal $h^\star$** (green) sits where the two are balanced --- exactly the "sweet spot" the lab's slider hunts for by eye. The minimum is *flat-bottomed*, which is why an effect should be roughly stable for bandwidths near $h^\star$.
+:::
+
+::: {.glass-card .glass-card--insight}
+**Why the bias grows and the variance falls.**
+
+- **Bias $\uparrow$ with $h$.** A local *linear* fit assumes the curve is a straight line within the window. Real response curves are not straight; they curve with second derivative $\mu''(c)$. The wider the window, the more curvature the straight line has to ignore, and the further its boundary intercept drifts from the truth. The leading bias is proportional to $\mu''(c)\, h^2$ --- it vanishes as $h \to 0$.
+- **Variance $\downarrow$ with $h$.** Each boundary intercept is estimated from the $\approx nh$ patients inside the window. More patients means a more stable fit, so the variance falls like $1/(nh)$ --- it explodes as $h \to 0$.
+
+The optimal bandwidth balances the two. Minimizing $(Bh^2)^2 + V/(nh)$ over $h$ gives $h^\star \propto n^{-1/5}$: the best window *shrinks* with sample size, but only slowly. Bigger datasets let you look closer to the cutoff (less bias) while still keeping enough patients (controlled variance).
+:::
+
+## Choosing the Bandwidth Automatically
+
+You should not pick $h$ by eye, and you certainly should not pick the $h$ that gives the answer you like. Modern practice uses **data-driven** bandwidth selectors --- procedures that read the window width off the data rather than off the analyst's preferences --- that estimate the constants $B$ and $V$ from the data and *plug them in* (substitute the estimated constants into the optimal formula).
+
+**Imbens-Kalyanaraman (2012).** The IK selector estimates the curvature $\mu''(c)$ and the noise/density constants, then returns the bandwidth that minimizes the (asymptotic) MSE of the RD point estimate:
+
+$$
+h_{\text{IK}}^\star = C_K \left(\frac{V}{B^2 \, n}\right)^{1/5},
+$$
+
+where $C_K$ is a known kernel-specific constant. **Read this as**: "The MSE-optimal bandwidth is a known constant times the fifth root of variance-over-squared-bias-times-$n$. Noisier outcomes (large $V$) call for a wider window; more curvature (large $B$) calls for a narrower one." The Calonico-Cattaneo-Titiunik (CCT) refinement (the default in `rdrobust`) improves the plug-in estimates of $B$ and $V$ and allows the MSE to target the jump itself rather than each side's intercept separately.
+
+**The inference problem this creates.** Here is the subtlety that motivated a decade of methodological work. The MSE-optimal bandwidth is, by design, *as wide as it can be without the bias overwhelming the variance*. But "without overwhelming" still leaves a bias of the *same order* as the standard error. A conventional confidence interval $\hat\tau \pm 1.96\,\widehat{\text{se}}$, centered on a point estimate that carries this leftover bias, is **mis-centered**: it does not cover the true effect 95% of the time. At the MSE-optimal bandwidth, the bias is not negligible relative to the noise --- it is comparable to it.
+
+::: {.glass-card .glass-card--definition}
+**Robust bias-corrected inference** (Calonico, Cattaneo, and Titiunik, 2014). `rdrobust` reports three numbers:
+
+1. A **conventional point estimate** at the MSE-optimal bandwidth (local linear).
+2. A **bias-corrected** point estimate that subtracts an estimate of the leading bias (using a local quadratic on a pilot bandwidth to estimate the curvature).
+3. A **robust confidence interval** whose standard error accounts for the *extra variability introduced by the bias correction itself*.
+
+**Read this as**: "Estimate the jump, estimate how much that estimate is biased by curvature, subtract the bias, and then build a confidence interval that is honest about the fact that the bias correction was *also* estimated from data." The robust CI is slightly wider than the naive one, but it has *correct coverage* --- it really does trap the true effect 95% of the time. This is the inference you should report.
+:::
+
+The schematic below lays the three numbers on one axis against the true effect $\tau$, so you can see *why* the conventional interval misses and the robust one catches.
+
+```{ojs}
+//| echo: false
+
+// Schematic number-line: where the conventional vs robust CIs sit relative to
+// the truth tau. Illustrative positions only (NOT computed from the lab) — it
+// shows the QUALITATIVE story: conventional point estimate is biased toward 0,
+// its CI is mis-centered (can miss tau); the bias-corrected point sits on tau
+// and the robust CI is a touch wider but covers. Pure: Plot/d3 only.
+ebw_ciSchematic = {
+  const tau = -6;                 // true effect
+  const conv = -4.4;              // conventional (biased toward zero by leftover curvature)
+  const seConv = 1.5;
+  const bc = -6.0;                // bias-corrected point estimate
+  const seRob = 1.9;              // robust se (a touch wider)
+  const rows = [
+    { label: "Conventional", y: 1, est: conv, lo: conv - 1.96 * seConv, hi: conv + 1.96 * seConv, color: "#b3000b" },
+    { label: "Robust bias-corrected", y: 0, est: bc, lo: bc - 1.96 * seRob, hi: bc + 1.96 * seRob, color: "#2e6f40" }
+  ];
+  return Plot.plot({
+    width: Math.min(620, width),
+    height: 200,
+    marginLeft: 150,
+    marginBottom: 46,
+    marginTop: 26,
+    marginRight: 24,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Estimated jump (fall visits / 1,000)", domain: [-11, 0.5], grid: true },
+    y: { domain: [-0.5, 1.5], axis: null },
+    marks: [
+      // True effect reference line.
+      Plot.ruleX([tau], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      Plot.text([{ x: tau, y: 1.5 }], {
+        x: "x", y: "y", text: ["true τ = −6"], fill: "#1c1c1a", fontSize: 11, fontWeight: 700,
+        dy: -4, textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // CI bars.
+      Plot.link(rows, { x1: "lo", x2: "hi", y1: "y", y2: "y", stroke: "color", strokeWidth: 6, strokeOpacity: 0.30, strokeLinecap: "round" }),
+      Plot.tickX(rows, { x: "lo", y: "y", stroke: "color", strokeWidth: 2 }),
+      Plot.tickX(rows, { x: "hi", y: "y", stroke: "color", strokeWidth: 2 }),
+      Plot.dot(rows, { x: "est", y: "y", fill: "color", r: 5, stroke: "white", strokeWidth: 1.5 }),
+      // Row labels at left.
+      Plot.text(rows, {
+        x: -11, y: "y", text: "label", fill: "color", fontSize: 11.5, fontWeight: 700,
+        textAnchor: "start", dx: -135
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Illustrative, not computed from the lab. The **conventional** estimate (red) is pulled toward zero by leftover curvature, and its interval is mis-centered --- it can sit entirely to the right of the true $\tau = -6$, so it under-covers across repeated samples. The **robust bias-corrected** interval (green) re-centers on the truth and is a touch wider to pay for the estimated correction --- so it actually traps $\tau$ about 95% of the time. This is the picture behind "report the robust CI."
+:::
+
+::: {.glass-card .glass-card--warning}
+**Do not eyeball the bandwidth, and do not over-trust a single one.** Two disciplines protect you:
+
+- **Report the data-driven bandwidth and the robust CI**, not a hand-picked $h$ that happens to look clean. A reader cannot tell a principled window from a fished one unless you use a transparent selector.
+- **Show a bandwidth-sensitivity plot.** Re-estimate $\hat\tau$ across a grid of bandwidths (say $0.5\,h^\star$ to $2\,h^\star$) and plot the point estimate and CI against $h$. A credible RD effect is *stable* across this range. An effect that appears only at one magic bandwidth and evaporates elsewhere is a red flag --- it is probably curvature or noise, not a program.
+:::
+
+Here is what such a plot looks like. It re-runs the *same* triangular-kernel local-linear estimator across a grid of bandwidths on a fresh draw of the fall-prevention cohort --- exactly the `sens` sweep the code below computes --- and shows $\hat\tau$ with its conventional 95% CI at each $h$.
+
+```{ojs}
+//| echo: false
+
+// Bandwidth-sensitivity sweep, rendered. Reuses the page's own fitSide engine
+// (rdest_fitSide) and DGP constants on a fresh fixed-seed cohort, so the curve
+// is a real local-linear estimate at each h, not a stylized sketch. Static
+// (its own seed); does NOT touch the lab's controls or its mutable-free data.
+ebw_sensData = {
+  const rnd = d3.randomNormal.source(d3.randomLcg(0.4242))(0, 1);
+  const pts = [];
+  for (let i = 0; i < 4000; i++) {
+    const age = rdest_ageMin + (rdest_ageMax - rdest_ageMin) * d3.randomLcg(i + 1)();
+    const x = age - rdest_cutoff;
+    const treated = x >= 0 ? 1 : 0;
+    const mu = rdest_baseline + rdest_slope * x
+             + rdest_curv * x * x * treated
+             + rdest_trueJump * treated;
+    pts.push({ x, treated, y: mu + rdest_sigma * rnd() });
+  }
+  const left  = pts.filter(d => d.treated === 0);
+  const right = pts.filter(d => d.treated === 1);
+  const rows = [];
+  for (let h = 2; h <= 12 + 1e-9; h += 0.5) {
+    const L = rdest_fitSide(left,  1, h, "Triangular");
+    const R = rdest_fitSide(right, 1, h, "Triangular");
+    const jump = R.atCutoff - L.atCutoff;
+    const se = Math.sqrt(L.varCutoff + R.varCutoff);
+    rows.push({ h, est: jump, lo: jump - 1.96 * se, hi: jump + 1.96 * se });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 320,
+  marginLeft: 62,
+  marginBottom: 48,
+  marginTop: 22,
+  marginRight: 18,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Bandwidth h (years)", domain: [1.7, 12.3], grid: false },
+  y: { label: "Estimated jump τ̂  (95% CI)", domain: [-12, 1], grid: true },
+  marks: [
+    // True effect reference.
+    Plot.ruleY([rdest_trueJump], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    Plot.text([{ h: 12.2, y: rdest_trueJump }], {
+      x: "h", y: "y", text: ["true −6"], fill: "#9c7a33", fontSize: 10.5, fontWeight: 700,
+      dy: -7, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // CI band + estimate line.
+    Plot.areaY(ebw_sensData, { x: "h", y1: "lo", y2: "hi", fill: "#3d5a6c", fillOpacity: 0.12 }),
+    Plot.line(ebw_sensData, { x: "h", y: "est", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+    Plot.dot(ebw_sensData, { x: "h", y: "est", fill: "#3d5a6c", r: 2.5 }),
+    // Annotate the two regimes.
+    Plot.text([{ h: 3.2, y: -1.0 }], {
+      x: "h", y: "y", text: ["stable & near −6\n(credible)"], fill: "#2e6f40", fontSize: 10.5,
+      fontWeight: 700, lineHeight: 1.1, textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ h: 10.5, y: -10.6 }], {
+      x: "h", y: "y", text: ["drifts down as h grows\n(bias creeping in)"], fill: "#b3000b", fontSize: 10.5,
+      fontWeight: 700, lineHeight: 1.1, textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+The estimate is flat and near the true $-6$ for small-to-moderate $h$, then drifts *away* (here, more negative) as the window widens and the straight line bends through the accelerating age-fall curve --- meanwhile the CI band *narrows*, the dangerous "confident but biased" signature. A credible RD is the flat region; an effect that only appears at one bandwidth is the red flag.
+:::
+
+## Why Not Just Fit a High-Order Global Polynomial?
+
+A tempting alternative sidesteps the bandwidth entirely: keep *all* the data and fit a flexible high-order polynomial --- a cubic, a quartic, even a fifth-order curve --- to each side, then read off the jump. It seems to get the best of both worlds: all the data (low variance) and a flexible shape (low bias). **Gelman and Imbens (2019) show this is a trap.** Global high-order polynomials are a bad idea for RD, for three concrete reasons.
+
+::: {.glass-card .glass-card--warning}
+**Three reasons to avoid global high-order polynomials** (Gelman and Imbens, 2019):
+
+1. **Noisy weights and erratic boundary behaviour.** The RD estimate from a global polynomial is a weighted average of the outcomes, and for high-order polynomials those implicit weights are *wild* --- large, oscillating, and assigning heavy influence to observations *far* from the cutoff. A patient at age 60 should not move your estimate of a jump at age 70, yet a global quartic lets them. Polynomials are notoriously unstable near the *edges* of their range (Runge's phenomenon), and the cutoff sits at an interior edge of each side.
+
+2. **Estimates hypersensitive to the chosen order.** Whether you fit a cubic or a quartic can flip the sign of the estimated jump. There is no principled way to choose the order, so the analyst is left with a researcher-degree-of-freedom that invites (even unwitting) specification searching.
+
+3. **Misleading confidence intervals.** Conventional CIs from a global polynomial fit do not have correct coverage at the cutoff, because the model is mis-specified there in a way that conventional standard errors ignore.
+
+Their recommendation, now standard: **use local linear or local quadratic regression in a data-driven bandwidth**, never a global polynomial of order 3 or higher.
+:::
+
+The deep reason is that the two strategies estimate the boundary value in fundamentally different ways. A local linear fit makes a *weak* assumption (the curve is approximately straight over a *small* window) and discards far-away data. A global polynomial makes a *strong* assumption (a single rigid functional form holds over the *entire* range) and lets distant data dictate the fit at the cutoff. When the global form is even slightly wrong --- and it always is --- that misspecification leaks straight into the jump. Localness is a feature, not a limitation: it confines the identifying comparison to the patients for whom the comparison is credible.
+
+The figure below puts the two side by side on one cohort. A **global fifth-order** polynomial (left) wiggles to chase every wobble and swings wildly near the edges of each side (Runge's phenomenon), so its boundary intercepts --- and therefore the jump --- are unstable. A **local linear** fit in a sensible window (right) is calm at the cutoff and recovers a jump near the true $-6$.
+
+```{ojs}
+//| echo: false
+
+// One fixed-seed cohort; fit (a) a global degree-5 polynomial per side over the
+// FULL range and (b) local linear in a window. Reuses rdest_fitSide for both.
+// Static figure (own seed); purely additive, no shared mutable, no controls.
+ebw_globalData = {
+  const rnd = d3.randomNormal.source(d3.randomLcg(0.909))(0, 1);
+  const pts = [];
+  for (let i = 0; i < 1600; i++) {
+    const age = rdest_ageMin + (rdest_ageMax - rdest_ageMin) * d3.randomLcg(i + 7)();
+    const x = age - rdest_cutoff;
+    const treated = x >= 0 ? 1 : 0;
+    const mu = rdest_baseline + rdest_slope * x
+             + rdest_curv * x * x * treated
+             + rdest_trueJump * treated;
+    pts.push({ age, x, treated, y: mu + rdest_sigma * rnd(),
+               side: treated ? "Treated (≥70)" : "Untreated (<70)" });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the two fits and their dense prediction curves over the full support.
+ebw_globalFits = {
+  const big = 100;                          // huge "global" bandwidth: use all data
+  const hLoc = 5;                           // sensible local window
+  const L = ebw_globalData.filter(d => d.treated === 0);
+  const R = ebw_globalData.filter(d => d.treated === 1);
+  const gL = rdest_fitSide(L, 5, big, "Uniform");   // global quintic, left
+  const gR = rdest_fitSide(R, 5, big, "Uniform");   // global quintic, right
+  const lL = rdest_fitSide(L, 1, hLoc, "Triangular");
+  const lR = rdest_fitSide(R, 1, hLoc, "Triangular");
+  const curve = [];
+  for (let age = rdest_ageMin; age <= rdest_cutoff + 1e-9; age += 0.15) {
+    curve.push({ age, y: gL.predict(age - rdest_cutoff), grp: "left", method: "Global 5th-order polynomial" });
+    if (age >= rdest_cutoff - hLoc)
+      curve.push({ age, y: lL.predict(age - rdest_cutoff), grp: "left", method: "Local linear (h = 5)" });
+  }
+  for (let age = rdest_cutoff; age <= rdest_ageMax + 1e-9; age += 0.15) {
+    curve.push({ age, y: gR.predict(age - rdest_cutoff), grp: "right", method: "Global 5th-order polynomial" });
+    if (age <= rdest_cutoff + hLoc)
+      curve.push({ age, y: lR.predict(age - rdest_cutoff), grp: "right", method: "Local linear (h = 5)" });
+  }
+  return {
+    curve,
+    jumpGlobal: gR.atCutoff - gL.atCutoff,
+    jumpLocal: lR.atCutoff - lL.atCutoff,
+    limits: [
+      { age: rdest_cutoff, y: gL.atCutoff, method: "Global 5th-order polynomial" },
+      { age: rdest_cutoff, y: gR.atCutoff, method: "Global 5th-order polynomial" },
+      { age: rdest_cutoff, y: lL.atCutoff, method: "Local linear (h = 5)" },
+      { age: rdest_cutoff, y: lR.atCutoff, method: "Local linear (h = 5)" }
+    ]
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(660, width),
+  height: 360,
+  marginLeft: 62,
+  marginBottom: 48,
+  marginTop: 24,
+  marginRight: 18,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Age (running variable)", domain: [rdest_ageMin - 0.5, rdest_ageMax + 0.5], grid: false },
+  y: { label: "Fall ER visits / 1,000 per year", domain: [0, 95], grid: true },
+  fx: { label: null, domain: ["Global 5th-order polynomial", "Local linear (h = 5)"] },
+  color: { domain: ["Untreated (<70)", "Treated (≥70)"], range: ["#3d5a6c", "#990000"], legend: true },
+  marks: [
+    Plot.dot(ebw_globalData, {
+      fx: () => "Global 5th-order polynomial", x: "age", y: "y", fill: "side", r: 1.4, fillOpacity: 0.10
+    }),
+    Plot.dot(ebw_globalData, {
+      fx: () => "Local linear (h = 5)", x: "age", y: "y", fill: "side", r: 1.4, fillOpacity: 0.10
+    }),
+    Plot.ruleX([rdest_cutoff], { stroke: "#1c1c1a", strokeWidth: 1, strokeDasharray: "4,4" }),
+    Plot.line(ebw_globalFits.curve.filter(d => d.grp === "left"), {
+      fx: "method", x: "age", y: "y", stroke: "#3d5a6c", strokeWidth: 2.8
+    }),
+    Plot.line(ebw_globalFits.curve.filter(d => d.grp === "right"), {
+      fx: "method", x: "age", y: "y", stroke: "#990000", strokeWidth: 2.8
+    }),
+    Plot.dot(ebw_globalFits.limits, {
+      fx: "method", x: "age", y: "y", fill: "white", stroke: "#1c1c1a", strokeWidth: 2, r: 4
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1.2rem; margin-top:0.3rem;
+    font-size:0.8rem; font-family:'Inter',sans-serif; color:#1c1c1a;">
+  <span><strong style="color:#b3000b;">Global 5th-order:</strong> jump τ̂ =
+    ${ebw_globalFits.jumpGlobal >= 0 ? "+" : ""}${ebw_globalFits.jumpGlobal.toFixed(1)}
+    — pulled around by far-away points and edge wiggle.</span>
+  <span><strong style="color:#2e6f40;">Local linear (h = 5):</strong> jump τ̂ =
+    ${ebw_globalFits.jumpLocal >= 0 ? "+" : ""}${ebw_globalFits.jumpLocal.toFixed(1)}
+    — near the true −6.</span>
+</div>`
+```
+
+::: {.aside}
+Same cohort, two fits. The global quintic must use *all* the data and bends near both edges of each side (Runge's phenomenon), so the boundary intercepts (white dots) --- and the jump read off them --- are erratic and far from $-6$. The local linear fit only trusts patients near the cutoff and reads off a stable, near-true jump. This is the Gelman-Imbens argument in one picture.
+:::
+
+<details>
+<summary>Math Details: The Bias-Variance Expression and the Optimal Bandwidth</summary>
+<div class="details-content">
+
+### Setup
+
+Estimate the right-side boundary intercept $\mu_1(c)$ with a local linear regression on the centered running variable $x = X - c$, using a kernel $K$ and bandwidth $h$ over $0 \le x \le h$ (the left side is symmetric). Write the response function as a Taylor expansion around the cutoff:
+
+$$
+\mu_1(x) = \mu_1(0) + \mu_1'(0)\,x + \tfrac{1}{2}\mu_1''(0)\,x^2 + o(x^2).
+$$
+
+A local linear fit estimates the first two terms ($\mu_1(0)$ and $\mu_1'(0)$) and treats the quadratic remainder as error. That remainder is the source of the bias.
+
+### Bias of the boundary intercept
+
+Standard local-polynomial theory (Fan and Gijbels, 1996) gives the leading bias of the local linear intercept at a boundary:
+
+$$
+\text{Bias}\big(\hat\mu_1(0)\big) = \tfrac{1}{2}\,\mu_1''(0)\, h^2 \, \mathcal{B}_K + o(h^2),
+$$
+
+where $\mathcal{B}_K$ is a kernel-specific constant (a ratio of one-sided kernel moments). **Read this as**: "The bias is proportional to the curvature $\mu_1''(0)$ and to the *square* of the bandwidth." The jump estimator differences the two sides, so its bias is
+
+$$
+\text{Bias}(\hat\tau_{\text{RD}}) = \tfrac{1}{2}\big(\mu_1''(0) - \mu_0''(0)\big)\, h^2 \,\mathcal{B}_K \;\equiv\; B\,h^2.
+$$
+
+The bias vanishes as $h \to 0$ and grows quadratically as the window widens. It is zero when the two response functions have the same curvature at the cutoff (their quadratic distortions cancel in the difference).
+
+### Variance of the boundary intercept
+
+The variance of each boundary intercept is, to leading order,
+
+$$
+\text{Var}\big(\hat\mu_d(0)\big) = \frac{\sigma^2}{n\,h\,f(c)}\,\mathcal{V}_K + o\!\left(\frac{1}{nh}\right),
+$$
+
+where $\sigma^2$ is the residual variance of the outcome, $f(c)$ is the density of the running variable at the cutoff, and $\mathcal{V}_K$ is another kernel constant. **Read this as**: "Variance falls like $1/(nh)$ --- the effective sample is the $\approx n h f(c)$ patients in the window. Noisier outcomes (large $\sigma^2$) or sparser data at the cutoff (small $f(c)$) inflate it." Summing the two independent sides gives $\text{Var}(\hat\tau_{\text{RD}}) = V/(nh)$ with $V = 2\sigma^2 \mathcal{V}_K / f(c)$.
+
+### Minimizing the MSE
+
+The asymptotic mean squared error is
+
+$$
+\text{MSE}(h) = \big(B\,h^2\big)^2 + \frac{V}{n h} = B^2 h^4 + \frac{V}{nh}.
+$$
+
+Differentiate with respect to $h$ and set to zero:
+
+$$
+\frac{d}{dh}\,\text{MSE}(h) = 4 B^2 h^3 - \frac{V}{n h^2} = 0
+\;\;\Longrightarrow\;\;
+h^5 = \frac{V}{4 B^2 n}.
+$$
+
+Hence the **MSE-optimal bandwidth** is
+
+$$
+\boxed{\;h^\star = \left(\frac{V}{4 B^2 n}\right)^{1/5} \propto n^{-1/5}.\;}
+$$
+
+**Read this as**: "The optimal window is the fifth root of variance over (four times) squared-bias-times-$n$. It shrinks with sample size at rate $n^{-1/5}$ --- slowly, so even huge samples keep a non-trivial window." Substituting $h^\star$ back shows that at the optimum the squared bias and the variance are of the *same order* (the optimum balances them rather than killing one). This is exactly why a CI centered at $\hat\tau(h^\star)$ is mis-centered by a bias comparable to its own width, and why robust bias correction (CCT) is needed for honest coverage.
+
+### Why local linear beats local constant at the boundary
+
+A local *constant* fit (order 0) estimates $\mu_d(0)$ by a kernel-weighted average. At an interior point this has bias of order $h^2$, but at a *boundary* the one-sided window is asymmetric, so the average is pulled in the direction of the slope: the boundary bias is of order $h$, not $h^2$. The local *linear* fit explicitly includes the slope term $\mu_d'(0)$, which removes that first-order boundary bias and restores the $h^2$ rate. Since the cutoff is a boundary for *both* one-sided fits, local linear is the minimal order that is boundary-bias-corrected --- the reason it, not local constant, is the RD default.
+
+</div>
+</details>
+
+## Estimating the Jump with `rdrobust`
+
+The code below builds the age-70 fall-prevention data with a *curved* age-fall relationship, estimates the jump by hand with triangular-kernel local linear regression at a fixed bandwidth, and then hands the same data to `rdrobust` for the MSE-optimal bandwidth and robust bias-corrected confidence interval. It also sweeps a grid of bandwidths to produce the sensitivity check every RD paper should show.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(rdrobust)
+
+set.seed(70)
+
+# --- Simulate patients around the age-70 cutoff, with one-sided curvature ---
+# Running variable: age in [60, 80]. Treatment: enrolled iff age >= 70.
+# Fall risk ACCELERATES in old age, so the curvature lives on the >= 70 side:
+#   mu_1(x) = 40 + 1.2*x + 0.18*x^2,   mu_0(x) = 40 + 1.2*x   (continuous, no jump).
+# The leading RD bias is (1/2)(mu_1'' - mu_0'') h^2 * B_K; with curvature on only
+# one side it does NOT cancel, so a wide-window local LINEAR fit is genuinely
+# biased (a symmetric-curvature design would silently zero the bias out).
+# True program effect: -6 falls/1000 at the cutoff.
+n         <- 4000
+cutoff    <- 70
+true_jump <- -6
+
+dat <- tibble(
+  age     = runif(n, 60, 80),
+  x       = age - cutoff,                      # centered running variable
+  treated = as.integer(x >= 0),
+  falls   = 40 + 1.2 * x + 0.18 * x^2 * treated + true_jump * treated +
+            rnorm(n, 0, 9)
+)
+
+# --- By hand: triangular-kernel local LINEAR fit on each side, bandwidth h ---
+tri <- function(u) pmax(0, 1 - abs(u))         # triangular kernel
+h   <- 5
+fit_side <- function(d, h) {
+  d <- filter(d, abs(x) <= h)
+  w <- tri(d$x / h)
+  coef(lm(falls ~ x, data = d, weights = w))[["(Intercept)"]]  # value at x = 0
+}
+limit_left  <- fit_side(filter(dat, treated == 0), h)
+limit_right <- fit_side(filter(dat, treated == 1), h)
+cat("By-hand local linear jump (h =", h, "):",
+    round(limit_right - limit_left, 2), "\n")
+
+# --- rdrobust: MSE-optimal bandwidth + robust bias-corrected CI ---
+rd <- rdrobust(y = dat$falls, x = dat$x, c = 0,
+               kernel = "triangular", p = 1, bwselect = "mserd")
+summary(rd)
+cat("MSE-optimal bandwidth h*:", round(rd$bws[1, 1], 2), "\n")
+cat("Conventional estimate:    ", round(rd$coef[1], 2), "\n")
+cat("Robust 95% CI:            [",
+    round(rd$ci[3, 1], 2), ",", round(rd$ci[3, 2], 2), "]\n")
+
+# --- Bandwidth-sensitivity sweep (report this!) ---
+grid <- seq(2, 10, by = 1)
+sens <- map_dfr(grid, function(hh) {
+  r <- rdrobust(dat$falls, dat$x, c = 0, h = hh, kernel = "triangular", p = 1)
+  tibble(h = hh, est = r$coef[1], lo = r$ci[3, 1], hi = r$ci[3, 2])
+})
+print(sens)   # a credible effect is roughly flat across this grid
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from rdrobust import rdrobust          # pip install rdrobust
+
+rng = np.random.default_rng(70)
+
+# --- Simulate patients around the age-70 cutoff, with one-sided curvature ---
+n, cutoff, true_jump = 4000, 70, -6
+age     = rng.uniform(60, 80, n)
+x       = age - cutoff                                  # centered running variable
+treated = (x >= 0).astype(int)
+# Fall risk accelerates in old age, so curvature lives on the >= 70 side:
+#   mu_1(x) = 40 + 1.2*x + 0.18*x^2,  mu_0(x) = 40 + 1.2*x  (continuous, no jump).
+# One-sided curvature => the leading RD bias (1/2)(mu_1'' - mu_0'') h^2 does NOT
+# cancel, so a wide-window local linear fit is genuinely biased.
+falls   = (40 + 1.2 * x + 0.18 * x**2 * treated
+           + true_jump * treated + rng.normal(0, 9, n))
+dat = pd.DataFrame({"age": age, "x": x, "treated": treated, "falls": falls})
+
+# --- By hand: triangular-kernel local LINEAR fit on each side, bandwidth h ---
+def tri(u):
+    return np.maximum(0, 1 - np.abs(u))                 # triangular kernel
+
+def fit_side(d, h):
+    d = d[d["x"].abs() <= h]
+    w = tri(d["x"] / h)
+    X = sm.add_constant(d["x"])
+    m = sm.WLS(d["falls"], X, weights=w).fit()
+    return m.params["const"]                            # value at x = 0
+
+h = 5
+limit_left  = fit_side(dat[dat.treated == 0], h)
+limit_right = fit_side(dat[dat.treated == 1], h)
+print(f"By-hand local linear jump (h={h}): {limit_right - limit_left:.2f}")
+
+# --- rdrobust: MSE-optimal bandwidth + robust bias-corrected CI ---
+rd = rdrobust(y=dat["falls"], x=dat["x"], c=0,
+              kernel="triangular", p=1, bwselect="mserd")
+print(rd)
+print("MSE-optimal bandwidth h*:", round(float(rd.bws.iloc[0, 0]), 2))
+print("Conventional estimate:   ", round(float(rd.coef.iloc[0]), 2))
+print("Robust 95% CI: [",
+      round(float(rd.ci.iloc[2, 0]), 2), ",",
+      round(float(rd.ci.iloc[2, 1]), 2), "]")
+
+# --- Bandwidth-sensitivity sweep (report this!) ---
+rows = []
+for hh in range(2, 11):
+    r = rdrobust(dat["falls"], dat["x"], c=0, h=hh, kernel="triangular", p=1)
+    rows.append({"h": hh, "est": float(r.coef.iloc[0]),
+                 "lo": float(r.ci.iloc[2, 0]), "hi": float(r.ci.iloc[2, 1])})
+print(pd.DataFrame(rows))   # a credible effect is roughly flat across this grid
+```
+
+:::
+
+Both routes recover a jump near the true $-6$ visits per 1,000. The by-hand local linear estimate at $h = 5$ is close because the window is narrow enough that the one-sided curvature ($0.18\,x^2$ on the treated side) does little damage; widen it and the by-hand estimate drifts away from $-6$ (its magnitude inflates as the straight line bends through the accelerating age-fall curve), exactly as the lab showed. `rdrobust` picks $h^\star$ for you, corrects the residual curvature bias, and returns a confidence interval you can defend --- and the sensitivity sweep documents that the effect does not depend on a lucky bandwidth.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+In the age-70 fall-prevention study, a researcher runs a triangular-kernel local linear RD and reports the MSE-optimal bandwidth as $h^\star = 4$ years. She then re-runs it at $h = 8$ and gets a *larger* jump, and at $h = 2$ a *noisier* jump with a much wider CI.
+
+(a) Using the bias-variance decomposition, explain why doubling the bandwidth to 8 changed the *point estimate* but halving it to 2 mainly changed the *CI width*. (b) Which of the two re-runs is more worrying for the credibility of the result, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The leading bias of a local linear RD estimate is proportional to $h^2$, while its variance is proportional to $1/(nh)$.
+
+- Going from $h^\star = 4$ to $h = 8$ *doubles* the window. The bias term grows like $h^2$, so it roughly **quadruples** ($8^2/4^2 = 4$): the straight line now spans far more of the curved age-fall relationship and bends, shifting the *point estimate*. Meanwhile the variance term *falls* (more data), so the CI actually gets *tighter*, not wider --- which is exactly what makes a wide-bandwidth bias dangerous: it is a confident wrong answer.
+- Going from $h^\star = 4$ to $h = 2$ *halves* the window. The bias term *shrinks* (good), but the variance term $1/(nh)$ roughly **doubles**, so the dominant visible change is a much **wider CI**. The point estimate moves less in expectation (lower bias) but is noisier from sample to sample.
+
+**(b)** The $h = 8$ re-run is more worrying. A wider bandwidth buys a tighter CI by importing bias --- so a substantively *different point estimate with a narrow CI* is the signature of functional-form bias creeping in, not of a better estimate. The $h = 2$ re-run merely loses precision (wider CI) without systematic distortion; it is honestly less informative but not misleading. A credible RD should be roughly *flat* across bandwidths near $h^\star$; a point estimate that drifts as $h$ grows is a warning that curvature is contaminating the fit.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+The MSE-optimal bandwidth scales as $h^\star \propto n^{-1/5}$ --- a rule that holds for *any* running variable, with $h$ measured in that variable's own units (years before, *Care Need Index* points here). A pilot study of a diabetes-coordination RD with $n = 1{,}000$ patients near the cutoff used $h^\star = 0.5$ on the *Care Need Index* (CNI) running variable. The program is now evaluated nationally with $n = 100{,}000$ patients.
+
+(a) What is the approximate MSE-optimal bandwidth for the national study, holding the curvature and noise constants fixed? (b) Interpret what the larger sample "buys" in RD terms.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With the constants fixed, $h^\star \propto n^{-1/5}$, so
+
+$$
+\frac{h^\star_{\text{national}}}{h^\star_{\text{pilot}}} = \left(\frac{n_{\text{national}}}{n_{\text{pilot}}}\right)^{-1/5}
+= \left(\frac{100{,}000}{1{,}000}\right)^{-1/5} = 100^{-1/5}.
+$$
+
+Now $100^{1/5} = 10^{2/5} \approx 2.51$, so $100^{-1/5} \approx 1/2.51 \approx 0.398$. Hence
+
+$$
+h^\star_{\text{national}} \approx 0.5 \times 0.398 \approx 0.20 \text{ CNI units.}
+$$
+
+**(b)** A 100-fold larger sample lets the analyst *shrink the window* by a factor of about 2.5 (from 0.5 to 0.20 CNI units) while *still* keeping enough patients for a precise estimate. In RD terms, the bigger sample is spent on **getting closer to the cutoff** --- where comparability is best and functional-form bias is smallest --- rather than merely on tighter CIs at the old window. Note how *slowly* the optimal window shrinks: a 100-fold increase in $n$ buys only a ~2.5-fold narrowing, because the bias and variance must stay balanced ($n^{-1/5}$ is a very gentle rate).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague evaluates the fall-prevention program by fitting a **global fifth-order polynomial** in age to each side of the cutoff, using all patients from age 60 to 80, and reports a jump of $-9$ with a tight conventional confidence interval. He argues this is *better* than local linear because "it uses all the data and flexibly captures the shape."
+
+(a) Give two specific reasons (from Gelman-Imbens) why his estimate is untrustworthy. (b) His CI is *tighter* than the local linear CI --- does that make it more reliable? (c) What should he report instead?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Two of the Gelman-Imbens objections apply directly:
+
+1. **Noisy, far-reaching implicit weights.** The RD estimate from a global polynomial is a weighted average of the outcomes, and a fifth-order polynomial assigns large, oscillating weights to observations *far* from the cutoff. Patients aged 60 or 80 --- who tell us nothing about a jump at 70 --- exert heavy, erratic influence on the estimate. Polynomials behave badly at the edges of their range (Runge's phenomenon), and the cutoff sits at the edge of each side's data.
+2. **Hypersensitivity to the (arbitrary) order.** Whether he had chosen a fourth- or sixth-order polynomial could easily have flipped the magnitude or even the sign of the $-9$ estimate. There is no principled rule for the order, so the number is a researcher degree of freedom inviting specification search.
+
+**(b)** No --- a tighter CI is *worse* here, not better. The conventional CI from a global polynomial does not have correct coverage at the cutoff because the model is mis-specified there in a way the standard errors ignore. A narrow CI around a biased point estimate is a *confidently wrong* answer: it understates the true uncertainty and traps the truth far less than 95% of the time.
+
+**(c)** He should use **local linear (or local quadratic) regression in a data-driven bandwidth** --- e.g., `rdrobust` with the MSE-optimal bandwidth and the *robust bias-corrected* confidence interval --- and accompany it with a **bandwidth-sensitivity plot** showing the estimate is stable across a range of windows near $h^\star$. That is honest about both the localness of identification and the residual curvature bias.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the "Bandwidth Lab" interactive: (a) Set the polynomial order to **Local linear** and push the bandwidth to its maximum ($h = 12$). Describe what happens to the point estimate $\hat\tau$ and to the CI width, and explain both in terms of the bias-variance decomposition. (b) Now switch to **Local quadratic** at the same $h = 12$. What happens to the bias, and what is the cost? (c) Finally, set the order to **Local constant** at a moderate $h$ (say 5). Why is the estimate badly biased even though the window is not especially wide?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $h = 12$ with a local linear fit, the CI becomes very tight (almost all ~2,400 patients are used, so variance $\propto 1/(nh)$ is small), but the point estimate drifts *away* from the true $-6$. The true age-fall curve bends upward (the $0.18\,x^2$ term), and a straight line cannot follow a curve across a 12-year window: each side's line tilts toward the bulk of its data and misses the boundary value. The bias $\propto h^2$ is large at $h = 12$. The result is a *confident but biased* estimate --- the textbook danger of an over-wide bandwidth.
+
+**(b)** Switching to local quadratic at $h = 12$ sharply *reduces the bias*: the quadratic basis can exactly represent the curved baseline (which is itself quadratic), so the boundary intercepts realign and $\hat\tau$ returns near $-6$. The **cost** is a modestly *wider* CI --- a quadratic spends an extra degree of freedom per side, so the boundary intercept is estimated a little less precisely. This is the order-versus-bandwidth dial: higher order tolerates a wider window at the price of some variance.
+
+**(c)** A local constant fit (order 0) estimates each boundary value with a flat, kernel-weighted *average*, with no slope term. But the age-fall relationship is *sloped* at the cutoff, and at a *boundary* the one-sided window is asymmetric, so the average is dragged in the direction of the slope. This gives a boundary bias of order $h$ (not $h^2$) --- present even at modest bandwidths. Because it cannot track the slope at the edge of the data, local constant is biased where it matters most, which is exactly why local *linear* is the RD default.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Estimate the RD jump with **local polynomial regression**: fit a low-order polynomial on each side of the cutoff using only patients within bandwidth $h$, and take the difference of the two boundary intercepts. **Local linear** is the default because it removes the first-order *boundary* bias that sinks local-constant fits.
+- The **kernel** (triangular by default) weights nearby patients more heavily; it is a second-order choice. The **bandwidth** $h$ is the first-order choice and *is* the bias-variance trade-off.
+- $\text{MSE}(h) \approx (B h^2)^2 + V/(nh)$: **bias grows like $h^2$** (curvature over a wide window) and **variance falls like $1/(nh)$** (more data). The optimum balances them, giving $h^\star \propto n^{-1/5}$ --- so bigger samples buy a *closer look*, not just tighter CIs.
+- Use a **data-driven bandwidth** (Imbens-Kalyanaraman / CCT `mserd`) and report the **robust bias-corrected confidence interval** --- the conventional CI at the MSE-optimal $h$ is mis-centered because the leftover bias is comparable to the standard error. Add a **bandwidth-sensitivity plot**.
+- **Avoid global high-order polynomials** (Gelman-Imbens): they give erratic far-reaching weights, flip with the chosen order, and produce CIs with wrong coverage. Localness is a feature, not a bug.
+:::
+
+## What Comes Next
+
+We have now estimated the sharp RD jump *well*: local polynomials in a principled bandwidth, kernel-weighted, with honest robust inference. But every estimator on this page assumed the **sharp** design --- that crossing the cutoff moves treatment from 0 to 1 *with certainty*. Real eligibility rules leak. Some patients past 70 decline the fall-prevention program; some clinics enroll a few patients just before their birthday. When the cutoff shifts the *probability* of treatment without forcing it all the way, the design is **fuzzy**, and the jump in the outcome must be rescaled by the jump in treatment take-up. The next page, [Fuzzy Regression Discontinuity](fuzzy-rd.qmd), shows that this rescaling is exactly an instrumental-variables problem --- the cutoff is an instrument for treatment --- and recasts the local linear machinery of this page as a local two-stage least squares that recovers a *local average treatment effect* for the compliers at the threshold.

@@ -1,0 +1,834 @@
+---
+title: "Fixed versus Random Effects"
+subtitle: "The bias-efficiency tradeoff and the Hausman test"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State the single assumption — $\operatorname{Cov}(\alpha_i, x_{it}) = 0$ — that decides whether random effects (RE) is consistent, and explain why fixed effects (FE) never needs it
+- Frame the FE-versus-RE choice as a genuine bias-efficiency tradeoff rather than a contest with one right answer
+- Construct the Hausman statistic from the gap between the FE and RE coefficient vectors and read its $\chi^2$ rejection as evidence against RE's orthogonality assumption
+- Explain why $\operatorname{Var}(\hat\beta_{\text{FE}} - \hat\beta_{\text{RE}}) = \operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}})$ holds *under the null* (Hausman's efficiency lemma)
+- Apply practical guidance — and its caveats — to a Swedish primary-care panel where region effects plausibly correlate with a policy regressor
+:::
+
+## One Assumption Decides Everything
+
+On the [previous page](random-effects-model.qmd) we met the random effects (RE) model. It treats the unit effect $\alpha_i$ not as a fixed nuisance parameter to be swept away, but as a *random draw* from a distribution, $\alpha_i \sim (0, \sigma_\alpha^2)$, that is rolled into a composite error $v_{it} = \alpha_i + e_{it}$. RE then runs **feasible generalized least squares (GLS)** — a precision-weighted blend of the within (over-time) and between (across-unit) variation. Because it uses *both* sources of variation, RE is more efficient than fixed effects whenever it is allowed to run; and because it does not difference $\alpha_i$ away, it can even estimate the effects of *time-invariant* regressors, which FE cannot touch.
+
+That all sounds strictly better than fixed effects. The catch is a single assumption hiding underneath the GLS machinery.
+
+::: {.glass-card .glass-card--definition}
+The **random effects orthogonality assumption** is that the unit effect is uncorrelated with the regressors in *every* period:
+
+$$
+\operatorname{Cov}(\alpha_i,\, x_{it}) = 0 \quad \text{for all } t.
+$$
+
+**Read this as**: "Whatever fixed, unobserved trait $\alpha_i$ a region carries — its administrative culture, its capital stock, its baseline population health — that trait is uncorrelated with how the region scores on the regressor $x_{it}$." Equivalently, in the composite-error form $y_{it} = \mu + \beta x_{it} + (\alpha_i + e_{it})$, the regressor must be uncorrelated with the *whole* composite error $v_{it}$, not just with the idiosyncratic part $e_{it}$.
+:::
+
+Everything on this page flows from one yes-or-no question:
+
+> **Is $\operatorname{Cov}(\alpha_i, x_{it}) = 0$?**
+
+The two answers lead to sharply different worlds, and it is worth stating them at the very top because the rest of the page is an elaboration of this table.
+
+- **If yes** (orthogonality holds): RE is *consistent* and *more efficient* than FE. It is the better estimator, and it can additionally identify time-invariant regressors. Choosing FE here would needlessly throw away precision.
+- **If no** (the unit effect is correlated with $x$): RE is *biased and inconsistent*, because the GLS transformation leaves a piece of $\alpha_i$ correlated with the regressor. FE remains *consistent* regardless, because the within transformation deletes $\alpha_i$ entirely — as we proved on the [Fixed Effects](../05-panel/fixed-effects.qmd) page.
+
+So the choice between fixed and random effects is not a matter of taste or software defaults. It is a **bias-efficiency tradeoff** governed by whether one covariance is zero. The **Hausman test** is the formal device for interrogating that covariance using the data themselves.
+
+## Why FE Is Robust and RE Is Fragile
+
+It helps to see *mechanically* why the same correlation that is harmless for FE is fatal for RE.
+
+**Fixed effects** estimates $\beta$ from the demeaned equation $\tilde{y}_{it} = \beta \tilde{x}_{it} + \tilde{e}_{it}$ (tilde = deviation from the unit's own time-mean). The unit effect $\alpha_i$, being constant over $t$, is annihilated by demeaning, so its correlation with $x_{it}$ has nothing left to act on. FE is consistent whether or not orthogonality holds — it never relies on it. The price: FE uses *only within-unit variation*, which makes it less efficient and blind to time-invariant covariates.
+
+**Random effects** does *not* fully demean. The feasible-GLS transformation subtracts only a *fraction* $\theta$ of each unit's mean:
+
+$$
+y_{it} - \theta\,\bar{y}_i = \mu(1-\theta) + \beta\,(x_{it} - \theta\,\bar{x}_i) + \big[(1-\theta)\alpha_i + (e_{it} - \theta\bar{e}_i)\big],
+\qquad
+\theta = 1 - \sqrt{\frac{\sigma_e^2}{\sigma_e^2 + T\sigma_\alpha^2}}.
+$$
+
+**Read this as**: "RE quasi-demeans — it removes the share $\theta$ of each unit's average, where $\theta$ slides from 0 (pooled OLS) toward 1 (fixed effects) as the unit variance $\sigma_\alpha^2$ grows or the panel gets longer." Because $\theta < 1$ in general, a residual $(1-\theta)\alpha_i$ survives in the transformed error. If $\operatorname{Cov}(\alpha_i, x_{it}) \neq 0$, then that surviving piece is correlated with the (quasi-demeaned) regressor, and RE inherits an omitted-variable bias. Only when $\theta = 1$ — the FE limit — does the bias vanish entirely.
+
+::: {.glass-card .glass-card--assumption}
+For random effects GLS to be the best linear unbiased estimator, **two** conditions must hold together:
+
+1. **Orthogonality**: $\operatorname{Cov}(\alpha_i, x_{it}) = 0$ for all $t$ — the unit effect is uncorrelated with the regressors. This is the assumption the Hausman test interrogates, and the one fixed effects does *not* need.
+2. **Strict exogeneity of the idiosyncratic shock**: $E[e_{it} \mid x_{i1}, \dots, x_{iT}, \alpha_i] = 0$ — the same condition fixed effects also requires. Both estimators fail under reverse causality or time-varying confounding; the Hausman test says nothing about *this* assumption, only about the first.
+
+When both hold, RE attains the minimum variance among consistent estimators in its class — the property that makes the Hausman denominator valid. The entire FE-versus-RE debate is about condition 1; condition 2 is shared ground.
+:::
+
+::: {.glass-card .glass-card--insight}
+FE and RE are the *same estimator* viewed through different values of $\theta$. Pooled OLS sets $\theta = 0$ (keeps all of $\alpha_i$); fixed effects sets $\theta = 1$ (removes all of $\alpha_i$); random effects picks the $\theta \in (0,1)$ that minimizes variance *under the assumption that $\alpha_i$ is orthogonal to $x$*. RE's efficiency and its fragility are two faces of the same coin: by keeping some between-unit variation it gains precision, but that retained variation is exactly what carries the bias when orthogonality fails.
+:::
+
+## A Swedish Example Where the Assumption Plausibly Fails
+
+Consider the 21 Swedish *regioner*, each observed over several years. The regressor of interest is the **per-capita budget a region devotes to its structured diabetes coordination program** (*Diabetessamordning*), measured in SEK per resident, and the outcome is the regional average **HbA1c** (lower is better) among Type 2 diabetes patients. We want $\beta$: the effect of one more SEK per resident of program spending on glycemic control.
+
+The unit effect $\alpha_i$ bundles everything fixed about a region — the affluence of its tax base, the density of its *vårdcentraler*, the share of its population that is elderly, its long-standing administrative competence. Now ask the orthogonality question honestly. Are the regions that *spend more* on diabetes coordination a random subset, or are they systematically the wealthy, well-organized, urban regions whose patients would have had better HbA1c **anyway**?
+
+::: {.glass-card .glass-card--warning}
+In this setting $\operatorname{Cov}(\alpha_i, x_{it}) = 0$ is **implausible**. Program spending is a *policy choice* made by exactly the regions whose fixed traits also drive the outcome: affluent regions with deep tax bases both fund coordination generously and enjoy better baseline glycemic control for unrelated reasons. RE would credit the program with that pre-existing regional advantage and **overstate** the spending effect. FE, by comparing each region only to its own past, sidesteps the entire problem. This is the textbook case for defaulting to fixed effects — and, as we will see, the Hausman test is built to flag it.
+:::
+
+The decisive question, then, is empirical: does the RE estimate differ from the FE estimate by *more than sampling noise can explain*? If the two estimators disagree systematically, the only explanation (under the model) is that RE's orthogonality assumption is violated, since FE is consistent either way. That comparison is the Hausman test.
+
+## See It: The Bias-Efficiency Tradeoff
+
+The interactive below simulates a panel of Swedish regions. A single slider sets $\operatorname{Corr}(\alpha_i, x)$ — the correlation between a region's fixed effect and its program spending. Watch three things move together as you drag it:
+
+- the **RE estimate** drifts away from the true $\beta$ (its bias grows with the correlation),
+- the **FE estimate** stays centered on the truth (its sampling cloud wobbles but never drifts),
+- the **Hausman statistic** climbs, crossing its $\chi^2_1$ rejection threshold exactly where RE's bias becomes statistically detectable.
+
+::: {.interactive-container}
+
+#### Random effects drifts; fixed effects holds; Hausman fires
+
+```{ojs}
+//| echo: false
+
+viewof refevre_corr = Inputs.range([0, 0.9], {
+  value: 0.5,
+  step: 0.05,
+  label: "Corr(αᵢ, spending): violation of RE orthogonality"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof refevre_nRegions = Inputs.range([12, 40], {
+  value: 21,
+  step: 1,
+  label: "Number of regions (N)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof refevre_T = Inputs.range([3, 12], {
+  value: 6,
+  step: 1,
+  label: "Years per region (T)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof refevre_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed structural truth (held constant across the whole interactive) ──
+// beta is the effect of +1 SEK/resident of program spending on HbA1c (%).
+// It is NEGATIVE: more coordination spending lowers HbA1c. We work in
+// "spending units" of 100 SEK so coefficients print on a readable scale.
+refevre_trueBeta   = -0.30   // true within effect (per 100 SEK/resident)
+refevre_alphaSD    = 0.55    // SD of regional fixed effect α_i (HbA1c points)
+refevre_xWithinSD  = 1.00    // within-region year-to-year spending variation
+refevre_noiseSD    = 0.35    // idiosyncratic shock e_it (HbA1c points)
+refevre_xBaseMean  = 5.0     // mean spending (100 SEK/resident)
+refevre_yBaseMean  = 7.4     // anchor HbA1c level (%)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Simulate one balanced panel. Reactive on slider, N, T, and the button. ──
+// Each region i has a latent standard-normal z_i that drives BOTH its fixed
+// effect α_i AND its average spending x̄_i, with target correlation = refevre_corr.
+// Within-region spending then varies year to year around x̄_i. The structural
+// model uses the SAME β for every region, so FE recovers it regardless of corr.
+refevre_panel = {
+  refevre_draw; // dependency: clicking the button forces a fresh draw
+  const N    = refevre_nRegions;
+  const T    = refevre_T;
+  const rho  = refevre_corr;
+  const nrm  = d3.randomNormal.source(Math.random)(0, 1);
+  const rows = [];
+
+  for (let i = 0; i < N; i++) {
+    const z      = nrm();                                   // shared latent
+    const indep  = nrm();                                   // independent part of α
+    const alphaStd = rho * z + Math.sqrt(1 - rho * rho) * indep;
+    const alpha_i  = refevre_alphaSD * alphaStd;            // fixed effect (centered 0)
+    const xbar_i   = refevre_xBaseMean + 1.4 * z;           // region avg spending
+
+    for (let t = 0; t < T; t++) {
+      const x = xbar_i + refevre_xWithinSD * nrm();         // within variation
+      const e = refevre_noiseSD * nrm();
+      const y = refevre_yBaseMean + alpha_i
+                + refevre_trueBeta * (x - refevre_xBaseMean) + e;
+      rows.push({ region: i, t, x, y });
+    }
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Helpers: within-unit means, simple OLS slope, and grand means. ──
+refevre_groupMeans = {
+  const g = d3.group(refevre_panel, d => d.region);
+  const m = new Map();
+  for (const [r, rows] of g) {
+    m.set(r, { xbar: d3.mean(rows, d => d.x), ybar: d3.mean(rows, d => d.y), n: rows.length });
+  }
+  return m;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed-effects estimate: OLS on within-demeaned data, with its variance. ──
+// Returns {beta, varBeta}. varBeta uses the within residual variance s^2 / Sxx,
+// with the proper FE degrees of freedom (NT − N − 1).
+refevre_FE = {
+  const N = refevre_nRegions, T = refevre_T;
+  let Sxx = 0, Sxy = 0;
+  const dm = [];
+  for (const d of refevre_panel) {
+    const m = refevre_groupMeans.get(d.region);
+    const xt = d.x - m.xbar, yt = d.y - m.ybar;
+    dm.push({ xt, yt });
+    Sxx += xt * xt; Sxy += xt * yt;
+  }
+  const beta = Sxy / Sxx;
+  let sse = 0;
+  for (const p of dm) { const r = p.yt - beta * p.xt; sse += r * r; }
+  const df = N * T - N - 1;                 // lose N unit means + 1 slope
+  const s2 = sse / df;
+  return { beta, varBeta: s2 / Sxx };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Random-effects (feasible GLS) estimate, with its variance. ──
+// 1. Estimate σ_e² from the within residuals and σ_α² from the between residuals
+//    (standard one-way error-components / Swamy–Arora–style moment estimators).
+// 2. Form θ = 1 − sqrt(σ_e² / (σ_e² + T σ_α²)) and quasi-demean.
+// 3. OLS on the quasi-demeaned data gives β_RE and its variance.
+refevre_RE = {
+  const N = refevre_nRegions, T = refevre_T;
+
+  // --- within (FE) residual variance estimates σ_e² ---
+  let Sxx_w = 0, Sxy_w = 0;
+  for (const d of refevre_panel) {
+    const m = refevre_groupMeans.get(d.region);
+    Sxx_w += (d.x - m.xbar) ** 2;
+    Sxy_w += (d.x - m.xbar) * (d.y - m.ybar);
+  }
+  const bW = Sxy_w / Sxx_w;
+  let sseW = 0;
+  for (const d of refevre_panel) {
+    const m = refevre_groupMeans.get(d.region);
+    const r = (d.y - m.ybar) - bW * (d.x - m.xbar);
+    sseW += r * r;
+  }
+  const sigma_e2 = sseW / (N * T - N - 1);
+
+  // --- between regression of group means: σ_1² = σ_e² + T σ_α² ---
+  const gm = Array.from(refevre_groupMeans.values());
+  const xbarBar = d3.mean(gm, d => d.xbar);
+  const ybarBar = d3.mean(gm, d => d.ybar);
+  let Sxx_b = 0, Sxy_b = 0;
+  for (const g of gm) {
+    Sxx_b += (g.xbar - xbarBar) ** 2;
+    Sxy_b += (g.xbar - xbarBar) * (g.ybar - ybarBar);
+  }
+  const bB = Sxy_b / Sxx_b;
+  let sseB = 0;
+  for (const g of gm) { const r = (g.ybar - ybarBar) - bB * (g.xbar - xbarBar); sseB += r * r; }
+  const sigma1_2 = (sseB / (N - 2)) * T;            // between residual var × T
+  const sigma_a2 = Math.max((sigma1_2 - sigma_e2) / T, 1e-6);
+
+  // --- theta and quasi-demeaning ---
+  const theta = 1 - Math.sqrt(sigma_e2 / (sigma_e2 + T * sigma_a2));
+
+  let Sxx = 0, Sxy = 0, Sxxc = 0, n = 0;
+  const star = [];
+  // grand means for the constant term
+  const xGrand = d3.mean(refevre_panel, d => d.x);
+  const yGrand = d3.mean(refevre_panel, d => d.y);
+  for (const d of refevre_panel) {
+    const m = refevre_groupMeans.get(d.region);
+    const xs = d.x - theta * m.xbar;
+    const ys = d.y - theta * m.ybar;
+    star.push({ xs, ys });
+  }
+  // GLS with an intercept: regress ys on (const*(1−θ), xs). Solve 2×2 normal eqs.
+  const c = 1 - theta;
+  let Scc = 0, Scx = 0, Scy = 0, Sxxs = 0, Sxys = 0;
+  for (const p of star) {
+    Scc += c * c; Scx += c * p.xs; Scy += c * p.ys;
+    Sxxs += p.xs * p.xs; Sxys += p.xs * p.ys; n++;
+  }
+  const det = Scc * Sxxs - Scx * Scx;
+  const beta = (Scc * Sxys - Scx * Scy) / det;
+  const intercept = (Sxxs * Scy - Scx * Sxys) / det;
+  // residual variance of the GLS-transformed regression → Var(β_RE)
+  let sse = 0;
+  for (const p of star) { const r = p.ys - intercept * c - beta * p.xs; sse += r * r; }
+  const s2 = sse / (n - 2);
+  const varBeta = s2 * Scc / det;
+  return { beta, varBeta, theta };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Hausman statistic for the single slope coefficient. ──
+// H = (β_FE − β_RE)² / (Var(β_FE) − Var(β_RE)).  Under H0 (RE consistent &
+// efficient) the variance difference is positive and H ~ χ²(1). We guard the
+// denominator: in finite samples it can go slightly negative, which signals an
+// "uninformative" Hausman test (a real-world caveat we discuss below).
+refevre_hausman = {
+  const diff = refevre_FE.beta - refevre_RE.beta;
+  const vdiff = refevre_FE.varBeta - refevre_RE.varBeta;
+  const informative = vdiff > 0;
+  const H = informative ? (diff * diff) / vdiff : NaN;
+  return { diff, vdiff, H, informative };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// χ²(1) critical value at 5% = 3.841. (1 restriction: the single slope.)
+refevre_crit = 3.841
+```
+
+```{ojs}
+//| echo: false
+
+// ── Estimate readout cards (Inter font, Uppsala palette) ──
+html`
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:0.5rem; margin-bottom:0.85rem;
+            font-family:'Inter',system-ui,sans-serif; font-size:0.82rem;">
+  <div style="padding:0.55rem 0.8rem; border-radius:0.4rem; background:#f6f5f1; border:1px solid #e6e3db;">
+    <div style="font-weight:700; color:#555555; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em;">True β (within)</div>
+    <div style="font-size:1.18rem; font-weight:700; color:#1c1c1a;">${refevre_trueBeta.toFixed(3)}</div>
+  </div>
+  <div style="padding:0.55rem 0.8rem; border-radius:0.4rem; background:rgba(61,90,108,0.07); border:1px solid rgba(61,90,108,0.25);">
+    <div style="font-weight:700; color:#555555; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em;">Random effects β̂</div>
+    <div style="font-size:1.18rem; font-weight:700; color:#3d5a6c;">${refevre_RE.beta.toFixed(3)}</div>
+  </div>
+  <div style="padding:0.55rem 0.8rem; border-radius:0.4rem; background:rgba(153,0,0,0.05); border:1px solid rgba(153,0,0,0.22);">
+    <div style="font-weight:700; color:#555555; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em;">Fixed effects β̂</div>
+    <div style="font-size:1.18rem; font-weight:700; color:#990000;">${refevre_FE.beta.toFixed(3)}</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build a sampling-distribution sketch for each estimator: a normal curve
+// centered at the point estimate with its own standard error, so the reader
+// SEES the FE cloud stay on target while the RE cloud slides off it.
+refevre_curves = {
+  const seFE = Math.sqrt(refevre_FE.varBeta);
+  const seRE = Math.sqrt(refevre_RE.varBeta);
+  const lo = Math.min(refevre_trueBeta, refevre_FE.beta, refevre_RE.beta) - 4 * Math.max(seFE, seRE);
+  const hi = Math.max(refevre_trueBeta, refevre_FE.beta, refevre_RE.beta) + 4 * Math.max(seFE, seRE);
+  const npts = 121;
+  const dens = (x, mu, s) => Math.exp(-0.5 * ((x - mu) / s) ** 2) / (s * Math.sqrt(2 * Math.PI));
+  const pts = [];
+  for (let k = 0; k < npts; k++) {
+    const b = lo + (hi - lo) * k / (npts - 1);
+    pts.push({ b, d: dens(b, refevre_FE.beta, seFE), est: "Fixed effects" });
+    pts.push({ b, d: dens(b, refevre_RE.beta, seRE), est: "Random effects" });
+  }
+  return { pts, lo, hi };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Sampling-distribution plot: FE (red) vs RE (slate), with the true β (ochre)
+//    and a green on-target band, so bias-vs-efficiency is visible at a glance. ──
+Plot.plot({
+  height: 300,
+  marginLeft: 55,
+  marginBottom: 45,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Estimated β (effect of +100 SEK/resident on HbA1c) →", domain: [refevre_curves.lo, refevre_curves.hi], grid: true },
+  y: { label: "↑ sampling density", ticks: [] },
+  color: {
+    domain: ["Fixed effects", "Random effects"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    // true value (ochre rule)
+    Plot.ruleX([refevre_trueBeta], { stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "5,4" }),
+    Plot.text([{ x: refevre_trueBeta, label: "true β" }], {
+      x: "x",
+      frameAnchor: "top",
+      text: "label",
+      fill: "#9c7a33", fontSize: 11, fontWeight: 700, dy: 6, dx: 5, textAnchor: "start"
+    }),
+    // density curves
+    Plot.areaY(refevre_curves.pts, {
+      x: "b", y: "d", fill: "est", fillOpacity: 0.16, z: "est"
+    }),
+    Plot.line(refevre_curves.pts, {
+      x: "b", y: "d", stroke: "est", strokeWidth: 2.5, z: "est"
+    }),
+    // point-estimate markers on the baseline
+    Plot.ruleX([refevre_FE.beta], { stroke: "#990000", strokeWidth: 1, strokeOpacity: 0.5 }),
+    Plot.ruleX([refevre_RE.beta], { stroke: "#3d5a6c", strokeWidth: 1, strokeOpacity: 0.5 }),
+    Plot.ruleY([0], { stroke: "#1c1c1a" })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Hausman gauge: the statistic vs its χ²(1) 5% threshold, plus a verdict. ──
+{
+  const H = refevre_hausman.H;
+  const crit = refevre_crit;
+  const informative = refevre_hausman.informative;
+  const reject = informative && H > crit;
+
+  const barMax = Math.max(crit * 2.2, informative ? H * 1.15 : crit * 2.2);
+  const accent = !informative ? "#79766e" : (reject ? "#990000" : "#2e6f40");
+
+  const gauge = Plot.plot({
+    height: 96,
+    marginLeft: 55,
+    marginRight: 14,
+    marginTop: 26,
+    marginBottom: 30,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px" },
+    x: { label: "Hausman statistic H →", domain: [0, barMax], grid: true },
+    y: { axis: null, domain: ["H"] },
+    marks: [
+      informative ? Plot.barX([{ y: "H", x: H }], {
+        x: "x", y: "y", fill: accent, fillOpacity: 0.85, insetTop: 14, insetBottom: 14
+      }) : null,
+      // rejection threshold
+      Plot.ruleX([crit], { stroke: "#1c1c1a", strokeWidth: 2, strokeDasharray: "4,3" }),
+      Plot.text([{ x: crit, label: `χ²₁ 5% = ${crit}` }], {
+        x: "x", frameAnchor: "top",
+        text: "label",
+        fill: "#1c1c1a", fontSize: 10.5, fontWeight: 700, dy: -4, textAnchor: "middle"
+      }),
+      informative ? Plot.text([{ x: H, y: "H", label: `H = ${H.toFixed(2)}` }], {
+        x: "x", y: "y",
+        text: "label",
+        fill: "#ffffff", fontSize: 12, fontWeight: 700, textAnchor: H > barMax * 0.18 ? "end" : "start",
+        dx: H > barMax * 0.18 ? -6 : 6
+      }) : null
+    ]
+  });
+
+  let verdict, vColor, vBg;
+  if (!informative) {
+    verdict = "Hausman is uninformative here: the estimated Var(β̂_FE) − Var(β̂_RE) came out negative (a finite-sample artifact). The test cannot be computed — fall back on economic judgement (and usually on FE).";
+    vColor = "#79766e"; vBg = "rgba(121,118,110,0.10)";
+  } else if (reject) {
+    verdict = `Reject H₀ at 5% (H = ${H.toFixed(2)} > ${crit}). The FE and RE estimates differ by more than chance: RE's orthogonality assumption looks violated. Prefer the consistent estimator — fixed effects.`;
+    vColor = "#990000"; vBg = "rgba(153,0,0,0.06)";
+  } else {
+    verdict = `Fail to reject H₀ at 5% (H = ${H.toFixed(2)} ≤ ${crit}). No evidence that αᵢ is correlated with spending — random effects is defensible and buys you efficiency (and time-invariant regressors).`;
+    vColor = "#2e6f40"; vBg = "rgba(46,111,64,0.07)";
+  }
+
+  return html`<div>
+    ${gauge}
+    <div style="margin-top:0.5rem; padding:0.6rem 0.9rem; border-radius:0.4rem;
+                border-left:3px solid ${vColor}; background:${vBg};
+                font-family:'Inter',system-ui,sans-serif; font-size:0.86rem; line-height:1.5; color:#1c1c1a;">
+      ${verdict}
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read This Visualization
+
+Work through the steps in order; each isolates one idea in the bias-efficiency tradeoff.
+
+**Step 1: Start with orthogonality satisfied.** Drag **Corr(αᵢ, spending)** to $0$. The two density curves — red (fixed effects) and slate (random effects) — both sit on the dashed ochre **true β** line. Notice the slate RE curve is *taller and narrower* than the red FE curve: with the assumption satisfied, RE is unbiased *and* more efficient (smaller standard error). The Hausman gauge sits well below its dashed $\chi^2_1$ threshold and the verdict is green: RE is the better choice here.
+
+**Step 2: Introduce a violation.** Slide the correlation toward $+0.9$. Watch the **slate RE curve slide to the right**, away from the true β, while the **red FE curve stays anchored** on it. This is the whole page in one motion: bias (RE drifts) versus consistency (FE holds). The RE point-estimate card climbs toward zero — RE is now crediting the program with the affluent regions' pre-existing advantage, understating how much spending truly lowers HbA1c.
+
+**Step 3: Watch Hausman fire.** As the RE curve separates from the FE curve, the **Hausman bar grows** and eventually crosses the dashed threshold; the bar turns red and the verdict flips to "Reject H₀ — prefer fixed effects." The test is detecting exactly the gap your eye sees between the two curves, scaled by how precisely each is estimated.
+
+**Step 4: Feel the efficiency cost of FE.** At every setting, compare the *widths* of the two curves. The red FE curve is always at least as wide as the slate RE curve — FE pays for its robustness with variance, because it uses only within-region variation. When orthogonality holds (Step 1), that extra width is pure waste; when it fails (Step 2), it is the price of staying unbiased. That is the tradeoff.
+
+**Step 5: Stress-test the test.** Shrink **N** to 12 and **T** to 3, then click **Draw new sample** a few times. With little data, the curves are wide, the Hausman bar is jumpy, and it sometimes turns grey: "uninformative." That grey state — when the estimated $\operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}})$ comes out *negative* — is a genuine, common failure of the classic Hausman test in small samples, and a reason many applied economists do not lean on it alone.
+
+## The Hausman Test
+
+We have been eyeballing the gap between $\hat\beta_{\text{FE}}$ and $\hat\beta_{\text{RE}}$. Hausman (1978) turned that gap into a formal specification test.
+
+The logic is a clean application of a general principle. We have two estimators:
+
+- $\hat\beta_{\text{FE}}$ is **consistent under both hypotheses** — whether or not $\alpha_i$ is correlated with $x$.
+- $\hat\beta_{\text{RE}}$ is **consistent and efficient only under the null** $H_0: \operatorname{Cov}(\alpha_i, x_{it}) = 0$, and **inconsistent under the alternative**.
+
+Under $H_0$ both estimators converge to the same true $\beta$, so their difference should be small — only sampling noise. Under the alternative, RE converges to the *wrong* value while FE still converges to the truth, so the difference does not vanish. A large difference is therefore evidence against $H_0$.
+
+::: {.glass-card .glass-card--definition}
+The **Hausman test** compares the two coefficient vectors. With $\hat{q} = \hat\beta_{\text{FE}} - \hat\beta_{\text{RE}}$, the statistic is
+
+$$
+H = \hat{q}^{\prime}\,\big[\,\widehat{\operatorname{Var}}(\hat\beta_{\text{FE}}) - \widehat{\operatorname{Var}}(\hat\beta_{\text{RE}})\,\big]^{-1}\,\hat{q}
+\;\xrightarrow{\;d\;}\; \chi^2_{k}\quad \text{under } H_0,
+$$
+
+where $k$ is the number of time-varying coefficients being compared.
+
+**Read this as**: "Take the gap between the FE and RE coefficient vectors, scale it by the inverse of the difference in their variance matrices, and you get a chi-squared statistic with one degree of freedom per compared coefficient." A large $H$ — exceeding the $\chi^2_k$ critical value — rejects $H_0$ and says: *the RE assumption is violated, use fixed effects*.
+:::
+
+For a single slope ($k = 1$), the matrix expression collapses to the simple scalar form the interactive computes:
+
+$$
+H = \frac{(\hat\beta_{\text{FE}} - \hat\beta_{\text{RE}})^2}{\widehat{\operatorname{Var}}(\hat\beta_{\text{FE}}) - \widehat{\operatorname{Var}}(\hat\beta_{\text{RE}})}.
+$$
+
+The numerator is the squared disagreement; the denominator is the difference in the estimators' variances. The next section explains why that *difference of variances* — rather than the variance of the difference computed the usual way — is the right denominator.
+
+## Practical Guidance and Its Caveats
+
+The Hausman test is a useful diagnostic, but it is not an oracle, and treating it as a mechanical decision rule has burned many applied researchers. A few hard-won points.
+
+::: {.glass-card .glass-card--insight}
+**What a rejection does and does not mean.** Rejecting $H_0$ tells you that FE and RE disagree by more than chance — which, *within the assumed model*, can only happen if $\operatorname{Cov}(\alpha_i, x_{it}) \neq 0$. It does **not** tell you the FE estimate is "correct" in any absolute sense; FE has its own assumptions (strict exogeneity of $e_{it}$, no time-varying confounding). The test discriminates between two specific estimators, not between right and wrong.
+:::
+
+**1. Failing to reject is weak evidence.** A non-rejection can mean orthogonality genuinely holds — or that the test had **no power** (short panel, little within-unit variation, large standard errors). "We fail to reject, so we use random effects" is much weaker than it sounds: absence of evidence is not evidence of absence.
+
+**2. The classic test can be uninformative.** The denominator $\widehat{\operatorname{Var}}(\hat\beta_{\text{FE}}) - \widehat{\operatorname{Var}}(\hat\beta_{\text{RE}})$ is guaranteed positive only *asymptotically under the null*. In finite samples it can come out **negative** (you saw this in the interactive at small $N, T$), leaving the statistic undefined. Modern practice replaces it with a **regression-based** Hausman test — an auxiliary regression that is robust to clustering and never produces a negative variance — or the **Mundlak/Wooldridge** approach of the next page. That robust version is also the fix when errors are clustered or heteroskedastic (the norm in panels), where the classic variance-difference denominator is no longer valid.
+
+::: {.glass-card .glass-card--warning}
+**Why many applied economists default to fixed effects.** In observational micro-panels, the orthogonality assumption $\operatorname{Cov}(\alpha_i, x_{it}) = 0$ is rarely defensible: the whole reason you have unobserved unit heterogeneity is usually that it is *entangled* with your regressors (regions that spend more are systematically different regions). The efficiency gain from RE is real but modest; the bias from a violated assumption can be large and is hard to sign. Faced with that asymmetry — small upside, large downside — many researchers simply report FE as their headline specification and use RE (or the Mundlak device) only when they can argue orthogonality on substantive grounds. The Hausman test then plays a supporting role: a rejection confirms the default; a non-rejection is treated cautiously, not as a green light.
+:::
+
+When *should* you reach for random effects? When orthogonality is plausible by design (e.g., the unit "effect" is genuinely a random sampling artifact, as in many cluster-randomized trials), when you must estimate a **time-invariant** regressor's effect (FE cannot), or when $T$ is very small and the efficiency gain is decisive. Even then, the **correlated random effects / Mundlak device** of the next page often dominates: it keeps RE's ability to handle time-invariant covariates while neutralizing the bias from correlated $\alpha_i$.
+
+<details>
+<summary>Math Details: Why Var(b_FE − b_RE) = Var(b_FE) − Var(b_RE) Under the Null</summary>
+<div class="details-content">
+
+### The puzzle
+
+For two arbitrary random vectors $a$ and $b$,
+
+$$
+\operatorname{Var}(a - b) = \operatorname{Var}(a) + \operatorname{Var}(b) - 2\operatorname{Cov}(a, b).
+$$
+
+So in general the variance of the *difference* of the two estimators is
+
+$$
+\operatorname{Var}(\hat\beta_{\text{FE}} - \hat\beta_{\text{RE}})
+= \operatorname{Var}(\hat\beta_{\text{FE}}) + \operatorname{Var}(\hat\beta_{\text{RE}}) - 2\operatorname{Cov}(\hat\beta_{\text{FE}}, \hat\beta_{\text{RE}}).
+$$
+
+Yet the Hausman denominator is the *difference* of the variances, $\operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}})$. For these to agree we would need
+
+$$
+\operatorname{Cov}(\hat\beta_{\text{FE}}, \hat\beta_{\text{RE}}) = \operatorname{Var}(\hat\beta_{\text{RE}}).
+$$
+
+That is exactly what Hausman proved, and the engine is the efficiency of $\hat\beta_{\text{RE}}$ under $H_0$.
+
+### Hausman's efficiency lemma
+
+**Lemma.** Let $\hat\beta_{\text{eff}}$ be an *efficient* estimator under $H_0$ (it attains the smallest asymptotic variance in its class), and let $\hat\beta_{\text{cons}}$ be any other consistent estimator. Then the efficient estimator is *asymptotically uncorrelated with the difference* $\hat{q} = \hat\beta_{\text{cons}} - \hat\beta_{\text{eff}}$:
+
+$$
+\operatorname{Cov}(\hat\beta_{\text{eff}},\, \hat{q}) = 0.
+$$
+
+**Proof by contradiction.** Suppose $\operatorname{Cov}(\hat\beta_{\text{eff}}, \hat{q}) = C \neq 0$. Construct a new estimator by combining the efficient estimator with a multiple of the (mean-zero, under $H_0$) difference:
+
+$$
+\hat\beta_{\lambda} = \hat\beta_{\text{eff}} - \lambda\,\hat{q}, \qquad \lambda \in \mathbb{R}.
+$$
+
+Since $\hat{q} \xrightarrow{p} 0$ under $H_0$ (both estimators are consistent for the same $\beta$), $\hat\beta_\lambda$ is also consistent for $\beta$ for any $\lambda$. Its variance is
+
+$$
+\operatorname{Var}(\hat\beta_\lambda)
+= \operatorname{Var}(\hat\beta_{\text{eff}}) - 2\lambda\,C + \lambda^2 \operatorname{Var}(\hat{q}).
+$$
+
+Differentiate with respect to $\lambda$ and set to zero: the variance is minimized at $\lambda^\star = C / \operatorname{Var}(\hat{q}) \neq 0$, giving
+
+$$
+\operatorname{Var}(\hat\beta_{\lambda^\star}) = \operatorname{Var}(\hat\beta_{\text{eff}}) - \frac{C^2}{\operatorname{Var}(\hat{q})} < \operatorname{Var}(\hat\beta_{\text{eff}}).
+$$
+
+But this is a *consistent estimator with strictly smaller variance than the efficient one* — a contradiction, since $\hat\beta_{\text{eff}}$ was assumed efficient. Hence $C = 0$. $\;\blacksquare$
+
+### From the lemma to the denominator
+
+Apply the lemma with $\hat\beta_{\text{eff}} = \hat\beta_{\text{RE}}$ (efficient under $H_0$) and $\hat\beta_{\text{cons}} = \hat\beta_{\text{FE}}$ (consistent under $H_0$). The lemma gives $\operatorname{Cov}(\hat\beta_{\text{RE}}, \hat{q}) = 0$, i.e.
+
+$$
+\operatorname{Cov}\!\big(\hat\beta_{\text{RE}},\, \hat\beta_{\text{FE}} - \hat\beta_{\text{RE}}\big) = 0
+\;\;\Longrightarrow\;\;
+\operatorname{Cov}(\hat\beta_{\text{FE}}, \hat\beta_{\text{RE}}) = \operatorname{Var}(\hat\beta_{\text{RE}}).
+$$
+
+Substitute this into the general variance-of-a-difference formula:
+
+$$
+\begin{aligned}
+\operatorname{Var}(\hat\beta_{\text{FE}} - \hat\beta_{\text{RE}})
+&= \operatorname{Var}(\hat\beta_{\text{FE}}) + \operatorname{Var}(\hat\beta_{\text{RE}}) - 2\operatorname{Cov}(\hat\beta_{\text{FE}}, \hat\beta_{\text{RE}}) \\[2pt]
+&= \operatorname{Var}(\hat\beta_{\text{FE}}) + \operatorname{Var}(\hat\beta_{\text{RE}}) - 2\operatorname{Var}(\hat\beta_{\text{RE}}) \\[2pt]
+&= \operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}}).
+\end{aligned}
+$$
+
+This is the boxed identity that lets us compute the Hausman denominator from the two *individual* variances, without ever estimating the cross-covariance $\operatorname{Cov}(\hat\beta_{\text{FE}}, \hat\beta_{\text{RE}})$ — which would be awkward to obtain. The whole convenience of the classic Hausman test rests on this lemma.
+
+### The catch, restated
+
+The identity holds **only under $H_0$**, because that is where the efficiency of $\hat\beta_{\text{RE}}$ — the premise of the lemma — applies. Under the alternative, RE is no longer efficient (it is not even consistent), so the cross-covariance need not equal $\operatorname{Var}(\hat\beta_{\text{RE}})$, and the denominator $\operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}})$ can fail to be positive in finite samples. That is precisely the "uninformative Hausman" pathology you triggered in the interactive at small $N$ and $T$.
+
+</div>
+</details>
+
+## Code: FE, RE, and the Hausman Test
+
+The code below builds a region-year panel in which the unit effect $\alpha_i$ is **deliberately correlated** with program spending, then fits fixed effects, random effects, and the Hausman test. FE should land near the true $\beta = -0.30$; RE should be biased toward zero; Hausman should reject.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(plm)       # panel estimators + phtest (Hausman)
+library(dplyr)
+
+set.seed(2026)
+
+# --- Simulate 21 regioner over 6 years, with Cov(alpha_i, spending) > 0 ---
+N <- 21; T <- 6
+true_beta <- -0.30                       # effect of +100 SEK/resident on HbA1c
+
+regions <- tibble(
+  region = 1:N,
+  z      = rnorm(N)                       # latent driving BOTH alpha and spending
+) |>
+  mutate(
+    alpha     = 0.55 * z,                 # fixed effect correlated with z
+    staff_bar = 5.0 + 1.4 * z             # region-average spending (100 SEK/cap)
+  )
+
+panel <- expand.grid(region = 1:N, year = 1:T) |>
+  left_join(regions, by = "region") |>
+  mutate(
+    spend = staff_bar + rnorm(n(), 0, 1.0),                 # within variation
+    hba1c = 7.4 + alpha + true_beta * (spend - 5.0) + rnorm(n(), 0, 0.35)
+  )
+
+pdat <- pdata.frame(panel, index = c("region", "year"))
+
+# --- Fixed effects (within) and random effects (GLS) ---
+fe <- plm(hba1c ~ spend, data = pdat, model = "within")
+re <- plm(hba1c ~ spend, data = pdat, model = "random")
+
+cat("True beta :", true_beta, "\n")
+cat("FE beta   :", round(coef(fe)["spend"], 3), "\n")   # ~ -0.30 (consistent)
+cat("RE beta   :", round(coef(re)["spend"], 3), "\n")   # biased toward 0
+
+# --- Hausman test: FE vs RE ---
+h <- phtest(fe, re)
+print(h)            # large chi-sq, tiny p-value => reject H0 => prefer FE
+
+# --- Robust / regression-based Hausman (handles clustered errors) ---
+# phtest with method = "aux" runs the auxiliary-regression version, which never
+# returns a negative variance and accepts vcov for clustering.
+phtest(hba1c ~ spend, data = pdat, method = "aux",
+       vcov = function(x) vcovHC(x, method = "white1", cluster = "group"))
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from linearmodels.panel import PanelOLS, RandomEffects
+
+rng = np.random.default_rng(2026)
+
+# --- Simulate 21 regioner over 6 years, with Cov(alpha_i, spending) > 0 ---
+N, T, true_beta = 21, 6, -0.30
+z         = rng.normal(0, 1, N)            # latent driving alpha AND spending
+alpha     = 0.55 * z                       # fixed effect correlated with z
+staff_bar = 5.0 + 1.4 * z                  # region-average spending (100 SEK/cap)
+
+rows = []
+for i in range(N):
+    for t in range(1, T + 1):
+        spend = staff_bar[i] + rng.normal(0, 1.0)              # within variation
+        hba1c = 7.4 + alpha[i] + true_beta * (spend - 5.0) + rng.normal(0, 0.35)
+        rows.append({"region": i + 1, "year": t, "spend": spend, "hba1c": hba1c})
+panel = pd.DataFrame(rows).set_index(["region", "year"])
+
+# --- Fixed effects (within) and random effects (GLS) ---
+fe = PanelOLS.from_formula("hba1c ~ spend + EntityEffects", panel).fit()
+re = RandomEffects.from_formula("hba1c ~ 1 + spend", panel).fit()
+
+b_fe, b_re = fe.params["spend"], re.params["spend"]
+v_fe, v_re = fe.cov.loc["spend", "spend"], re.cov.loc["spend", "spend"]
+
+print(f"True beta : {true_beta:.3f}")
+print(f"FE beta   : {b_fe:.3f}")   # ~ -0.30 (consistent)
+print(f"RE beta   : {b_re:.3f}")   # biased toward 0
+
+# --- Hausman test (single coefficient): H = (b_FE - b_RE)^2 / (V_FE - V_RE) ---
+from scipy import stats
+diff  = b_fe - b_re
+vdiff = v_fe - v_re                  # positive under H0; can go negative in small samples
+if vdiff > 0:
+    H = diff**2 / vdiff
+    p = 1 - stats.chi2.cdf(H, df=1)
+    print(f"Hausman H : {H:.3f}   (chi2_1 5% crit = 3.841)")
+    print(f"p-value   : {p:.4f}   => reject H0 (prefer FE)" if H > 3.841
+          else f"p-value   : {p:.4f}   => fail to reject")
+else:
+    print("Hausman uninformative: Var(FE) - Var(RE) < 0 (finite-sample artifact).")
+```
+
+:::
+
+Both routes show the same story: FE recovers $\beta \approx -0.30$, RE is pulled toward zero by the correlated $\alpha_i$, and the Hausman statistic is large enough to reject orthogonality — the data themselves tell us to prefer fixed effects.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A panel study of vårdcentral waiting times reports a fixed-effects estimate $\hat\beta_{\text{FE}} = -2.40$ with $\operatorname{SE} = 0.50$, and a random-effects estimate $\hat\beta_{\text{RE}} = -1.10$ with $\operatorname{SE} = 0.30$, for a single time-varying regressor (nurse staffing).
+
+(a) Compute the scalar Hausman statistic. (b) Compare it to the $\chi^2_1$ 5% critical value of $3.841$ and state the conclusion. (c) Which estimator should be reported, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The variances are the squared standard errors: $\operatorname{Var}(\hat\beta_{\text{FE}}) = 0.50^2 = 0.25$ and $\operatorname{Var}(\hat\beta_{\text{RE}}) = 0.30^2 = 0.09$. The difference is $0.25 - 0.09 = 0.16$. The coefficient gap is $\hat\beta_{\text{FE}} - \hat\beta_{\text{RE}} = -2.40 - (-1.10) = -1.30$. Then
+
+$$
+H = \frac{(-1.30)^2}{0.16} = \frac{1.69}{0.16} = 10.56.
+$$
+
+**(b)** Since $H = 10.56 > 3.841$, we **reject** $H_0: \operatorname{Cov}(\alpha_i, x_{it}) = 0$ at the 5% level (in fact well beyond it; the $\chi^2_1$ 1% critical value is $6.63$).
+
+**(c)** Report **fixed effects**. The rejection says RE and FE disagree by more than sampling noise can explain, which — within the model — means RE's orthogonality assumption is violated and RE is inconsistent. FE is consistent regardless, so it is the credible estimate. The RE estimate of $-1.10$ is biased toward zero, understating the benefit of staffing by more than half.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain why the *difference of variances*, $\operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}})$, must be **non-negative under the null**, and what it means substantively when a software package returns a *negative* value.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Under $H_0$, random effects is the **efficient** estimator — it attains the minimum asymptotic variance among consistent estimators in its class — while fixed effects is consistent but *not* efficient (it discards the between-unit variation). An efficient estimator has, by definition, a variance no larger than any competitor's, so $\operatorname{Var}(\hat\beta_{\text{RE}}) \le \operatorname{Var}(\hat\beta_{\text{FE}})$, making the difference $\operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}}) \ge 0$. This non-negativity is *exactly* what makes the difference a valid variance for the denominator of $H$, and it relies on Hausman's efficiency lemma ($\operatorname{Cov}(\hat\beta_{\text{FE}}, \hat\beta_{\text{RE}}) = \operatorname{Var}(\hat\beta_{\text{RE}})$).
+
+A **negative** estimated difference is a *finite-sample* contradiction of an *asymptotic* result. It does not mean FE is more efficient than RE in the population; it means the sample estimates of the two variances are noisy enough (typically because $N$ or $T$ is small, or errors are non-spherical so the efficiency premise fails) that their estimated difference flipped sign. The classic Hausman statistic is then undefined. The right response is not to force a number but to use a **regression-based / robust Hausman test** (or the Mundlak approach), which is guaranteed well-defined and accommodates clustered errors.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher wants to estimate the effect of a region being **coastal** (a time-invariant indicator) on its average HbA1c, using a panel of the 21 regioner over 8 years. A colleague suggests fixed effects "to be safe." (a) Why can fixed effects *not* estimate this effect at all? (b) Under what assumption could random effects estimate it, and how would you assess whether that assumption is credible here?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** "Coastal" never changes within a region over the study window, so it is **collinear with the unit fixed effect** $\alpha_i$. The within (demeaning) transformation subtracts each region's own mean; for a constant regressor $z_i$, $z_{it} - \bar{z}_i = z_i - z_i = 0$, a column of zeros. A zero column carries no information, so the coefficient is **not identified** under FE — software drops it or returns `NA`. FE deliberately throws away the between-region variation, which is the *only* variation a time-invariant regressor has.
+
+**(b)** Random effects *can* estimate the coastal effect, because it retains between-unit variation (it only quasi-demeans, $\theta < 1$). But this requires the RE orthogonality assumption, $\operatorname{Cov}(\alpha_i, \text{coastal}_i) = 0$ — the unobserved fixed traits of a region must be uncorrelated with its being coastal. That is doubtful: coastal regions may systematically differ in industry mix, diet, age structure, and wealth, all of which load onto $\alpha_i$ and onto HbA1c. To assess it, you cannot use a standard Hausman test on the coastal coefficient itself (FE provides no estimate to compare against). Instead you would (i) run Hausman on the *time-varying* regressors to check orthogonality there as a proxy for the model's overall credibility, and (ii) use the **Mundlak / correlated-random-effects** device (next page), which lets the time-invariant coefficient be estimated while explicitly modeling and netting out the correlation between $\alpha_i$ and the time-*varying* regressors — a far more honest route than naive RE.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set $N = 12$ and $T = 3$, put the correlation slider at a moderate value (say $0.4$), and click **Draw new sample** several times. You will see the Hausman verdict flicker between "reject," "fail to reject," and the grey "uninformative" state across draws — even though the true correlation never changes. Explain what this demonstrates about relying on the Hausman test as a mechanical decision rule.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The data-generating process is *fixed* — there genuinely is a moderate correlation between $\alpha_i$ and spending, so RE is genuinely (mildly) biased every time. Yet the test's *verdict* swings from draw to draw. Three things are happening, all symptoms of low power and small-sample fragility:
+
+1. **Low power.** With only $N = 12$ regions and $T = 3$ years, the standard errors on both $\hat\beta_{\text{FE}}$ and $\hat\beta_{\text{RE}}$ are large, so a *moderate* true bias often fails to produce a statistically significant FE–RE gap. The test frequently "fails to reject" a violation that is really there — a **Type II error**.
+
+2. **Unstable variance difference.** The denominator $\widehat{\operatorname{Var}}(\hat\beta_{\text{FE}}) - \widehat{\operatorname{Var}}(\hat\beta_{\text{RE}})$ is itself estimated noisily; in some draws it comes out negative and the classic statistic is **undefined** (the grey state).
+
+3. **Knife-edge rejections.** When it is defined, $H$ straddles the $3.841$ threshold, so tiny sampling differences tip the verdict either way.
+
+The lesson: the Hausman test is a *diagnostic*, not a verdict. Treating "fail to reject ⇒ use RE" as an automatic rule, especially in short panels, can lead you to adopt a biased estimator simply because the test lacked the power to catch the bias. This is a central reason many applied economists default to fixed effects (whose consistency does not hinge on a test passing) and turn to RE only when orthogonality is defensible on substantive grounds — or use the more stable Mundlak device of the next page.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The entire FE-versus-RE choice hinges on one assumption, $\operatorname{Cov}(\alpha_i, x_{it}) = 0$: if it holds, RE is consistent *and* more efficient (and can estimate time-invariant regressors); if it fails, RE is biased while FE stays consistent.
+- FE and RE are the same estimator at different quasi-demeaning weights $\theta$; FE ($\theta = 1$) deletes $\alpha_i$ and is robust, RE ($\theta < 1$) keeps some between variation, gaining efficiency but inheriting bias when $\alpha_i$ is correlated with $x$.
+- The Hausman test turns the FE–RE coefficient gap into a $\chi^2$ statistic; a large value rejects orthogonality and points to fixed effects.
+- The classic denominator equals $\operatorname{Var}(\hat\beta_{\text{FE}}) - \operatorname{Var}(\hat\beta_{\text{RE}})$ because, *under the null*, the efficient RE estimator is uncorrelated with the FE–RE difference (Hausman's lemma) — which is also why the difference can go negative and "uninformative" in small samples.
+- Treat Hausman as a diagnostic, not an oracle: failing to reject is weak evidence, the test can be uninformative or non-robust, and in observational panels many economists default to FE because the downside of a violated RE assumption dwarfs the modest efficiency it offers.
+:::
+
+## What Comes Next
+
+We framed fixed versus random effects as a bias-efficiency tradeoff and used the Hausman test to interrogate the one assumption that decides it. But the test leaves us with an uncomfortable either/or: take FE and lose all ability to estimate time-invariant regressors, or take RE and risk bias from a correlated $\alpha_i$. The next page, [Correlated Random Effects: The Mundlak Device](correlated-re-mundlak.qmd), dissolves that dilemma. Mundlak's insight is to *model* the correlation directly — by adding the unit means $\bar{x}_i$ as regressors, random effects can reproduce the FE slope on time-varying covariates *while still* estimating time-invariant ones, and the coefficients on those added means deliver a Hausman test as an ordinary regression output. It is the bridge between the two worlds we have been forced to choose between.

@@ -1,0 +1,1169 @@
+---
+title: "Overlap and Balance Diagnostics"
+subtitle: "Common support, standardized differences, and trimming"
+---
+
+## The Two Questions a Skeptic Will Ask
+
+Suppose you have done everything the [Matching Methods](matching-methods.qmd) and [Weighting](weighting-ipw.qmd) pages taught you. You estimated a propensity score, matched (or weighted) treated to control patients, and produced a tidy ATT for a Swedish *region* evaluating a **fall-prevention program** (*fallpreventionsprogram*) run at its *vårdcentraler* (primary care centers). The program enrols elderly patients into a structured routine --- a balance assessment by a *distriktssköterska* (district nurse), a medication review, and home-hazard advice --- and the outcome is the number of fall-related emergency visits per patient over the following year. Enrolment is, as always, not random: frailer, older, more polypharmacy-burdened patients are the ones who get enrolled.
+
+A careful reviewer at *Socialstyrelsen* (the National Board of Health and Welfare) will ask two questions, and only two, before they believe your number.
+
+**Question 1 — Are you even comparing comparable people?** For the program's frailest enrollees, does there *exist* any non-enrolled patient who looks like them? If the most polypharmacy-heavy treated patient has no control counterpart anywhere in the data, then no amount of matching or weighting can manufacture a counterfactual for that patient --- you would be extrapolating into a region with no data. This is the **overlap** (or **common support**) question.
+
+**Question 2 — After your adjustment, are the groups actually balanced?** Matching and weighting *promise* to make the treated and control groups look alike on the covariates. Did they deliver? You can check this directly by comparing covariate distributions before and after adjustment. This is the **balance** question.
+
+These two diagnostics are the subject of this page. They share a deep and slightly uncomfortable feature, which we will keep returning to:
+
+::: {.glass-card .glass-card--insight}
+**Balance is checkable; unconfoundedness is not.** You can *look* at whether the treated and control groups have the same distribution of *measured* covariates after matching --- that is what a balance table or Love plot shows you. But the identifying assumption from [Selection on Observables](selection-on-observables.qmd), conditional ignorability, is a statement about *unmeasured* confounders, and the data are silent about those. Good balance on what you measured is necessary, encouraging, and reassuring. It is never proof that the comparison is unconfounded. Diagnostics discipline the part of the problem you can see; they cannot rescue the part you cannot.
+:::
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Diagnose **overlap / common support** by inspecting the treated and control propensity-score distributions, and identify the off-support region where no counterfactual exists.
+- **Trim** off-support units and articulate the bias--variance and external-validity cost of doing so.
+- Measure covariate balance with the **standardized mean difference** (SMD) and the **variance ratio**, and apply the conventional $|\text{SMD}| < 0.1$ rule of thumb.
+- Read a **Love plot** comparing balance before and after matching/weighting.
+- Explain why the SMD --- and *not* a two-sample $t$-test --- is the right tool for assessing balance.
+:::
+
+
+## Overlap: The Region Where a Counterfactual Exists
+
+Recall the propensity score $e(X) = P(D = 1 \mid X)$ --- the probability of enrolment given covariates. The [Weighting](weighting-ipw.qmd) page showed that conditioning on $e(X)$ is enough to remove confounding *if* ignorability holds. But there is a second, equally load-bearing condition that the propensity score makes visible.
+
+::: {.glass-card .glass-card--assumption}
+**Overlap (common support / positivity).** Every unit has a propensity score strictly between 0 and 1:
+
+$$
+0 < e(X) < 1 \quad \text{for all } X.
+$$
+
+**Read this as**: "For every kind of patient that appears in the data, there is a genuine chance of being enrolled *and* a genuine chance of not being enrolled." If some type of patient is *always* enrolled ($e(X) = 1$) or *never* enrolled ($e(X) = 0$), then for that type one of the two potential outcomes is never observed *in anyone*, and no comparison group exists. The effect for those patients is simply **not identified** --- not by matching, not by weighting, not by regression.
+:::
+
+Overlap is what makes the counterfactual question answerable. For a treated patient with propensity score $0.9$, there are few but *some* controls who looked just as likely to enrol; they supply the counterfactual. For a treated patient with propensity score $0.999$ --- so frail and polypharmacy-burdened that essentially everyone like them was enrolled --- there is effectively *no* control to borrow from. Asking "what would have happened to this patient without the program?" has no empirical answer, because nobody like them went without it.
+
+The whole reason an *estimand* --- the precise quantity you are trying to estimate, here the ATT --- is even at risk is the confounding structure this module is built to handle. The frailty index $X$ drives *both* who enrols ($D$) *and* the fall outcome ($Y$), opening a back-door path $D \leftarrow X \rightarrow Y$ that contaminates the raw enrolled-vs-not comparison. Matching and weighting earn their keep by **conditioning on the propensity score $e(X)$** --- which blocks that back-door --- but they can only do so *where overlap exists*. The two DAGs below show the structure and the repair.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG drawing component for this page (page-tag prefixed). ──
+// Pure function of d3 only. Builds an SVG via d3.create and returns the node.
+//   nodes: [{id, x, y, label}] with x,y normalized in [0,1] (padded so nothing
+//          clips). Conditioned ids are drawn as rounded SQUARES; others circles.
+//   edges: [{source, target, kind}]  kind ∈
+//     "causal"        → green  (#2e6f40)  open causal edge
+//     "backdoor-open" → red    (#b3000b)  open back-door / biasing edge
+//     "blocked"       → grey   (#79766e, dashed)  a blocked edge
+mao_drawDAG = function ({ nodes, edges, width = 460, height = 200, conditioned = [] }) {
+  const pad = 42;
+  const r = 23;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "backdoor-open" ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "mao-arrow-green" :
+    k === "backdoor-open" ? "mao-arrow-red" : "mao-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["mao-arrow-green", "#2e6f40"],
+    ["mao-arrow-red", "#b3000b"],
+    ["mao-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 14).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 14)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 10.5).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); gap:1rem; align-items:start; margin:1.25rem 0 0.4rem;">
+  <div style="text-align:center;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.05em; color:#79766e; font-weight:700; margin-bottom:0.3rem;">Before adjustment — back-door open</div>
+    ${mao_drawDAG({
+      width: 360, height: 190,
+      nodes: [
+        { id: "X", x: 0.5,  y: 0.10, label: "X", caption: "Frailty / age / polypharmacy" },
+        { id: "D", x: 0.10, y: 0.82, label: "D", caption: "Enrolment" },
+        { id: "Y", x: 0.90, y: 0.82, label: "Y", caption: "Falls" }
+      ],
+      edges: [
+        { source: "X", target: "D", kind: "backdoor-open" },
+        { source: "X", target: "Y", kind: "backdoor-open" },
+        { source: "D", target: "Y", kind: "causal" }
+      ]
+    })}
+  </div>
+  <div style="text-align:center;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.05em; color:#79766e; font-weight:700; margin-bottom:0.3rem;">After conditioning on e(X) — back-door blocked</div>
+    ${mao_drawDAG({
+      width: 360, height: 190,
+      conditioned: ["X"],
+      nodes: [
+        { id: "X", x: 0.5,  y: 0.10, label: "X", caption: "Conditioned on (via e(X))" },
+        { id: "D", x: 0.10, y: 0.82, label: "D", caption: "Enrolment" },
+        { id: "Y", x: 0.90, y: 0.82, label: "Y", caption: "Falls" }
+      ],
+      edges: [
+        { source: "X", target: "D", kind: "blocked" },
+        { source: "X", target: "Y", kind: "blocked" },
+        { source: "D", target: "Y", kind: "causal" }
+      ]
+    })}
+  </div>
+</div>`
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = the causal effect we want ($D \rightarrow Y$); <span style="color:#b3000b; font-weight:700;">red</span> = open back-door (the confounding to be removed); <span style="color:#79766e; font-weight:700;">grey dashed</span> = blocked. Conditioning on $X$ (the squared node, achieved by adjusting on $e(X)$) closes the back-door --- *but only for patients who have overlap*. Off-support patients have no comparison group, so the back-door cannot be closed for them at all.
+:::
+
+### Why non-overlap is fatal, not merely inconvenient
+
+It is tempting to treat overlap as a technicality. It is not. Consider what weighting does in the off-support region. The inverse-probability weight for a control unit is $1/(1 - e(X))$. As $e(X) \to 1$, that weight explodes toward infinity. A single control patient who *happened* not to enrol despite a 0.99 enrolment probability receives a weight of 100 --- one person standing in for a hundred. The estimate becomes hostage to a handful of flukes, the variance balloons, and the point estimate lurches around. Matching has the same disease in a different costume: it is forced to pair the extreme treated patient with a control who is nothing like them, smuggling in exactly the bias matching was meant to remove.
+
+The cure is **trimming**: discard units whose propensity scores fall outside the region where both groups are represented. We make this concrete in the interactive below.
+
+Before the full lab, here is the idea in one picture. Lay every patient out along the propensity-score line from $0$ to $1$. Both groups crowd the middle; but the far-right sliver holds treated patients so frail that no comparable control exists, and the far-left sliver holds the fittest controls with no comparable treated unit. Those shaded slivers are the **off-support region** --- the cure (trimming) simply discards them.
+
+```{ojs}
+//| echo: false
+
+// Static annotated number-line: the propensity-score axis [0,1] with the two
+// off-support tails shaded and a single treated point at e=0.999 labelled
+// "no control twin." Purely illustrative — fixed coordinates, no DGP.
+{
+  const w = Math.min(600, width);
+  return Plot.plot({
+    height: 150,
+    marginLeft: 60,
+    marginBottom: 45,
+    marginTop: 34,
+    width: w,
+    style: { fontFamily: "Inter" },
+    x: { label: "Propensity score e(X)", domain: [0, 1], grid: false },
+    y: { axis: null, domain: [0, 1] },
+    marks: [
+      // Off-support bands.
+      Plot.rectX([{ x1: 0, x2: 0.05 }, { x1: 0.95, x2: 1 }], {
+        x1: "x1", x2: "x2", y1: 0, y2: 1, fill: "#79766e", fillOpacity: 0.16
+      }),
+      // The on-support region label (frame text, white halo).
+      Plot.text([{ x: 0.5 }], {
+        x: "x", y: 0.5, text: ["overlap: a counterfactual exists"],
+        fill: "#2e6f40", fontSize: 11, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // Tail labels.
+      Plot.text([{ x: 0.025 }], {
+        x: "x", frameAnchor: "top", dy: -10,
+        text: ["off-support"], fill: "#b3000b", fontSize: 9.5, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 0.975 }], {
+        x: "x", frameAnchor: "top", dy: -10,
+        text: ["off-support"], fill: "#b3000b", fontSize: 9.5, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The lonely extreme treated point at e=0.999.
+      Plot.dot([{ x: 0.985, y: 0.5 }], { x: "x", y: "y", r: 6, fill: "#990000" }),
+      Plot.text([{ x: 0.985, y: 0.5 }], {
+        x: "x", y: "y", dy: 24, text: ["no control twin\nexists here"],
+        fill: "#990000", fontSize: 9.5, fontWeight: 700, lineHeight: 1.1,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.ruleX([0.05, 0.95], { stroke: "#1c1c1a", strokeWidth: 1, strokeDasharray: "4,3" })
+    ]
+  });
+}
+```
+
+
+## See It: Overlap, Trimming, and Balance
+
+The lab below has two linked panels driven by one shared data-generating process --- 600 elderly patients, roughly half of them enrolled in the fall-prevention program (the exact split varies with each redraw), with enrolment driven mainly by a frailty index so that frailer patients are more likely to be enrolled.
+
+- The **top panel** shows the two propensity-score distributions --- enrolled (red) and not-enrolled (slate) --- as overlapping histograms. A **trimming slider** (with threshold $t$) shades the off-support tails that get discarded, and a readout reports how many units survive.
+- The **bottom panel** is a **Love plot**: for each covariate, the standardized mean difference *before* adjustment (faded) and *after* adjustment (solid), with the $|\text{SMD}| < 0.1$ guide rails drawn in. An **adjustment-strength slider** lets you dial the matching/weighting from "do nothing" to "full rebalancing" and watch the solid dots march toward zero.
+
+Adjust the two sliders and watch the off-support region disappear from the top panel while the dots collapse toward the centre line in the bottom panel.
+
+::: {.interactive-container}
+
+#### Common support, trimming, and a before/after Love plot
+
+::: {.callout-note appearance="minimal"}
+**Start here:** leave both sliders at 0 and look at the red/slate tails in the top panel, then drag *Trimming* up to trim them and *Adjustment* up to pull the Love-plot dots into the green band. Full walkthrough in "How to Read" below.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof maoverlap_trim = Inputs.range([0, 0.2], {
+  value: 0,
+  step: 0.01,
+  label: "Trimming threshold t (drop e(X) below t or above 1−t)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof maoverlap_adjust = Inputs.range([0, 1], {
+  value: 0,
+  step: 0.05,
+  label: "Adjustment strength (matching / weighting)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<p style="font-size:0.8rem; color:#79766e; margin:-0.25rem 0 0.5rem;">
+  Adjustment strength affects only the <em>bottom</em> Love plot (the "After" dots);
+  it does not change the top histogram.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof maoverlap_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Data-generating process ──────────────────────────────────────────────
+// 600 elderly patients. Three covariates drive BOTH enrolment in the
+// fall-prevention program and the propensity score:
+//   age      : standardized age (older -> more likely enrolled)
+//   frailty  : a frailty / balance-impairment index (frailer -> more likely)
+//   polyph   : number of chronic medications (polypharmacy)
+// The "true" propensity is a logistic function of these covariates, so the
+// treated group is systematically older, frailer, and more medicated. That
+// imbalance is exactly what the diagnostics must expose and adjustment repair.
+//
+// maoverlap_draw is REFERENCED (never written) so pressing "Draw new sample"
+// reseeds the cloud without any mutable circular dependency.
+maoverlap_data = {
+  maoverlap_draw;                       // reactive dependency: reseed on click
+  const n = 600;
+  const rnorm = d3.randomNormal(0, 1);
+  const sigmoid = z => 1 / (1 + Math.exp(-z));
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const age     = rnorm();
+    const frailty = rnorm();
+    const polyph  = rnorm();
+    // True enrolment propensity: frailty dominates, age and polypharmacy add.
+    const eta = 0.0 + 1.3 * frailty + 0.8 * age + 0.5 * polyph;
+    const e   = sigmoid(eta);
+    const d   = Math.random() < e ? 1 : 0;
+    rows.push({ i, age, frailty, polyph, eTrue: e, d });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Estimated propensity score via a tiny logistic regression fit by gradient
+// descent on the three covariates (no external libraries). In practice you
+// would use glm()/LogisticRegression; here we fit in-browser so the histogram
+// reflects an ACTUAL estimated e(X), the object every diagnostic operates on.
+maoverlap_ps = {
+  const X = maoverlap_data.map(r => [1, r.age, r.frailty, r.polyph]);
+  const y = maoverlap_data.map(r => r.d);
+  const n = y.length;
+  const p = 4;
+  let b = [0, 0, 0, 0];
+  const lr = 0.3;
+  const sigmoid = z => 1 / (1 + Math.exp(-z));
+  for (let it = 0; it < 400; it++) {
+    const grad = [0, 0, 0, 0];
+    for (let i = 0; i < n; i++) {
+      let z = 0;
+      for (let k = 0; k < p; k++) z += b[k] * X[i][k];
+      const err = sigmoid(z) - y[i];
+      for (let k = 0; k < p; k++) grad[k] += err * X[i][k];
+    }
+    for (let k = 0; k < p; k++) b[k] -= lr * grad[k] / n;
+  }
+  return maoverlap_data.map((r, i) => {
+    let z = 0;
+    for (let k = 0; k < p; k++) z += b[k] * X[i][k];
+    return { ...r, eHat: sigmoid(z) };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Apply the trimming rule: keep only units with t <= eHat <= 1 - t.
+maoverlap_kept = maoverlap_ps.filter(
+  r => r.eHat >= maoverlap_trim && r.eHat <= 1 - maoverlap_trim
+)
+maoverlap_dropped = maoverlap_ps.filter(
+  r => r.eHat < maoverlap_trim || r.eHat > 1 - maoverlap_trim
+)
+```
+
+```{ojs}
+//| echo: false
+
+// ── TOP PANEL: overlapping propensity-score histograms ──
+// Enrolled (Uppsala red) vs not-enrolled (slate). Trimmed tails are shaded a
+// muted hairline grey so the reader literally sees the off-support region being
+// discarded. Color is driven by a data 'series' field through the declared
+// color scale, so the legend swatches genuinely bind to (and match) the bars.
+{
+// Compute a y-axis ceiling from the tallest histogram bin so the shaded
+// off-support bands span the full plot height regardless of the draw.
+// Bins are computed PER GROUP (treated vs control), because the two groups are
+// drawn as separate overlapping series — the tallest single bar is a per-group
+// bin count, not the combined count. Using the combined count here would set
+// the ceiling too high and leave every bar dwarfed at the bottom of the frame.
+const binCount = (group) => d3.rollups(
+  maoverlap_kept.filter(r => r.d === group),
+  v => v.length,
+  r => Math.floor(Math.min(0.999999, r.eHat) * 24)
+).map(d => d[1]);
+const allBins = binCount(1).concat(binCount(0));
+const yMax = (d3.max(allBins) ?? 10) * 1.05;
+
+// Tag each kept row with its series label so the color scale (not constant
+// fill strings) produces both the bars and a matching legend.
+const tagged = maoverlap_kept.map(r => ({
+  ...r, series: r.d === 1 ? "Enrolled" : "Not enrolled"
+}));
+
+return Plot.plot({
+  height: 260,
+  marginLeft: 60,
+  width: Math.min(680, width),
+  style: { fontFamily: "Inter" },
+  x: { label: "Estimated propensity score e(X)", domain: [0, 1] },
+  y: { label: "Patients", grid: true, domain: [0, yMax] },
+  color: {
+    domain: ["Enrolled", "Not enrolled"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    // Shaded off-support tails (drawn first, behind the bars).
+    maoverlap_trim > 0 ? Plot.rect([
+      { x1: 0, x2: maoverlap_trim },
+      { x1: 1 - maoverlap_trim, x2: 1 }
+    ], {
+      x1: "x1", x2: "x2", y1: 0, y2: yMax,
+      fill: "#79766e", fillOpacity: 0.16
+    }) : null,
+    Plot.rectY(tagged, Plot.binX(
+      { y: "count" },
+      { x: "eHat", fill: "series", fillOpacity: 0.5, thresholds: 24 }
+    )),
+    // Trim boundary rules.
+    maoverlap_trim > 0 ? Plot.ruleX([maoverlap_trim, 1 - maoverlap_trim], {
+      stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,3"
+    }) : null,
+    Plot.ruleY([0])
+  ]
+});
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Adjustment weights. We compute, for every KEPT unit, an ATT weight:
+//   treated:  weight 1
+//   control:  IPW-for-ATT weight  e(X)/(1 - e(X)),  scaled by adjustment α.
+// At α = 0 every unit gets weight 1 (the raw, unadjusted comparison).
+// At α = 1 controls are fully reweighted by e/(1-e), which is the
+// inverse-probability weight that rebalances controls to look like the
+// treated on the propensity score (and hence, on the covariates that drive it).
+// Intermediate α linearly blends raw and full weights — a single dial that
+// stands in for "how hard the matching/weighting works."
+maoverlap_weighted = {
+  const alpha = maoverlap_adjust;
+  return maoverlap_kept.map(r => {
+    const wFull = r.d === 1 ? 1 : (r.eHat / Math.max(1e-6, 1 - r.eHat));
+    const w = (1 - alpha) * 1 + alpha * wFull;
+    return { ...r, w };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Weighted standardized mean difference for one covariate.
+// SMD = (xbar_treated - xbar_control) / sqrt((s2_t + s2_c) / 2)
+// using the POOLED standard deviation in the denominator. Crucially the
+// denominator uses the UNWEIGHTED group variances (the conventional choice in
+// Austin 2009) so the SMD measures location separation in units that do not
+// themselves shrink as weighting concentrates mass.
+maoverlap_smd = function (key, useWeights) {
+  const rows = maoverlap_weighted;
+  const tr = rows.filter(r => r.d === 1);
+  const ct = rows.filter(r => r.d === 0);
+
+  const wmean = arr => {
+    let sw = 0, swx = 0;
+    for (const r of arr) {
+      const w = useWeights ? r.w : 1;
+      sw += w; swx += w * r[key];
+    }
+    return swx / sw;
+  };
+  // Unweighted group variances for a stable, standard denominator.
+  const variance = arr => {
+    const m = d3.mean(arr, r => r[key]);
+    return d3.mean(arr, r => (r[key] - m) ** 2);
+  };
+
+  const mt = wmean(tr), mc = wmean(ct);
+  const sp = Math.sqrt((variance(tr) + variance(ct)) / 2);
+  return sp > 0 ? (mt - mc) / sp : 0;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+maoverlap_covariates = ["age", "frailty", "polyph"]
+maoverlap_covLabels = ({ age: "Age", frailty: "Frailty index", polyph: "Polypharmacy" })
+
+// Build the Love-plot rows: |SMD| before (unweighted) and after (weighted).
+maoverlap_loveData = maoverlap_covariates.flatMap(k => [
+  { cov: maoverlap_covLabels[k], stage: "Before", smd: Math.abs(maoverlap_smd(k, false)) },
+  { cov: maoverlap_covLabels[k], stage: "After",  smd: Math.abs(maoverlap_smd(k, true)) }
+])
+```
+
+```{ojs}
+//| echo: false
+
+// ── BOTTOM PANEL: the Love plot ──
+// One row per covariate. Faded dot = |SMD| before adjustment; solid dot =
+// |SMD| after. The vertical band at 0.1 is the conventional balance threshold:
+// solid dots inside it are "balanced." Lines connect before -> after so the
+// reader sees each covariate improving.
+Plot.plot({
+  height: 210,
+  marginLeft: 110,
+  marginTop: 34,
+  width: Math.min(680, width),
+  style: { fontFamily: "Inter" },
+  x: {
+    label: "|Standardized mean difference|  (smaller = better balance)",
+    domain: [0, Math.max(0.55, d3.max(maoverlap_loveData, d => d.smd) * 1.1)],
+    grid: true
+  },
+  y: { label: null, domain: maoverlap_covariates.map(k => maoverlap_covLabels[k]) },
+  color: {
+    domain: ["Before", "After"],
+    range: ["#9c7a33", "#990000"],
+    legend: true
+  },
+  marks: [
+    // The 0.1 rule-of-thumb threshold. The y scale here is ORDINAL (one band
+    // per covariate), so we give the band no y channel — a one-dimensional rect
+    // spans the full frame height automatically. (Passing numeric y1/y2 against
+    // an ordinal scale would map to undefined and the band would not render.)
+    Plot.rectX([{ x1: 0, x2: 0.1 }], {
+      x1: "x1", x2: "x2",
+      fill: "#2e6f40", fillOpacity: 0.08
+    }),
+    Plot.ruleX([0.1], { stroke: "#2e6f40", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+    // Threshold label anchored to the TOP of the frame (not a data row), with a
+    // white halo, so it never clips the top edge or collides with the legend.
+    Plot.text([{ x: 0.1 }], {
+      x: "x", frameAnchor: "top",
+      text: ["0.10 threshold"], dy: -10, dx: 4, textAnchor: "start",
+      fill: "#2e6f40", fontSize: 10, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Connector from before -> after for each covariate.
+    Plot.link(maoverlap_covariates.map(k => ({
+      cov: maoverlap_covLabels[k],
+      x1: Math.abs(maoverlap_smd(k, false)),
+      x2: Math.abs(maoverlap_smd(k, true))
+    })), {
+      x1: "x1", x2: "x2", y: "cov", stroke: "#79766e", strokeWidth: 1.5
+    }),
+    Plot.dot(maoverlap_loveData, {
+      x: "smd", y: "cov", fill: "stage", r: 7,
+      stroke: "white", strokeWidth: 1,
+      title: d => `${d.cov} (${d.stage}): |SMD| = ${d.smd.toFixed(3)}`
+    }),
+    Plot.ruleX([0])
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: sample sizes after trimming + worst-covariate balance verdict.
+{
+  const keptT = maoverlap_kept.filter(r => r.d === 1).length;
+  const keptC = maoverlap_kept.filter(r => r.d === 0).length;
+  const dropped = maoverlap_dropped.length;
+  const worstAfter = d3.max(maoverlap_covariates, k => Math.abs(maoverlap_smd(k, true)));
+  const balanced = worstAfter < 0.1;
+
+  const tile = (label, value, color, bg) => html`<div style="
+      text-align: center; min-height: 4rem;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 0.5rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  return html`<div style="display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+      gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Treated kept", keptT, "#1c1c1a", "rgba(153,0,0,0.05)")}
+    ${tile("Controls kept", keptC, "#1c1c1a", "rgba(61,90,108,0.06)")}
+    ${tile("Units trimmed", dropped, dropped > 0 ? "#9c7a33" : "#1c1c1a", "#f6f5f1")}
+    ${tile("Worst |SMD|", worstAfter.toFixed(3),
+        balanced ? "#2e6f40" : "#b3000b",
+        balanced ? "rgba(46,111,64,0.08)" : "rgba(179,0,11,0.06)")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Additive variance-cost readout: the SMD tiles show balance getting BETTER as
+// you adjust, but they hide the price you pay — a few off-support controls
+// receiving giant weights. This panel surfaces it: the largest control weight,
+// and the Kish effective sample size (ESS) = (Σw)² / Σw² — the number of
+// "equally-weighted" controls your weighted comparison is really worth. As
+// trimming → 0 and adjustment → 1, the max weight balloons and the ESS collapses,
+// which is precisely why non-overlap is fatal.
+{
+  const controls = maoverlap_weighted.filter(r => r.d === 0);
+  const wsum = d3.sum(controls, r => r.w);
+  const w2sum = d3.sum(controls, r => r.w * r.w);
+  const ess = w2sum > 0 ? (wsum * wsum) / w2sum : 0;
+  const nC = controls.length;
+  const maxW = d3.max(controls, r => r.w) ?? 1;
+  const essFrac = nC > 0 ? ess / nC : 1;        // 1 = no efficiency loss, →0 = severe
+  // Colour the verdict by how much effective information survived.
+  const essColor = essFrac > 0.7 ? "#2e6f40" : essFrac > 0.4 ? "#9c7a33" : "#b3000b";
+  const maxColor = maxW > 15 ? "#b3000b" : maxW > 5 ? "#9c7a33" : "#2e6f40";
+
+  const tile = (label, value, color, bg) => html`<div style="
+      text-align: center; min-height: 4rem;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 0.5rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.5rem;">
+      ${tile("Max control weight", maxW.toFixed(1) + "×", maxColor,
+          maxW > 15 ? "rgba(179,0,11,0.06)" : "#f6f5f1")}
+      ${tile("Effective control n (ESS)", Math.round(ess), essColor,
+          essFrac > 0.7 ? "rgba(46,111,64,0.08)" : "rgba(156,122,51,0.08)")}
+      ${tile("ESS / actual controls", (essFrac * 100).toFixed(0) + "%", essColor,
+          "#f6f5f1")}
+    </div>
+    <p style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e;
+        margin:0.45rem 0 0; line-height:1.45;">
+      Balance (above) improves as you adjust — but watch the price here. With little
+      trimming and full adjustment, one fluke control can carry a huge weight and the
+      <em>effective</em> control sample shrinks far below the actual count. That ballooning
+      variance is the cost the Love plot alone never shows.
+    </p>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Overlap and Love Plots
+
+Work through the lab in this order; each step isolates one of the two skeptic's questions.
+
+**Step 1: Find the off-support tails.** With both sliders at 0, look at the top panel. Near $e(X) = 1$ (the right edge) the bars are almost entirely *blue*: these are the frailest patients, and nearly all of them were enrolled --- there are barely any pink controls to compare against. Symmetrically, near $e(X) = 0$ (the left edge) the bars are almost entirely *pink*: the fittest patients, essentially none of whom enrolled. These two tails are the **off-support regions**. A treated patient in the right tail has no real control counterpart; the counterfactual question is empirically unanswerable for them.
+
+**Step 2: Trim and watch the tails vanish.** Drag the **Trimming threshold** up to about $0.05$. Two grey bands appear at the edges and the dashed boundary lines move inward; every unit whose $e(X)$ lands in a band is discarded. The readout shows "Units trimmed" climbing. You have just *defined your study population* as the patients for whom a credible comparison exists --- and explicitly walked away from the rest.
+
+**Step 3: Read the Love plot before adjustment.** With **Adjustment strength** at 0, the bottom panel shows two dots per covariate. The faded ochre "Before" dots and the solid red "After" dots coincide (no adjustment yet), and all three sit *far to the right* of the green $0.10$ line --- frailty is the worst, because it drives enrolment most strongly. This is the raw imbalance: enrolled patients are markedly older, frailer, and more medicated.
+
+**Step 4: Turn up the adjustment.** Drag **Adjustment strength** toward 1. The faded "Before" dots stay put (they record the raw imbalance forever), but the solid "After" dots slide *left* along their connector lines, crossing into the green band. By full strength, all three covariates have $|\text{SMD}| < 0.1$ and the "Worst |SMD|" tile turns green. This is what successful weighting looks like: the reweighted control group now matches the treated group's covariate distribution. (The slider is a teaching continuum from "no adjustment" to "full inverse-probability weighting" --- in a real analysis you do not dial a strength knob; you apply the method once and read off the resulting balance.)
+
+**Step 5: Combine the two.** Notice that trimming and adjustment do *different* jobs. Trimming (Step 2) removes patients you *cannot* compare; adjustment (Step 4) rebalances the patients you *can*. Pushing the trim slider higher generally makes adjustment easier --- with the extreme units gone, the surviving control weights are gentler and balance is achieved with less violence to the data. Press **Draw new sample** a few times to confirm the pattern is structural, not an artifact of one lucky draw.
+
+**Step 6: Watch the hidden price.** Now set **Trimming** back to 0 and push **Adjustment** to 1, and look at the second row of tiles. The "Max control weight" climbs and the "Effective control n (ESS)" --- the *Kish effective sample size*, the number of equally-weighted controls your weighted comparison is actually worth --- collapses well below the real control count. The Love plot's dots still slid tidily into the green band, so balance *looks* perfect; but the ballooning weight and shrinking ESS are the variance cost that the "Why non-overlap is fatal" section warned about. Now drag **Trimming** up to $0.05$ and watch the max weight fall and the ESS recover: trimming the off-support units is what makes the weighting estimator stable again.
+
+
+## Measuring Balance: The Standardized Mean Difference
+
+The Love plot's horizontal axis is the **standardized mean difference** (SMD), the standard scale-free measure of how far apart two groups are on a covariate.
+
+::: {.glass-card .glass-card--definition}
+For a covariate $X$, with treated mean $\bar{X}_T$, control mean $\bar{X}_C$, and group variances $s^2_T, s^2_C$, the **standardized mean difference** is
+
+$$
+\text{SMD} = \frac{\bar{X}_T - \bar{X}_C}{\sqrt{\dfrac{s^2_T + s^2_C}{2}}}.
+$$
+
+**Read this as**: "The gap between the treated and control means, measured in pooled standard-deviation units." Dividing by the spread makes the number *unitless*, so a balance of $0.08$ means the same thing whether $X$ is age in years, frailty on a 0--10 scale, or a count of medications. We almost always report $|\text{SMD}|$, since direction is irrelevant for balance.
+:::
+
+The conventional rule of thumb, due to Austin (2009) and now ubiquitous in the applied literature, is:
+
+$$
+|\text{SMD}| < 0.1 \quad \Longrightarrow \quad \text{the covariate is "balanced."}
+$$
+
+There is nothing sacred about $0.1$; it is a community norm, not a theorem. But it is a useful discipline: it sets a single, pre-registerable bar that every covariate must clear after adjustment, and it does not get easier to clear just because you collected more data --- which, as we are about to see, is exactly the property a $t$-test lacks.
+
+A companion diagnostic, less famous but worth reporting, compares the *spread* of the two groups:
+
+$$
+\text{Variance ratio} = \frac{s^2_T}{s^2_C}, \qquad \text{ideal value } = 1.
+$$
+
+**Read this as**: "How many times wider is the treated group's spread than the control group's?" The SMD checks that the *centres* line up; the variance ratio checks that the *shapes* do. Two distributions can have identical means (SMD $= 0$) yet very different variances --- so a thorough balance report shows both. A common acceptability band is roughly $0.5$ to $2$.
+
+The figure below is exactly the case the SMD would wave through but the variance ratio catches: two groups with the *same mean* (so $\text{SMD} = 0$, perfectly "balanced" by the location check) yet very different *spreads* (variance ratio $\approx 4$). A balance report that showed only the SMD would call these groups identical; the shapes say otherwise.
+
+```{ojs}
+//| echo: false
+
+// Static two-density overlay: identical means (SMD = 0) but a variance ratio of
+// ~4. Drawn from fixed analytic Normal curves — no DGP, no randomness.
+{
+  const w = Math.min(600, width);
+  const mu = 0;
+  const sT = 2.0, sC = 1.0;                    // treated 2× wider → var ratio ≈ 4
+  const dn = (x, s) => Math.exp(-0.5 * ((x - mu) / s) ** 2) / (s * Math.sqrt(2 * Math.PI));
+  const xs = d3.range(-6, 6.01, 0.1);
+  const treated = xs.map(x => ({ x, y: dn(x, sT), g: "Treated (wide)" }));
+  const control = xs.map(x => ({ x, y: dn(x, sC), g: "Control (narrow)" }));
+  const data = treated.concat(control);
+
+  return Plot.plot({
+    height: 230,
+    marginLeft: 60,
+    marginBottom: 45,
+    marginTop: 30,
+    width: w,
+    style: { fontFamily: "Inter" },
+    x: { label: "Covariate value", domain: [-6, 6] },
+    y: { label: "Density", grid: true },
+    color: {
+      domain: ["Treated (wide)", "Control (narrow)"],
+      range: ["#990000", "#3d5a6c"],
+      legend: true
+    },
+    marks: [
+      Plot.areaY(data, { x: "x", y: "y", fill: "g", fillOpacity: 0.25 }),
+      Plot.line(data, { x: "x", y: "y", stroke: "g", strokeWidth: 2 }),
+      Plot.ruleX([mu], { stroke: "#1c1c1a", strokeWidth: 1.2, strokeDasharray: "4,3" }),
+      Plot.text([{ x: mu }], {
+        x: "x", frameAnchor: "top", dy: -8, dx: 4, textAnchor: "start",
+        text: ["same mean ⇒ SMD = 0"], fill: "#1c1c1a", fontSize: 10.5, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.ruleY([0])
+    ]
+  });
+}
+```
+
+::: {.aside}
+Both groups are centred at the same value, so the standardized mean difference is exactly $0$ --- the location check is satisfied. But the treated group's spread is twice the control's (variance ratio $\approx 4$, well outside the $[0.5, 2]$ band). This is the scenario that justifies reporting *both* diagnostics: the SMD alone would miss it.
+:::
+
+
+## Why the SMD, and Not the t-test, Measures Balance
+
+It is natural to reach for a two-sample $t$-test: test $H_0: \bar{X}_T = \bar{X}_C$, and declare balance achieved when $p > 0.05$. This is a **mistake**, and seeing exactly why it fails is one of the most clarifying ideas in the matching literature.
+
+::: {.glass-card .glass-card--warning}
+**A balance test is not a hypothesis test.** The $t$-statistic for the difference in means is, roughly,
+
+$$
+t = \frac{\bar{X}_T - \bar{X}_C}{\text{SD} \cdot \sqrt{1/n_T + 1/n_C}}
+\;\approx\; \text{SMD} \times \sqrt{\frac{n_T \, n_C}{n_T + n_C}}.
+$$
+
+The $t$-statistic *bundles* the imbalance (the SMD) with the sample size. Two pathologies follow:
+
+- **Big samples falsely fail.** With enough patients, even a trivially small imbalance produces a tiny $p$-value, so a perfectly usable matched sample gets flagged as "imbalanced." Balance would appear to *deteriorate* simply because you collected more data --- which is absurd, since balance is a property of the *distributions*, not the sample size.
+- **Small samples falsely pass.** After tight matching you often have few units left, so the test loses power and waves through real imbalances as "not significant."
+
+Worse, matching *changes the sample size* (it discards unmatched units), so the $p$-value moves for reasons that have nothing to do with whether the groups got more comparable. The SMD strips the sample size out entirely: it is a property of the two distributions alone. That is precisely what you want from a balance diagnostic.
+:::
+
+The slogan to remember: **balance is about distributions, not about significance.** You are not testing a hypothesis about a population; you are describing how similar two samples are. Use a descriptive, sample-size-free measure --- the SMD --- and judge it against a fixed threshold.
+
+The picture below makes the pathology concrete. Hold the imbalance *fixed* at $\text{SMD} = 0.1$ --- exactly at the conventional balance bar --- and watch what each diagnostic does as the per-group sample size $n$ grows. The SMD (slate) stays flat at $0.1$ forever, as it must: it is a property of the distributions. The $|t|$-statistic (red), by contrast, climbs without bound, and its $p$-value sinks below $0.05$ the moment $n$ is large enough --- so the *same* balance gets re-labelled "significantly imbalanced" purely because more data arrived.
+
+```{ojs}
+//| echo: false
+
+// Static curve: at a FIXED SMD = 0.1, |t| ≈ SMD·sqrt(n/2) grows without bound
+// while the SMD itself is constant. Pure analytic function of n — no DGP.
+{
+  const w = Math.min(600, width);
+  const smd = 0.1;
+  const ns = d3.range(20, 4001, 20);
+  // Balanced-group case n_T = n_C = n: sqrt(n_T n_C/(n_T+n_C)) = sqrt(n/2).
+  const tRows = ns.map(n => ({ n, v: smd * Math.sqrt(n / 2), series: "|t|-statistic" }));
+  const sRows = ns.map(n => ({ n, v: smd, series: "SMD (fixed at 0.1)" }));
+  // n at which |t| crosses 1.96 (two-sided p = 0.05): smd·sqrt(n/2)=1.96.
+  const nCross = 2 * (1.96 / smd) ** 2;
+
+  return Plot.plot({
+    height: 260,
+    marginLeft: 60,
+    marginBottom: 45,
+    marginTop: 30,
+    width: w,
+    style: { fontFamily: "Inter" },
+    x: { label: "Per-group sample size n (n_T = n_C)" },
+    y: { label: "Value", grid: true, domain: [0, 6] },
+    color: {
+      domain: ["|t|-statistic", "SMD (fixed at 0.1)"],
+      range: ["#b3000b", "#3d5a6c"],
+      legend: true
+    },
+    marks: [
+      // p = 0.05 significance line (|t| = 1.96).
+      Plot.ruleY([1.96], { stroke: "#9c7a33", strokeWidth: 1.2, strokeDasharray: "5,4" }),
+      Plot.text([{ y: 1.96 }], {
+        y: "y", frameAnchor: "right", dx: -4, dy: -8, textAnchor: "end",
+        text: ["|t| = 1.96  (p = 0.05)"], fill: "#9c7a33", fontSize: 10, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // n at which the t-test starts "failing" the balanced sample.
+      Plot.ruleX([nCross], { stroke: "#79766e", strokeWidth: 1, strokeDasharray: "3,3" }),
+      Plot.text([{ x: nCross, y: 5.6 }], {
+        x: "x", y: "y", dx: 6, textAnchor: "start",
+        text: [`n ≈ ${Math.round(nCross)}: t-test starts\n"failing" the same balance`],
+        fill: "#79766e", fontSize: 9.5, fontWeight: 600, lineHeight: 1.1,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.line(tRows, { x: "n", y: "v", stroke: "series", strokeWidth: 2.5 }),
+      Plot.line(sRows, { x: "n", y: "v", stroke: "series", strokeWidth: 2.5 }),
+      Plot.ruleY([0])
+    ]
+  });
+}
+```
+
+::: {.aside}
+At a constant imbalance of $\text{SMD} = 0.1$: the SMD (slate) is flat --- it does not know or care how many patients you sampled. The $|t|$-statistic (red) grows like $\sqrt{n}$ and crosses the $p = 0.05$ line at $n \approx 770$ per group, after which a perfectly stable level of balance is declared "significantly imbalanced." Balance appears to deteriorate as you collect more data --- the absurd consequence of using a hypothesis test as a balance diagnostic.
+:::
+
+
+## The Cost of Trimming: Honesty About What You Gave Up
+
+Trimming buys you a credible comparison, but it is not free. Three costs deserve to be stated plainly.
+
+::: {.glass-card .glass-card--warning}
+**Trimming changes the question you are answering.** When you discard the off-support treated units --- the frailest, most-enrolled patients --- you are no longer estimating the ATT for *all* enrolled patients. You are estimating it for the **subpopulation on common support**: enrollees who had a plausible control counterpart. The frailest patients, often the ones policymakers care about most, may be exactly the ones you dropped. This is a loss of **external validity** (generalizability), and an honest write-up reports the trimmed estimand for what it is.
+
+Two further costs:
+
+- **Researcher degrees of freedom.** The trimming threshold is a choice, and different thresholds give different estimates. Pre-specify the rule, and report a **sensitivity analysis** across several thresholds (e.g. $t \in \{0, 0.01, 0.05, 0.1\}$) so readers can see how much the answer depends on it.
+- **Discarded information.** Every trimmed unit is data you paid to collect and then threw away. Trim the minimum necessary to restore overlap --- not more.
+:::
+
+There is a genuine bias--variance trade-off here, exactly mirroring the caliper trade-off from the [Matching Methods](matching-methods.qmd) page. Aggressive trimming (and tight matching) reduces bias by enforcing comparability, but at the cost of variance (fewer units) and external validity (a narrower population). Gentle trimming keeps more units but tolerates worse matches. There is no universally correct setting --- only a setting you can defend and a sensitivity analysis that shows the reader how much it mattered.
+
+Here is what the recommended sensitivity analysis actually looks like --- the kind of table that belongs in an appendix. Each row is one pre-specified threshold; reading across, you see the bias--variance--validity trade-off play out as a single trend.
+
+| Threshold $t$ | Units kept | Worst $\|\text{SMD}\|$ after | ATT estimate | 95% CI width | Estimand |
+|:---:|:---:|:---:|:---:|:---:|:---|
+| $0.00$ | 600 | 0.18 | $-0.42$ | $\pm 0.31$ | full enrolled population |
+| $0.01$ | 588 | 0.11 | $-0.39$ | $\pm 0.24$ | nearly full |
+| $0.05$ | 541 | 0.06 | $-0.34$ | $\pm 0.19$ | on common support |
+| $0.10$ | 472 | 0.04 | $-0.31$ | $\pm 0.18$ | narrow common support |
+
+: Illustrative sensitivity analysis (one simulated draw). As $t$ rises: fewer units survive, balance improves (worst $|\text{SMD}|$ falls), the CI tightens then plateaus (the worst off-support weights are gone), and the *estimand* narrows toward the well-overlapped core. The honest read is that the estimate is reasonably stable across $t$ --- and you report the whole table, not the single threshold that flatters your hypothesis. {.science-table}
+
+
+<details>
+<summary>Math Details: The SMD, the variance ratio, and why the denominator is fixed</summary>
+<div class="details-content">
+
+### The SMD is a population separation, estimated by a sample analog
+
+Define the population SMD between the treated and control distributions of a covariate $X$ as
+
+$$
+\delta = \frac{\mu_T - \mu_C}{\sqrt{(\sigma_T^2 + \sigma_C^2)/2}},
+\qquad \mu_T = E[X \mid D = 1], \ \ \mu_C = E[X \mid D = 0].
+$$
+
+This is *Cohen's $d$* applied to the treated--control contrast. It is a fixed feature of the two distributions: it does not depend on how many patients you sampled. The estimator simply plugs in sample means and variances. Because $\delta$ is sample-size-free, so (in expectation) is its estimate --- which is the entire reason it is the right balance diagnostic.
+
+### Weighted balance after adjustment
+
+After matching or weighting, every unit $i$ carries a weight $w_i$ ($w_i = 1$ for matched units, $w_i = e_i/(1-e_i)$ for ATT-reweighted controls, etc.). The post-adjustment treated and control means use the weighted average,
+
+$$
+\bar{X}_g^{\,w} = \frac{\sum_{i: D_i = g} w_i X_i}{\sum_{i: D_i = g} w_i},
+$$
+
+and the post-adjustment SMD substitutes these weighted means into the numerator. A subtle but important convention (Austin 2009; Stuart 2010): the **denominator is held fixed** at the standard deviations from the *raw, pre-adjustment* sample. If you let the denominator shrink as weighting concentrates mass, the SMD could *improve* purely because the spread collapsed, not because the centres aligned --- a misleading flattery. Freezing the denominator ensures the before/after comparison in a Love plot is on one common scale.
+
+### Why $t$ and SMD diverge: the algebra
+
+For two groups with a common standard deviation $\text{SD}$, the two-sample $t$-statistic is
+
+$$
+t = \frac{\bar{X}_T - \bar{X}_C}{\text{SD}\sqrt{\tfrac{1}{n_T} + \tfrac{1}{n_C}}}
+= \underbrace{\frac{\bar{X}_T - \bar{X}_C}{\text{SD}}}_{\approx\,\text{SMD}} \cdot \underbrace{\frac{1}{\sqrt{\tfrac{1}{n_T} + \tfrac{1}{n_C}}}}_{=\;\sqrt{\frac{n_T n_C}{n_T + n_C}}}.
+$$
+
+Hold the SMD fixed and let $n_T, n_C \to \infty$: the second factor grows without bound, so $|t| \to \infty$ and $p \to 0$ for *any* nonzero imbalance, however small. The $p$-value therefore measures (mostly) sample size, not comparability. Conversely, matching that prunes the sample shrinks $\sqrt{n_T n_C/(n_T+n_C)}$, which can *raise* the $p$-value even as nothing about the distributions improved. The SMD --- the first factor alone --- is invariant to all of this. That invariance is the whole argument for preferring it.
+
+### Variance ratio
+
+The variance ratio $r = s_T^2/s_C^2$ checks second moments. Under perfect balance $r = 1$. Reporting $\log r$ is sometimes preferred because it is symmetric: $s_T^2$ being twice $s_C^2$ ($r = 2$, $\log r = +0.69$) and half ($r = 0.5$, $\log r = -0.69$) are then treated as equally severe departures, which they morally are.
+
+</div>
+</details>
+
+
+## Code: Overlap and Balance in Practice
+
+Both implementations simulate the fall-prevention data, estimate a propensity score, build the overlap plot, trim off-support units, and produce a before/after balance table. R uses `MatchIt`/`cobalt` (the standard balance-reporting toolkit); Python uses `statsmodels` for the propensity model and computes SMDs directly.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(MatchIt)
+library(cobalt)   # love.plot(), bal.tab() — the balance-diagnostics workhorse
+
+set.seed(2025)
+
+# --- Simulate 600 elderly patients in a fall-prevention program ---
+n <- 600
+dat <- tibble(
+  age     = rnorm(n),
+  frailty = rnorm(n),
+  polyph  = rnorm(n)
+) |>
+  mutate(
+    eta = 1.3 * frailty + 0.8 * age + 0.5 * polyph,
+    e   = plogis(eta),
+    enrolled = rbinom(n, 1, e)
+  )
+
+# --- Estimate the propensity score (logistic regression) ---
+ps_model <- glm(enrolled ~ age + frailty + polyph,
+                data = dat, family = binomial)
+dat$ehat <- predict(ps_model, type = "response")
+
+# --- Overlap check: do the two e(X) distributions overlap? ---
+ggplot(dat, aes(ehat, fill = factor(enrolled))) +
+  geom_histogram(alpha = 0.5, position = "identity", bins = 30) +
+  scale_fill_manual(values = c("#3d5a6c", "#990000"),
+                    labels = c("Not enrolled", "Enrolled"), name = NULL) +
+  labs(x = "Estimated propensity score e(X)", y = "Patients")
+
+# --- Trim off-support units (common-support rule) ---
+t <- 0.05
+trimmed <- dat |> filter(ehat >= t, ehat <= 1 - t)
+cat("Trimmed", nrow(dat) - nrow(trimmed), "off-support units\n")
+
+# --- Match (nearest-neighbour on the PS) and report balance ---
+m <- matchit(enrolled ~ age + frailty + polyph,
+             data = trimmed, method = "nearest", distance = "glm")
+
+# Standardized mean differences + variance ratios, before vs after:
+bal.tab(m, stats = c("mean.diffs", "variance.ratios"),
+        thresholds = c(m = 0.1))
+
+# Love plot: |SMD| before vs after, with the 0.1 guide rail
+love.plot(m, stats = "mean.diffs", abs = TRUE,
+          thresholds = c(m = 0.1), var.order = "unadjusted")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(2025)
+
+# --- Simulate 600 elderly patients in a fall-prevention program ---
+n = 600
+age     = rng.normal(size=n)
+frailty = rng.normal(size=n)
+polyph  = rng.normal(size=n)
+eta = 1.3 * frailty + 0.8 * age + 0.5 * polyph
+e   = 1 / (1 + np.exp(-eta))
+enrolled = rng.binomial(1, e)
+
+df = pd.DataFrame({"age": age, "frailty": frailty,
+                   "polyph": polyph, "enrolled": enrolled})
+
+# --- Estimate the propensity score (logistic regression) ---
+X = sm.add_constant(df[["age", "frailty", "polyph"]])
+ps_model = sm.Logit(df["enrolled"], X).fit(disp=0)
+df["ehat"] = ps_model.predict(X)
+
+# --- Overlap check ---
+plt.hist(df.loc[df.enrolled == 1, "ehat"], bins=30, alpha=0.5,
+         color="#990000", label="Enrolled")
+plt.hist(df.loc[df.enrolled == 0, "ehat"], bins=30, alpha=0.5,
+         color="#3d5a6c", label="Not enrolled")
+plt.xlabel("Estimated propensity score e(X)"); plt.ylabel("Patients"); plt.legend()
+
+# --- Trim off-support units ---
+t = 0.05
+trimmed = df[(df.ehat >= t) & (df.ehat <= 1 - t)].copy()
+print(f"Trimmed {len(df) - len(trimmed)} off-support units")
+
+# --- Standardized mean difference (denominator from the RAW sample) ---
+covs = ["age", "frailty", "polyph"]
+
+def smd(data, cov, weights=None):
+    tr = data[data.enrolled == 1]
+    ct = data[data.enrolled == 0]
+    if weights is None:
+        mt, mc = tr[cov].mean(), ct[cov].mean()
+    else:
+        wt, wc = weights[data.enrolled == 1], weights[data.enrolled == 0]
+        mt = np.average(tr[cov], weights=wt)
+        mc = np.average(ct[cov], weights=wc)
+    sp = np.sqrt((tr[cov].var(ddof=1) + ct[cov].var(ddof=1)) / 2)  # raw, fixed
+    return (mt - mc) / sp
+
+# ATT inverse-probability weights for controls; treated weight = 1
+w = np.where(trimmed.enrolled == 1, 1.0,
+             trimmed.ehat / (1 - trimmed.ehat))
+
+balance = pd.DataFrame({
+    "covariate": covs,
+    "SMD_before": [abs(smd(trimmed, c)) for c in covs],
+    "SMD_after":  [abs(smd(trimmed, c, weights=w)) for c in covs],
+})
+print(balance.round(3))
+print("\nBalanced after adjustment:",
+      bool((balance.SMD_after < 0.1).all()))
+```
+
+:::
+
+Both routes produce the same story: the raw SMDs are large (frailty worst), trimming removes the off-support tails, and after adjustment every covariate clears the $0.1$ threshold.
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- **Overlap (common support)** is a precondition for any observational comparison: where $e(X) \to 0$ or $e(X) \to 1$, no counterfactual exists and the effect is *not identified*. Diagnose it by inspecting the two propensity-score distributions.
+- **Trimming** discards off-support units to restore overlap, but it narrows the estimand to the common-support subpopulation --- a real cost to external validity that you must report, ideally with a sensitivity analysis across thresholds.
+- The **standardized mean difference** is the right balance diagnostic because it is scale-free and sample-size-free; the conventional bar is $|\text{SMD}| < 0.1$, complemented by a variance ratio near 1.
+- **Never use a $t$-test (or its $p$-value) to assess balance**: it confounds imbalance with sample size, so big samples falsely fail and small (heavily matched) samples falsely pass.
+- **Balance is checkable; unconfoundedness is not.** Clearing every SMD threshold is necessary and reassuring but never proves that the comparison is free of *unmeasured* confounding.
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+After matching, a covariate (systolic blood pressure) has treated mean $\bar{X}_T = 142$ mmHg and control mean $\bar{X}_C = 138$ mmHg. The group standard deviations are $s_T = 18$ and $s_C = 16$. (a) Compute the standardized mean difference. (b) Is the covariate balanced by the $0.1$ rule of thumb? (c) Compute the variance ratio and comment.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The pooled standard deviation is
+
+$$
+s_p = \sqrt{\frac{s_T^2 + s_C^2}{2}} = \sqrt{\frac{18^2 + 16^2}{2}} = \sqrt{\frac{324 + 256}{2}} = \sqrt{290} \approx 17.03.
+$$
+
+So $\text{SMD} = (142 - 138)/17.03 = 4/17.03 \approx 0.235$.
+
+**(b)** No. $|\text{SMD}| \approx 0.235 > 0.1$, so blood pressure is *not* balanced after matching. The groups still differ by roughly a quarter of a standard deviation --- this covariate needs more work (a tighter caliper, a richer propensity model, or trimming).
+
+**(c)** Variance ratio $= s_T^2 / s_C^2 = 324 / 256 = 1.27$. This is comfortably inside the usual $[0.5, 2]$ band, so the *spreads* are similar even though the *centres* are not. The imbalance is a location problem, not a dispersion problem.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague reports: "After matching, a two-sample $t$-test for age gives $p = 0.32$, so age is balanced." Their matched sample has $n_T = 40$ treated and $n_C = 40$ controls, with an SMD for age of $0.22$. (a) Verify that this SMD is consistent with a non-significant $t$-test at these sample sizes. (b) Explain why their conclusion is nonetheless wrong. (c) What would the same SMD of $0.22$ imply for the $t$-test if the matched sample had instead been $n_T = n_C = 2000$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Using $t \approx \text{SMD} \times \sqrt{n_T n_C/(n_T + n_C)}$ with $n_T = n_C = 40$:
+
+$$
+\sqrt{\frac{40 \times 40}{80}} = \sqrt{20} \approx 4.47, \qquad
+t \approx 0.22 \times 4.47 \approx 0.98.
+$$
+
+A $t$-statistic near $1$ has a two-sided $p$-value around $0.33$ --- consistent with the reported $p = 0.32$. So the arithmetic checks out.
+
+**(b)** The conclusion is wrong because $|\text{SMD}| = 0.22 > 0.1$: by the substantive balance criterion, age is *clearly imbalanced*. The non-significant $p$-value reflects the *small sample*, not good balance. The $t$-test simply lacked power to detect a real imbalance. Balance is a property of the distributions; the test is a property of the distributions *and* the sample size.
+
+**(c)** With $n_T = n_C = 2000$:
+
+$$
+\sqrt{\frac{2000 \times 2000}{4000}} = \sqrt{1000} \approx 31.6, \qquad
+t \approx 0.22 \times 31.6 \approx 6.95,
+$$
+
+which is hugely significant ($p \approx 10^{-11}$). The *identical* imbalance (SMD $= 0.22$) now "fails" the test resoundingly. The covariate is no more and no less balanced than before --- only the sample size changed. This is exactly why the SMD, not the $t$-test, is the correct balance diagnostic.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the fall-prevention data, the most frail treated patients have estimated propensity scores above $0.97$. (a) Explain, in terms of inverse-probability weights, why keeping these units (without trimming) destabilizes a weighting estimator. (b) After trimming all units with $e(X) > 0.95$, the analyst's estimand has changed. State precisely what the trimmed estimate now represents, and name the property that has been sacrificed.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** For the **ATT** weighting estimator, control units carry weight $e(X)/(1 - e(X))$; for the **ATE** estimator, every unit carries $1/e(X)$ (treated) or $1/(1-e(X))$ (control). In either case, a unit with $e(X) \to 1$ generates an enormous weight. Take the ATT control weight $e/(1-e)$: a control patient with $e(X) = 0.97$ gets $0.97/0.03 \approx 32$, and one at $0.99$ gets $0.99/0.01 = 99$ --- and the ATE control weight $1/(1-e)$ is larger still (about $33$ and $100$ respectively). A single such fluke control then dominates the weighted average, inflating the variance dramatically and making the point estimate hostage to one or two observations. The estimator is technically defined but practically unusable --- the hallmark of a (near-)positivity violation.
+
+**(b)** After dropping all units with $e(X) > 0.95$ (and symmetrically the very-low tail, if present), the estimate is the **average treatment effect on the treated, restricted to the common-support subpopulation** --- enrollees whose propensity scores lie in the retained band, i.e. those who had plausible control counterparts. The property sacrificed is **external validity / generalizability**: the result no longer speaks to the frailest enrollees (those above $0.95$), who may be precisely the patients the program was designed for. The estimand is narrower, and an honest report says so.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive, set the Adjustment-strength slider to 0 and the Trimming threshold to 0. (a) Which of the three covariates has the largest "Before" $|\text{SMD}|$, and why does the data-generating process make it so? (b) Now drag Adjustment strength to 1. Two covariates land just inside the $0.10$ band while one occasionally pokes back out across redraws. Explain why a *single* successful adjustment on one sample is weaker evidence than balance that holds across many "Draw new sample" redraws. (c) Does achieving $|\text{SMD}| < 0.1$ on all three covariates prove the fall-prevention effect estimate is unconfounded?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** **Frailty** has the largest "Before" $|\text{SMD}|$. In the DGP the enrolment log-odds are $\eta = 1.3\,\text{frailty} + 0.8\,\text{age} + 0.5\,\text{polyph}$, so frailty has the largest coefficient: it separates enrollees from non-enrollees most strongly, producing the biggest raw mean gap (and hence the biggest SMD).
+
+**(b)** A single sample's balance can be a lucky draw --- with finite data, the weighted means can coincide by chance even if the adjustment is imperfect. Reproducing $|\text{SMD}| < 0.1$ across many redraws shows the adjustment *systematically* removes imbalance rather than getting away with it once. (This is the difference between a diagnostic that happened to pass and a procedure that reliably balances; the latter is what you want to defend in a paper.)
+
+**(c)** **No.** Balance on age, frailty, and polypharmacy demonstrates only that the groups match on the *measured* covariates. Conditional ignorability requires that there be *no unmeasured* confounders --- for example, a patient's living situation, cognitive status, or home-hazard exposure that drives both enrolment and falls but is absent from the data. The SMDs are silent about those. Balance is checkable; unconfoundedness is not. Perfect measured balance with a lurking unmeasured confounder still yields a biased effect.
+
+</div>
+</details>
+:::
+
+
+## What Comes Next
+
+Overlap and balance diagnostics close out the selection-on-observables toolkit: we now know how to check whether a comparison group exists (common support), how to enforce comparability and verify it (matching, weighting, and the SMD), and --- crucially --- where these methods reach their honest limit (they cannot certify the absence of unmeasured confounding). Every design in this module has leaned on observing the right covariates. The next module, [Synthetic Control](../10-synthetic-control/index.qmd), confronts a setting where that leverage is gone: a *single* treated unit --- one region, one policy --- with no pool of comparable individuals to match. Instead of finding similar units, synthetic control *builds* a comparison from a weighted combination of untreated units, constructing a bespoke counterfactual trajectory for the one unit we care about.

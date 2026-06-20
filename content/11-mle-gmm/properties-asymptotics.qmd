@@ -1,0 +1,681 @@
+---
+title: "Properties and Asymptotics of MLE"
+subtitle: "Consistency, asymptotic normality, and the information matrix"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State the three pillars of large-sample MLE theory --- consistency, asymptotic normality, and efficiency --- and explain what each one promises
+- Compute the Fisher information $I(\theta)$ two equivalent ways (curvature of the log-likelihood and variance of the score) and use its inverse as the asymptotic variance
+- Read standard errors off the observed information (the Hessian at the optimum) and watch them shrink like $1/\sqrt{n}$
+- Apply the Cramér--Rao lower bound to argue that the MLE is asymptotically efficient, and use invariance to re-parameterise an estimate for free
+- Propagate uncertainty through a smooth transformation $g(\hat\theta)$ with the delta method
+:::
+
+## Why the Likelihood Is Only Half the Story
+
+The previous page, [The Likelihood Principle](likelihood.qmd), showed you how to *find* a maximum-likelihood estimate: write down the log-likelihood for your data, then climb to its peak. For a Swedish *vårdcentral* (primary care center) modelling the count of fall-related emergency visits among its elderly patients with a Poisson model, the peak gives a single number $\hat\lambda$ --- the estimated mean number of falls per patient-year.
+
+But a point estimate alone is almost useless for policy. If the regional health authority (*regionen*) is deciding whether a fall-prevention program is worth its SEK budget, it needs to know not just "the estimated fall rate is $0.42$ per patient-year" but "and we are confident it lies between $0.38$ and $0.46$." That second statement --- the **standard error**, the **confidence interval**, the *uncertainty* --- is what turns an estimate into evidence.
+
+Maximum likelihood comes with a remarkable promise: in large samples, the estimator behaves in an almost completely predictable way. It homes in on the truth (**consistency**), its sampling distribution becomes a tidy bell curve (**asymptotic normality**), and the *width* of that bell curve is determined by a single object, the **Fisher information**, which we can read straight off the curvature of the log-likelihood. This page makes those three promises precise and shows you how to extract a standard error from them.
+
+::: {.glass-card .glass-card--definition}
+Let $\theta_0$ denote the **true** parameter value and $\hat\theta_n$ the maximum-likelihood estimator from a sample of size $n$. The three large-sample properties we develop are:
+
+- **Consistency:** $\hat\theta_n \xrightarrow{p} \theta_0$ --- read "$\hat\theta_n$ converges in probability to $\theta_0$": as the sample grows, the estimate piles up arbitrarily close to the truth.
+- **Asymptotic normality:** $\sqrt{n}\,(\hat\theta_n - \theta_0) \xrightarrow{d} \mathcal{N}\!\big(0,\, I_1(\theta_0)^{-1}\big)$ --- read "$\sqrt{n}$ times the estimation error converges in distribution to a Normal with mean zero and variance $I_1(\theta_0)^{-1}$." Here $I_1(\theta_0)$ is the Fisher information *from a single observation*.
+- **Efficiency:** among all well-behaved estimators, none has a smaller asymptotic variance --- the MLE attains the **Cramér--Rao lower bound**.
+:::
+
+The whole argument rests on one quantity, so we build it carefully.
+
+## The Score and the Information
+
+Write the log-likelihood of an i.i.d. sample $y_1,\dots,y_n$ as $\ell_n(\theta) = \sum_{i=1}^n \log f(y_i \mid \theta)$. Two derivatives of this function do all the work.
+
+The first derivative is the **score**, the gradient of the log-likelihood:
+
+$$
+s_i(\theta) = \frac{\partial}{\partial\theta}\,\log f(y_i \mid \theta), \qquad
+S_n(\theta) = \sum_{i=1}^n s_i(\theta).
+$$
+
+**Read this as:** "the score for observation $i$ is the slope of its log-density with respect to the parameter, and the total score is the sum over all observations." The MLE $\hat\theta_n$ is exactly the value where the total score is zero --- the top of the hill is flat.
+
+The score has a beautiful property: *at the true parameter, its expected value is zero*, $E_{\theta_0}[s_i(\theta_0)] = 0$. On average, the data point you in no particular direction once you are already at the truth. Its *spread*, however, is informative --- and that spread is the Fisher information.
+
+::: {.glass-card .glass-card--definition}
+The **Fisher information** from a single observation can be written two equivalent ways:
+
+$$
+I_1(\theta) \;=\; \underbrace{\operatorname{Var}_\theta\!\big[s_i(\theta)\big]}_{\text{variance of the score}}
+\;=\; \underbrace{-\,E_\theta\!\left[\frac{\partial^2}{\partial\theta^2}\log f(y_i\mid\theta)\right]}_{\text{expected negative curvature}}.
+$$
+
+**Read this as:** "the information equals the variance of the score, *and also* equals the expected negative second derivative of the log-density." The first form says information is how much the score *wiggles* across samples; the second says it is how *sharply curved* the log-likelihood is at its peak. The equality of these two expressions is the **information matrix identity**, derived in the Math Details.
+:::
+
+Intuition for the curvature form: a log-likelihood that rises to a sharp, narrow peak pins the parameter down tightly --- a small move away from $\hat\theta$ costs a lot of fit, so the data are *informative*. A flat, gently rounded peak leaves many parameter values nearly as plausible --- the data are *uninformative*. Curvature $=$ information $=$ precision.
+
+For $n$ i.i.d. observations the information simply adds up: $I_n(\theta) = n\, I_1(\theta)$. More data, more information, in direct proportion. This additivity is the engine behind the $1/\sqrt{n}$ shrinkage you will watch in the interactive.
+
+::: {.glass-card .glass-card--insight}
+**The inverse information is the asymptotic variance.** Combining the two displays above, in finite (but large) samples the MLE is approximately distributed as
+
+$$
+\hat\theta_n \;\approx\; \mathcal{N}\!\left(\theta_0,\; \frac{1}{n\,I_1(\theta_0)}\right)
+= \mathcal{N}\!\left(\theta_0,\; I_n(\theta_0)^{-1}\right).
+$$
+
+So the standard error is $\operatorname{SE}(\hat\theta_n) = 1/\sqrt{n\,I_1(\theta_0)}$. It falls like $1/\sqrt{n}$: to halve your standard error you need four times the data. Because $I_1$ is positive, more information always means a *smaller* standard error.
+:::
+
+In practice we do not know $\theta_0$, so we evaluate the curvature at the estimate using the **observed information** --- minus the Hessian of the log-likelihood at $\hat\theta_n$:
+
+$$
+\hat{I}_n = -\,\frac{\partial^2 \ell_n(\theta)}{\partial\theta^2}\bigg|_{\theta=\hat\theta_n},
+\qquad
+\widehat{\operatorname{SE}}(\hat\theta_n) = \sqrt{\hat{I}_n^{-1}}.
+$$
+
+**Read this as:** "evaluate how sharply the log-likelihood curves down at its peak, take the reciprocal, and the square root is the standard error." This is literally what every statistics package reports: `summary()` in R and `.summary()` in `statsmodels` invert the Hessian returned by the optimiser. The interactive below shows that this Hessian-based SE tracks the true sampling spread of $\hat\theta$ remarkably well, even at modest $n$.
+
+## See It: The Sampling Distribution Concentrates and Goes Normal
+
+Our running example is a **Poisson model of fall-related emergency visits**. Each elderly patient $i$ at a Swedish vårdcentral contributes a count $y_i \sim \text{Poisson}(\lambda_0)$ over one year, where $\lambda_0$ is the true mean annual fall rate. The MLE is just the sample mean, $\hat\lambda = \bar{y}$, and for the Poisson the single-observation information is $I_1(\lambda) = 1/\lambda$ (derived below), so the theory predicts
+
+$$
+\hat\lambda \;\approx\; \mathcal{N}\!\left(\lambda_0,\; \frac{\lambda_0}{n}\right),
+\qquad
+\operatorname{SE}(\hat\lambda) = \sqrt{\lambda_0/n}.
+$$
+
+The interactive runs a **Monte Carlo experiment**: it draws many independent samples of size $n$, computes $\hat\lambda$ for each, and histograms them. On top it overlays the theoretical Normal curve the asymptotics predict. Slide $n$ and watch two things happen at once: the histogram *narrows* (consistency) and its shape snaps to the bell curve (asymptotic normality). The dashed marker shows the observed-information standard error from a single representative sample --- watch it shrink like $1/\sqrt{n}$.
+
+::: {.interactive-container}
+
+#### Monte Carlo: the sampling distribution of the Poisson MLE
+
+```{ojs}
+//| echo: false
+
+viewof mleprop_n = Inputs.range([10, 1000], {
+  value: 40,
+  step: 10,
+  label: "Sample size n (patients per study)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mleprop_lambda0 = Inputs.range([0.5, 5], {
+  value: 2.0,
+  step: 0.1,
+  label: "True fall rate λ₀ (visits / patient-year)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mleprop_reps = Inputs.range([200, 4000], {
+  value: 1500,
+  step: 100,
+  label: "Number of Monte Carlo replications"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mleprop_draw = Inputs.button("Draw new Monte Carlo", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Poisson sampler via the Knuth algorithm (browser-side randomness).
+// Returns one Poisson(lambda) draw.
+mleprop_rpois = function (lambda) {
+  const L = Math.exp(-lambda);
+  let k = 0, p = 1;
+  do {
+    k++;
+    p *= Math.random();
+  } while (p > L);
+  return k - 1;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The Monte Carlo experiment. Referencing mleprop_draw makes this cell
+// recompute on every button click (fresh randomness) without any mutable.
+mleprop_mc = {
+  mleprop_draw;                       // dependency: resample on click
+  const n      = mleprop_n;
+  const lam    = mleprop_lambda0;
+  const reps   = mleprop_reps;
+
+  const estimates = new Float64Array(reps);
+  for (let r = 0; r < reps; r++) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += mleprop_rpois(lam);
+    estimates[r] = sum / n;           // MLE = sample mean
+  }
+  const arr = Array.from(estimates);
+  const mcMean = d3.mean(arr);
+  const mcSd   = d3.deviation(arr);
+  return { estimates: arr, mcMean, mcSd };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Theoretical large-sample SE from the Fisher information: I1(lambda)=1/lambda,
+// so Var(lambda_hat) = lambda0 / n  and  SE = sqrt(lambda0 / n).
+mleprop_theorySE = Math.sqrt(mleprop_lambda0 / mleprop_n)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// One "representative" sample, and the OBSERVED-information SE computed from it
+// exactly as software would: for the Poisson, observed info = n / lambda_hat,
+// so SE_obs = sqrt(lambda_hat / n).  Depends on mleprop_draw so it refreshes too.
+mleprop_oneSample = {
+  mleprop_draw;
+  const n = mleprop_n;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += mleprop_rpois(mleprop_lambda0);
+  const lamHat = sum / n;
+  const seObs  = Math.sqrt(lamHat / n);     // sqrt( observed-info^{-1} )
+  return { lamHat, seObs };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Histogram of the MLEs with the theoretical Normal(lambda0, lambda0/n) overlaid.
+{
+  const lam = mleprop_lambda0;
+  const se  = mleprop_theorySE;
+  const ests = mleprop_mc.estimates;
+
+  // x-window: centre on lambda0, span +/- 4.5 theory SDs (clamped to >=0).
+  const lo = Math.max(0, lam - 4.5 * se);
+  const hi = lam + 4.5 * se;
+
+  // Theoretical Normal density curve.
+  const normPdf = x =>
+    Math.exp(-0.5 * ((x - lam) / se) ** 2) / (se * Math.sqrt(2 * Math.PI));
+  const curve = d3.range(lo, hi, (hi - lo) / 240).map(x => ({ x, d: normPdf(x) }));
+
+  // Bin the MLEs into a TRUE density (count / (N * binWidth)) so the bars share
+  // the same vertical scale as the Normal density curve overlaid on top.
+  const bins = d3.bin().domain([lo, hi]).thresholds(36)(ests);
+  const histo = bins
+    .filter(b => b.x1 > b.x0)
+    .map(b => ({
+      x0: b.x0,
+      x1: b.x1,
+      density: b.length / (ests.length * (b.x1 - b.x0))
+    }));
+
+  return Plot.plot({
+    width: 660,
+    height: 380,
+    marginLeft: 60,
+    marginBottom: 48,
+    style: {
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontSize: "12px",
+      background: "transparent",
+      color: "#555555"
+    },
+    x: {
+      label: "Estimate  λ̂ = ȳ  (visits / patient-year)  →",
+      domain: [lo, hi],
+      grid: false
+    },
+    y: { label: "Density", grid: true },
+    marks: [
+      // Monte Carlo histogram, drawn as a true density so it shares the y-axis
+      // with the asymptotic Normal curve.
+      Plot.rectY(histo, {
+        x1: "x0", x2: "x1", y: "density", y2: 0,
+        fill: "#3d5a6c", fillOpacity: 0.35,
+        stroke: "#3d5a6c", strokeOpacity: 0.45
+      }),
+      // Theoretical asymptotic Normal.
+      Plot.line(curve, {
+        x: "x", y: "d", stroke: "#990000", strokeWidth: 2.5
+      }),
+      // True value marker.
+      Plot.ruleX([lam], { stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "5,4" }),
+      Plot.text([{ x: lam, d: normPdf(lam) }], {
+        x: "x", y: "d",
+        text: [`λ₀ = ${lam.toFixed(2)}`],
+        dy: -8, fill: "#9c7a33", fontWeight: 700, fontSize: 12, textAnchor: "middle"
+      }),
+      // Label for the asymptotic curve.
+      Plot.text([{ x: lam + 2.2 * se, d: normPdf(lam + 1.2 * se) }], {
+        x: "x", y: "d",
+        text: ["asymptotic\nNormal"],
+        fill: "#990000", fontWeight: 600, fontSize: 11, textAnchor: "start", dx: 4,
+        lineHeight: 1.1
+      }),
+      Plot.ruleY([0], { stroke: "#1c1c1a", strokeOpacity: 0.5 })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live numeric readout: theory SE vs Monte Carlo spread vs observed-info SE.
+{
+  const fmt = v => v.toFixed(4);
+  const tile = (name, value, color, sub) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.6rem 0.5rem; border-radius: 0.4rem;
+      background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:#79766e;">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color}; margin-top:0.15rem;">${value}</div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        color:#79766e; margin-top:0.1rem;">${sub}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Theory SE", fmt(mleprop_theorySE), "#990000", "√(λ₀ / n)")}
+    ${tile("Monte Carlo SD", fmt(mleprop_mc.mcSd), "#3d5a6c", "spread of λ̂ across reps")}
+    ${tile("Observed-info SE", fmt(mleprop_oneSample.seObs), "#2e6f40", "from one sample's Hessian")}
+    ${tile("One λ̂", fmt(mleprop_oneSample.lamHat), "#1c1c1a", "single representative estimate")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Monte Carlo
+
+Work through these in order; each isolates one of the three asymptotic promises.
+
+**Step 1: Read the picture.** The slate-blue bars are a histogram of $\hat\lambda$ across many simulated studies, each with $n$ patients. The Uppsala-red curve is the Normal distribution the asymptotic theory predicts, $\mathcal{N}(\lambda_0,\, \lambda_0/n)$. The ochre dashed line marks the true rate $\lambda_0$. Notice that the histogram is centred on $\lambda_0$ --- this is consistency: the MLE is (essentially) unbiased and homes in on the truth.
+
+**Step 2: Watch it concentrate.** Drag **sample size n** from 10 up toward 1000. The histogram squeezes inward around $\lambda_0$ --- the estimates from different studies agree more and more closely. This is $\hat\lambda \xrightarrow{p}\lambda_0$ made visual: with enough data, sampling error nearly vanishes.
+
+**Step 3: Watch it become Normal.** At small $n$ (say 10) with a low rate $\lambda_0$, the histogram is visibly *skewed* --- counts are discrete and bounded below by zero, so the sampling distribution is lumpy and right-leaning, and the red curve fits imperfectly. Increase $n$: the lumps smooth out and the histogram snaps onto the red Normal. This is the Central Limit Theorem doing its work inside the MLE --- asymptotic normality is an *approximation* that gets better with $n$.
+
+**Step 4: Confirm the standard error.** Compare the three SE tiles. **Theory SE** is $\sqrt{\lambda_0/n}$ from the Fisher information. **Monte Carlo SD** is the actual spread of $\hat\lambda$ across replications --- the "truth" we are trying to predict. **Observed-info SE** is what a single study would report by inverting its own Hessian. All three should agree closely, and the agreement *improves* as $n$ grows. This is the punchline: the curvature of one log-likelihood predicts the spread you would see across infinitely many repeated studies.
+
+**Step 5: See the $1/\sqrt{n}$ law.** Note the Theory SE at $n=40$, then quadruple $n$ to $160$. The SE roughly *halves*, not quarters. Diminishing returns to data are baked into maximum likelihood: precision grows only with the square root of sample size. Click **Draw new Monte Carlo** a few times to confirm the pattern is not a fluke of one random draw.
+
+## Efficiency and the Cramér--Rao Bound
+
+Consistency and normality tell us the MLE lands on the truth with a Normal wobble. Efficiency tells us *no estimator wobbles less*.
+
+::: {.glass-card .glass-card--definition}
+The **Cramér--Rao lower bound** states that for any unbiased estimator $\tilde\theta$ of a scalar $\theta$,
+
+$$
+\operatorname{Var}(\tilde\theta) \;\ge\; \frac{1}{n\,I_1(\theta)} \;=\; I_n(\theta)^{-1}.
+$$
+
+**Read this as:** "the variance of any unbiased estimator is at least the inverse of the total Fisher information." The inverse information is a *floor* below which no unbiased estimator can go. The MLE attains this floor asymptotically, so we call it **asymptotically efficient**: among all consistent, asymptotically-normal estimators, it has the smallest possible asymptotic variance.
+:::
+
+This is why maximum likelihood is the default in so much of econometrics: when the model is correctly specified, you cannot beat it in large samples. For the fall-count example, the sample mean $\bar y$ is the MLE and its variance $\lambda_0/n$ exactly equals $I_n(\lambda_0)^{-1}$ --- the Poisson sample mean is fully efficient, and no cleverer unbiased estimator of the fall rate exists.
+
+::: {.glass-card .glass-card--assumption}
+The asymptotic guarantees are not free. They require **regularity conditions**: the true parameter lies in the *interior* of the parameter space (not on a boundary), the log-density is smooth enough to differentiate twice, the support of $f(y\mid\theta)$ does not depend on $\theta$, and --- crucially --- the **model is correctly specified**. If $f$ is the wrong family, the MLE still converges, but to the parameter that minimises the Kullback--Leibler divergence from the truth, and the tidy variance formula $I_n^{-1}$ no longer holds (you then need the "sandwich" robust variance). Treat $I_n^{-1}$ as a best case that assumes you got the model right.
+:::
+
+## Invariance: Re-Parameterising for Free
+
+A small but enormously convenient property: the MLE is **invariant** under transformation. If $\hat\theta$ is the MLE of $\theta$ and $g$ is any function, then the MLE of $g(\theta)$ is simply $g(\hat\theta)$.
+
+For the fall-count study, suppose the region cares not about the rate $\lambda$ but about the **probability a patient has zero falls in a year**, $\pi_0 = P(Y=0) = e^{-\lambda}$. By invariance, the MLE of that probability is just $\hat\pi_0 = e^{-\hat\lambda}$ --- no re-optimisation needed. You maximise once, in whatever parameterisation is convenient, and read off any smooth function of the result.
+
+But invariance only hands you the *point* estimate. The *standard error* of $\hat\pi_0$ is a different question, because squeezing $\hat\lambda$ through the nonlinear map $e^{-\lambda}$ stretches its uncertainty too. That is exactly what the delta method is for.
+
+## The Delta Method: Standard Errors for $g(\hat\theta)$
+
+We have a standard error for $\hat\theta$. We want one for $g(\hat\theta)$. The delta method linearises $g$ around $\theta_0$ with a first-order Taylor expansion and propagates the variance through the slope.
+
+::: {.glass-card .glass-card--definition}
+**The delta method.** If $\sqrt{n}(\hat\theta - \theta_0) \xrightarrow{d} \mathcal{N}(0, \sigma^2)$ and $g$ is differentiable at $\theta_0$ with $g'(\theta_0)\neq 0$, then
+
+$$
+\sqrt{n}\,\big(g(\hat\theta) - g(\theta_0)\big)
+\;\xrightarrow{d}\;
+\mathcal{N}\!\big(0,\; g'(\theta_0)^2\,\sigma^2\big).
+$$
+
+In standard-error terms, $\widehat{\operatorname{SE}}\big(g(\hat\theta)\big) = \big|g'(\hat\theta)\big| \cdot \widehat{\operatorname{SE}}(\hat\theta)$.
+:::
+
+**Read this as:** "the standard error of the transformed estimate is the absolute slope of $g$ at the estimate, times the standard error of the original estimate." Geometrically, $g'$ is the local magnification factor: where $g$ is steep, a small wobble in $\hat\theta$ becomes a large wobble in $g(\hat\theta)$; where $g$ is flat, uncertainty is compressed.
+
+Apply it to the zero-fall probability $\pi_0 = e^{-\lambda}$, so $g(\lambda) = e^{-\lambda}$ and $g'(\lambda) = -e^{-\lambda}$. With $\hat\lambda = 2.0$ from $n=40$ patients, the SE of $\hat\lambda$ is $\sqrt{\hat\lambda/n} = \sqrt{2.0/40} = \sqrt{0.05} = 0.2236$. Then
+
+$$
+\hat\pi_0 = e^{-2.0} = 0.1353,
+\qquad
+\widehat{\operatorname{SE}}(\hat\pi_0) = \big|-e^{-2.0}\big|\cdot 0.2236 = 0.1353 \times 0.2236 = 0.0303.
+$$
+
+So roughly $13.5\%$ of patients have a fall-free year, with a standard error of about $3.0$ percentage points --- an approximate 95% interval of $[0.076,\,0.195]$. We obtained a calibrated uncertainty for a *nonlinear* function of the parameter without ever fitting a second model.
+
+::: {.glass-card .glass-card--warning}
+**The delta method has blind spots.** Two failure modes recur in applied work and the formula gives no warning when they bite:
+
+- **Vanishing slope.** When $g'(\theta_0)=0$ the first-order term collapses and the *leading* approximation is degenerate --- you must go to a second-order (quadratic) expansion, and the limiting law is no longer Normal. Estimating the variance of a quantity *near its own optimum*, where the derivative is zero, is the classic trap.
+- **Bounded transforms near a boundary.** Probabilities live in $[0,1]$, but a symmetric delta-method interval can spill past $0$ or $1$ --- as it nearly does for our $\hat\pi_0$ at small $n$. When the transform is bounded or strongly curved, prefer building the interval on a scale where the Normal approximation is better (e.g. the log-odds in Exercise 3) and then transforming the *endpoints* back. The delta method is a *local linearisation*; trust it only where $g$ is close to linear over the plausible range of $\hat\theta$.
+:::
+
+<details>
+<summary>Math Details: the information identity and the delta method</summary>
+<div class="details-content">
+
+### Why the score has mean zero
+
+Start from the fact that any density integrates to one: $\int f(y\mid\theta)\,dy = 1$ for every $\theta$. Differentiate both sides with respect to $\theta$ and pass the derivative inside the integral (a regularity condition):
+
+$$
+0 = \frac{\partial}{\partial\theta}\int f\,dy
+= \int \frac{\partial f}{\partial\theta}\,dy
+= \int \frac{\partial \log f}{\partial\theta}\, f\,dy
+= E_\theta\!\left[\frac{\partial \log f}{\partial\theta}\right]
+= E_\theta[s(\theta)].
+$$
+
+The trick in the middle is $\partial f/\partial\theta = f \cdot \partial(\log f)/\partial\theta$. So the score has expectation zero at the true parameter.
+
+### The information matrix identity
+
+Differentiate the identity $\int s(\theta)\, f\,dy = 0$ once more with respect to $\theta$:
+
+$$
+0 = \frac{\partial}{\partial\theta}\int s\, f\,dy
+= \int \frac{\partial s}{\partial\theta}\, f\,dy + \int s\,\frac{\partial f}{\partial\theta}\,dy
+= E_\theta\!\left[\frac{\partial s}{\partial\theta}\right] + \int s\cdot s\, f\,dy,
+$$
+
+again using $\partial f/\partial\theta = f\, s$. The second term is $E_\theta[s^2]$. Since $\partial s/\partial\theta = \partial^2 \log f/\partial\theta^2$ and $E_\theta[s]=0$ means $E_\theta[s^2]=\operatorname{Var}_\theta(s)$, we rearrange to
+
+$$
+\operatorname{Var}_\theta(s) = E_\theta[s^2] = -\,E_\theta\!\left[\frac{\partial^2 \log f}{\partial\theta^2}\right].
+$$
+
+That is the **information identity**: variance of the score equals expected negative curvature. Both equal $I_1(\theta)$.
+
+### Asymptotic normality in one line of intuition
+
+A first-order Taylor expansion of the total score $S_n$ around $\theta_0$, evaluated at the root $\hat\theta$ where $S_n(\hat\theta)=0$, gives $0 \approx S_n(\theta_0) + S_n'(\theta_0)(\hat\theta-\theta_0)$, so
+
+$$
+\sqrt{n}(\hat\theta - \theta_0)
+\approx \frac{\tfrac{1}{\sqrt n}S_n(\theta_0)}{-\tfrac{1}{n}S_n'(\theta_0)}.
+$$
+
+The numerator is $\sqrt n$ times a sample average of mean-zero scores, which the CLT sends to $\mathcal{N}(0, I_1)$. The denominator is a sample average of $-\partial s/\partial\theta$, which the law of large numbers sends to $I_1$. Slutsky's theorem combines them into $\mathcal{N}(0, I_1 / I_1^2) = \mathcal{N}(0, I_1^{-1})$. That is the asymptotic-normality result.
+
+### The Fisher information for the Poisson
+
+With $f(y\mid\lambda) = e^{-\lambda}\lambda^y / y!$, the log-density is $\log f = -\lambda + y\log\lambda - \log(y!)$. The score is $s = -1 + y/\lambda$ and the second derivative is $\partial^2 \log f/\partial\lambda^2 = -y/\lambda^2$. Taking the negative expectation, and using $E[Y]=\lambda$,
+
+$$
+I_1(\lambda) = -E\!\left[-\frac{Y}{\lambda^2}\right] = \frac{\lambda}{\lambda^2} = \frac{1}{\lambda}.
+$$
+
+Hence $\operatorname{Var}(\hat\lambda) = 1/(n\,I_1) = \lambda/n$ --- exactly the variance the Poisson sample mean already has, confirming efficiency.
+
+### The delta method derivation
+
+Expand $g$ to first order around $\theta_0$: $g(\hat\theta) \approx g(\theta_0) + g'(\theta_0)(\hat\theta - \theta_0)$. Subtract $g(\theta_0)$ and scale by $\sqrt n$:
+
+$$
+\sqrt n\big(g(\hat\theta)-g(\theta_0)\big) \approx g'(\theta_0)\cdot \sqrt n(\hat\theta-\theta_0).
+$$
+
+The right side is a constant $g'(\theta_0)$ times a quantity converging to $\mathcal{N}(0,\sigma^2)$. Multiplying a Normal by a constant $c$ multiplies its variance by $c^2$, giving $\mathcal{N}\big(0,\, g'(\theta_0)^2\sigma^2\big)$. The remainder term is $O_p(1/\sqrt n)$ and vanishes asymptotically.
+
+</div>
+</details>
+
+## Computing Information-Based and Delta-Method Standard Errors
+
+Both panels fit the Poisson fall-count model by maximum likelihood, extract the standard error by inverting the observed information (the Hessian the optimiser returns), and then propagate that uncertainty through $g(\lambda)=e^{-\lambda}$ with the delta method. The numbers match the worked example above.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(bbmle)   # mle2: maximum likelihood with a numeric Hessian
+
+set.seed(2024)
+# Simulated fall-related ER visits for n elderly patients at a vårdcentral.
+n     <- 40
+lam0  <- 2.0
+y     <- rpois(n, lambda = lam0)
+
+# Negative log-likelihood for a Poisson rate.
+nll <- function(lambda) -sum(dpois(y, lambda, log = TRUE))
+
+fit <- mle2(nll, start = list(lambda = 1), method = "BFGS")
+
+lam_hat <- coef(fit)["lambda"]
+# Observed-information SE: bbmle inverts the numeric Hessian for us.
+se_lam  <- sqrt(diag(vcov(fit)))["lambda"]
+
+cat(sprintf("lambda_hat = %.4f\n", lam_hat))
+cat(sprintf("SE(lambda) = %.4f   (theory sqrt(lam_hat/n) = %.4f)\n",
+            se_lam, sqrt(lam_hat / n)))
+
+# Invariance: MLE of pi0 = P(Y = 0) = exp(-lambda) is exp(-lambda_hat).
+pi0_hat <- exp(-lam_hat)
+
+# Delta method: g(lambda) = exp(-lambda), g'(lambda) = -exp(-lambda).
+gprime  <- -exp(-lam_hat)
+se_pi0  <- abs(gprime) * se_lam
+
+cat(sprintf("\npi0_hat    = %.4f  (P of a fall-free year)\n", pi0_hat))
+cat(sprintf("SE(pi0)    = %.4f   via delta method\n", se_pi0))
+cat(sprintf("95%% CI    = [%.4f, %.4f]\n",
+            pi0_hat - 1.96 * se_pi0, pi0_hat + 1.96 * se_pi0))
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy import optimize, stats
+
+rng = np.random.default_rng(2024)
+# Simulated fall-related ER visits for n elderly patients at a vårdcentral.
+n, lam0 = 40, 2.0
+y = rng.poisson(lam0, size=n)
+
+# Negative log-likelihood for a Poisson rate.
+def nll(theta):
+    lam = theta[0]
+    if lam <= 0:
+        return np.inf
+    return -np.sum(stats.poisson.logpmf(y, lam))
+
+# Optimise, then read the inverse-Hessian from the BFGS result.
+res = optimize.minimize(nll, x0=[1.0], method="BFGS")
+lam_hat = res.x[0]
+# res.hess_inv approximates the inverse observed information -> variance.
+se_lam = np.sqrt(res.hess_inv[0, 0])
+
+print(f"lambda_hat = {lam_hat:.4f}")
+print(f"SE(lambda) = {se_lam:.4f}   (theory sqrt(lam_hat/n) = "
+      f"{np.sqrt(lam_hat / n):.4f})")
+
+# Invariance: MLE of pi0 = P(Y = 0) = exp(-lambda) is exp(-lambda_hat).
+pi0_hat = np.exp(-lam_hat)
+
+# Delta method: g(lambda) = exp(-lambda), g'(lambda) = -exp(-lambda).
+gprime = -np.exp(-lam_hat)
+se_pi0 = abs(gprime) * se_lam
+
+print(f"\npi0_hat    = {pi0_hat:.4f}  (P of a fall-free year)")
+print(f"SE(pi0)    = {se_pi0:.4f}   via delta method")
+print(f"95% CI     = [{pi0_hat - 1.96 * se_pi0:.4f}, "
+      f"{pi0_hat + 1.96 * se_pi0:.4f}]")
+```
+
+:::
+
+Both routes report a $\hat\lambda$ near $2$ with an SE near $\sqrt{\hat\lambda/n}\approx 0.22$, and a zero-fall probability near $0.135$ with a delta-method SE near $0.030$ --- exactly the hand computation. The lesson: the optimiser's Hessian *is* the observed information, and a single derivative turns that into a standard error for any smooth quantity you care about.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A vårdcentral models the time (in days) between consecutive fall-related ER visits as $Y \sim \text{Exponential}(\theta)$ with density $f(y\mid\theta) = \theta e^{-\theta y}$ for $y>0$, where $\theta$ is the rate. (a) Find the score and show $E_\theta[s]=0$. (b) Derive the Fisher information $I_1(\theta)$. (c) Write the large-sample standard error of $\hat\theta$ for a sample of size $n$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\log f = \log\theta - \theta y$, so the score is $s(\theta) = \partial\log f/\partial\theta = 1/\theta - y$. For the Exponential, $E_\theta[Y] = 1/\theta$, hence $E_\theta[s] = 1/\theta - 1/\theta = 0$. $\checkmark$
+
+**(b)** The second derivative is $\partial^2\log f/\partial\theta^2 = -1/\theta^2$, a constant. Therefore
+
+$$
+I_1(\theta) = -E_\theta\!\left[-\tfrac{1}{\theta^2}\right] = \frac{1}{\theta^2}.
+$$
+
+(Check via the variance form: $\operatorname{Var}(s)=\operatorname{Var}(1/\theta - Y)=\operatorname{Var}(Y)=1/\theta^2$. $\checkmark$)
+
+**(c)** $\operatorname{Var}(\hat\theta) = 1/(n\,I_1) = \theta^2/n$, so
+
+$$
+\operatorname{SE}(\hat\theta) = \sqrt{\theta^2/n} = \frac{\theta}{\sqrt n}.
+$$
+
+In practice replace $\theta$ by $\hat\theta = 1/\bar y$, giving $\widehat{\operatorname{SE}}(\hat\theta) = \hat\theta/\sqrt n$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Continuing Exercise 1, the region reports the *mean* time between falls, $\mu = 1/\theta$, rather than the rate. (a) Use invariance to state $\hat\mu$. (b) Use the delta method to find $\operatorname{SE}(\hat\mu)$ in terms of $\theta$ and $n$. (c) With $n=50$ and $\hat\theta = 0.05$ per day, give $\hat\mu$ and its standard error.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** By invariance, $\hat\mu = 1/\hat\theta$.
+
+**(b)** Here $g(\theta) = 1/\theta$ so $g'(\theta) = -1/\theta^2$. From Exercise 1, $\operatorname{SE}(\hat\theta) = \theta/\sqrt n$. The delta method gives
+
+$$
+\operatorname{SE}(\hat\mu) = |g'(\theta)|\cdot \operatorname{SE}(\hat\theta)
+= \frac{1}{\theta^2}\cdot\frac{\theta}{\sqrt n}
+= \frac{1}{\theta\sqrt n}.
+$$
+
+Equivalently, $\operatorname{SE}(\hat\mu) = \mu/\sqrt n$ since $\mu = 1/\theta$ --- the same proportional structure as the rate.
+
+**(c)** $\hat\mu = 1/0.05 = 20$ days. With $\hat\theta = 0.05$ and $n=50$,
+
+$$
+\widehat{\operatorname{SE}}(\hat\mu) = \frac{1}{0.05\cdot\sqrt{50}} = \frac{1}{0.05\times 7.071} = \frac{1}{0.3536} = 2.83 \text{ days}.
+$$
+
+So the mean gap between falls is about $20 \pm 2.8$ days.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A study of HbA1c control records whether each of $n=200$ diabetes patients is "at target" ($<52$ mmol/mol). Let $Y\sim\text{Bernoulli}(p)$ with $\hat p = 0.65$. (a) Show that the Fisher information for a single Bernoulli is $I_1(p)=1/[p(1-p)]$. (b) Compute $\widehat{\operatorname{SE}}(\hat p)$. (c) The region instead wants the **log-odds** $\eta = \log\frac{p}{1-p}$. Use the delta method to find $\widehat{\operatorname{SE}}(\hat\eta)$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\log f = y\log p + (1-y)\log(1-p)$. The score is $s = y/p - (1-y)/(1-p)$ and the second derivative is $\partial^2\log f/\partial p^2 = -y/p^2 - (1-y)/(1-p)^2$. Taking the negative expectation with $E[Y]=p$:
+
+$$
+I_1(p) = \frac{p}{p^2} + \frac{1-p}{(1-p)^2} = \frac1p + \frac{1}{1-p} = \frac{1}{p(1-p)}.
+$$
+
+**(b)** $\operatorname{Var}(\hat p) = 1/(n\,I_1) = p(1-p)/n$, so
+
+$$
+\widehat{\operatorname{SE}}(\hat p) = \sqrt{\frac{0.65\times 0.35}{200}} = \sqrt{\frac{0.2275}{200}} = \sqrt{0.0011375} = 0.0337.
+$$
+
+**(c)** With $\eta = \log\frac{p}{1-p}$, the derivative is $g'(p) = \frac{1}{p(1-p)}$. The delta method gives
+
+$$
+\widehat{\operatorname{SE}}(\hat\eta) = \frac{1}{p(1-p)}\cdot\widehat{\operatorname{SE}}(\hat p)
+= \frac{1}{0.2275}\times 0.033727 = 0.1482.
+$$
+
+(Keep the unrounded $\widehat{\operatorname{SE}}(\hat p)=\sqrt{0.2275/200}=0.033727$ here; plugging in the $2$-significant-figure $0.034$ would inflate the answer.)
+
+A neat shortcut: $\operatorname{SE}(\hat\eta) = \frac{1}{\sqrt{n\,p(1-p)}} = 1/\sqrt{200\times 0.2275} = 1/\sqrt{45.5} = 0.1482$. $\checkmark$
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the Monte Carlo interactive, set $\lambda_0 = 1.0$ and start at $n=10$. (a) Describe the shape of the histogram and how well the red Normal fits. (b) Increase $n$ to $250$ and describe what changed about *both* the centre and the shape. (c) Read the Theory SE at $n=10$ and at $n=250$; verify the ratio matches what the $1/\sqrt n$ law predicts.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $\lambda_0=1.0$ and $n=10$, the histogram is wide and visibly **right-skewed** --- the discreteness of small Poisson counts and the floor at zero make the sampling distribution of $\bar y$ lumpy and asymmetric. The red asymptotic Normal is a rough approximation: it overshoots into negative-looking territory the data cannot reach and underweights the right tail. This is the regime where "asymptotic" normality has not kicked in yet.
+
+**(b)** At $n=250$ the histogram **narrows sharply** (it now hugs $\lambda_0=1$ much more tightly --- consistency) and becomes **symmetric and smooth**, matching the red bell curve almost perfectly (the CLT has taken over --- asymptotic normality). Both promises are visible at once.
+
+**(c)** Theory SE $=\sqrt{\lambda_0/n}$. At $n=10$: $\sqrt{1/10}=\sqrt{0.1}=0.3162$. At $n=250$: $\sqrt{1/250}=\sqrt{0.004}=0.0632$. The ratio is $0.3162/0.0632 = 5.0$. The $1/\sqrt n$ law predicts the ratio $\sqrt{250/10}=\sqrt{25}=5$. $\checkmark$ Multiplying the sample by 25 cut the standard error by exactly 5.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- In large samples the MLE is consistent ($\hat\theta_n\to\theta_0$), asymptotically Normal ($\sqrt n(\hat\theta_n-\theta_0)\to\mathcal N(0, I_1^{-1})$), and efficient (it attains the Cramér--Rao floor).
+- The Fisher information $I_1(\theta)$ is both the variance of the score and the expected negative curvature of the log-likelihood; these are equal by the information identity, and a sharper peak means more information and smaller standard errors.
+- The inverse information is the asymptotic variance: $\operatorname{SE}(\hat\theta)=1/\sqrt{n\,I_1}$ shrinks like $1/\sqrt n$, and software reports it by inverting the observed information (the Hessian at the optimum).
+- Invariance gives the point estimate of any smooth function for free, $\widehat{g(\theta)}=g(\hat\theta)$; the delta method gives its standard error, $\operatorname{SE}(g(\hat\theta))=|g'(\hat\theta)|\cdot\operatorname{SE}(\hat\theta)$.
+- All of this assumes correct specification and interior, smooth, support-stable parameters --- violate those and the clean $I_n^{-1}$ variance must be replaced by a robust sandwich.
+:::
+
+## What Comes Next
+
+Maximum likelihood is powerful precisely because it squeezes every drop of information from a *fully specified* probability model --- and that is also its Achilles' heel: you must commit to a distribution for $Y$. The next page, [Method of Moments and GMM](method-of-moments-gmm.qmd), relaxes that commitment. Instead of a full likelihood, you supply only a handful of **moment conditions** --- statements like "this residual is, on average, uncorrelated with that instrument" --- and let the data pin down the parameters. We will see that MLE is a special case of the Generalized Method of Moments (its score equations *are* moment conditions), that GMM inherits its own asymptotic-normality and efficiency theory, and that the optimal GMM weighting matrix plays the role the Fisher information played here. The information-and-delta-method machinery you just built carries straight over.

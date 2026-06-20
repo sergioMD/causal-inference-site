@@ -1,0 +1,981 @@
+---
+title: "Functional Form"
+subtitle: "Logs, polynomials, and choosing the right specification"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain that the OLS linearity assumption is linear *in the parameters* — a claim about the specification you choose, not about the world — and exploit transformations to fit curves with a line
+- Interpret a slope correctly across all four log/level cases (level-level, log-level, level-log, log-log), reading logged variables as percents and recognizing the log-log slope as an elasticity
+- Apply the exact $100(e^{\beta}-1)$ correction when a semi-elasticity coefficient is large, and handle the $\log(0)$ problem honestly
+- Fit a quadratic to capture genuine curvature, compute its turning point $x^* = -\beta_1/(2\beta_2)$ and changing marginal effect, and recognize the extrapolation and overfitting dangers
+- Choose a functional form by theory and residual diagnostics first, refusing to data-dredge by chasing $R^2$ across non-comparable scales
+:::
+
+## The Line Is Yours to Shape
+
+Ordinary least squares does exactly one thing: it fits a straight line through whatever variables you hand it. It has no opinion about whether that line is a good description of the world. If you give OLS the raw patient volume of a *vårdcentral* (primary care center) and its annual operating cost in kronor, OLS will draw the best-fitting straight line through those points --- even if the true relationship curves, bends, or saturates. The regression will report a slope and a standard error with complete confidence. The numbers will be wrong, not because OLS made an arithmetic error, but because a straight line was the wrong shape.
+
+This is the problem of **functional form**. The linearity assumption in regression is not an assumption that the world is linear. It is an assumption that the world is linear *in the variables you chose to put on the right-hand side*. And here is the liberating consequence: you get to choose those variables. You can feed OLS the logarithm of cost, the square of patient age, an interaction, a spline basis --- any transformation you like. OLS will fit a line in the transformed space, which corresponds to a curve in the original space. The art of regression is choosing transformations that (a) make the linearity assumption credible and (b) make the resulting coefficients mean something a policymaker can act on.
+
+Consider a concrete Swedish example that will run through this entire page. The 21 *regioner* (regions) operate vårdcentraler of wildly different sizes --- from rural centers serving 2,000 listed patients to urban ones serving 25,000. A health economist at a region wants to know how the **cost per listed patient** behaves as a center grows. Are there economies of scale? Does cost per patient fall as volume rises, and if so, by how much? This is a question about the *shape* of the cost curve, and the answer depends entirely on the functional form we choose.
+
+::: {.glass-card .glass-card--insight}
+The linearity assumption of OLS is an assumption about the *specification*, not about reality. "Linear regression" means linear in the parameters --- the model $y = \beta_0 + \beta_1 g(x) + \varepsilon$ is perfectly linear regression even when $g(\cdot)$ is a logarithm or a polynomial. Choosing $g$ well is what turns a mechanical line-fitter into a credible model of a curved world.
+:::
+
+
+## Why Transform at All? Two Jobs a Transformation Does
+
+A transformation of $y$ or $x$ does two distinct jobs, and it helps to keep them separate.
+
+**Job 1: Make the relationship straight.** Many relationships in health economics are multiplicative or curved. Cost grows with volume but at a decreasing rate. A health outcome improves with age, peaks, and declines. If we model these with a straight line in the raw variables, the residuals will show systematic curvature --- the model under-predicts in some regions of $x$ and over-predicts in others. The right transformation removes that curvature so a straight line fits honestly.
+
+**Job 2: Make the coefficient interpretable.** A slope of "412 SEK of cost per additional listed patient" is interpretable but may not be the quantity you care about. If you instead model $\log(\text{cost})$ on $\log(\text{volume})$, the slope becomes an **elasticity** --- the percent change in cost for a one-percent change in volume --- which is exactly the language economists use to talk about returns to scale. The transformation changes not just the fit but the *meaning* of $\beta$.
+
+These two jobs usually travel together. Logging a right-skewed cost variable both straightens the relationship and yields an elasticity. But they are conceptually separate, and recognizing which job you are doing keeps you honest.
+
+
+## The Four Interpretation Cases
+
+The single most important skill on this page is reading a coefficient aloud correctly. Whether you logged the outcome, the regressor, both, or neither completely changes the sentence that interprets $\beta_1$. There are exactly four cases. Memorize the sentence for each.
+
+::: {.glass-card .glass-card--definition}
+**The four log/level interpretation rules.** In each case the model is $\;\text{[left]} = \beta_0 + \beta_1 \,\text{[right]} + \varepsilon\;$ and we interpret the slope $\beta_1$.
+
+**1. Level–level:** $\;y = \beta_0 + \beta_1 x$
+
+$$
+\frac{dy}{dx} = \beta_1
+$$
+
+Read this as: "a one-**unit** increase in $x$ is associated with a $\beta_1$-**unit** change in $y$." If $x$ is patient volume and $y$ is cost in SEK, then $\beta_1$ is *kronor of cost per additional patient*.
+
+**2. Log–level (semi-elasticity):** $\;\log y = \beta_0 + \beta_1 x$
+
+$$
+\frac{d\log y}{dx} = \beta_1 \quad\Longrightarrow\quad 100\,\beta_1 \approx \%\,\Delta y \text{ per unit } x
+$$
+
+Read this as: "a one-**unit** increase in $x$ is associated with an approximately $100\,\beta_1$-**percent** change in $y$." This is the **semi-elasticity**. The approximation is good for small $\beta_1$; the **exact** percent change is $100\,(e^{\beta_1} - 1)$.
+
+**3. Level–log:** $\;y = \beta_0 + \beta_1 \log x$
+
+$$
+\frac{dy}{d\log x} = \beta_1 \quad\Longrightarrow\quad \frac{\beta_1}{100} \approx \Delta y \text{ per } 1\%\ \Delta x
+$$
+
+Read this as: "a one-**percent** increase in $x$ is associated with a $\beta_1/100$-**unit** change in $y$."
+
+**4. Log–log (elasticity):** $\;\log y = \beta_0 + \beta_1 \log x$
+
+$$
+\frac{d\log y}{d\log x} = \beta_1 = \text{elasticity}
+$$
+
+Read this as: "a one-**percent** increase in $x$ is associated with a $\beta_1$-**percent** change in $y$." This $\beta_1$ *is* the elasticity. If $\beta_1 = 0.85$ for cost on volume, a 10% larger center costs about 8.5% more --- less than proportional, which is exactly **economies of scale**.
+:::
+
+A compact way to remember the four cases: **logging a variable converts "units" to "percents" for that variable.** Log the left-hand side and the *output* is now read in percents; log the right-hand side and the *input* is now read in percents. That is the whole rule.
+
+| Model | Left | Right | $\beta_1$ reads as |
+|:------|:----:|:-----:|:-------------------|
+| Level–level | $y$ | $x$ | units of $y$ per unit of $x$ |
+| Log–level | $\log y$ | $x$ | $100\beta_1$ = % change in $y$ per unit of $x$ |
+| Level–log | $y$ | $\log x$ | $\beta_1/100$ = units of $y$ per 1% change in $x$ |
+| Log–log | $\log y$ | $\log x$ | $\beta_1$ = elasticity (% per %) |
+
+The four rules are also four *shapes*. Drawn in raw $x$–$y$ space (no transformed axes), each form bends in its own characteristic way --- this is what you are choosing between when you pick a specification.
+
+```{ojs}
+//| echo: false
+
+// Static 2×2 gallery: what each of the four forms LOOKS like in raw space.
+// Pure thumbnails — fixed coefficients, no data fitted, no shared mutable.
+p2_shapeThumb = function ({ title, sub, f, accent = "#3d5a6c", w = 215 }) {
+  const xs = d3.range(1, 100).map(i => i / 10);   // x in (0.1, 10]
+  const pts = xs.map(x => ({ x, y: f(x) }));
+  const plot = Plot.plot({
+    width: w,
+    height: 130,
+    marginLeft: 28,
+    marginRight: 12,
+    marginTop: 8,
+    marginBottom: 24,
+    style: { fontFamily: "Inter, sans-serif", color: "#79766e", fontSize: "10px" },
+    x: { ticks: [], label: "x →", labelAnchor: "right" },
+    y: { ticks: [], label: "↑ y", labelAnchor: "top" },
+    marks: [
+      Plot.line(pts, { x: "x", y: "y", stroke: accent, strokeWidth: 2.5 }),
+      Plot.frame({ stroke: "#e6e3db" })
+    ]
+  });
+  return html`<div style="background:#fff; border:1px solid #e6e3db; border-radius:0.4rem; padding:0.5rem 0.6rem 0.3rem;">
+    <div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.8rem; color:#1c1c1a;">${title}</div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem; color:#79766e; margin-bottom:0.2rem;">${sub}</div>
+    ${plot}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(13rem, 1fr)); gap:0.7rem; margin:1.25rem 0 1.75rem;">
+  ${p2_shapeThumb({ title: "Level–level", sub: "straight line — constant slope", accent: "#79766e", f: x => 1 + 0.6 * x })}
+  ${p2_shapeThumb({ title: "Log–level", sub: "exponential — constant % per unit", accent: "#9c7a33", f: x => Math.exp(0.32 * x) })}
+  ${p2_shapeThumb({ title: "Level–log", sub: "log curve — fast then flat", accent: "#3d5a6c", f: x => 1 + 2.4 * Math.log(x) })}
+  ${p2_shapeThumb({ title: "Log–log", sub: "power curve — constant elasticity", accent: "#990000", f: x => 6 * Math.pow(x, -0.4) })}
+</div>`
+```
+
+::: {.aside}
+Thumbnails of the four forms in raw $x$–$y$ space (axes hidden — only the *shape* matters). Level–level is the only straight line; the other three bend, each in the single specific way its rule allows. The log–log power curve (red) is the shape with genuine economies of scale: it falls steeply, then flattens.
+:::
+
+::: {.glass-card .glass-card--warning}
+**The semi-elasticity approximation breaks down for large coefficients.** The rule "$100\beta_1$ = percent change" comes from $\log(1+r) \approx r$ for small $r$. If $\beta_1 = 0.10$, the approximate change is 10% and the exact change is $100(e^{0.10}-1) = 10.5\%$ --- close enough. But if $\beta_1 = 0.50$, the approximation says 50% while the truth is $100(e^{0.50}-1) = 64.9\%$. Always report the exact $100(e^{\beta_1}-1)$ when the coefficient is large, and never let a referee catch you calling a 0.69 coefficient "a 69% increase" when it is really a doubling ($e^{0.69} \approx 2$).
+:::
+
+::: {.aside}
+A note on language used throughout: a **percentage point** is an *additive* difference between two percentages (going from 50% to 65% is a 15-percentage-point gap), whereas a **percent change** is a *multiplicative* one (relative to a base). The approximate-vs-exact discrepancies above are gaps measured in percentage points, not percents.
+:::
+
+
+## When Are Logs Appropriate?
+
+Logs are not a default; they are a choice justified by the nature of the variable. The logarithm is the right transformation when:
+
+- **The variable is strictly positive and right-skewed.** Costs in SEK, patient counts, waiting times in days, lengths of stay, and incomes all live on $(0, \infty)$ and pile up near small values with a long right tail. The log compresses that tail, pulling extreme centers back toward the bulk of the data so they do not dominate the fit.
+- **The relationship is multiplicative rather than additive.** If doubling a center's size multiplies its cost by a roughly constant factor (rather than adding a constant amount), then the relationship is linear *in logs*. Taking logs turns multiplication into addition: $\log(a \cdot b) = \log a + \log b$. A constant-elasticity world is a straight line in log–log space.
+- **The error variance grows with the level.** Cost data are typically *heteroskedastic* (the spread of the errors is not constant --- it changes with $x$): a 25,000-patient center has far more absolute cost variability than a 2,000-patient center. Logging often **stabilizes the variance**, because proportional variability becomes roughly constant on the log scale. This is the variance-stabilizing role of the log.
+
+::: {.glass-card .glass-card--warning}
+**The $\log(0)$ problem.** The logarithm is undefined at zero, and zeros are common in health data --- a patient with zero specialist visits, a center with zero overnight stays, a month with zero readmissions. You cannot simply log a variable that contains zeros. Three honest options, in rough order of preference:
+
+1. **Model the count directly** with a Poisson or negative-binomial regression (which handle zeros natively and whose coefficients are *already* semi-elasticities).
+2. **Use $\log(1+y)$** if zeros are few and the interpretation shift is acceptable --- but be aware this is a different transformation whose coefficient is no longer a clean elasticity, and it is sensitive to the units of $y$.
+3. **Avoid the much-abused "add a tiny constant"** trick ($\log(y + 0.001)$): the results depend arbitrarily on the constant you pick.
+
+Never silently drop the zeros --- that throws away exactly the observations (the centers with no overnight stays) that may be most policy-relevant.
+:::
+
+
+## Polynomials: Letting the Curve Bend
+
+Logs impose a *monotone* curvature --- a log–log cost curve always rises (or always falls), just at a changing rate. But some relationships are not monotone. A clinical example: the relationship between **patient age and an outcome like physical-function score or self-rated health** often rises through midlife and then declines --- it has a genuine peak. To capture a hump or a U-shape, we add a **quadratic** term.
+
+::: {.glass-card .glass-card--definition}
+**The quadratic specification.**
+
+$$
+E[y \mid x] = \beta_0 + \beta_1 x + \beta_2 x^2
+$$
+
+Read this as: "the expected value of $y$ is a parabola in $x$." The **marginal effect** of $x$ is no longer constant --- it depends on where you are:
+
+$$
+\frac{dE[y\mid x]}{dx} = \beta_1 + 2\beta_2 x
+$$
+
+Read this as: "the slope of $y$ with respect to $x$ at a point $x$ equals $\beta_1$ plus $2\beta_2$ times $x$." The effect of one more unit of $x$ changes as $x$ grows.
+
+The parabola has a single **turning point** (a maximum if $\beta_2 < 0$, a minimum if $\beta_2 > 0$) at:
+
+$$
+x^{*} = -\frac{\beta_1}{2\beta_2}
+$$
+
+Read this as: "the curve flattens out --- its slope hits zero --- at $x$ equal to negative $\beta_1$ over two $\beta_2$." This is found by setting the marginal effect $\beta_1 + 2\beta_2 x = 0$ and solving for $x$.
+:::
+
+The turning point is enormously useful for interpretation: it tells you the age at which the outcome peaks, or the volume beyond which cost per patient would start rising again. But it must be *inside the range of your data* to be meaningful --- a turning point at age 140 is an artifact of fitting a parabola, not a real peak.
+
+::: {.glass-card .glass-card--warning}
+**Two dangers of polynomials.**
+
+**Extrapolation.** A quadratic that fits beautifully inside your data range will shoot off to $\pm\infty$ outside it, because $\beta_2 x^2$ dominates for large $|x|$. Predictions just outside the observed range can be wildly wrong. Never trust a polynomial prediction beyond the cloud of data that estimated it.
+
+**Overfitting.** It is tempting to "improve fit" by adding $x^3$, $x^4$, $x^5$. High-order polynomials wiggle to chase noise, producing implausible local bumps and disastrous behavior at the edges (Runge's phenomenon). Each added power inflates the variance of your predictions. Adding terms until $R^2$ stops rising is data-dredging the functional form --- a path to a model that fits *this* sample and generalizes to nothing.
+
+A more disciplined alternative to high-order polynomials is a **spline**: piecewise low-order polynomials joined smoothly at "knots." Splines stay *local* --- a wiggle in one region does not force a compensating wiggle far away --- giving flexible curvature without the global instability of a single high-degree polynomial. We mention them here as the principled next step; for most policy work a quadratic plus good judgment is enough.
+:::
+
+The two dangers are easier to *see* than to describe. The figure below shows both at once: inside the shaded band (the range your data actually cover) every curve behaves; just outside it, the same curves go haywire.
+
+```{ojs}
+//| echo: false
+
+// Static figure: extrapolation blow-up + Runge wiggle outside the data range.
+// Pure — fixed analytic curves, no fitting, no shared mutable.
+p2_extrap = {
+  const lo = 2, hi = 8;                          // observed data range
+  const xs = d3.range(-1, 11.01, 0.1);
+  // A quadratic anchored to a gentle hump inside [lo,hi]; it shoots off outside.
+  const quad = x => -0.5 * (x - 5) ** 2 + 6;
+  // A high-order (Runge-like) curve: tame inside, violent wiggles at the edges.
+  const runge = x => 6 / (1 + 0.55 * (x - 5) ** 2) + 0.0009 * (x - 5) ** 5;
+  const qd = xs.map(x => ({ x, y: quad(x), kind: "Quadratic" }));
+  const rg = xs.map(x => ({ x, y: runge(x), kind: "High-order polynomial" }));
+  return { rows: qd.concat(rg), lo, hi };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 300,
+  marginLeft: 60,
+  marginRight: 18,
+  marginBottom: 46,
+  style: { fontFamily: "Inter, sans-serif", color: "#79766e" },
+  x: { label: "x →", domain: [-1, 11] },
+  y: { label: "↑ fitted value", domain: [-12, 12] },
+  color: {
+    legend: true,
+    domain: ["Quadratic", "High-order polynomial"],
+    range: ["#3d5a6c", "#990000"]
+  },
+  marks: [
+    // Shaded "data range" band — predictions are only trustworthy here.
+    Plot.rect([{ x1: p2_extrap.lo, x2: p2_extrap.hi, y1: -12, y2: 12 }],
+      { x1: "x1", x2: "x2", y1: "y1", y2: "y2", fill: "#2e6f40", fillOpacity: 0.07 }),
+    Plot.ruleX([p2_extrap.lo, p2_extrap.hi], { stroke: "#2e6f40", strokeDasharray: "4,4", strokeOpacity: 0.6 }),
+    Plot.line(p2_extrap.rows, { x: "x", y: "y", stroke: "kind", strokeWidth: 2.5 }),
+    Plot.ruleY([0], { stroke: "#1c1c1a", strokeOpacity: 0.18 }),
+    Plot.text([{ x: 5, y: 11, t: "← observed data range →" }], { x: "x", y: "y", text: "t",
+      fill: "#2e6f40", fontSize: 11, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+    Plot.text([{ x: 9.6, y: -9, t: "extrapolation:\nwildly wrong" }], { x: "x", y: "y", text: "t",
+      fill: "#990000", fontSize: 10.5, fontWeight: 700, textAnchor: "middle", lineHeight: 1.1,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+  ]
+})
+```
+
+::: {.aside}
+Inside the green band both curves are sensible. Outside it the quadratic (slate) plunges as $\beta_2 x^2$ takes over (extrapolation), and the high-order polynomial (red) whips up and down near the edges --- Runge's phenomenon. A curve that "fits" your sample tells you nothing about its behavior where you have no data.
+:::
+
+
+## See It: One Curve, Four Specifications
+
+The interactive below fits the **same** underlying Swedish cost dataset --- cost per listed patient versus patient volume across simulated vårdcentraler --- under four different functional forms. Choose a form from the dropdown and watch the fitted curve, the interpretation sentence (computed reactively from the fitted coefficients), and the goodness-of-fit readout change. The data have genuine economies of scale baked in: cost per patient falls steeply at first, then flattens. Your job is to *see* which form captures that curvature.
+
+::: {.interactive-container}
+
+#### Fitting Functional Forms to a Swedish Cost Curve
+
+::: {.start-here}
+**Start here:** pick a **functional form** below and watch the fitted curve, the "Read it aloud" sentence, and the R² readout change. Then follow the 5-step tour underneath the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof ff_form = Inputs.select(
+  ["Level–level", "Log–level", "Level–log", "Log–log", "Quadratic"],
+  {
+    label: "Functional form",
+    value: "Level–level"
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof ff_noise = Inputs.range([0, 1], {
+  value: 0.35,
+  step: 0.05,
+  label: "Noise level (data scatter)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ff_reseed = Inputs.button("Resample centers", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Deterministic RNG so the cloud is reproducible per seed
+ff_rng = {
+  const seed = ff_reseed;
+  let a = (20240617 + seed * 1013904223) | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Generate vårdcentral cost data: cost per listed patient (SEK) vs volume.
+// True data-generating process is a constant-elasticity decline (economies
+// of scale): cost_per_patient = A * volume^(-0.30) * lognormal noise.
+ff_data = {
+  const rng = ff_rng;
+  const n = 60;
+  const A = 9000;          // scale constant (SEK)
+  const elast = -0.30;     // true elasticity of cost-per-patient w.r.t. volume
+  const sd = 0.05 + 0.30 * ff_noise;
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    // volumes between ~2,000 and ~25,000 listed patients, right-skewed
+    const u = rng();
+    const volume = 2000 + 23000 * Math.pow(u, 1.4);
+    // lognormal multiplicative noise via Box–Muller
+    const z = Math.sqrt(-2 * Math.log(rng() + 1e-12)) * Math.cos(2 * Math.PI * rng());
+    const cost = A * Math.pow(volume, elast) * Math.exp(sd * z);
+    rows.push({ volume, cost });
+  }
+  return rows.sort((a, b) => a.volume - b.volume);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Simple OLS helper: fit y on a design matrix [1, f1(x), f2(x), ...].
+// Returns coefficients via the normal equations (small p, so a direct solve is fine).
+ff_ols = function (X, y) {
+  const n = X.length, p = X[0].length;
+  // X'X and X'y
+  const XtX = Array.from({ length: p }, () => new Array(p).fill(0));
+  const Xty = new Array(p).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < p; j++) {
+      Xty[j] += X[i][j] * y[i];
+      for (let k = 0; k < p; k++) XtX[j][k] += X[i][j] * X[i][k];
+    }
+  }
+  // Gaussian elimination on the augmented matrix (XtX | Xty)
+  const M = XtX.map((row, j) => [...row, Xty[j]]);
+  for (let col = 0; col < p; col++) {
+    let piv = col;
+    for (let r = col + 1; r < p; r++) if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+    [M[col], M[piv]] = [M[piv], M[col]];
+    const d = M[col][col];
+    for (let c = col; c <= p; c++) M[col][c] /= d;
+    for (let r = 0; r < p; r++) {
+      if (r === col) continue;
+      const factor = M[r][col];
+      for (let c = col; c <= p; c++) M[r][c] -= factor * M[col][c];
+    }
+  }
+  return M.map(row => row[p]);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fit the selected specification and return everything the display needs.
+ff_fit = {
+  const d = ff_data;
+  const form = ff_form;
+  const xs = d.map(r => r.volume);
+  const ys = d.map(r => r.cost);
+
+  // Build design matrix and response on the MODELED scale, then fit.
+  let b, yMod, predFn, modeledLabel;
+  if (form === "Level–level") {
+    const X = d.map(r => [1, r.volume]);
+    yMod = ys;
+    b = ff_ols(X, yMod);
+    predFn = v => b[0] + b[1] * v;
+    modeledLabel = "y";
+  } else if (form === "Log–level") {
+    const X = d.map(r => [1, r.volume]);
+    yMod = ys.map(Math.log);
+    b = ff_ols(X, yMod);
+    predFn = v => Math.exp(b[0] + b[1] * v);
+    modeledLabel = "log y";
+  } else if (form === "Level–log") {
+    const X = d.map(r => [1, Math.log(r.volume)]);
+    yMod = ys;
+    b = ff_ols(X, yMod);
+    predFn = v => b[0] + b[1] * Math.log(v);
+    modeledLabel = "y";
+  } else if (form === "Log–log") {
+    const X = d.map(r => [1, Math.log(r.volume)]);
+    yMod = ys.map(Math.log);
+    b = ff_ols(X, yMod);
+    predFn = v => Math.exp(b[0] + b[1] * Math.log(v));
+    modeledLabel = "log y";
+  } else { // Quadratic
+    const X = d.map(r => [1, r.volume, r.volume * r.volume]);
+    yMod = ys;
+    b = ff_ols(X, yMod);
+    predFn = v => b[0] + b[1] * v + b[2] * v * v;
+    modeledLabel = "y";
+  }
+
+  // Fitted values on the MODELED scale (the scale OLS actually optimized)
+  const yhatMod = d.map(r => {
+    if (form === "Log–level") return b[0] + b[1] * r.volume;
+    if (form === "Log–log")  return b[0] + b[1] * Math.log(r.volume);
+    if (form === "Level–log") return b[0] + b[1] * Math.log(r.volume);
+    if (form === "Quadratic") return b[0] + b[1] * r.volume + b[2] * r.volume * r.volume;
+    return b[0] + b[1] * r.volume; // Level–level
+  });
+
+  // R^2 on the modeled scale
+  const ybarMod = d3.mean(yMod);
+  const ssTot = d3.sum(yMod.map(v => (v - ybarMod) ** 2));
+  const ssRes = d3.sum(yMod.map((v, i) => (v - yhatMod[i]) ** 2));
+  const r2 = 1 - ssRes / ssTot;
+
+  // Smooth fitted curve across the volume range (back-transformed to SEK)
+  const vmin = d3.min(xs), vmax = d3.max(xs);
+  const curve = d3.range(vmin, vmax + 1, (vmax - vmin) / 120).map(v => ({
+    volume: v,
+    cost: predFn(v)
+  }));
+
+  return { b, modeledLabel, r2, curve, predFn };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Scatter of the raw data with the fitted curve overlaid (always shown in SEK)
+Plot.plot({
+  width: Math.min(680, width),
+  height: 320,
+  marginLeft: 70,
+  marginRight: 16,
+  marginTop: 24,
+  marginBottom: 44,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif", color: "#79766e" },
+  x: {
+    label: "Listed patients (volume)",
+    domain: [0, 26000],
+    tickFormat: d => (d / 1000) + "k"
+  },
+  y: {
+    label: "Cost per listed patient (SEK)",
+    domain: [0, d3.max(ff_data, d => d.cost) * 1.05]
+  },
+  color: {
+    legend: true,
+    domain: ["Observed centers", "Fitted curve"],
+    range: ["#3d5a6c", "#990000"]
+  },
+  marks: [
+    Plot.dot(ff_data, {
+      x: "volume",
+      y: "cost",
+      fill: () => "Observed centers",
+      fillOpacity: 0.55,
+      r: 4,
+      title: d => `Volume: ${Math.round(d.volume)}\nCost/patient: ${Math.round(d.cost)} SEK`
+    }),
+    Plot.line(ff_fit.curve, {
+      x: "volume",
+      y: "cost",
+      stroke: () => "Fitted curve",
+      strokeWidth: 3
+    }),
+    Plot.ruleY([0], { stroke: "#1c1c1a", strokeOpacity: 0.25 })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Residuals on the MODELED scale (the scale OLS actually optimized), recomputed
+// additively from the already-fitted coefficients ff_fit.b. This does NOT touch
+// the data-generating process or the fit — it only re-reads them to expose the
+// diagnostic the prose keeps recommending: residual = actual − fitted.
+p2_resid = {
+  const d = ff_data;
+  const form = ff_form;
+  const b = ff_fit.b;
+  // Modeled response yMod and modeled fitted yhatMod, per the selected form.
+  const logY = form === "Log–level" || form === "Log–log";
+  const logX = form === "Level–log" || form === "Log–log";
+  return d.map(r => {
+    const yMod = logY ? Math.log(r.cost) : r.cost;
+    const xterm = logX ? Math.log(r.volume) : r.volume;
+    let yhat;
+    if (form === "Quadratic") {
+      yhat = b[0] + b[1] * r.volume + b[2] * r.volume * r.volume;
+    } else {
+      yhat = b[0] + b[1] * xterm;
+    }
+    return { fitted: yhat, residual: yMod - yhat };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Binned mean of the residuals across fitted-value bins. A LINEAR fit through
+// residuals is flat by construction (OLS orthogonality), so it cannot reveal an
+// arch — the binned mean can. An arch in this line = leftover curvature.
+p2_residBins = {
+  const rows = p2_resid;
+  const fmin = d3.min(rows, d => d.fitted), fmax = d3.max(rows, d => d.fitted);
+  const k = 7;
+  const w = (fmax - fmin) / k || 1;
+  const bins = [];
+  for (let i = 0; i < k; i++) {
+    const a = fmin + i * w, b = a + w;
+    const inBin = rows.filter(d => d.fitted >= a && (i === k - 1 ? d.fitted <= b : d.fitted < b));
+    if (inBin.length) bins.push({ fitted: a + w / 2, residual: d3.mean(inBin, d => d.residual) });
+  }
+  return bins;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Reactive residual-vs-fitted diagnostic: a SYSTEMATIC arch/U pattern signals
+// the wrong functional form; a shapeless band around zero signals a form that
+// has captured the curvature. This is the very test the page later names (RESET).
+Plot.plot({
+  width: Math.min(680, width),
+  height: 210,
+  marginLeft: 60,
+  marginRight: 16,
+  marginTop: 28,
+  marginBottom: 46,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif", color: "#79766e" },
+  x: { label: `Fitted value (${ff_fit.modeledLabel} scale) →` },
+  y: { label: "↑ Residual" },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a", strokeOpacity: 0.4 }),
+    Plot.dot(p2_resid, { x: "fitted", y: "residual", fill: "#3d5a6c", fillOpacity: 0.45, r: 3.5 }),
+    // Binned-mean trend: bows into an arch when curvature is left unmodeled.
+    Plot.line(p2_residBins, { x: "fitted", y: "residual", stroke: "#990000", strokeWidth: 2.5, curve: "catmull-rom" }),
+    Plot.dot(p2_residBins, { x: "fitted", y: "residual", fill: "#990000", r: 3 }),
+    Plot.text([{ x: 0, y: 0, t: "Binned-mean line bowing = leftover curvature; flat band at 0 = good fit" }],
+      { frameAnchor: "top-left", dx: 6, dy: 4, text: "t",
+        fill: "#79766e", fontSize: 10.5, fontWeight: 600, textAnchor: "start" })
+  ]
+})
+```
+
+::: {.aside}
+The residual diagnostic the workflow recommends, live. Pick **Level–level** and you will see the dots bow into a clear **arch** (the model misses the curvature); switch to **Log–log** and the band flattens toward a shapeless cloud around zero --- the signature of a form that fits the *shape*, not just the trend. Residuals are on the modeled scale, so the cloud is not comparable in size across forms, only in *pattern*.
+:::
+
+```{ojs}
+//| echo: false
+
+// Reactive interpretation sentence + goodness-of-fit readout
+{
+  const f = ff_fit;
+  const form = ff_form;
+  const b = f.b;
+  const b1 = b[1];
+
+  let interp;
+  let caveat = "";
+  if (form === "Level–level") {
+    interp = `Slope b₁ = ${b1.toFixed(3)} SEK. Each additional listed patient is associated with a change of ${b1.toFixed(2)} SEK in cost per patient (a units-per-unit reading). A straight line cannot bend, so it badly misses the early steep drop.`;
+  } else if (form === "Log–level") {
+    const pctApprox = (100 * b1).toFixed(3);
+    const pctExact = (100 * (Math.exp(b1) - 1)).toFixed(3);
+    interp = `Slope b₁ = ${b1.toExponential(3)}. Approx %-change per extra patient ≈ 100·b₁ = ${pctApprox}%; exact = 100·(exp(b₁) − 1) = ${pctExact}%. A semi-elasticity assumes a constant % change per patient — the wrong shape for a saturating curve.`;
+  } else if (form === "Level–log") {
+    interp = `Slope b₁ = ${b1.toFixed(1)} SEK per log-unit of volume. A 1% rise in volume is associated with a change of b₁/100 = ${(b1 / 100).toFixed(2)} SEK in cost per patient.`;
+  } else if (form === "Log–log") {
+    interp = `Elasticity b₁ = ${b1.toFixed(3)}. A 1% increase in volume is associated with a ${b1.toFixed(2)}% change in cost per patient. Because |b₁| < 1 and b₁ < 0, larger centers cost less per patient — economies of scale. This sits close to the true data-generating elasticity of −0.30 (sampling noise moves it a little each resample).`;
+  } else {
+    const turning = -b[1] / (2 * b[2]);
+    const me0 = b[1] + 2 * b[2] * 5000;
+    const shape = b[2] > 0 ? "opens upward (U), so x* is a minimum" : "opens downward (hump), so x* is a maximum";
+    interp = `Quadratic. Since b₂ ${b[2] > 0 ? ">" : "<"} 0 the parabola ${shape}. Turning point x* = −b₁/(2b₂) = ${Math.round(turning)} patients; marginal effect at v = 5,000 is ${me0.toFixed(3)} SEK/patient.`;
+    caveat = b[2] > 0
+      ? "The fitted minimum implies cost rises again for the largest centers — an artifact of a symmetric parabola, not a real feature. Predictions near or past x* extrapolate dangerously."
+      : "It curves, but extrapolates dangerously near and past the turning point.";
+  }
+
+  const r2pct = (f.r2 * 100).toFixed(1);
+  return html`
+  <div style="font-family: 'Inter', sans-serif; font-size: 0.9rem; line-height: 1.55;">
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.6rem;">
+      <div style="padding:0.5rem 0.9rem; border-radius:0.5rem; background:rgba(153,0,0,0.06); border:1px solid rgba(153,0,0,0.2); min-width:9rem; min-height:3.6rem;">
+        <span style="font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#79766e;">R² (modeled scale)</span><br>
+        <span style="font-size:1.3rem; font-weight:800; color:#990000;">${r2pct}%</span>
+        <span style="display:block; font-size:0.6rem; color:#79766e; margin-top:0.15rem;">not comparable across forms — see Step 5</span>
+      </div>
+      <div style="padding:0.5rem 0.9rem; border-radius:0.5rem; background:#f6f5f1; border:1px solid #e6e3db; flex:1; min-width:18rem;">
+        <span style="font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#79766e;">Read it aloud</span><br>
+        <span style="color:#1c1c1a;">${interp}</span>
+        ${caveat ? html`<span style="display:block; margin-top:0.35rem; color:#79766e; font-size:0.82rem;">${caveat}</span>` : ""}
+      </div>
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read This Interactive
+
+Work through these steps in order --- each one isolates a single lesson.
+
+**Step 1: Start with the wrong shape.** With the form set to **Level–level** and noise at its default, look at the fitted curve (the solid line) against the cloud of observed centers (the dots). The line is *straight*, but the data clearly bend: cost per patient plunges from the small centers and then flattens. The straight line over-predicts in the middle and under-predicts at the extremes. Notice the $R^2$ in the readout box --- it is positive (a straight line does capture the overall downward trend), but the systematic miss is visible to the eye. Glance down at the **residuals-vs-fitted panel** below the scatter: the dots bow into a pronounced **arch**, the classic fingerprint of missing curvature. This is what "wrong functional form" looks like.
+
+**Step 2: Try a semi-elasticity.** Switch to **Log–level**. The fitted curve now bends (it is a straight line in $\log y$, which is a *decaying exponential* in SEK), but it bends with the wrong curvature for a saturating cost curve --- a log–level model assumes a constant *percent* change per additional patient, so it imposes exponential decay rather than the power-law flattening the data actually show. It cannot reproduce the steep early plunge from the smallest centers. The "exponential-vs-power-law" mismatch is hard to see in the fitted curve alone, but it shows up plainly in the **residual panel** --- the arch shrinks from Level–level but does not yet flatten, telling you the curvature is still wrong. Read the interpretation sentence: it now reports the approximate $100\beta_1$ percent change *and* the exact $100(e^{\beta_1}-1)$ correction, side by side. For this tiny per-patient coefficient the two are nearly identical --- a concrete illustration of when the approximation is safe.
+
+**Step 3: Find the form that matches the truth.** Switch to **Log–log**. The curve now hugs the cloud, and --- this is the payoff --- the readout reports an elasticity close to **−0.30**, the very elasticity we baked into the data-generating process. The sentence reads: "a 1% increase in volume is associated with a roughly −0.28% change in cost per patient." Because the magnitude is below one and the sign is negative, this *is* economies of scale, stated in the language a health economist would use. Notice that we do **not** justify log–log by its $R^2$: the modeled-scale $R^2$ values are computed on different response variables (some on cost in SEK, some on $\log$ cost) and are not comparable across forms --- a trap we return to in Exercise 4. The reason to prefer log–log is *structural*: it recovers the true elasticity. You have *seen* the right functional form announce itself.
+
+**Step 4: Watch the quadratic curve --- and its danger.** Switch to **Quadratic**. The parabola also fits the visible cloud reasonably well and reports a turning point $x^* = -\beta_1/(2\beta_2)$. Here is the tell that something is off: OLS estimates $\beta_2 > 0$, so the fitted parabola opens *upward* (a U), and its turning point is a *minimum* that sits near the top of the data range. Read literally, the model claims cost per patient falls, bottoms out around twenty-thousand-something patients, and then **rises again** for the very largest centers --- an artifact of forcing a symmetric parabola onto an asymmetric, monotonically flattening curve, not a real feature of the data. Anywhere near or beyond that minimum the predictions are not to be trusted: this is the extrapolation hazard in action. The quadratic is flexible but unprincipled here; the log–log model encodes the right economic structure (a curve that flattens but never turns back up).
+
+**Step 5: Stress-test with noise.** Drag the **Noise level** slider up and click **Resample centers** a few times. Watch the log–log readout: even as the cloud gets messier, the estimated elasticity stays anchored near its true value of −0.30, while the level–level slope and the quadratic's turning point jump around. That stability is the signature of a correctly specified model --- it is recovering a real structural parameter, not chasing noise. Resist the urge to pick the form by its $R^2$ box: the modeled-scale $R^2$ values are not comparable across forms (they measure fit to different response variables, some in SEK and some in $\log$ SEK), so a higher number for one form is not evidence it is better. Functional form is about structure, not about the largest $R^2$ on any single sample.
+
+
+## How to Choose: Theory First, Diagnostics Second
+
+The interactive makes it tempting to believe you should just try all four and keep the best-fitting one. Resist that. The disciplined workflow is:
+
+1. **Start from theory and the variable's nature.** Is the variable a strictly positive, right-skewed quantity (cost, count, time)? Logs are a natural prior. Do you expect constant returns to scale, so a constant elasticity makes economic sense? Log–log. Do you expect a genuine peak (an age at which an outcome is best)? A quadratic. The shape should be motivated *before* you see the fit.
+
+2. **Then check residual plots.** After fitting, plot the residuals against the fitted values and against each regressor. Systematic curvature (a U-shape or arch in the residuals) is the signature of a misspecified functional form --- it tells you the model is missing curvature that a transformation could supply. A funnel shape (residual spread growing with the fitted value) suggests the variance is not constant, often curable by logging $y$.
+
+3. **Use a formal specification test, but as a check, not a search.** Ramsey's **RESET** test (Regression Equation Specification Error Test) adds powers of the fitted values ($\hat{y}^2, \hat{y}^3$) back into the regression and tests whether they enter significantly. The plain intuition: *refit while adding $\hat{y}^2$ and $\hat{y}^3$; if those manufactured curves "matter," you left a curve on the table.* If they do, your functional form is leaving structure unexplained. RESET is a *diagnostic*, not a model-selection engine.
+
+::: {.glass-card .glass-card--warning}
+**Do not data-dredge the specification.** Trying twenty transformations and reporting the one with the highest $R^2$ or the most "significant" coefficient is specification search by another name. It inflates Type I error exactly the way fishing for significant covariates does, and it produces a model that fits your sample and nothing else. Let theory propose the form; let diagnostics *test* it; pre-register or at least disclose the specifications you tried.
+:::
+
+::: {.glass-card .glass-card--insight}
+A coefficient is only as trustworthy as the functional form that produced it. The cleanest standard error in the world is meaningless if it is attached to the slope of a straight line through a curved relationship. Getting the shape right is not cosmetic --- it is a prerequisite for the coefficient to mean what you say it means.
+:::
+
+
+<details>
+<summary>Math Details: The Turning Point and the Log Approximation</summary>
+<div class="details-content">
+
+### Deriving the quadratic turning point
+
+Start from the conditional expectation function:
+
+$$
+E[y \mid x] = \beta_0 + \beta_1 x + \beta_2 x^2
+$$
+
+The marginal effect of $x$ is the derivative:
+
+$$
+\frac{dE[y\mid x]}{dx} = \beta_1 + 2\beta_2 x
+$$
+
+A turning point (maximum or minimum) occurs where this slope equals zero. Set the derivative to zero and solve:
+
+$$
+\beta_1 + 2\beta_2 x^{*} = 0 \quad\Longrightarrow\quad x^{*} = -\frac{\beta_1}{2\beta_2}
+$$
+
+The **second derivative** is $\frac{d^2 E[y\mid x]}{dx^2} = 2\beta_2$. So the turning point is a **maximum** when $\beta_2 < 0$ (the parabola opens downward, like a hump) and a **minimum** when $\beta_2 > 0$ (opens upward, like a U). For a beneficial outcome that peaks in midlife, $\beta_2 < 0$ and $x^*$ is the age at which the outcome is best.
+
+**A worked check.** Suppose a regression of a physical-function score on age gives $\beta_1 = 1.8$ and $\beta_2 = -0.015$. Then:
+
+$$
+x^{*} = -\frac{1.8}{2(-0.015)} = -\frac{1.8}{-0.03} = 60 \text{ years}
+$$
+
+The score peaks at age 60. The marginal effect at age 50 is $\beta_1 + 2\beta_2(50) = 1.8 + 2(-0.015)(50) = 1.8 - 1.5 = +0.3$ (still improving), and at age 70 it is $1.8 + 2(-0.015)(70) = 1.8 - 2.1 = -0.3$ (now declining). The sign flips as we cross $x^* = 60$, exactly as a hump requires.
+
+### Why $d\log y \approx dy/y$ (and why $100\beta$ is a percent change)
+
+The log–level and log–log interpretations rest on a single calculus fact: the differential of the natural log is the *proportional* change.
+
+By the chain rule, the derivative of $\log y$ with respect to $y$ is $1/y$, so its differential is:
+
+$$
+d\log y = \frac{1}{y}\,dy = \frac{dy}{y}
+$$
+
+Read this as: "a small change in $\log y$ equals the *fractional* (proportional) change in $y$." Multiply both sides by 100 and $100 \cdot d\log y$ is the **percent** change in $y$. That is the whole reason a coefficient on a logged outcome reads as a percent.
+
+To see the approximation explicitly, take the first-order Taylor expansion of $\log(1+r)$ around $r = 0$:
+
+$$
+\log(1 + r) = r - \frac{r^2}{2} + \frac{r^3}{3} - \cdots \approx r \quad \text{for small } r
+$$
+
+In a log–level model, a one-unit rise in $x$ raises $\log y$ by $\beta_1$, i.e. $\log y_{\text{new}} - \log y_{\text{old}} = \beta_1$, which means $\log(y_{\text{new}}/y_{\text{old}}) = \beta_1$, so the *gross* ratio is $y_{\text{new}}/y_{\text{old}} = e^{\beta_1}$. The **exact** proportional change is therefore:
+
+$$
+r = \frac{y_{\text{new}} - y_{\text{old}}}{y_{\text{old}}} = e^{\beta_1} - 1
+$$
+
+and the exact percent change is $100(e^{\beta_1}-1)$. Using the Taylor expansion with $r = \beta_1$ small, $e^{\beta_1} - 1 \approx \beta_1$, recovering the convenient rule $100\beta_1$. The *leading* approximation error is the dropped quadratic term $\beta_1^2/2$: for $\beta_1 = 0.10$ that term is $0.005$ (half a percentage point, and the full error $e^{0.10}-1-0.10 \approx 0.0052$ is barely larger), while for $\beta_1 = 0.50$ the quadratic term is $0.125$ and the full error $e^{0.50}-1-0.50 \approx 0.149$ swells to nearly fifteen percentage points --- which is exactly why we insist on the exact formula for large coefficients.
+
+### Why log–log gives an elasticity
+
+In $\log y = \beta_0 + \beta_1 \log x$, differentiate both sides:
+
+$$
+\frac{dy}{y} = \beta_1 \frac{dx}{x} \quad\Longrightarrow\quad \beta_1 = \frac{dy/y}{dx/x} = \frac{\%\,\Delta y}{\%\,\Delta x}
+$$
+
+Read this as: "$\beta_1$ is the ratio of the proportional change in $y$ to the proportional change in $x$" --- the textbook definition of an **elasticity**. This is why a single number, the log–log slope, *is* the elasticity at every point, with no further evaluation required.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+The code below builds a small Swedish cost dataset, fits all four log/level forms plus a quadratic, and --- crucially --- prints each coefficient *with its correct interpretation*, including the exact $100(e^{\beta}-1)$ correction for the log–level case.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(lmtest)   # for the RESET test
+
+# --- Build a vårdcentral cost dataset with economies of scale ---
+# True DGP: cost_per_patient = 9000 * volume^(-0.30) * lognormal noise
+set.seed(2024)
+n <- 60
+volume <- 2000 + 23000 * runif(n)^1.4
+cost   <- 9000 * volume^(-0.30) * exp(rnorm(n, 0, 0.15))
+df <- tibble(volume, cost)
+
+# --- Four log/level specifications + a quadratic ---
+m_ll     <- lm(cost ~ volume, data = df)                  # level-level
+m_logl   <- lm(log(cost) ~ volume, data = df)             # log-level
+m_levl   <- lm(cost ~ log(volume), data = df)             # level-log
+m_loglog <- lm(log(cost) ~ log(volume), data = df)        # log-log (elasticity)
+m_quad   <- lm(cost ~ volume + I(volume^2), data = df)    # quadratic
+
+# --- Interpret each slope correctly ---
+b_ll   <- coef(m_ll)["volume"]
+b_logl <- coef(m_logl)["volume"]
+b_levl <- coef(m_levl)["log(volume)"]
+b_elas <- coef(m_loglog)["log(volume)"]
+
+cat("Level-level:", round(b_ll, 4),
+    "SEK change in cost/patient per +1 patient\n")
+cat("Log-level:   approx", round(100 * b_logl, 4),
+    "%  |  EXACT", round(100 * (exp(b_logl) - 1), 4),
+    "%  change per +1 patient\n")
+cat("Level-log:  ", round(b_levl / 100, 4),
+    "SEK change in cost/patient per +1% volume\n")
+cat("Log-log:     elasticity =", round(b_elas, 4),
+    "(% change in cost/patient per 1% volume)\n")
+
+# --- Quadratic: turning point and marginal effect ---
+b1 <- coef(m_quad)["volume"]
+b2 <- coef(m_quad)["I(volume^2)"]
+x_star     <- -b1 / (2 * b2)
+me_at_5000 <- b1 + 2 * b2 * 5000
+cat("Quadratic turning point x* =", round(x_star), "patients\n")
+cat("Marginal effect at volume = 5000:", round(me_at_5000, 4), "SEK/patient\n")
+
+# --- RESET-style specification check on the level-level model ---
+# A small p-value flags missing curvature (wrong functional form).
+resettest(m_ll, power = 2:3, type = "fitted")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from statsmodels.stats.diagnostic import linear_reset
+
+# --- Build a vårdcentral cost dataset with economies of scale ---
+# True DGP: cost_per_patient = 9000 * volume^(-0.30) * lognormal noise
+rng = np.random.default_rng(2024)
+n = 60
+volume = 2000 + 23000 * rng.uniform(size=n) ** 1.4
+cost = 9000 * volume ** (-0.30) * np.exp(rng.normal(0, 0.15, n))
+df = pd.DataFrame({"volume": volume, "cost": cost,
+                   "logcost": np.log(cost), "logvol": np.log(volume)})
+
+# --- Four log/level specifications + a quadratic ---
+m_ll     = smf.ols("cost ~ volume", df).fit()                  # level-level
+m_logl   = smf.ols("logcost ~ volume", df).fit()              # log-level
+m_levl   = smf.ols("cost ~ logvol", df).fit()                 # level-log
+m_loglog = smf.ols("logcost ~ logvol", df).fit()             # log-log
+m_quad   = smf.ols("cost ~ volume + I(volume**2)", df).fit()  # quadratic
+
+# --- Interpret each slope correctly ---
+b_ll   = m_ll.params["volume"]
+b_logl = m_logl.params["volume"]
+b_levl = m_levl.params["logvol"]
+b_elas = m_loglog.params["logvol"]
+
+print(f"Level-level: {b_ll:.4f} SEK per +1 patient")
+print(f"Log-level:   approx {100*b_logl:.4f}%  |  "
+      f"EXACT {100*(np.exp(b_logl)-1):.4f}%  per +1 patient")
+print(f"Level-log:   {b_levl/100:.4f} SEK per +1% volume")
+print(f"Log-log:     elasticity = {b_elas:.4f} (% per %)")
+
+# --- Quadratic: turning point and marginal effect ---
+b1 = m_quad.params["volume"]
+b2 = m_quad.params["I(volume ** 2)"]
+x_star = -b1 / (2 * b2)
+me_at_5000 = b1 + 2 * b2 * 5000
+print(f"Quadratic turning point x* = {x_star:.0f} patients")
+print(f"Marginal effect at volume=5000: {me_at_5000:.4f} SEK/patient")
+
+# --- RESET-style specification check on the level-level model ---
+# A small p-value flags missing curvature (wrong functional form).
+reset = linear_reset(m_ll, power=3, use_f=True)
+print(f"RESET test: F = {reset.fvalue:.3f}, p = {reset.pvalue:.4f}")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region regresses the **log** of a vårdcentral's annual operating cost (SEK) on the **log** of the number of listed patients and obtains a slope of $\hat\beta_1 = 0.88$ (standard error $0.04$).
+
+(a) State the interpretation of $\hat\beta_1$ in one sentence.
+(b) Does this indicate economies of scale, diseconomies of scale, or constant returns? Explain.
+(c) A center grows its list by 20%. By approximately what percent does total cost rise?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** This is a log–log model, so $\hat\beta_1$ is an **elasticity**: a 1% increase in the number of listed patients is associated with a 0.88% increase in total operating cost.
+
+**(b)** Because the elasticity is **less than 1**, total cost rises *less than proportionally* with volume --- so **cost per patient falls** as the center grows. This is **economies of scale**. (An elasticity of exactly 1 would be constant returns: cost rises one-for-one with volume; an elasticity above 1 would be diseconomies.)
+
+**(c)** For a finite 20% change, use the exact constant-elasticity relationship: total cost is multiplied by $(1.20)^{0.88}$.
+
+$$
+1.20^{0.88} = e^{0.88 \cdot \ln 1.20} = e^{0.88 \cdot 0.1823} = e^{0.1604} = 1.174
+$$
+
+So total cost rises by about **17.4%**. (The crude linear approximation $0.88 \times 20\% = 17.6\%$ is very close here because 20% is a modest change; for large changes the exact power formula is the honest one.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A study regresses the **log** of waiting time (in days) on a binary indicator for whether a vårdcentral adopted an online triage system, plus controls. The coefficient on the indicator is $\hat\beta = -0.30$.
+
+(a) Using the *approximate* rule, by what percent does waiting time change?
+(b) Compute the *exact* percent change. Why do they differ?
+(c) Which would you report in a policy brief, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** This is a log–level model with a dummy regressor, so the approximate rule gives $100\hat\beta = 100(-0.30) = \mathbf{-30\%}$: adopting online triage is associated with an approximately 30% *reduction* in waiting time.
+
+**(b)** The exact percent change is
+
+$$
+100\,(e^{\hat\beta} - 1) = 100\,(e^{-0.30} - 1) = 100\,(0.7408 - 1) = -25.9\%.
+$$
+
+The true reduction is about **25.9%**, not 30%. They differ because the approximation $\log(1+r)\approx r$ drops the curvature term $\hat\beta^2/2 = 0.045$, and at $|\hat\beta| = 0.30$ that term is no longer negligible.
+
+**(c)** Report the **exact −25.9%**. The coefficient is large enough that the roughly 4-percentage-point gap between approximate and exact is material, and for a binary "treated vs not" comparison the exact $100(e^{\hat\beta}-1)$ is the genuine proportional difference between the two groups. Reporting "−30%" would overstate the benefit.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A regression of a patient physical-function score on age yields the fitted equation
+
+$$
+\widehat{\text{score}} = 42 + 1.5\,\text{age} - 0.012\,\text{age}^2.
+$$
+
+(a) At what age does the predicted score peak?
+(b) What is the marginal effect of one more year of age at age 45? At age 70?
+(c) The sample contains patients aged 40 to 85. Comment on whether the turning point is interpretable, and on what would happen if you used this model to predict the score for a 20-year-old.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The turning point is at $x^* = -\beta_1/(2\beta_2)$:
+
+$$
+x^{*} = -\frac{1.5}{2(-0.012)} = -\frac{1.5}{-0.024} = 62.5 \text{ years}.
+$$
+
+Because $\beta_2 = -0.012 < 0$, the parabola opens downward, so this is a **maximum**: the predicted score peaks at age **62.5**.
+
+**(b)** The marginal effect is $\beta_1 + 2\beta_2\,\text{age} = 1.5 - 0.024\,\text{age}$.
+
+- At age 45: $1.5 - 0.024(45) = 1.5 - 1.08 = +0.42$ points per year (still improving).
+- At age 70: $1.5 - 0.024(70) = 1.5 - 1.68 = -0.18$ points per year (now declining).
+
+The sign flips after the peak at 62.5, exactly as expected.
+
+**(c)** The turning point **62.5 is inside the data range (40–85)**, so it is a meaningful, interpretable peak. Predicting for a **20-year-old**, however, requires **extrapolation** far outside the observed range. The fitted value would be $42 + 1.5(20) - 0.012(400) = 42 + 30 - 4.8 = 67.2$, but there is no data near age 20 to support the parabola's shape there --- the curve is being trusted in a region it never saw. Such an extrapolation could be badly wrong and should not be reported.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive above, set the form to **Level–level** and note the $R^2$ in the readout box. Then switch to **Log–log** and note its $R^2$. A colleague says: "Log–log has a higher $R^2$, so it is the better model --- proof that logs always beat levels." Critique this reasoning in one paragraph.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The colleague is making a comparison that is **not valid**. The two $R^2$ values are computed on **different response variables**: the level–level $R^2$ measures how much of the variance in *cost in SEK* is explained, while the log–log $R^2$ measures how much of the variance in *log cost* is explained. These are fits to two different dependent variables, so their $R^2$ values are not directly comparable --- a higher $R^2$ on the log scale does not mechanically prove a better fit on the SEK scale. The right reason to prefer log–log here is **structural, not numerical**: the data were generated by a constant-elasticity (multiplicative) process, the cost variable is strictly positive and right-skewed, residual plots from the level–level model would show systematic curvature, and the log–log slope recovers an economically meaningful elasticity (≈ −0.30) that matches the data-generating process. If you genuinely need to compare predictive fit across scales, back-transform the log–log predictions to SEK and compute $R^2$ (or RMSE) on the SEK scale for *both* models --- only then are the numbers on equal footing. Functional form should be chosen by theory and diagnostics, not by hunting for the largest $R^2$ across incomparable scales.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- "Linear regression" means linear in the parameters; logging, squaring, or splining a variable lets a straight-line estimator fit a curved world, and you choose the transformation.
+- Logging a variable converts its reading from units to percents: log-level gives a semi-elasticity ($100\beta_1$), log-log gives an elasticity, and a log-log slope below one signals economies of scale.
+- The $100\beta_1$ percent rule is an approximation that breaks for large coefficients — always report the exact $100(e^{\beta_1}-1)$ when $\beta_1$ is sizable, and never silently drop zeros or add an arbitrary constant before logging.
+- A quadratic has a turning point at $x^* = -\beta_1/(2\beta_2)$ and a marginal effect $\beta_1 + 2\beta_2 x$ that changes with $x$; trust it only inside the data range, since polynomials extrapolate catastrophically and overfit when over-powered.
+- Choose functional form from theory and residual plots, not by hunting for the largest $R^2$ — modeled-scale $R^2$ values are not comparable across forms fit to different response variables.
+:::
+
+## What Comes Next
+
+We now know how to bend the regression line so its coefficients are both credible and interpretable --- logs for proportional, skewed quantities; polynomials for genuine peaks; and a theory-first discipline for choosing among them. But every coefficient we have read aloud carries uncertainty, and so far we have leaned on the textbook standard errors that OLS reports by default. Those standard errors rest on their own assumptions --- homoskedasticity and independent errors --- that health-economics data routinely violate. The next page, **[Inference](inference.qmd)**, develops how to attach honest uncertainty to our coefficients: robust and clustered standard errors, the bootstrap, and what to do when the classical OLS formulas quietly fail.

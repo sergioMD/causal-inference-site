@@ -1,0 +1,967 @@
+---
+title: "Extensions and Practical Issues"
+subtitle: "When synthetic control works, augmented SCM, and pitfalls"
+---
+
+## When the Method Earns Its Keep --- and When It Fails
+
+On the previous pages we built a synthetic *Region* by choosing donor weights that made a weighted average of untreated *regioner* track the treated region's pre-treatment HbA1c trajectory, and we learned to judge the post-treatment gap against a distribution of placebo gaps. That machinery is only as trustworthy as the setting it is applied to. Synthetic control (SCM) is not a black box that manufactures a counterfactual on demand; it is a method with a narrow zone of validity, and most of the harm done with it comes from running it outside that zone.
+
+Imagine *Region Norrbotten* launches an ambitious **diabetes coordination program** (*Diabetessamordning*) in 2018 --- a dedicated *distriktssköterska* for every Type 2 diabetes patient, structured HbA1c follow-up, and tighter referral to *läkare*. The other 20 *regioner* keep their existing care. We want the effect on mean regional HbA1c. SCM says: build a "Synthetic Norrbotten" from the donor regions whose pre-2018 HbA1c path hugs Norrbotten's, then read the post-2018 gap. Whether that gap means anything depends entirely on four conditions.
+
+::: {.glass-card .glass-card--assumption}
+**SCM is appropriate when all four hold.**
+
+1. **A long, well-fit pre-period.** Many pre-treatment periods, and a synthetic unit that reproduces the treated unit's trajectory *closely* over all of them. Good pre-fit is the method's only evidence that the weights have captured the relevant confounding structure.
+2. **A single, discrete intervention with a known date.** SCM dates the counterfactual from a sharp break. A gradual or ambiguous rollout blurs the gap.
+3. **A clean donor pool of unaffected units.** Donors must be untreated *and* untouched by the treatment's spillovers, with outcomes driven by the same factors as the treated unit.
+4. **The treated unit lies inside (or near) the donors' convex hull.** Because standard SCM weights are non-negative and sum to one, the synthetic unit can only *interpolate* among donors. If the treated unit is more extreme than every donor on a relevant dimension, no convex combination can match it.
+:::
+
+Read condition 4 carefully, because it is the one most often violated silently. "Convex hull" means the set of all weighted averages (with non-negative weights summing to one) of the donor units. A weighted average can never be larger than the largest donor or smaller than the smallest. If Norrbotten has the *highest* baseline HbA1c of all 21 regions --- a sparsely populated northern region with long travel distances to care --- then no blend of the other twenty can reach it, and the synthetic unit will sit systematically *below* the treated unit even before treatment. That gap is not an effect; it is **interpolation bias**.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Decide whether a given Swedish primary-care setting satisfies the four conditions under which synthetic control is appropriate.
+- Diagnose the three classic failure modes --- poor pre-fit, interpolation bias outside the convex hull, and contamination of the donor pool (anticipation, spillovers, too-short pre-period).
+- Apply **augmented synthetic control** (Ben-Michael, Feller & Rothstein, 2021) to correct residual pre-fit imbalance, and read its bias-correction term.
+- Situate SCM relative to difference-in-differences, event studies, and the matrix-completion / generalized-SCM family.
+- Report a synthetic-control study to the standard the literature now expects.
+:::
+
+## Three Ways It Breaks
+
+The four conditions fail in recognizable ways. Each has a fingerprint you can see in the pre-treatment plot, and each has a remedy or a verdict.
+
+### Failure 1 --- Poor pre-treatment fit
+
+If the best attainable synthetic unit still misses the treated unit's pre-period path --- the two lines never lock together --- then the donor pool simply cannot reproduce the treated unit. Abadie's guidance is blunt: when pre-fit is poor, *do not interpret the post-period gap as an effect*, because the same imbalance that distorts the pre-period will distort the post-period. Poor fit is usually a symptom of one of the next two problems, or of a donor pool too small or too dissimilar.
+
+### Failure 2 --- Interpolation bias (the treated unit is an extreme)
+
+Even with a large donor pool, if the treated unit is outside the donors' convex hull on a determinant of the outcome, the non-negativity-and-sum-to-one constraints make perfect pre-fit *impossible*. The synthetic unit clings to the nearest face of the hull and leaves a persistent gap. This is the central pitfall this page's interactive makes visible.
+
+### Failure 3 --- A contaminated donor pool or pre-period
+
+::: {.glass-card .glass-card--warning}
+**Three quiet contaminations of the SCM setup.**
+
+- **Anticipation.** If Norrbotten's *vårdcentraler* began hiring nurses in 2017 in anticipation of the 2018 program, the "pre" period already contains treatment. The synthetic unit then matches a partly-treated trajectory and the estimated effect is biased toward zero. *Remedy:* backdate the intervention to the first plausible anticipation date and re-estimate.
+- **Spillovers to donors.** If neighbouring *Region Västerbotten* shares referral pathways with Norrbotten and its HbA1c improves *because* of Norrbotten's reform, then a donor is contaminated by the treatment. SUTVA fails; the synthetic unit is pulled toward the treated trajectory and the effect is understated. *Remedy:* drop plausibly-affected donors and check sensitivity.
+- **Too-short pre-period.** With only two or three pre-periods, near-perfect fit can be achieved by *overfitting to noise* --- the weights chase idiosyncratic blips, not structural similarity. The fit looks great and predicts nothing. *Remedy:* require enough pre-periods that good fit is informative, and validate on held-out pre-periods.
+:::
+
+The spillover contamination is the easiest of the three to mis-draw, so it is worth seeing as a graph. When Norrbotten's reform ($D$) flows through a shared referral system into donor Västerbotten's outcome, that donor is no longer a clean stand-in for the untreated world --- the program's effect has leaked into the very comparison group SCM relies on. The red arrow is the SUTVA violation (one unit's treatment affecting another's outcome); it is the path that quietly pulls the synthetic unit toward the treated trajectory and understates the effect.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Small static DAG component (page-tag prefixed). Pure function of d3. ──
+// nodes: [{id,x,y,label}] in normalized [0,1]; conditioned ids drawn as
+// rounded squares; edges {source,target,kind}: 'causal'=green, 'biasing'=red,
+// 'blocked'=grey dashed. Mirrors the shared component used on the DAG pages.
+scext_drawDAG = function ({ nodes, edges, width = 480, height = 220, conditioned = [] }) {
+  const pad = 52, r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "scext-arrow-green" :
+    (k === "biasing" || k === "backdoor-open") ? "scext-arrow-red" : "scext-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["scext-arrow-green", "#2e6f40"],
+    ["scext-arrow-red", "#b3000b"],
+    ["scext-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 14).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+scext_drawDAG({
+  width: Math.min(500, width),
+  height: 220,
+  nodes: [
+    { id: "D", x: 0.12, y: 0.30, label: "D",   caption: "Norrbotten reform" },
+    { id: "Yt", x: 0.12, y: 0.82, label: "Yᴺ",  caption: "Norrbotten HbA1c" },
+    { id: "Yd", x: 0.80, y: 0.82, label: "Yⱽ",  caption: "donor HbA1c (Västerbotten)" }
+  ],
+  edges: [
+    { source: "D", target: "Yt", kind: "causal" },
+    { source: "D", target: "Yd", kind: "biasing" }
+  ]
+})
+```
+
+::: {.aside}
+<span style="color:#2e6f40; font-weight:700;">Green</span> = the intended causal effect of the reform on Norrbotten's own HbA1c. <span style="color:#b3000b; font-weight:700;">Red</span> = the spillover to a donor (Västerbotten), the SUTVA violation that contaminates the comparison group. A clean donor pool has *no* red arrow. (Yᴺ = Norrbotten outcome, Yⱽ = Västerbotten donor outcome.)
+:::
+
+The deepest of these is interpolation bias, because it can coexist with a donor pool that looks clean and a pre-period that looks long. Let us make it tangible.
+
+## See It: Interpolation Bias and the Convex Hull
+
+The lab below places the treated region (Norrbotten, blue) and ten donor *regioner* (grey) on a single pre-treatment characteristic that drives HbA1c --- think of it as a standardized **baseline severity index** combining patient age, deprivation, and travel distance to the nearest *vårdcentral*. Standard SCM can only place the synthetic unit (orange) at a *weighted average* of the donors, so it is trapped inside the donors' range. Move the severity slider to push the treated unit past the most extreme donor and watch the synthetic unit get stuck at the edge of the hull --- the gap that opens is pure interpolation bias, not a treatment effect.
+
+The second control lets you **augment** the synthetic unit: turn on a ridge-penalized linear correction that is permitted limited *extrapolation*, and watch the residual pre-fit gap shrink toward zero.
+
+For clarity this lab collapses everything to a single severity index with a noise-free outcome line, so "matching severity" simply means "matching outcome." In practice you match many noisy pre-period outcomes (as the R/Python code below does), but the convex-hull logic is identical.
+
+::: {.interactive-container}
+
+#### Convex Hull, Interpolation Bias, and the Augmented Fix
+
+::: {.callout-note appearance="minimal"}
+**Start here.** Move the severity slider to set how extreme Norrbotten is, then watch the orange synthetic point get *trapped* inside the donors' shaded hull. Toggle **Augment** to let the green point extrapolate out to it.
+:::
+
+```{ojs}
+//| echo: false
+
+// On-chart color key (the figure should describe itself without the prose).
+html`<div style="display:flex; flex-wrap:wrap; gap:0.75rem 1.1rem;
+    margin:0.25rem 0 0.5rem; font-family:'Inter',sans-serif; font-size:0.8rem;
+    color:#1c1c1a;">
+  <span><span style="display:inline-block;width:0.7rem;height:0.7rem;border-radius:50%;
+    background:#3d5a6c;margin-right:0.35rem;vertical-align:middle;"></span>Norrbotten (treated)</span>
+  <span><span style="display:inline-block;width:0.7rem;height:0.7rem;border-radius:50%;
+    background:#79766e;margin-right:0.35rem;vertical-align:middle;"></span>donor regions</span>
+  <span><span style="display:inline-block;width:0.7rem;height:0.7rem;border-radius:50%;
+    border:2px solid #9c7a33;margin-right:0.35rem;vertical-align:middle;"></span>standard SCM synthetic</span>
+  <span><span style="display:inline-block;width:0.7rem;height:0.7rem;border-radius:50%;
+    background:#2e6f40;margin-right:0.35rem;vertical-align:middle;"></span>augmented synthetic</span>
+  <span><span style="display:inline-block;width:1rem;height:0;border-top:2px dashed #990000;
+    margin-right:0.35rem;vertical-align:middle;"></span>interpolation-bias gap</span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof scext_treatedSeverity = Inputs.range([-3.2, 3.2], {
+  value: 1.0,
+  step: 0.1,
+  label: "Treated region's baseline severity (z-score)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof scext_augment = Inputs.toggle({
+  label: "Augment: allow limited extrapolation (ridge bias-correction)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof scext_lambda = Inputs.range([0.02, 4], {
+  value: 0.6,
+  step: 0.02,
+  label: "Ridge penalty λ (left = aggressive correction; right = stay near plain SCM)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+// The λ slider only does anything once augmentation is turned on.
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem;
+    color:#79766e; margin:-0.25rem 0 0.4rem;">
+  λ is active only when <strong>Augment</strong> is on.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Ten fixed donor regions on a single severity axis (z-scores). The most
+// severe donor sits at +2.0, so any treated severity beyond +2.0 is OUTSIDE
+// the donors' convex hull and cannot be matched by a convex combination.
+scext_donors = [
+  { id: "Skåne",        sev: -2.0 },
+  { id: "Halland",      sev: -1.5 },
+  { id: "Blekinge",     sev: -1.0 },
+  { id: "Kalmar",       sev: -0.6 },
+  { id: "Örebro",       sev: -0.1 },
+  { id: "Värmland",     sev:  0.3 },
+  { id: "Dalarna",      sev:  0.8 },
+  { id: "Gävleborg",    sev:  1.2 },
+  { id: "Jämtland",     sev:  1.6 },
+  { id: "Västerbotten", sev:  2.0 }
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Outcome model: pre-treatment HbA1c is a deterministic, monotone function of
+// severity, identical for the treated unit and every donor (no treatment yet).
+// This is what makes the pre-period informative: matching severity => matching
+// the whole pre-trajectory. center 7.4%, slope 0.45 pp per z.
+scext_hba1c = sev => 7.4 + 0.45 * sev
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Standard SCM weights on a single matching variable. ──
+// We want non-negative weights w_j ≥ 0, Σ w_j = 1, minimizing the squared
+// gap between Σ w_j · sev_j and the treated severity. On one dimension the
+// optimum is exactly the projection of the treated point onto the donor
+// convex hull = the interval [min donor sev, max donor sev].
+scext_scm = {
+  const target = scext_treatedSeverity;
+  const sevs = scext_donors.map(d => d.sev);
+  const lo = d3.min(sevs), hi = d3.max(sevs);
+  // Clamp target into the hull: this IS the synthetic unit's severity.
+  const synthSev = Math.max(lo, Math.min(hi, target));
+
+  // Recover convex weights that realize synthSev. Put all mass on the two
+  // donors that bracket synthSev (a valid, sparse SCM solution). If synthSev
+  // is clamped to an endpoint, all mass sits on that single extreme donor.
+  let weights = scext_donors.map(d => ({ id: d.id, sev: d.sev, w: 0 }));
+  // Find bracketing pair.
+  const sorted = [...scext_donors].sort((a, b) => a.sev - b.sev);
+  let lower = sorted[0], upper = sorted[sorted.length - 1];
+  for (let k = 0; k < sorted.length - 1; k++) {
+    if (sorted[k].sev <= synthSev && sorted[k + 1].sev >= synthSev) {
+      lower = sorted[k]; upper = sorted[k + 1]; break;
+    }
+  }
+  const span = upper.sev - lower.sev;
+  const wUpper = span === 0 ? 1 : (synthSev - lower.sev) / span;
+  weights = weights.map(d => {
+    if (d.id === upper.id) return { ...d, w: span === 0 ? 1 : wUpper };
+    if (d.id === lower.id) return { ...d, w: span === 0 ? 0 : 1 - wUpper };
+    return d;
+  });
+
+  const synthHba1c = scext_hba1c(synthSev);
+  const treatedHba1c = scext_hba1c(target);
+  const prefitGap = treatedHba1c - synthHba1c;  // residual pre-fit imbalance
+  const outsideHull = target > hi + 1e-9 || target < lo - 1e-9;
+
+  return { synthSev, synthHba1c, treatedHba1c, prefitGap, weights, lo, hi, outsideHull };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Augmented SCM (ridge bias-correction). ──
+// Ben-Michael–Feller–Rothstein: take the standard SCM synthetic unit, then ADD
+// a correction for the *residual* imbalance, using an outcome model fit on the
+// donors and allowed to extrapolate. Here the outcome model is the (linear)
+// relationship between severity and HbA1c estimated on the donors; the
+// correction nudges the synthetic outcome by m(treated) − m(synthetic), shrunk
+// by a ridge factor that grows with λ. λ→0 = full extrapolation (exact fix);
+// λ→∞ = no correction (back to plain SCM).
+scext_aug = {
+  const s = scext_scm;
+  // Donor outcome model slope (we know it is 0.45, but "estimate" it to mirror
+  // a real workflow; with a clean linear DGP the OLS slope on donors == 0.45).
+  const xbar = d3.mean(scext_donors, d => d.sev);
+  const ybar = d3.mean(scext_donors, d => scext_hba1c(d.sev));
+  const sxx = d3.sum(scext_donors, d => (d.sev - xbar) ** 2);
+  const sxy = d3.sum(scext_donors, d => (d.sev - xbar) * (scext_hba1c(d.sev) - ybar));
+  const slope = sxy / sxx;
+
+  // Model-predicted outcomes at treated severity and at the synthetic severity.
+  const mTreated = ybar + slope * (scext_treatedSeverity - xbar);
+  const mSynth   = ybar + slope * (s.synthSev - xbar);
+
+  // Ridge shrinkage of the correction term. shrink ∈ (0,1]; small λ → shrink→1.
+  const shrink = 1 / (1 + scext_lambda);
+  const correction = shrink * (mTreated - mSynth);
+
+  const augHba1c = s.synthHba1c + correction;       // corrected synthetic outcome
+  const augGap   = s.treatedHba1c - augHba1c;        // residual after augmentation
+  return { slope, correction, augHba1c, augGap, shrink };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The convex-hull picture. ──
+// Severity on x; HbA1c on y. Donors (grey) lie on the outcome line. The grey
+// band marks the donors' convex hull on the severity axis. The blue treated
+// point can be dragged outside it; the orange synthetic point is the standard
+// SCM solution (trapped on the hull); the green point (when augmentation is on)
+// is the bias-corrected synthetic.
+Plot.plot({
+  width: Math.min(640, width),
+  height: 380,
+  marginLeft: 60,
+  marginTop: 28,
+  marginRight: 28,
+  marginBottom: 46,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Baseline severity index (z-score)", domain: [-3.4, 3.4], grid: true },
+  y: { label: "Pre-treatment HbA1c (%)", domain: [5.6, 9.4], grid: true },
+  marks: [
+    // Convex-hull band on the severity axis (the conceptual star — kept visible).
+    Plot.rectX([{ x1: scext_scm.lo, x2: scext_scm.hi }], {
+      x1: "x1", x2: "x2", y1: 5.6, y2: 9.4,
+      fill: "#3d5a6c", fillOpacity: 0.10
+    }),
+    Plot.ruleX([scext_scm.lo, scext_scm.hi], {
+      stroke: "#3d5a6c", strokeOpacity: 0.55, strokeWidth: 1.5
+    }),
+    Plot.text([{ x: (scext_scm.lo + scext_scm.hi) / 2, y: 8.85 }], {
+      x: "x", y: "y", text: ["donors' convex hull"],
+      fill: "#3d5a6c", fillOpacity: 0.85, fontSize: 11, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Edge labels so the boundary the treated unit crosses is unmistakable.
+    Plot.text([{ x: scext_scm.lo, y: 5.72 }], {
+      x: "x", y: "y", text: ["least severe"], textAnchor: "start", dx: 3,
+      fill: "#79766e", fontSize: 10, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: scext_scm.hi, y: 5.72 }], {
+      x: "x", y: "y", text: ["most severe"], textAnchor: "end", dx: -3,
+      fill: "#79766e", fontSize: 10, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // Outcome line (the severity → HbA1c relationship the donors trace out).
+    Plot.line(d3.range(-3.4, 3.41, 0.1).map(sev => ({ sev, y: scext_hba1c(sev) })), {
+      x: "sev", y: "y", stroke: "#79766e", strokeWidth: 1.5, strokeDasharray: "2,3"
+    }),
+
+    // Donor regions.
+    Plot.dot(scext_donors, {
+      x: "sev", y: d => scext_hba1c(d.sev), r: 5,
+      fill: "#79766e", stroke: "white", strokeWidth: 1,
+      title: d => `Donor: ${d.id}\nSeverity ${d.sev.toFixed(1)}, HbA1c ${scext_hba1c(d.sev).toFixed(2)}`
+    }),
+
+    // Standard SCM synthetic unit (ochre) — trapped on the hull. Drawn as a
+    // hollow ring so it stays visible when it coincides with the treated dot.
+    Plot.dot([{ x: scext_scm.synthSev, y: scext_scm.synthHba1c }], {
+      x: "x", y: "y", r: 8, fill: "none", stroke: "#9c7a33", strokeWidth: 2.5,
+      title: () => `Synthetic (standard SCM)\nseverity ${scext_scm.synthSev.toFixed(2)}, HbA1c ${scext_scm.synthHba1c.toFixed(2)}`
+    }),
+    Plot.text([{ x: scext_scm.synthSev, y: scext_scm.synthHba1c }], {
+      x: "x", y: "y", text: ["synthetic"], dy: 18, fill: "#9c7a33",
+      fontSize: 11, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // Augmented synthetic unit (green) — only when augmentation is on.
+    scext_augment ? Plot.dot([{ x: scext_treatedSeverity, y: scext_aug.augHba1c }], {
+      x: "x", y: "y", r: 7, fill: "#2e6f40", stroke: "white", strokeWidth: 1.5,
+      title: () => `Augmented synthetic\nHbA1c ${scext_aug.augHba1c.toFixed(2)}`
+    }) : null,
+    // Label placed BELOW the augmented point so it never collides with the
+    // 'Norrbotten' label (which sits above) when augGap → 0 (Step 5 end-state).
+    // Flip the anchor leftward once the treated unit nears the right frame edge
+    // so the label never clips past the plot at high severity.
+    scext_augment ? Plot.text([{ x: scext_treatedSeverity, y: scext_aug.augHba1c }], {
+      x: "x", y: "y", text: ["augmented"], dy: 18,
+      dx: scext_treatedSeverity > 1.8 ? -4 : 4,
+      textAnchor: scext_treatedSeverity > 1.8 ? "end" : "start",
+      fill: "#2e6f40", fontSize: 11, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+
+    // Treated region (slate).
+    Plot.dot([{ x: scext_treatedSeverity, y: scext_scm.treatedHba1c }], {
+      x: "x", y: "y", r: 7, fill: "#3d5a6c", stroke: "white", strokeWidth: 1.5,
+      title: () => `Treated: Norrbotten\nseverity ${scext_treatedSeverity.toFixed(2)}, HbA1c ${scext_scm.treatedHba1c.toFixed(2)}`
+    }),
+    // Anchor flips near either frame edge so the (wide) "Norrbotten" label
+    // never clips past the plot across the full severity slider range.
+    Plot.text([{ x: scext_treatedSeverity, y: scext_scm.treatedHba1c }], {
+      x: "x", y: "y", text: ["Norrbotten"], dy: -14, fill: "#3d5a6c",
+      textAnchor: scext_treatedSeverity > 2.4 ? "end"
+        : scext_treatedSeverity < -2.4 ? "start" : "middle",
+      dx: scext_treatedSeverity > 2.4 ? 4
+        : scext_treatedSeverity < -2.4 ? -4 : 0,
+      fontSize: 11, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // Residual pre-fit gap as a vertical connector at the treated severity.
+    Plot.link([{
+      x: scext_treatedSeverity,
+      y1: scext_scm.treatedHba1c,
+      y2: scext_augment ? scext_aug.augHba1c : scext_scm.synthHba1c
+    }], {
+      x: "x", y1: "y1", y2: "y2",
+      stroke: scext_scm.outsideHull && !scext_augment ? "#990000" : "#1c1c1a",
+      strokeWidth: 2, strokeDasharray: "4,3"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Numeric readout: residual pre-fit gap before vs after augmentation, plus an
+// explicit "outside the hull" flag.
+{
+  const scmGap = scext_scm.prefitGap;
+  const augGap = scext_aug.augGap;
+  const outside = scext_scm.outsideHull;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+
+  const tile = (label, value, color, bg) => html`<div style="
+      min-width: 0; min-height: 3.6rem; text-align: center;
+      padding: 0.55rem 0.6rem; border-radius: 0.5rem; background: ${bg};
+      display:flex; flex-direction:column; justify-content:center;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color}; margin-top:0.15rem;">${value}</div>
+  </div>`;
+
+  return html`<div>
+    <div style="display:grid; gap:0.5rem; margin-top:0.75rem;
+        grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));">
+      ${tile("Outside hull?", outside ? "YES" : "no",
+          outside ? "#990000" : "#2e6f40",
+          outside ? "rgba(153,0,0,0.07)" : "rgba(46,111,64,0.08)")}
+      ${tile("Gap: standard SCM", fmt(scmGap),
+          Math.abs(scmGap) < 0.01 ? "#2e6f40" : "#9c7a33",
+          "rgba(156,122,51,0.06)")}
+      ${tile("Gap: augmented",
+          scext_augment ? fmt(augGap) : "—",
+          scext_augment ? (Math.abs(augGap) < 0.01 ? "#2e6f40" : "#2e6f40") : "#79766e",
+          "rgba(46,111,64,0.06)")}
+      ${tile("Shrinkage 1/(1+λ)",
+          scext_augment ? scext_aug.shrink.toFixed(2) : "—",
+          scext_augment ? "#9c7a33" : "#79766e",
+          "rgba(156,122,51,0.06)")}
+    </div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live verdict line.
+{
+  const outside = scext_scm.outsideHull;
+  const scmGap = scext_scm.prefitGap;
+  const augGap = scext_aug.augGap;
+  let msg, color;
+  if (!outside && Math.abs(scmGap) < 0.01) {
+    msg = "Norrbotten lies inside the donors' convex hull and standard SCM fits it essentially perfectly — interpolation is enough, no augmentation needed.";
+    color = "#2e6f40";
+  } else if (!scext_augment) {
+    msg = `Norrbotten is ${outside ? "OUTSIDE" : "near the edge of"} the convex hull, so standard SCM leaves a residual pre-fit gap of ${scmGap >= 0 ? "+" : ""}${scmGap.toFixed(3)} pp. That gap is interpolation bias — it would masquerade as a treatment effect. Turn on augmentation.`;
+    color = "#990000";
+  } else {
+    msg = `Augmentation extrapolates along the donor outcome model and shrinks the residual gap from ${scmGap >= 0 ? "+" : ""}${scmGap.toFixed(3)} to ${augGap >= 0 ? "+" : ""}${augGap.toFixed(3)} pp. With a small λ it can remove the bias entirely — at the cost of relying on the (extrapolated) outcome model.`;
+    color = "#2e6f40";
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem;
+      border-radius:0.5rem; border-left:3px solid ${color};
+      background:#f6f5f1; font-family:'Inter',sans-serif;
+      font-size:0.86rem; line-height:1.45; color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Convex-Hull Lab
+
+Work through it in order; each step isolates one idea from the four conditions.
+
+**Step 1: Start inside the hull.** Leave **augmentation off** and set the treated severity to about $+1.0$. Norrbotten sits *between* donors Gävleborg ($1.2$) and Dalarna ($0.8$), so the orange synthetic point lands right on top of the blue treated point: the pre-fit gap is essentially $0$ and the "Outside hull?" tile reads *no*. This is SCM working as intended --- a convex blend of donors reproduces the treated unit, and the dashed connector has zero length.
+
+**Step 2: Push the treated unit to the edge.** Move the severity slider up to $+2.0$, exactly the most severe donor (Västerbotten). The synthetic unit can still just reach it by putting all weight on that one donor --- but you are now resting on the *boundary* of the hull. SCM has degenerated to a single-donor match; you have lost the averaging that gave the method its stability.
+
+**Step 3: Cross the boundary --- watch interpolation bias appear.** Move the severity slider to $+2.8$. Now Norrbotten is **outside the convex hull**: no convex combination of donors is that severe. The orange synthetic point gets *stuck* at the most-severe donor and the blue treated point floats above it. A red dashed gap opens, the "Outside hull?" tile turns red, and the verdict warns that this residual gap is interpolation bias. If you mistook this pre-period gap for a treatment effect, you would "find" an effect that is purely an artifact of an unmatchable treated unit.
+
+**Step 4: Augment to extrapolate.** With the slider still at $+2.8$, turn **augmentation on**. A green point appears at the treated severity, lifted up toward the blue point by the ridge bias-correction. With the default $\lambda = 0.6$ the residual gap shrinks substantially; the "Gap: augmented" tile drops toward zero.
+
+**Step 5: Trade off extrapolation against stability.** Slide $\lambda$ toward its minimum ($0.02$). The correction is barely shrunk, the green point snaps almost exactly onto the treated point, and the augmented gap goes to (near) zero --- *perfect* fit by allowing free extrapolation along the donor outcome model. Now slide $\lambda$ toward its maximum ($4$). The correction is heavily shrunk (the shrinkage factor $1/(1+\lambda)$ falls to about $0.2$, so only a fifth of the imbalance is corrected) and augmented SCM moves back toward standard SCM --- as $\lambda \to \infty$ the correction would vanish entirely and the green point would collapse onto the orange one. This slider *is* the bias--reliance trade-off: small $\lambda$ removes interpolation bias but leans hard on an extrapolated model; large $\lambda$ stays close to the safe convex world but tolerates the gap.
+
+## Augmented Synthetic Control
+
+The lab demonstrates the idea behind **augmented synthetic control** (ASCM), introduced by Ben-Michael, Feller, and Rothstein (2021). The motivation is exactly Failure 2: when the treated unit cannot be matched inside the convex hull, standard SCM leaves a residual pre-treatment imbalance, and that imbalance contaminates the post-treatment gap. ASCM keeps the SCM weights but adds a *bias-correction* term that estimates, and subtracts, the part of the gap attributable to the residual imbalance.
+
+::: {.glass-card .glass-card--definition}
+Let $w^{\text{scm}}$ be the standard synthetic-control weights, $Y_{0t}$ the treated unit's outcome at time $t$, and $\sum_j w^{\text{scm}}_j Y_{jt}$ the synthetic unit's outcome built from donors $j$. Let $\hat m(\cdot)$ be an outcome model (e.g. a ridge regression of post-period outcomes on pre-period outcomes, fit on the donors). Two zeros do different jobs here: the *subscript* $0$ indexes the **treated unit** (Norrbotten), while the *superscript* $(0)$ denotes the **untreated potential outcome** --- what the treated unit's HbA1c would have been with no program. The **augmented SCM estimator** of the treated unit's counterfactual at post-period $t$ is
+
+$$
+\widehat{Y}_{0t}^{(0),\text{aug}}
+= \underbrace{\sum_j w^{\text{scm}}_j\, Y_{jt}}_{\text{SCM synthetic}}
+\;+\;
+\underbrace{\Big(\hat m(X_0) - \sum_j w^{\text{scm}}_j\, \hat m(X_j)\Big)}_{\text{bias correction}},
+$$
+
+where $X_0$ and $X_j$ are the pre-treatment characteristics of the treated unit and donor $j$.
+
+**Read this as**: "Start with the ordinary synthetic-control prediction, then add a correction equal to what the outcome model says the treated unit should be, minus what the same model says the synthetic unit should be. If the synthetic unit already matches the treated unit (no residual imbalance), the two model terms are equal and the correction is zero --- ASCM reduces to plain SCM. The correction only bites when residual imbalance remains."
+:::
+
+The picture below ties the two symbols in the bias-correction term to the geometry of the lab. The outcome model $\hat m(\cdot)$ is the donor outcome line; $\hat m(X_0)$ is where that line predicts the treated unit *should* sit, and $\sum_j w_j\,\hat m(X_j)$ is where it predicts the constrained synthetic unit sits. The augmentation simply lifts the synthetic outcome by the vertical distance between them --- the green arrow.
+
+```{ojs}
+//| echo: false
+
+// ── Static teaching figure: the bias-correction term as geometry. ──
+// Bridges the algebra in the definition card (m(X0) − Σ w·m(Xj)) to the same
+// picture the lab draws. Fixed, illustrative numbers (NOT tied to the live
+// slider) so the symbols always land where the labels say. Treated severity
+// fixed at +2.8 (outside hull); synthetic clamped to the most severe donor +2.0.
+Plot.plot({
+  width: Math.min(560, width),
+  height: 320,
+  marginLeft: 62,
+  marginTop: 24,
+  marginRight: 28,
+  marginBottom: 48,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Pre-treatment characteristic X (severity)", domain: [-2.6, 3.4], grid: true },
+  y: { label: "Outcome  m(X)", domain: [6.0, 9.2], grid: true },
+  marks: [
+    // The donor outcome model m(·): the line the donors trace out.
+    Plot.line(d3.range(-2.6, 3.41, 0.1).map(x => ({ x, y: 7.4 + 0.45 * x })), {
+      x: "x", y: "y", stroke: "#79766e", strokeWidth: 1.5, strokeDasharray: "2,3"
+    }),
+    Plot.text([{ x: -2.2, y: 7.4 + 0.45 * -2.2 }], {
+      x: "x", y: "y", text: ["outcome model  m(X)"], dy: -12, textAnchor: "start",
+      fill: "#79766e", fontSize: 11, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // m(Σ w·X_j): model at the synthetic unit's characteristics (clamped to +2.0).
+    Plot.dot([{ x: 2.0, y: 7.4 + 0.45 * 2.0 }], {
+      x: "x", y: "y", r: 7, fill: "none", stroke: "#9c7a33", strokeWidth: 2.5
+    }),
+    Plot.text([{ x: 2.0, y: 7.4 + 0.45 * 2.0 }], {
+      x: "x", y: "y", text: ["Σ wⱼ m(Xⱼ)"], dy: 20, fill: "#9c7a33",
+      fontSize: 11, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // m(X0): model at the treated unit's characteristics (+2.8).
+    Plot.dot([{ x: 2.8, y: 7.4 + 0.45 * 2.8 }], {
+      x: "x", y: "y", r: 7, fill: "#3d5a6c", stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text([{ x: 2.8, y: 7.4 + 0.45 * 2.8 }], {
+      x: "x", y: "y", text: ["m(X₀)"], dy: -14, textAnchor: "end", dx: 4,
+      fill: "#3d5a6c", fontSize: 11, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The correction term = the vertical gap, drawn as a green arrow upward
+    // from the synthetic-model point to the treated-model point.
+    Plot.arrow([{ x1: 2.8, y1: 7.4 + 0.45 * 2.0, x2: 2.8, y2: 7.4 + 0.45 * 2.8 }], {
+      x1: "x1", y1: "y1", x2: "x2", y2: "y2",
+      stroke: "#2e6f40", strokeWidth: 2.5, bend: 0, headLength: 8
+    }),
+    Plot.text([{ x: 2.8, y: (7.4 + 0.45 * 2.0 + 7.4 + 0.45 * 2.8) / 2 }], {
+      x: "x", y: "y", text: ["bias correction"], textAnchor: "end", dx: -8,
+      fill: "#2e6f40", fontSize: 11, fontWeight: 700,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Faint connectors showing each X maps up to its model value.
+    Plot.ruleX([2.0], { y1: 6.0, y2: 7.4 + 0.45 * 2.0, stroke: "#9c7a33", strokeOpacity: 0.3, strokeDasharray: "3,3" }),
+    Plot.ruleX([2.8], { y1: 6.0, y2: 7.4 + 0.45 * 2.0, stroke: "#3d5a6c", strokeOpacity: 0.3, strokeDasharray: "3,3" })
+  ]
+})
+```
+
+::: {.aside}
+The **bias-correction** term $\hat m(X_0) - \sum_j w_j\,\hat m(X_j)$ is exactly the green arrow: how far the donor outcome model says the treated unit ($\hat m(X_0)$, slate) sits above the constrained synthetic unit ($\sum_j w_j\,\hat m(X_j)$, gold ring). Adding that gap to the SCM synthetic outcome is what the green point in the lab does when you turn augmentation on.
+:::
+
+The estimated treatment effect at $t$ is then the gap between the treated unit's *observed* post outcome and this augmented counterfactual:
+
+$$
+\hat\tau_t = Y_{0t} - \widehat{Y}_{0t}^{(0),\text{aug}}.
+$$
+
+The key behavioral facts, all visible in the lab:
+
+- **When pre-fit is already good, ASCM $\approx$ SCM.** The correction term vanishes, so augmentation is safe to apply by default --- it does nothing when nothing is needed.
+- **When pre-fit is poor, ASCM allows *limited extrapolation* to close the gap.** This is the price: the weights may now effectively become negative once the correction is folded in, so the synthetic unit is no longer a literal convex average of donors. Interpretability and the "no extrapolation" safety of classic SCM are partially surrendered.
+- **The ridge penalty $\lambda$ controls how much extrapolation is allowed.** Large $\lambda$ shrinks the correction toward zero (stay near SCM); small $\lambda$ permits aggressive extrapolation (full bias correction). Choosing $\lambda$ is a transparency-versus-fit decision that should be reported and probed for sensitivity.
+
+::: {.glass-card .glass-card--warning}
+Augmentation is a *repair*, not a license. If the residual imbalance is large, the correction term is large, which means your estimate now depends heavily on an extrapolated outcome model you cannot validate in the region where it matters. A huge correction is a red flag that the donor pool is fundamentally inadequate --- the honest move may be to abandon SCM, not to extrapolate your way out of a missing comparison group.
+:::
+
+## The Generalized / Matrix-Completion Family
+
+Standard and augmented SCM are two points on a broader map. A useful way to see the whole family is to recognize that all of these methods are imputing the *missing* untreated potential outcomes --- the treated unit's $Y(0)$ after treatment --- and they differ in how they pool information across units and time.
+
+- **Generalized synthetic control** (Xu, 2017) embeds SCM inside an **interactive fixed-effects** model (outcomes depend on shared trends whose *strength varies by unit*, not just an additive unit and time effect): outcomes are driven by a small number of **latent factors** (a few hidden trends that move everyone's outcomes) with unit-specific loadings (how strongly each unit responds to each trend), estimated from the donors and then used to predict the treated unit's counterfactual. It naturally handles *multiple* treated units and covariates.
+- **Matrix completion** (Athey, Bayati, Doudchenko, Imbens & Khosravi, 2021) treats the panel of outcomes as a **low-rank matrix** (the whole table of outcomes is mostly explained by a few underlying patterns) with the post-treatment treated cells *missing*, and fills them in with nuclear-norm-penalized completion (a way of imputing the holes that prefers the simplest few-pattern explanation). SCM and two-way fixed effects emerge as special/limiting cases. It is well-suited to "block" or staggered missingness patterns.
+- **Synthetic difference-in-differences** (Arkhangelsky, Athey, Hirshberg, Imbens & Wager, 2021) blends SCM and DiD: it learns *unit* weights (like SCM) *and* *time* weights, then runs a weighted two-way fixed-effects regression --- gaining DiD's robustness to a level mismatch (a constant pre-period offset between treated and synthetic that DiD differences away) while keeping SCM's data-driven control construction.
+
+The map is easier to scan as a table. Read across each row to see what each method weights, whether it lets the synthetic unit leave the convex hull (extrapolate), and the structural problem it is built to solve.
+
+| Method | Unit weights? | Time weights? | Allows extrapolation? | # treated units | When to reach for it |
+|:--|:--|:--|:--|:--|:--|
+| **Standard SCM** | Yes (convex) | No | No | One | Long pre-period, treated unit inside the hull, one clean donor blend |
+| **Augmented SCM** | Yes + correction | No | Limited (ridge-controlled) | One (or few) | Pre-fit imperfect / treated near or just outside the hull |
+| **Generalized SCM** | Via latent factors | No | Yes (model-based) | Many | Several treated units; shared trends with unit-specific strength |
+| **Matrix completion** | Implicit (low-rank) | Implicit (low-rank) | Yes (model-based) | Many / staggered | Block or staggered missingness; no single clean donor |
+| **Synthetic DiD** | Yes (SCM-style) | Yes | Partly (level shift) | One or many | A constant level offset the SCM weights cannot absorb |
+
+: Five members of the SCM family, from the most constrained (standard SCM, pure interpolation) to the most flexible (matrix completion). Moving down the table generally buys flexibility by surrendering the "no extrapolation" safety of classic SCM. {.science-table}
+
+You do not need the mechanics of each here; the takeaway is that when classic SCM fails for structural reasons --- many treated units, no single clean donor, a level offset the weights cannot absorb --- one of these generalizations is usually the principled next step, and ASCM is the gentlest of them.
+
+## How SCM Relates to DiD and Event Studies
+
+It is worth placing SCM beside the methods from earlier modules, because reviewers will ask why you chose it.
+
+::: {.glass-card .glass-card--insight}
+**DiD, event study, and SCM are three answers to "what is the right comparison?"**
+
+- **Difference-in-differences** assumes you already have a credible control group and that, absent treatment, treated and control would have moved *in parallel*. It imposes equal weights on controls and a single common time shock.
+- **Event studies** generalize DiD to many periods, plotting the dynamic path of effects and using *pre-treatment* coefficients as a (partial) test of parallel trends.
+- **Synthetic control** refuses to assume the comparison group; it *constructs* one by data-driven weighting to match the treated unit's pre-trajectory. SCM can be read as DiD with *optimized, non-negative unit weights* instead of equal weights --- which is exactly why synthetic DiD sits between them.
+:::
+
+When should you reach for SCM rather than DiD? When there is **one** (or very few) treated units, a **long** pre-period, and **no** off-the-shelf control whose parallel trend you would defend. When you have many treated units and a defensible control group, DiD/event study is simpler, more familiar to readers, and easier to do inference on. The methods are complements: a good comparative case study often reports SCM as the headline and a DiD as a robustness check (and synthetic DiD as the bridge).
+
+## Reporting Standards
+
+Synthetic control has matured into a method with community expectations. A study that omits these will (rightly) struggle in review.
+
+1. **Show the pre-fit explicitly.** Plot treated vs synthetic over the *entire* pre-period and report a pre-period fit statistic (RMSPE --- root mean squared prediction error, the typical pre-period gap between treated and synthetic). Poor pre-fit is disqualifying; say so.
+2. **Report the donor weights.** List which donors received positive weight and how much. Sparse, interpretable weights are a feature; a synthetic unit dominated by one implausible donor is a warning.
+3. **Report the matching variables.** State which predictors (and which pre-period outcome lags) were matched, and avoid "cherry-picking" lags to manufacture fit.
+4. **Do placebo / permutation inference.** From the previous page: in-space placebos, the post/pre RMSPE ratio, and a permutation $p$-value. Report the full placebo distribution, not just the treated gap.
+5. **Probe robustness.** Leave-one-donor-out, backdating the intervention (anticipation), dropping plausibly-contaminated donors (spillovers), and --- where fit is imperfect --- augmented SCM as a sensitivity check.
+6. **Be honest about the convex hull.** If the treated unit is an extreme, say so, and either justify augmentation or concede the limit.
+
+<details>
+<summary>Math Details: Why the bias-correction term removes residual imbalance</summary>
+<div class="details-content">
+
+### The estimand and the source of bias
+
+The **estimand** --- the quantity we are after, defined before any estimator is chosen --- is the treated unit's missing untreated potential outcome $Y_{0t}(0)$, and hence the treatment effect $\hat\tau_t = Y_{0t} - Y_{0t}(0)$. Write the untreated potential outcome of unit $i$ at the post period $t$ as an outcome model plus noise,
+
+$$
+Y_{it}(0) = m_t(X_i) + \varepsilon_{it}, \qquad E[\varepsilon_{it} \mid X_i] = 0,
+$$
+
+where $X_i$ collects the pre-treatment characteristics (and outcome lags) of unit $i$. We want the treated unit's missing $Y_{0t}(0) = m_t(X_0) + \varepsilon_{0t}$.
+
+The **standard SCM** estimator of that counterfactual is the donor blend $\sum_j w_j Y_{jt} = \sum_j w_j \big(m_t(X_j) + \varepsilon_{jt}\big)$. Its conditional bias for $Y_{0t}(0)$ is, taking expectations over the noise,
+
+$$
+\text{Bias}_{\text{scm}} = E\Big[\sum_j w_j Y_{jt} - Y_{0t}(0)\Big]
+= \underbrace{\sum_j w_j\, m_t(X_j) - m_t(X_0)}_{\text{residual imbalance}}.
+$$
+
+**Read this as**: "The bias of the plain synthetic unit is exactly the *weighted average of the outcome model across the donors* minus the outcome model evaluated at the *treated* unit's characteristics." When $m_t$ is linear, the weighted average collapses to $m_t(\sum_j w_j X_j)$ --- the model evaluated at the synthetic unit's characteristics --- so if the weights achieve perfect balance ($\sum_j w_j X_j = X_0$) the term is zero. Interpolation bias is precisely this term being nonzero because the constrained weights *cannot* balance $X_0$.
+
+### Subtracting an estimate of the bias
+
+Augmented SCM estimates that residual-imbalance term with a fitted model $\hat m_t$ and subtracts it. The augmented counterfactual is
+
+$$
+\widehat{Y}_{0t}^{(0),\text{aug}}
+= \sum_j w_j Y_{jt} \;-\; \Big(\sum_j w_j\, \hat m_t(X_j) - \hat m_t(X_0)\Big).
+$$
+
+Its bias is now
+
+$$
+\text{Bias}_{\text{aug}}
+= \underbrace{\Big(\sum_j w_j m_t(X_j) - m_t(X_0)\Big)}_{\text{original imbalance}}
+- \underbrace{\Big(\sum_j w_j \hat m_t(X_j) - \hat m_t(X_0)\Big)}_{\text{estimated imbalance}}.
+$$
+
+If $\hat m_t = m_t$, the two terms cancel and the bias is *zero* --- the correction has removed the interpolation bias entirely. In practice $\hat m_t$ is estimated, so the bias is reduced to the *error in estimating the imbalance*, which is second-order: it is the product of how badly the weights balance $X$ and how badly the model is estimated, rather than either alone. This "double robustness"-flavored structure is why ASCM improves on plain SCM whenever fit is imperfect.
+
+### The role of the ridge penalty
+
+ASCM fits $\hat m_t$ by ridge regression with penalty $\lambda$. The correction term equals (a shrunk version of) the imbalance, where the shrinkage factor decreases with $\lambda$. As $\lambda \to \infty$ the correction $\to 0$ and $\widehat{Y}^{(0),\text{aug}}_{0t} \to \sum_j w_j Y_{jt}$ (plain SCM). As $\lambda \to 0$ the correction is unshrunk and the model is allowed to extrapolate freely, closing the gap but relying entirely on $\hat m_t$ being correct in the region outside the donor hull --- exactly the trade-off the slider exposes.
+
+</div>
+</details>
+
+## Code: Augmented SCM and a Convex-Hull Diagnostic
+
+Both implementations build a small Swedish region panel, fit standard SCM, check whether the treated region is inside the donor convex hull, and apply an augmented (ridge bias-corrected) fit.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+# install.packages("augsynth")  # Ben-Michael, Feller & Rothstein
+library(augsynth)
+
+# --- Panel: 1 treated region (Norrbotten) + 10 donors, 2010–2020 ---------
+set.seed(2018)
+regions <- c("Norrbotten", "Skane", "Halland", "Blekinge", "Kalmar",
+             "Orebro", "Varmland", "Dalarna", "Gavleborg", "Jamtland",
+             "Vasterbotten")
+severity <- c(Norrbotten = 2.8,  Skane = -2.0, Halland = -1.5, Blekinge = -1.0,
+              Kalmar = -0.6, Orebro = -0.1, Varmland = 0.3, Dalarna = 0.8,
+              Gavleborg = 1.2, Jamtland = 1.6, Vasterbotten = 2.0)
+
+panel <- expand_grid(region = regions, year = 2010:2020) |>
+  mutate(
+    sev    = severity[region],
+    treated = as.integer(region == "Norrbotten"),
+    # post-2018 treatment lowers HbA1c by 0.4 in Norrbotten only
+    rx     = as.integer(treated == 1 & year >= 2018),
+    hba1c  = 7.4 + 0.45 * sev + 0.02 * (year - 2015) -
+             0.40 * rx + rnorm(n(), 0, 0.05)
+  )
+
+# --- Convex-hull diagnostic: is the treated severity matchable? ----------
+donor_sev <- severity[names(severity) != "Norrbotten"]
+inside_hull <- severity["Norrbotten"] <= max(donor_sev) &&
+               severity["Norrbotten"] >= min(donor_sev)
+cat("Treated inside donor convex hull? ", inside_hull, "\n")  # FALSE here
+
+# --- Augmented SCM (ridge). progfunc = "Ridge" adds the bias correction --
+asyn <- augsynth(hba1c ~ rx, unit = region, time = year, data = panel,
+                 progfunc = "Ridge", scm = TRUE)
+summary(asyn)               # average post-treatment effect + inference
+plot(asyn)                  # treated vs (augmented) synthetic trajectory
+
+# Compare to plain SCM (no augmentation): progfunc = "None"
+syn <- augsynth(hba1c ~ rx, unit = region, time = year, data = panel,
+                progfunc = "None", scm = TRUE)
+
+# Pre-period fit quality. augsynth stores the L2 norm of the pre-treatment gap
+# (treated - synthetic) on the fitted object; dividing by sqrt(#pre-periods)
+# turns it into the root-mean-square pre-period error (RMSPE). Augmentation
+# should shrink the residual imbalance relative to plain SCM.
+n_pre <- length(2010:2017)
+cat("Pre-period RMSPE  plain SCM:", syn$l2_imbalance  / sqrt(n_pre), "\n")
+cat("Pre-period RMSPE  augmented:", asyn$l2_imbalance / sqrt(n_pre), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import Ridge
+
+# --- Panel: 1 treated region (Norrbotten) + 10 donors, 2010–2020 ---------
+rng = np.random.default_rng(2018)
+severity = {"Norrbotten": 2.8, "Skane": -2.0, "Halland": -1.5, "Blekinge": -1.0,
+            "Kalmar": -0.6, "Orebro": -0.1, "Varmland": 0.3, "Dalarna": 0.8,
+            "Gavleborg": 1.2, "Jamtland": 1.6, "Vasterbotten": 2.0}
+years = np.arange(2010, 2021)
+
+rows = []
+for region, sev in severity.items():
+    for y in years:
+        rx = int(region == "Norrbotten" and y >= 2018)
+        hba1c = 7.4 + 0.45*sev + 0.02*(y - 2015) - 0.40*rx + rng.normal(0, 0.05)
+        rows.append((region, y, sev, rx, hba1c))
+panel = pd.DataFrame(rows, columns=["region", "year", "sev", "rx", "hba1c"])
+
+# --- Convex-hull diagnostic ----------------------------------------------
+donor_sev = [s for r, s in severity.items() if r != "Norrbotten"]
+inside_hull = min(donor_sev) <= severity["Norrbotten"] <= max(donor_sev)
+print("Treated inside donor convex hull?", inside_hull)   # False here
+
+# --- Standard SCM weights (non-negative, sum to one) on pre-period lags ---
+from scipy.optimize import minimize
+pre = panel[panel.year < 2018].pivot(index="year", columns="region",
+                                      values="hba1c")
+y0 = pre["Norrbotten"].values
+X  = pre.drop(columns="Norrbotten").values            # T_pre x J donors
+J  = X.shape[1]
+
+def loss(w):
+    return np.sum((y0 - X @ w) ** 2)
+cons = ({"type": "eq", "fun": lambda w: w.sum() - 1},)
+bnds = [(0, 1)] * J
+w = minimize(loss, np.full(J, 1/J), bounds=bnds, constraints=cons).x
+
+# --- Augmented (ridge bias-corrected) counterfactual ---------------------
+# Fit an outcome model on donors (post on pre lags), then add the correction
+# m(treated) - sum_j w_j m(donor_j) to the SCM synthetic outcome.
+post = panel[panel.year >= 2018].pivot(index="year", columns="region",
+                                       values="hba1c")
+donors = [c for c in pre.columns if c != "Norrbotten"]
+m = Ridge(alpha=0.6).fit(pre[donors].T.values, post[donors].mean(axis=0).values)
+
+scm_synth = post[donors].values @ w                    # plain SCM post path
+correction = (m.predict(pre["Norrbotten"].values[None, :])[0]
+              - (w @ m.predict(pre[donors].T.values)))
+aug_synth = scm_synth + correction
+tau_aug = post["Norrbotten"].values - aug_synth        # augmented effect path
+print("Augmented ATT (post mean):", round(tau_aug.mean(), 3))
+```
+
+:::
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A health economist runs SCM for *Region Gotland*'s new fall-prevention program. The synthetic Gotland tracks the treated unit's pre-period fall rate to within $0.2$ falls per 1,000 residents in every pre-year, the program started on a single known date in 2019, and all donor regions are geographically distant with no shared services. The treated unit's pre-period fall rate is well within the range spanned by the donors. Which of the four appropriateness conditions are satisfied, and is SCM a reasonable choice here?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+All four conditions are satisfied: (1) **good pre-fit** --- the synthetic unit matches within $0.2$ per 1,000 across all pre-years; (2) a **single discrete intervention** with a known 2019 date; (3) a **clean donor pool** --- distant donors with no shared services means no plausible spillover (SUTVA holds); (4) the treated unit is **inside the convex hull**, since its pre-period rate lies within the donors' range, so interpolation suffices and there is no interpolation bias. SCM is a reasonable, indeed well-suited, choice. Standard SCM should be adequate; augmentation would do little because pre-fit is already good (the correction term would be near zero).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the convex-hull lab, set the treated severity to $+2.8$ (outside the hull) with augmentation **off**. The donor outcome line is $\text{HbA1c} = 7.4 + 0.45 \cdot \text{sev}$, and the most severe donor is at $\text{sev} = 2.0$. (a) What HbA1c does standard SCM assign to the synthetic unit, and what is the treated unit's HbA1c? (b) Compute the residual pre-fit gap. (c) If you mistook this gap for a treatment effect, would you over- or under-state the benefit of a program that truly *lowers* HbA1c?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Standard SCM clamps the synthetic unit to the most severe donor, $\text{sev} = 2.0$, so its HbA1c is $7.4 + 0.45 \times 2.0 = 7.4 + 0.90 = 8.30$. The treated unit at $\text{sev} = 2.8$ has HbA1c $7.4 + 0.45 \times 2.8 = 7.4 + 1.26 = 8.66$.
+
+**(b)** Residual pre-fit gap $= Y_{\text{treated}} - Y_{\text{synth}} = 8.66 - 8.30 = +0.36$ percentage points. The treated unit sits *above* its synthetic, even before any treatment.
+
+**(c)** A program that lowers HbA1c produces a *negative* post-period gap (treated below synthetic). But here the treated unit starts $+0.36$ *above* the synthetic for purely structural reasons. That positive interpolation bias would partly cancel the negative treatment gap, making the program look **weaker** than it truly is --- you would *understate* the benefit. (Conversely, if the bias were negative, you would overstate it.) Either way, the pre-period gap is a red flag that the post-period gap is not a clean effect.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Use the augmented-SCM formula $\widehat{Y}_{0t}^{(0),\text{aug}} = \sum_j w_j Y_{jt} + \big(\hat m(X_0) - \sum_j w_j \hat m(X_j)\big)$. Suppose the SCM synthetic outcome is $\sum_j w_j Y_{jt} = 8.30$, the donor outcome model is $\hat m(X) = 7.4 + 0.45 X$ with $X$ = severity, the treated severity is $X_0 = 2.8$, and the weighted donor severity is $\sum_j w_j X_j = 2.0$. (a) Compute the unshrunk bias correction. (b) Compute the augmented counterfactual. (c) With ridge shrinkage factor $0.625$ (corresponding to $\lambda = 0.6$), recompute the correction and the augmented counterfactual, and compare the residual gap to the standard-SCM gap of $0.36$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\hat m(X_0) = 7.4 + 0.45 \times 2.8 = 8.66$ and $\sum_j w_j \hat m(X_j) = 7.4 + 0.45 \times 2.0 = 8.30$. Unshrunk correction $= 8.66 - 8.30 = +0.36$.
+
+**(b)** Augmented counterfactual $= 8.30 + 0.36 = 8.66$, which equals the treated unit's HbA1c exactly. With a *linear* model and no shrinkage, augmentation removes the interpolation bias completely --- residual gap $= 8.66 - 8.66 = 0$.
+
+**(c)** With shrinkage $0.625$: correction $= 0.625 \times 0.36 = 0.225$. Augmented counterfactual $= 8.30 + 0.225 = 8.525$. Residual gap $= 8.66 - 8.525 = +0.135$. Compared to the standard-SCM gap of $+0.36$, the ridge-augmented fit cuts the interpolation bias by about $63\%$ (from $0.36$ to $0.135$) while keeping the correction conservative --- the bias--reliance trade-off the $\lambda$ slider controls.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+For each scenario, name the failure mode (poor pre-fit, interpolation bias, anticipation, spillover to donors, or too-short pre-period) and give one remedy. (a) Norrbotten's *vårdcentraler* started recruiting *distriktssköterskor* in 2017 for the 2018 program. (b) The pre-period contains only the years 2016 and 2017, yet the synthetic unit fits perfectly. (c) Neighbouring Västerbotten shares a referral system with Norrbotten and its HbA1c improves after Norrbotten's reform. (d) Even the best donor blend never gets within $0.5$ pp of the treated unit's pre-trajectory in any year.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Anticipation.** Treatment effectively begins in 2017, so the "pre" period is partly treated and the effect is biased toward zero. *Remedy:* backdate the intervention to 2017 (the first plausible anticipation date) and re-estimate; report sensitivity to the assumed date.
+
+**(b) Too-short pre-period.** Perfect fit on only two pre-years is almost certainly overfitting to noise rather than capturing structural similarity --- the weights chase idiosyncratic blips. *Remedy:* require more pre-periods, or validate the weights on a held-out pre-year; treat near-perfect fit on few periods with suspicion.
+
+**(c) Spillover to donors.** A donor (Västerbotten) is contaminated by the treatment, violating SUTVA; the synthetic unit is pulled toward the treated trajectory and the effect is understated. *Remedy:* drop plausibly-affected donors and check how much the estimate moves.
+
+**(d) Poor pre-fit.** The donor pool cannot reproduce the treated unit --- often a symptom of the treated unit being outside the convex hull or an inadequate donor set. *Remedy:* do not interpret the post gap as an effect; consider augmented SCM (limited extrapolation), enlarge/improve the donor pool, or abandon SCM for this setting.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- SCM is appropriate only with a long, well-fit pre-period, a single dated intervention, a clean donor pool, and a treated unit inside the donors' convex hull; violate any one and the post-period gap may not be an effect.
+- Interpolation bias arises because standard SCM weights are non-negative and sum to one, so the synthetic unit cannot match a treated unit that is more extreme than every donor --- the residual pre-fit gap masquerades as an effect.
+- Augmented SCM keeps the SCM weights but adds a model-based bias-correction term; it equals plain SCM when fit is already good and allows limited, ridge-controlled extrapolation when it is not.
+- The bias correction removes residual imbalance exactly when the outcome model is correct, and otherwise reduces it to a second-order error --- but large corrections signal a donor pool that is fundamentally inadequate.
+- Report pre-fit, donor weights, matching variables, placebo inference, and robustness (leave-one-out, backdating, dropping contaminated donors); be candid when the treated unit is an extreme.
+:::
+
+## What Comes Next
+
+We now know *when* synthetic control can be trusted, how to diagnose its three failure modes, and how augmented SCM repairs poor fit through limited, transparent extrapolation. The next page, [Case Study: A Swedish Regional Reform](case-study.qmd), puts the entire toolkit to work end to end: building the donor pool, fitting and reading the synthetic unit, running placebo and permutation inference, and stress-testing the result with the robustness checks catalogued here --- a complete comparative case study from raw panel to policy conclusion.

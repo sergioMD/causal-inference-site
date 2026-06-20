@@ -1,0 +1,963 @@
+---
+title: "Regularization: Ridge, LASSO, and Elastic Net"
+subtitle: "Prediction, sparsity, and the bias-variance tradeoff"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Contrast the *prediction* mindset (minimize out-of-sample error) with the *estimation* mindset (recover an unbiased coefficient), and explain the bias-variance tradeoff
+- Write the ridge ($L_2$) and LASSO ($L_1$) penalized objectives and read off what each penalty does to the coefficients
+- Explain *geometrically* why the $L_1$ ball produces exact zeros (variable selection) while the $L_2$ ball only shrinks
+- Choose the penalty parameter $\lambda$ by cross-validation, reading the CV error curve and the one-standard-error rule
+- Recognize why naive inference on LASSO-selected coefficients is invalid, motivating post-double-selection and double machine learning
+:::
+
+## Two Mindsets: Estimation vs. Prediction
+
+Every regression you have run so far in this book served *estimation*: you wanted one coefficient --- the effect of a diabetes program, the return to schooling, an elasticity --- to be **unbiased**, with an honest standard error. Ordinary least squares (OLS) is built for exactly that. Under the Gauss-Markov conditions it is the best *linear unbiased* estimator, and unbiasedness is non-negotiable: a biased causal effect is a wrong answer.
+
+Machine learning starts from a different question. A data scientist at a Swedish *region* has, for each of $n = 400$ enrolled Type 2 diabetes patients, a 12-month follow-up HbA1c (mmol/mol) and $p = 250$ candidate predictors: age, BMI, baseline HbA1c, blood pressure, eGFR, lab panels, dispensed-medication counts from *Läkemedelsregistret*, comorbidity flags, number of *vårdcentral* visits, deprivation index of the patient's *DeSO*, and dozens of interactions. The goal is **not** "what is the causal effect of BMI?" It is: *given a new patient's covariates, predict their follow-up HbA1c as accurately as possible.* The single number that matters is the **out-of-sample prediction error** --- how well the model does on patients it has never seen.
+
+For prediction, unbiasedness is no longer sacred. A *slightly biased* estimator that is much *less variable* can predict far better. That trade is the entire subject of this page.
+
+::: {.glass-card .glass-card--insight}
+**The estimator can be wrong on average yet better in practice.** In estimation we forbid bias. In prediction we tolerate a little bias if it buys a large reduction in variance, because what we are scored on is total error on new data --- and total error mixes both. Regularization is the deliberate purchase of bias to reduce variance.
+:::
+
+## The Bias-Variance Tradeoff
+
+Suppose the truth is $y = f(x) + \varepsilon$ with $\mathbb{E}[\varepsilon]=0$ and $\operatorname{Var}(\varepsilon)=\sigma^2$. We fit $\hat f$ on a training sample and ask how badly it predicts a *fresh* point $x_0$. The expected squared prediction error decomposes exactly into three pieces:
+
+$$
+\underbrace{\mathbb{E}\big[(y_0 - \hat f(x_0))^2\big]}_{\text{expected test error}}
+= \underbrace{\big(\operatorname{Bias}[\hat f(x_0)]\big)^2}_{\text{systematic miss}}
++ \underbrace{\operatorname{Var}[\hat f(x_0)]}_{\text{sensitivity to the sample}}
++ \underbrace{\sigma^2}_{\text{irreducible noise}}.
+$$
+
+**Read this as**: "the expected error on a new point equals the squared bias of the prediction, plus the variance of the prediction across training samples, plus the irreducible noise that no model can remove." The third term $\sigma^2$ is a floor; we can never beat it. The first two are ours to trade.
+
+A very flexible model (many predictors, large coefficients) chases the training data: low bias, but the fit lurches from sample to sample --- **high variance**. A very rigid model (few predictors, coefficients pulled toward zero) is stable across samples --- low variance --- but systematically misses the signal: **high bias**. With $p = 250$ predictors and $n = 400$ patients, OLS is dangerously flexible; it can fit noise and predict new patients poorly. The minimum of the test-error curve sits at neither extreme. Regularization is the dial that moves us along this curve toward that minimum.
+
+The [previous page on series and spline methods](../22-nonparametric/series-splines.qmd) managed exactly this tradeoff by limiting the *number of basis terms* --- too few underfit, too many overfit. Penalized regression makes the same move continuously: instead of switching basis terms on and off, it shrinks a large set of coefficients by a tunable amount, sweeping smoothly across the bias-variance frontier.
+
+::: {.glass-card .glass-card--definition}
+**Regularization** adds a penalty on the size of the coefficients to the least-squares objective, deliberately shrinking the fit toward zero to reduce variance at the cost of a controlled amount of bias. A single tuning parameter $\lambda \ge 0$ sets the strength of the penalty: $\lambda = 0$ recovers OLS (maximal flexibility), and $\lambda \to \infty$ shrinks every coefficient to zero (maximal rigidity, the intercept-only model).
+:::
+
+## Ridge Regression: the $L_2$ Penalty
+
+The first penalized estimator is **ridge regression** (Hoerl & Kennard, 1970). It augments the residual sum of squares with the squared $L_2$ norm of the coefficient vector.
+
+::: {.glass-card .glass-card--definition}
+The **ridge estimator** minimizes least-squares loss plus an $L_2$ (sum-of-squares) penalty:
+
+$$
+\hat\beta^{\text{ridge}}_\lambda
+= \arg\min_{\beta}\;
+\underbrace{\sum_{i=1}^{n}\Big(y_i - \beta_0 - \textstyle\sum_{j=1}^{p}x_{ij}\beta_j\Big)^2}_{\text{fit the data}}
+\;+\;
+\lambda \underbrace{\sum_{j=1}^{p}\beta_j^2}_{\|\beta\|_2^2}.
+$$
+
+**Read this as**: "choose the coefficients that minimize the usual sum of squared residuals, *plus* $\lambda$ times the sum of the squared slopes." The penalty $\sum_j \beta_j^2$ charges a price for every unit of coefficient magnitude. The intercept $\beta_0$ is left unpenalized, and the predictors are standardized first so the penalty treats them on equal footing. (To keep the orthonormal shrinkage maps clean --- ridge's $1/(1+\lambda)$ scaling and LASSO's $\lambda$-threshold below --- the Math Details carry a harmless $\tfrac12$ on the loss, which only rescales $\lambda$ and never moves the minimizer.)
+:::
+
+Ridge has a clean closed form, $\hat\beta^{\text{ridge}} = (X^\top X + \lambda I)^{-1} X^\top y$, which exposes its two superpowers. First, adding $\lambda I$ to $X^\top X$ makes the matrix invertible **even when $p > n$ or predictors are collinear** --- the exact situation where OLS explodes. Second, it shrinks every coefficient *smoothly* toward zero as $\lambda$ grows. But ridge **never sets a coefficient exactly to zero**: with 250 predictors, you keep all 250, each a little smaller. Ridge tames multicollinearity and variance, but it does not give you a *simpler* model.
+
+## LASSO: the $L_1$ Penalty That Selects
+
+The **LASSO** --- Least Absolute Shrinkage and Selection Operator (Tibshirani, 1996) --- changes one thing: it penalizes the *absolute values* of the coefficients, not their squares.
+
+::: {.glass-card .glass-card--definition}
+The **LASSO estimator** minimizes least-squares loss plus an $L_1$ (sum-of-absolute-values) penalty:
+
+$$
+\hat\beta^{\text{lasso}}_\lambda
+= \arg\min_{\beta}\;
+\sum_{i=1}^{n}\Big(y_i - \beta_0 - \textstyle\sum_{j=1}^{p}x_{ij}\beta_j\Big)^2
+\;+\;
+\lambda \underbrace{\sum_{j=1}^{p}|\beta_j|}_{\|\beta\|_1}.
+$$
+
+**Read this as**: "minimize the sum of squared residuals plus $\lambda$ times the sum of the *absolute values* of the slopes." The only change from ridge is $\beta_j^2 \rightarrow |\beta_j|$ --- squares become absolute values.
+:::
+
+That one change has a dramatic consequence: as $\lambda$ grows, the LASSO does not merely shrink coefficients --- it drives some of them to **exactly zero**, one after another. A coefficient at exactly zero means its predictor has been *dropped*. The LASSO therefore performs **variable selection** and **estimation simultaneously**: it hands back a *sparse* model that uses only a handful of the 250 candidates. For our diabetes data, LASSO might keep baseline HbA1c, eGFR, BMI, and a deprivation index, and zero out the other 246. The next interactive shows this happening coefficient by coefficient; the geometry behind it is the heart of this page.
+
+::: {.glass-card .glass-card--insight}
+**Why $L_1$ zeroes and $L_2$ does not --- in one line.** The $L_1$ penalty has a *kink* (a corner) at zero: its derivative is $\pm\lambda$, a constant push toward zero that does not fade as a coefficient shrinks. So a weak predictor gets pushed all the way to exactly zero and pinned there. The $L_2$ penalty is smooth at zero: its derivative $2\lambda\beta_j$ vanishes as $\beta_j \to 0$, so the push weakens and the coefficient only *approaches* zero asymptotically, never arriving.
+:::
+
+## See It: Coefficient Paths and the Cross-Validation Curve
+
+The interactive below fits both ridge and LASSO to the same Swedish diabetes prediction problem across the full range of $\lambda$. The **left panel** is the *coefficient path*: each line is one predictor's coefficient, and you watch them shrink as $\lambda$ increases from left to right. Toggle to LASSO and the lines hit **exactly zero** one at a time --- the moment a predictor leaves the model. The **right panel** is the *cross-validation error curve*: the estimated out-of-sample error at each $\lambda$. Its minimum marks the $\lambda$ that predicts best; the dashed ochre line marks the more conservative one-standard-error choice.
+
+::: {.interactive-container}
+
+#### Coefficient shrinkage and the optimal $\lambda$
+
+```{ojs}
+//| echo: false
+// Shared Uppsala-academic palette for every mark on this page.
+mlreg_pal = ({
+  focal:  "#990000",  // focal series (Uppsala red) — the active coefficient / CV min
+  slate:  "#3d5a6c",  // secondary / comparison series
+  good:    "#2e6f40", // on-target / kept-in-model
+  ochre:   "#9c7a33", // highlight / 1-SE rule / true value
+  bad:     "#b3000b", // alarm
+  ink:     "#1c1c1a", // reference ink
+  axis:    "#79766e", // axis text
+  hair:    "#e6e3db", // gridlines
+  muted:   "#79766e", // muted ink
+  fill:    "#f6f5f1"  // tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mlreg_penalty = Inputs.radio(["LASSO  (L1 — shrinks AND selects)", "Ridge  (L2 — shrinks only)"], {
+  label: "Penalty type",
+  value: "LASSO  (L1 — shrinks AND selects)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Normalize the radio choice to a short tag used everywhere below.
+mlreg_kind = mlreg_penalty.startsWith("LASSO") ? "lasso" : "ridge"
+```
+
+```{ojs}
+//| echo: false
+viewof mlreg_logLam = Inputs.range([-6, 2], {
+  value: -2.4,
+  step: 0.05,
+  label: "log₁₀(λ)  — drag to change penalty strength"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mlreg_lambda = Math.pow(10, mlreg_logLam)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Eight named candidate predictors of 12-month HbA1c, with the OLS (λ=0)
+// coefficient each WOULD take on standardized predictors, and a "true"
+// relevance flag. Four are genuinely predictive; four are essentially noise
+// (small true coefficient) and SHOULD be the first the LASSO drops.
+mlreg_vars = [
+  { name: "Baseline HbA1c",   b0:  6.2, color: "#990000", signal: true  },
+  { name: "eGFR (kidney)",    b0: -3.1, color: "#3d5a6c", signal: true  },
+  { name: "BMI",              b0:  2.4, color: "#2e6f40", signal: true  },
+  { name: "Deprivation (DeSO)", b0: 1.7, color: "#9c7a33", signal: true  },
+  { name: "Systolic BP",      b0:  0.9, color: "#b3000b", signal: false },
+  { name: "Age",              b0:  0.6, color: "#1c1c1a", signal: false },
+  { name: "# VC visits",      b0: -0.5, color: "#79766e", signal: false },
+  { name: "Triglycerides",    b0:  0.35, color: "#79766e", signal: false }
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Closed-form shrinkage maps as a function of λ, applied to each predictor's
+// OLS coefficient b0. These are the EXACT univariate (orthonormal-design)
+// solutions, which is the cleanest way to SEE the difference between the two
+// penalties — ridge scales, LASSO soft-thresholds.
+//   Ridge:  b(λ) = b0 / (1 + λ)                       (smooth scaling, never 0)
+//   LASSO:  b(λ) = sign(b0) · max(|b0| − λ, 0)        (soft threshold → exact 0)
+mlreg_coef = function (b0, lambda, kind) {
+  if (kind === "ridge") return b0 / (1 + lambda);
+  const s = Math.sign(b0);
+  return s * Math.max(Math.abs(b0) - lambda, 0);   // soft-threshold
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Build the full coefficient path: for each predictor, evaluate its coefficient
+// on a dense grid of λ. One flat array of {name,color,lam,coef} for Plot.line.
+mlreg_lamGrid = d3.range(-6, 2.001, 0.04).map(e => Math.pow(10, e))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mlreg_path = mlreg_vars.flatMap(v =>
+  mlreg_lamGrid.map(lam => ({
+    name: v.name,
+    color: v.color,
+    lam,
+    coef: mlreg_coef(v.b0, lam, mlreg_kind)
+  }))
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Coefficients AT the reader's current λ (for the dots + the live table).
+mlreg_coefNow = mlreg_vars.map(v => ({
+  ...v,
+  coef: mlreg_coef(v.b0, mlreg_lambda, mlreg_kind)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A stylized cross-validation error curve as a function of log10(λ).
+// Construction (so the pedagogy is honest): test error = irreducible noise
+// + squared bias (rises with λ as real signal is shrunk away) + variance
+// (falls with λ as the fit stabilizes). The sum is U-shaped with an interior
+// minimum — exactly the bias-variance tradeoff. The LASSO curve has a flatter,
+// slightly lower basin (it removes noise predictors), the ridge curve a touch
+// higher (it keeps all of them). Values are in mmol/mol² (MSE).
+mlreg_cv = function (logLam, kind) {
+  const noise = 16;                       // irreducible σ²
+  const lam = Math.pow(10, logLam);
+  // Variance term: large at λ→0 (overfit with p≈n), decays as λ grows.
+  const variance = 30 / (1 + 6 * lam);
+  // Bias² term: ~0 at λ→0, grows as real signal is shrunk. LASSO pays bias
+  // a little later because it spends its budget on the noise predictors first.
+  const k = kind === "lasso" ? 0.55 : 0.85;
+  const bias2 = k * Math.pow(lam, 1.15) * 9;
+  return noise + variance + bias2;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mlreg_cvCurve = d3.range(-6, 2.001, 0.04).map(e => ({
+  logLam: e,
+  mse: mlreg_cv(e, mlreg_kind)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// λ_min: the grid point minimizing CV error. λ_1se: the largest λ whose CV
+// error is within one "standard error" of the minimum — the conservative,
+// sparser choice glmnet reports by default. We fake a constant SE band of 1.2
+// MSE units for illustration.
+mlreg_cvMin = mlreg_cvCurve.reduce((a, b) => (b.mse < a.mse ? b : a))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mlreg_se = 1.2
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mlreg_cv1se = {
+  const thresh = mlreg_cvMin.mse + mlreg_se;
+  // Largest λ (rightmost / most regularized) still under the threshold.
+  const ok = mlreg_cvCurve.filter(d => d.mse <= thresh);
+  return ok.reduce((a, b) => (b.logLam > a.logLam ? b : a), ok[0]);
+}
+```
+
+```{ojs}
+//| echo: false
+// LEFT PANEL — coefficient paths. Each line is one predictor; the vertical red
+// rule is the reader's current λ; dots show where each path crosses it.
+mlreg_pathPlot = Plot.plot({
+  width: Math.min(640, width),
+  height: 360,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginRight: 14,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: mlreg_pal.axis
+  },
+  x: {
+    label: "log₁₀(λ)  — more regularization →",
+    domain: [-6, 2],
+    grid: false
+  },
+  y: {
+    label: "↑ Standardized coefficient",
+    grid: true,
+    domain: [-3.6, 6.6]
+  },
+  color: { type: "identity" },
+  marks: [
+    Plot.gridY({ stroke: mlreg_pal.hair }),
+    Plot.ruleY([0], { stroke: mlreg_pal.ink, strokeWidth: 1 }),
+    // All eight coefficient paths.
+    Plot.line(mlreg_path, {
+      x: d => Math.log10(d.lam),
+      y: "coef",
+      z: "name",
+      stroke: "color",
+      strokeWidth: 2,
+      strokeOpacity: 0.9
+    }),
+    // The reader's current λ.
+    Plot.ruleX([mlreg_logLam], {
+      stroke: mlreg_pal.focal, strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    // Dots where each path crosses the current λ.
+    Plot.dot(mlreg_coefNow, {
+      x: () => mlreg_logLam, y: "coef",
+      fill: "color", r: 4, stroke: "white", strokeWidth: 1
+    }),
+    // Label the four signal predictors at the left edge (λ small) so the legend
+    // is on the chart; white halo keeps them readable over gridlines.
+    Plot.text(mlreg_vars.filter(v => v.signal), {
+      x: () => -6, y: "b0",
+      text: "name", fill: "color",
+      fontSize: 11, fontWeight: 600, textAnchor: "start", dx: 4, dy: -6,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// RIGHT PANEL — cross-validation error curve with λ_min and λ_1se markers.
+mlreg_cvPlot = Plot.plot({
+  width: Math.min(640, width),
+  height: 300,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginRight: 14,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: mlreg_pal.axis
+  },
+  x: {
+    label: "log₁₀(λ)  — more regularization →",
+    domain: [-6, 2],
+    grid: false
+  },
+  y: {
+    label: "↑ CV prediction error (MSE, mmol/mol²)",
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: mlreg_pal.hair }),
+    // One-SE band around the minimum, drawn as a faint area.
+    Plot.ruleY([mlreg_cvMin.mse + mlreg_se], {
+      stroke: mlreg_pal.hair, strokeWidth: 1, strokeDasharray: "2,3"
+    }),
+    // The CV curve.
+    Plot.line(mlreg_cvCurve, {
+      x: "logLam", y: "mse",
+      stroke: mlreg_pal.slate, strokeWidth: 2.5
+    }),
+    // λ_min (focal red).
+    Plot.ruleX([mlreg_cvMin.logLam], {
+      stroke: mlreg_pal.focal, strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    Plot.dot([mlreg_cvMin], {
+      x: "logLam", y: "mse", fill: mlreg_pal.focal, r: 6
+    }),
+    Plot.text([mlreg_cvMin], {
+      x: "logLam", y: "mse",
+      text: d => `λ min`,
+      fill: mlreg_pal.focal, fontWeight: 700, fontSize: 11,
+      dy: -14, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // λ_1se (ochre, the conservative sparser model).
+    Plot.ruleX([mlreg_cv1se.logLam], {
+      stroke: mlreg_pal.ochre, strokeWidth: 2, strokeDasharray: "2,4"
+    }),
+    Plot.text([mlreg_cv1se], {
+      x: "logLam", y: "mse",
+      text: d => `λ 1-SE`,
+      fill: mlreg_pal.ochre, fontWeight: 700, fontSize: 11,
+      dy: -14, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The reader's current λ.
+    Plot.ruleX([mlreg_logLam], {
+      stroke: mlreg_pal.ink, strokeWidth: 1.5
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Two-column layout: paths on the left, CV on the right (stacks on narrow
+// screens). Built in one html`` cell so the two Plot figures sit side by side.
+html`<div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-start;">
+  <div style="flex:1 1 320px; min-width:300px;">${mlreg_pathPlot}</div>
+  <div style="flex:1 1 320px; min-width:300px;">${mlreg_cvPlot}</div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+// Live readout: which predictors survive at the current λ, and the model size.
+{
+  const kept = mlreg_coefNow.filter(d => Math.abs(d.coef) > 1e-6);
+  const dropped = mlreg_coefNow.filter(d => Math.abs(d.coef) <= 1e-6);
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:8rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${mlreg_pal.fill}; border:1px solid ${mlreg_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${mlreg_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.85rem;">
+    ${tile("Penalty", mlreg_kind.toUpperCase(), mlreg_pal.ink)}
+    ${tile("λ (current)", mlreg_lambda.toFixed(3), mlreg_pal.slate)}
+    ${tile("Predictors kept", `${kept.length} / 8`, mlreg_pal.good)}
+    ${tile("Dropped to 0", mlreg_kind === "ridge" ? "0 (ridge never zeroes)" : `${dropped.length}`, dropped.length > 0 ? mlreg_pal.ochre : mlreg_pal.muted)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// A compact bar of current coefficients so the reader sees the magnitudes,
+// not just the paths. Dropped predictors render as a faint zero stub.
+{
+  const data = mlreg_coefNow.map(d => ({ name: d.name, coef: d.coef, color: d.color }));
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 235,
+    marginLeft: 130,
+    marginRight: 44,
+    marginBottom: 46,
+    style: {
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontSize: "11px",
+      color: mlreg_pal.axis
+    },
+    x: { label: "Coefficient at current λ →", domain: [-3.6, 6.6], grid: true },
+    y: { label: null, domain: data.map(d => d.name) },
+    marks: [
+      Plot.gridX({ stroke: mlreg_pal.hair }),
+      Plot.ruleX([0], { stroke: mlreg_pal.ink, strokeWidth: 1 }),
+      Plot.barX(data, {
+        x: "coef", y: "name", fill: "color", fillOpacity: 0.88,
+        title: d => `${d.name}: ${d.coef.toFixed(3)}`
+      }),
+      Plot.text(data, {
+        x: "coef", y: "name",
+        text: d => Math.abs(d.coef) <= 1e-6 ? "dropped" : d.coef.toFixed(2),
+        dx: d => d.coef >= 0 ? 6 : -6,
+        textAnchor: d => d.coef >= 0 ? "start" : "end",
+        fill: d => Math.abs(d.coef) <= 1e-6 ? mlreg_pal.muted : mlreg_pal.ink,
+        fontSize: 10, fontWeight: 600,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+:::
+
+### How to Read the Coefficient-Path and CV Curves
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read a single path.** In the left panel, pick the dark-red line --- *Baseline HbA1c*, the strongest predictor. At the far left ($\lambda$ tiny, $\log_{10}\lambda = -6$) it sits at its full OLS value near $6.2$. As you move right, the penalty grows and the line bends toward zero. Every line is one predictor doing the same thing at its own pace.
+
+**Step 2: Drag $\lambda$ and watch the dots slide.** Move the **$\log_{10}(\lambda)$** slider. The vertical red rule sweeps across both panels at once, and the dots on the paths slide down their lines. The bar chart below updates to show each coefficient's current magnitude. Everything is shrinking toward zero together.
+
+**Step 3: Switch to LASSO and watch zeros appear.** With the penalty set to **LASSO**, increase $\lambda$ slowly. The *weak* predictors --- Triglycerides, # VC visits, Age, Systolic BP --- hit **exactly zero** first, one by one, and their bars read "dropped". The model gets *sparser*: "Predictors kept" falls from 8 toward 4. This is variable selection happening live.
+
+**Step 4: Compare with Ridge.** Flip to **Ridge** and sweep $\lambda$ again. Now *no* line ever touches zero --- they all bend toward it but stay positive (or negative) forever, and "Dropped to 0" stays at zero. Ridge shrinks everything but keeps all 8 predictors. This is the visible signature of $L_2$ versus $L_1$.
+
+**Step 5: Find the best $\lambda$ on the CV curve.** In the right panel, the slate curve is the cross-validation prediction error. It is **U-shaped**: too little regularization (left) overfits --- high variance; too much (right) underfits --- high bias. The red dot at **$\lambda$ min** is the lowest-error choice. Drag your slider until the black rule lands on it: that is the $\lambda$ a predictive modeler would deploy.
+
+**Step 6: Prefer the simpler model with the 1-SE rule.** The ochre **$\lambda$ 1-SE** line sits to the *right* of $\lambda$ min --- it is the most regularized model whose error is still statistically indistinguishable from the best (within one standard error). Practitioners often pick it: a sparser, more interpretable model that predicts essentially as well. Notice it keeps fewer predictors than $\lambda$ min.
+
+## Elastic Net: the Best of Both
+
+Ridge and LASSO each have a weakness. LASSO struggles when predictors are *correlated in groups*: among a cluster of collinear labs that all measure kidney function, it tends to pick one arbitrarily and zero the rest, which is unstable across samples. Ridge keeps the whole group but never produces a sparse model. The **elastic net** (Zou & Hastie, 2005) blends the two penalties with a mixing parameter $\alpha \in [0,1]$.
+
+::: {.glass-card .glass-card--definition}
+The **elastic net** combines the $L_1$ and $L_2$ penalties:
+
+$$
+\hat\beta^{\text{enet}}_{\lambda,\alpha}
+= \arg\min_{\beta}\;
+\sum_{i=1}^{n}\Big(y_i - \beta_0 - \textstyle\sum_j x_{ij}\beta_j\Big)^2
+\;+\;
+\lambda\Big[\,\alpha\!\sum_{j}|\beta_j| \;+\; (1-\alpha)\!\sum_{j}\beta_j^2\,\Big].
+$$
+
+**Read this as**: "least-squares loss plus $\lambda$ times a *mixture* of the $L_1$ and $L_2$ penalties, with $\alpha$ setting the blend." Setting $\alpha = 1$ gives pure LASSO; $\alpha = 0$ gives pure ridge; intermediate $\alpha$ (say $0.5$) keeps the LASSO's sparsity while letting whole groups of correlated predictors enter or leave *together* --- the **grouping effect** ridge provides.
+:::
+
+In practice you tune both $\lambda$ and $\alpha$ by cross-validation. The elastic net is the default workhorse when you have many correlated predictors and want a sparse, stable model --- exactly the high-dimensional Swedish health-registry setting that opened this page.
+
+## The Sparsity Geometry: Why $L_1$ Hits the Corners
+
+The most beautiful argument in this whole topic is geometric. Recast each penalized problem in its *constrained* form: minimize the residual sum of squares **subject to** a budget on coefficient size. Ridge constrains $\sum_j \beta_j^2 \le t$ (a **disk** / sphere); LASSO constrains $\sum_j |\beta_j| \le t$ (a **diamond** / cross-polytope). The least-squares solution is surrounded by elliptical contours of equal RSS; the penalized estimate is the first point where an expanding ellipse *touches* the budget region.
+
+A disk has no corners: the ellipse almost always touches it on a smooth arc, where *both* coefficients are non-zero --- ridge keeps everything. A diamond has **sharp corners that lie exactly on the axes**, where one coefficient is zero. Because the corners stick out, an expanding ellipse very often touches the diamond *at a corner* --- and a corner means a coefficient is **exactly zero**. That is the entire reason LASSO selects and ridge does not. The next interactive lets you drag the least-squares solution and watch where the ellipse first touches each region.
+
+::: {.interactive-container}
+
+#### The constraint regions: disk vs. diamond
+
+```{ojs}
+//| echo: false
+viewof mlreg_geoShape = Inputs.radio(["LASSO  (L1 diamond)", "Ridge  (L2 disk)"], {
+  label: "Constraint region",
+  value: "LASSO  (L1 diamond)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mlreg_geoKind = mlreg_geoShape.startsWith("LASSO") ? "lasso" : "ridge"
+```
+
+```{ojs}
+//| echo: false
+viewof mlreg_bx = Inputs.range([-3, 3], { value: 2.2, step: 0.05, label: "OLS solution  β̂₁ (drag the ellipse center)" })
+```
+
+```{ojs}
+//| echo: false
+viewof mlreg_by = Inputs.range([-3, 3], { value: 1.5, step: 0.05, label: "OLS solution  β̂₂" })
+```
+
+```{ojs}
+//| echo: false
+viewof mlreg_budget = Inputs.range([0.4, 2.5], { value: 1.4, step: 0.05, label: "Budget  t  (size of the constraint region)" })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The constrained solution. With a (near-)isotropic RSS ellipse the touch point
+// is the closest point of the budget region to the OLS solution under the
+// matching norm. For the diamond we minimize ||β − β̂||² subject to |β₁|+|β₂|≤t;
+// for the disk subject to β₁²+β₂²≤t². We solve each on a fine boundary grid —
+// exact enough to SEE the corner-snapping without any optimizer.
+mlreg_solve = function (bx, by, t, kind) {
+  if (kind === "ridge") {
+    const r = Math.hypot(bx, by);
+    if (r <= t) return { x: bx, y: by, onAxis: false };  // OLS already inside
+    return { x: (bx / r) * t, y: (by / r) * t, onAxis: false };
+  }
+  // LASSO: project onto the L1 ball of radius t (Euclidean projection).
+  if (Math.abs(bx) + Math.abs(by) <= t) return { x: bx, y: by, onAxis: false };
+  // Soft-threshold search for the shrinkage τ that makes the L1 norm equal t.
+  const soft = (v, τ) => Math.sign(v) * Math.max(Math.abs(v) - τ, 0);
+  let lo = 0, hi = Math.max(Math.abs(bx), Math.abs(by));
+  for (let k = 0; k < 60; k++) {
+    const mid = (lo + hi) / 2;
+    const n1 = Math.abs(soft(bx, mid)) + Math.abs(soft(by, mid));
+    if (n1 > t) lo = mid; else hi = mid;
+  }
+  const x = soft(bx, hi), y = soft(by, hi);
+  return { x, y, onAxis: Math.abs(x) < 1e-4 || Math.abs(y) < 1e-4 };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mlreg_sol = mlreg_solve(mlreg_bx, mlreg_by, mlreg_budget, mlreg_geoKind)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Boundary of the constraint region as a polyline for plotting.
+mlreg_region = {
+  if (mlreg_geoKind === "ridge") {
+    return d3.range(0, 2 * Math.PI + 0.01, 0.05).map(a => ({
+      x: mlreg_budget * Math.cos(a),
+      y: mlreg_budget * Math.sin(a)
+    }));
+  }
+  // Diamond |x|+|y| = t : four corners.
+  const t = mlreg_budget;
+  return [
+    { x:  t, y: 0 }, { x: 0, y:  t }, { x: -t, y: 0 }, { x: 0, y: -t }, { x: t, y: 0 }
+  ];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// One representative RSS contour ellipse passing through the touch point, so
+// the reader sees the "first ellipse to touch the region". Centered at the OLS
+// solution; radius = distance from OLS to the constrained solution.
+mlreg_ellipse = {
+  const cx = mlreg_bx, cy = mlreg_by;
+  const r = Math.hypot(cx - mlreg_sol.x, cy - mlreg_sol.y);
+  return d3.range(0, 2 * Math.PI + 0.01, 0.05).map(a => ({
+    x: cx + r * Math.cos(a),
+    y: cy + r * Math.sin(a)
+  }));
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(560, width),
+  height: 440,
+  marginLeft: 60,
+  marginBottom: 46,
+  aspectRatio: 1,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    color: mlreg_pal.axis
+  },
+  x: { label: "β₁ →", domain: [-3.4, 3.4], grid: false },
+  y: { label: "↑ β₂", domain: [-3.4, 3.4], grid: false },
+  marks: [
+    Plot.gridX({ stroke: mlreg_pal.hair }),
+    Plot.gridY({ stroke: mlreg_pal.hair }),
+    Plot.ruleX([0], { stroke: mlreg_pal.ink, strokeWidth: 1 }),
+    Plot.ruleY([0], { stroke: mlreg_pal.ink, strokeWidth: 1 }),
+    // Constraint region (slate fill).
+    Plot.line(mlreg_region, {
+      x: "x", y: "y", stroke: mlreg_pal.slate, strokeWidth: 2,
+      fill: mlreg_pal.slate, fillOpacity: 0.08
+    }),
+    // The RSS contour that first touches the region (ochre).
+    Plot.line(mlreg_ellipse, {
+      x: "x", y: "y", stroke: mlreg_pal.ochre, strokeWidth: 1.8, strokeDasharray: "4,3"
+    }),
+    // OLS (unconstrained) solution.
+    Plot.dot([{ x: mlreg_bx, y: mlreg_by }], {
+      x: "x", y: "y", fill: "white", stroke: mlreg_pal.ink, strokeWidth: 2, r: 5
+    }),
+    Plot.text([{ x: mlreg_bx, y: mlreg_by }], {
+      x: "x", y: "y", text: () => "OLS", fill: mlreg_pal.ink,
+      fontSize: 11, fontWeight: 700, dy: -12, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Constrained (penalized) solution — focal red, larger when it lands on an axis.
+    Plot.dot([mlreg_sol], {
+      x: "x", y: "y",
+      fill: mlreg_sol.onAxis ? mlreg_pal.focal : mlreg_pal.good,
+      r: mlreg_sol.onAxis ? 8 : 6, stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text([mlreg_sol], {
+      x: "x", y: "y",
+      text: () => mlreg_sol.onAxis ? "penalized  (a coef = 0!)" : "penalized",
+      fill: mlreg_sol.onAxis ? mlreg_pal.focal : mlreg_pal.good,
+      fontSize: 11, fontWeight: 700, dy: 18, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live verdict tying the geometry to sparsity.
+html`<div style="
+    margin-top:0.7rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+    border-left:3px solid ${mlreg_sol.onAxis ? mlreg_pal.focal : mlreg_pal.slate};
+    background:${mlreg_pal.fill}; font-family:'Inter',system-ui,sans-serif;
+    font-size:0.86rem; line-height:1.45; color:${mlreg_pal.ink};">
+  ${mlreg_geoKind === "lasso"
+    ? (mlreg_sol.onAxis
+        ? html`The ellipse touched the diamond <strong>at a corner</strong>: one coefficient is <strong style="color:${mlreg_pal.focal}">exactly zero</strong> — the LASSO has dropped a predictor. Corners lie on the axes, which is why the diamond produces sparsity.`
+        : html`Here the ellipse touched an <em>edge</em>, not a corner, so both coefficients survive. Drag the budget <em>t</em> smaller, or move the OLS solution toward an axis, and the touch point will snap to a corner — a coefficient will become exactly zero.`)
+    : html`The disk has <strong>no corners</strong>: the ellipse touches it on a smooth arc, so both coefficients stay non-zero. Ridge shrinks but never selects — no matter how you drag the controls, the green dot avoids the axes.`}
+</div>`
+```
+
+:::
+
+### How to Read the Geometry
+
+**Step 1.** The hollow black **OLS** dot is the unconstrained least-squares solution. The slate region is the *budget* you allow the coefficients --- a **diamond** for LASSO, a **disk** for ridge. The penalized estimate must lie inside it.
+
+**Step 2.** The ochre dashed ellipse is a contour of equal residual sum of squares, grown outward from OLS until it *just touches* the budget region. The touch point is the penalized solution (the colored dot).
+
+**Step 3.** Set the region to **LASSO** and shrink the **budget $t$**. Watch the colored dot snap to a **corner** of the diamond --- the dot turns red and one coefficient becomes *exactly zero*. The corners sit on the axes, so touching a corner means dropping a predictor.
+
+**Step 4.** Switch to **Ridge**. Now the dot rides smoothly around the circle and never lands on an axis: both coefficients stay non-zero no matter how you drag. No corners, no sparsity. This single picture *is* the difference between $L_1$ and $L_2$.
+
+<details>
+<summary>Math Details: The ridge and LASSO objectives and the $L_1$ sparsity condition</summary>
+<div class="details-content">
+
+### Ridge has a closed form
+
+The ridge objective is $\tfrac12\|y - X\beta\|_2^2 + \tfrac{\lambda}{2}\|\beta\|_2^2$ (both terms carry the same harmless $\tfrac12$, so $\lambda$ is unchanged). Differentiate with respect to $\beta$ and set to zero:
+
+$$
+-X^\top(y - X\beta) + \lambda\beta = 0
+\;\Longrightarrow\;
+(X^\top X + \lambda I)\,\beta = X^\top y
+\;\Longrightarrow\;
+\hat\beta^{\text{ridge}} = (X^\top X + \lambda I)^{-1} X^\top y.
+$$
+
+The matrix $X^\top X + \lambda I$ is positive definite for any $\lambda > 0$ (its eigenvalues are the eigenvalues of $X^\top X$ plus $\lambda$, all strictly positive), so the inverse *always exists* --- even when $X^\top X$ is singular because $p > n$ or columns are collinear. With an orthonormal design ($X^\top X = I$) this collapses to $\hat\beta^{\text{ridge}}_j = \hat\beta^{\text{ols}}_j / (1 + \lambda)$: every coefficient is scaled by the same factor $1/(1+\lambda) \in (0,1)$, shrunk toward but never reaching zero. This is the ridge map in the interactive.
+
+### LASSO has no closed form, but a clean orthonormal solution
+
+The LASSO objective (with the matching $\tfrac12$ on the loss) is $\tfrac12\|y - X\beta\|_2^2 + \lambda\|\beta\|_1$, convex but *non-differentiable* at $\beta_j = 0$ because $|\beta_j|$ has a kink there. We use the **subgradient**: at a minimum, $0$ must lie in the subdifferential. For coordinate $j$ this gives the optimality condition
+
+$$
+-\,x_j^\top(y - X\beta) + \lambda\, g_j = 0,
+\qquad
+g_j \in
+\begin{cases}
+\{\operatorname{sign}(\beta_j)\} & \beta_j \ne 0,\\[2pt]
+[-1,\,1] & \beta_j = 0.
+\end{cases}
+$$
+
+The key is the second line: when $\beta_j = 0$, the "derivative" of $|\beta_j|$ is allowed to be *any* value in $[-1, 1]$. So $\beta_j = 0$ is optimal whenever the data's pull on coordinate $j$, measured by $|x_j^\top(y - X\beta_{-j})|$, is **smaller than $\lambda$** --- the penalty's flat $[-\lambda, \lambda]$ band can absorb it. A weak predictor never overcomes the penalty and is pinned at exactly zero. With an orthonormal design ($x_j^\top(y - X\beta_{-j}) = \hat\beta^{\text{ols}}_j$) this yields the **soft-thresholding** solution
+
+$$
+\hat\beta^{\text{lasso}}_j = \operatorname{sign}(\hat\beta^{\text{ols}}_j)\,\big(|\hat\beta^{\text{ols}}_j| - \lambda\big)_+,
+$$
+
+where $(z)_+ = \max(z, 0)$. Any OLS coefficient with magnitude below $\lambda$ is set to **exactly zero**; the rest are shrunk by a *constant* $\lambda$ (not scaled). This is the LASSO map in the interactive, and the constant subtraction --- rather than ridge's proportional scaling --- is precisely why LASSO reaches zero.
+
+### Why the geometry says the same thing
+
+By Lagrangian duality, the penalized problems are equivalent to the constrained problems: minimize $\|y - X\beta\|_2^2$ subject to $\|\beta\|_2^2 \le t$ (ridge) or $\|\beta\|_1 \le t$ (LASSO), for a $t$ that depends on $\lambda$. The RSS contours are ellipsoids centered at $\hat\beta^{\text{ols}}$. The solution is where the smallest such ellipsoid meets the constraint set. The $L_1$ ball $\{\|\beta\|_1 \le t\}$ is a cross-polytope whose vertices lie *on the coordinate axes* (points like $(t, 0, \dots)$), where all but one coefficient are zero. Because these vertices protrude, a generic ellipsoid meets the set at a vertex with high probability, giving a sparse solution. The $L_2$ ball is smooth with no protruding vertices, so the contact point generically has all coordinates non-zero. The kink in $|\cdot|$ and the corner of the diamond are the same fact viewed two ways.
+
+</div>
+</details>
+
+## A Caution: LASSO is for Prediction, Not Inference
+
+Here is the trap that this whole page has been building toward. The LASSO hands you a tidy sparse model --- say, four surviving predictors --- and it is *tempting* to report their coefficients with standard errors and $p$-values, as if you had simply run OLS on those four variables. **Do not.** This naive "post-selection inference" is invalid, and badly so.
+
+::: {.glass-card .glass-card--warning}
+**Naive post-LASSO inference is broken for two compounding reasons.**
+
+1. **Shrinkage bias.** Every surviving LASSO coefficient is shrunk toward zero by the penalty (the soft-threshold subtracts $\lambda$). It is *biased by construction*, so its value is not a valid point estimate of the underlying effect, and the usual standard error does not account for the shrinkage.
+
+2. **Selection-induced bias.** The set of survivors was *chosen by looking at the same data* used to estimate them. Conditioning on "this variable was selected" tilts its sampling distribution: confidence intervals computed as if the model were fixed in advance have **far below nominal coverage**, and a variable correlated with a true predictor can be selected (or dropped) almost at random. Reported $p$-values are anti-conservative --- they reject far too often.
+:::
+
+This is not a flaw in the LASSO; it is a category error in how it is used. The LASSO was *designed* to minimize prediction error, and at that it excels. It was *not* designed to deliver an unbiased causal coefficient with honest uncertainty --- the estimation mindset from the top of this page. When you genuinely need the causal effect of one treatment while *using* machine learning to flexibly control for hundreds of confounders, you need a procedure that separates the selection step from the inference step.
+
+::: {.glass-card .glass-card--insight}
+**The fix has a name (and it is the next chapters).** *Post-double-selection* (Belloni, Chernozhukov & Hansen) runs the LASSO **twice** --- once to select controls that predict the outcome, once to select controls that predict the treatment --- and keeps the *union*, so no confounder is wrongly dropped. *Double machine learning* (Chernozhukov et al., 2018) generalizes this with cross-fitting and Neyman-orthogonal moments, yielding a treatment-effect estimate that is $\sqrt{n}$-consistent and asymptotically normal *despite* the high-dimensional ML nuisance step. Both restore valid inference on top of LASSO-style selection. That is where this module heads.
+:::
+
+## R and Python: Fitting Penalized Regression with Cross-Validation
+
+Both panels simulate the Swedish diabetes prediction problem ($n = 400$, $p = 60$, only a handful truly predictive), fit ridge and LASSO with cross-validated $\lambda$, and report the selected model. In R the canonical tool is **`glmnet`** (`alpha = 1` is LASSO, `alpha = 0` is ridge, in between is elastic net). In Python it is **scikit-learn**'s `LassoCV`, `RidgeCV`, and `ElasticNetCV`.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("glmnet")
+library(glmnet)
+set.seed(2024)
+
+## ---- Simulate: 400 patients, 60 candidate predictors, 5 truly matter ----
+n <- 400; p <- 60
+X <- matrix(rnorm(n * p), n, p)
+beta_true <- c(6.2, -3.1, 2.4, 1.7, 1.0, rep(0, p - 5))  # only 5 nonzero
+y <- 50 + X %*% beta_true + rnorm(n, sd = 4)             # follow-up HbA1c
+
+## ---- LASSO with 10-fold CV over a path of lambda (alpha = 1) ----
+cv_lasso <- cv.glmnet(X, y, alpha = 1, nfolds = 10, standardize = TRUE)
+
+cat("lambda.min =", round(cv_lasso$lambda.min, 4),
+    "  lambda.1se =", round(cv_lasso$lambda.1se, 4), "\n")
+
+# Coefficients at the two canonical choices. lambda.1se gives the SPARSER model.
+coef_min <- coef(cv_lasso, s = "lambda.min")
+coef_1se <- coef(cv_lasso, s = "lambda.1se")
+cat("Nonzero coefs at lambda.min:", sum(coef_min != 0) - 1, "\n")  # exclude intercept
+cat("Nonzero coefs at lambda.1se:", sum(coef_1se != 0) - 1, "\n")
+
+## ---- Ridge for comparison (alpha = 0): keeps ALL predictors ----
+cv_ridge <- cv.glmnet(X, y, alpha = 0, nfolds = 10, standardize = TRUE)
+cat("Ridge nonzero coefs:", sum(coef(cv_ridge, s = "lambda.min") != 0) - 1,
+    "(ridge never zeroes — expect 60)\n")
+
+## ---- Elastic net: tune alpha by hand over a small grid ----
+alphas <- c(0.25, 0.5, 0.75)
+enet  <- lapply(alphas, function(a) cv.glmnet(X, y, alpha = a, nfolds = 10))
+best  <- which.min(sapply(enet, function(m) min(m$cvm)))   # lowest CV error
+cat("Best elastic-net alpha =", alphas[best], "\n")
+
+## Plot the CV curve (U-shaped) and the coefficient paths.
+plot(cv_lasso)                       # CV error vs log(lambda), with min & 1se
+plot(glmnet(X, y, alpha = 1), xvar = "lambda", label = TRUE)  # coefficient paths
+```
+
+### Python
+
+```python
+import numpy as np
+from sklearn.linear_model import LassoCV, RidgeCV, ElasticNetCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+
+rng = np.random.default_rng(2024)
+
+# ---- Simulate: 400 patients, 60 candidate predictors, 5 truly matter ----
+n, p = 400, 60
+X = rng.standard_normal((n, p))
+beta_true = np.concatenate([[6.2, -3.1, 2.4, 1.7, 1.0], np.zeros(p - 5)])
+y = 50 + X @ beta_true + rng.normal(scale=4, size=n)        # follow-up HbA1c
+
+# ---- LASSO with 10-fold CV over an automatic lambda path ----
+# StandardScaler + LassoCV mirrors glmnet's standardize = TRUE.
+lasso = make_pipeline(StandardScaler(),
+                      LassoCV(cv=10, n_alphas=100, random_state=0))
+lasso.fit(X, y)
+lcv = lasso.named_steps["lassocv"]
+kept = np.sum(lcv.coef_ != 0)
+print(f"LASSO chosen alpha (lambda) = {lcv.alpha_:.4f}")
+print(f"Predictors kept = {kept} of {p}")
+
+# ---- Ridge for comparison: keeps ALL predictors ----
+ridge = make_pipeline(StandardScaler(),
+                      RidgeCV(alphas=np.logspace(-3, 3, 50)))
+ridge.fit(X, y)
+rcoef = ridge.named_steps["ridgecv"].coef_
+print(f"Ridge nonzero coefs = {np.sum(np.abs(rcoef) > 1e-8)} "
+      f"(ridge never zeroes — expect {p})")
+
+# ---- Elastic net: tune the L1/L2 mix (l1_ratio = alpha) and lambda jointly ----
+enet = make_pipeline(
+    StandardScaler(),
+    ElasticNetCV(l1_ratio=[0.25, 0.5, 0.75, 0.95], cv=10,
+                 n_alphas=100, random_state=0))
+enet.fit(X, y)
+ecv = enet.named_steps["elasticnetcv"]
+print(f"Elastic-net best l1_ratio = {ecv.l1_ratio_},  "
+      f"kept = {np.sum(ecv.coef_ != 0)} predictors")
+
+# WARNING: do NOT report lasso.coef_ with naive t-tests / p-values.
+# Those coefficients are shrunk and were selected on the same data —
+# use post-double-selection or DoubleML for valid inference (next chapters).
+```
+
+:::
+
+Run either panel and the pattern is the same: LASSO recovers roughly the five true predictors and zeros the rest, ridge keeps all 60 (smaller, but none exactly zero), and the elastic net lands in between. The cross-validated $\lambda$ does the model-size selection for you --- no manual variable hunting required.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+On an orthonormal design, a predictor's OLS coefficient is $\hat\beta^{\text{ols}} = 2.0$. Using the closed-form maps, compute the ridge and LASSO coefficients at (a) $\lambda = 0.5$ and (b) $\lambda = 2.5$. (c) At which $\lambda$ does the LASSO set this coefficient to exactly zero, and what does ridge give at that same $\lambda$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Use ridge $\hat\beta = \hat\beta^{\text{ols}}/(1+\lambda)$ and LASSO $\hat\beta = \operatorname{sign}(\hat\beta^{\text{ols}})(|\hat\beta^{\text{ols}}|-\lambda)_+$.
+
+**(a) $\lambda = 0.5$:** Ridge $= 2.0/(1+0.5) = 2.0/1.5 = 1.333$. LASSO $= (2.0 - 0.5)_+ = 1.5$.
+
+**(b) $\lambda = 2.5$:** Ridge $= 2.0/(1+2.5) = 2.0/3.5 = 0.571$. LASSO $= (2.0 - 2.5)_+ = \max(-0.5, 0) = 0$ --- the coefficient is **dropped**.
+
+**(c)** LASSO zeroes the coefficient exactly when $\lambda \ge |\hat\beta^{\text{ols}}| = 2.0$. At $\lambda = 2.0$, LASSO $= (2.0-2.0)_+ = 0$, while ridge $= 2.0/(1+2.0) = 0.667 \ne 0$. This is the whole story: at the very $\lambda$ where LASSO drops the predictor, ridge still keeps two-thirds of it. Ridge shrinks proportionally and never arrives at zero; LASSO subtracts a constant and crosses zero.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague fits a LASSO to 250 candidate predictors of HbA1c, reports the four survivors with their coefficients, standard errors, and $p$-values from a plain OLS refit on those four, and concludes "BMI has a statistically significant effect ($p = 0.01$)." State two distinct reasons this inference is invalid, and name the class of methods that fixes it.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Reason 1 --- shrinkage bias.** The four coefficients the LASSO reported are penalized (soft-thresholded) estimates, biased toward zero by construction. Even refitting OLS on the selected four does not undo the *selection* distortion; and the reported uncertainty ignores that the LASSO step happened at all.
+
+**Reason 2 --- selection-induced bias.** The four survivors were chosen by inspecting the *same* data used for the OLS refit. Conditioning on "this variable was selected" changes its sampling distribution, so confidence intervals have below-nominal coverage and $p$-values are anti-conservative (they reject too often). A predictor correlated with a true cause can be selected essentially by chance, making "$p = 0.01$" meaningless as a guarantee.
+
+**The fix:** *post-double-selection* and, more generally, *double / debiased machine learning* (DML) with cross-fitting and orthogonal moments. These separate the high-dimensional selection step from the inference step and restore valid, $\sqrt{n}$-normal inference on the target coefficient. The LASSO is excellent for *prediction*; for an honest effect-of-BMI claim you need one of these procedures.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the cross-validation interactive, the curve is U-shaped. (a) Explain in bias-variance terms why the error rises at *both* ends. (b) Why does a practitioner often choose $\lambda_{\text{1SE}}$ (to the right of $\lambda_{\min}$) rather than $\lambda_{\min}$ itself? (c) Suppose you set $\lambda$ far to the right of $\lambda_{\text{1SE}}$ --- describe the resulting model and its error.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At the **left** ($\lambda \to 0$) the model is barely penalized: it is highly flexible, fits the training noise, and has **high variance** --- its predictions swing from sample to sample, so out-of-sample error is large. At the **right** ($\lambda$ large) coefficients are shrunk hard toward zero: the model is too rigid and systematically misses real signal --- **high bias**. The expected test error is squared bias plus variance plus irreducible noise; the first two trade off, so the sum is minimized at an interior $\lambda$ and rises at both extremes.
+
+**(b)** $\lambda_{\text{1SE}}$ is the most regularized (sparsest) model whose CV error is still within one standard error of the minimum --- i.e., statistically indistinguishable from the best. Choosing it buys a **simpler, more interpretable, more stable** model at no *detectable* loss in predictive accuracy, and it guards against the optimism of picking the exact empirical minimum (which is itself a noisy estimate).
+
+**(c)** Far to the right, nearly all coefficients are zero --- the model approaches the **intercept-only** model that predicts every patient's HbA1c as the sample mean. Bias is maximal, variance near zero, and the test error climbs back up toward the variance of $y$ itself (here roughly the irreducible noise plus the variance of the signal it has thrown away). It underfits severely.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Among your 250 predictors are five highly correlated kidney-function labs (eGFR, creatinine, cystatin C, urea, albumin ratio) that jointly matter. (a) What does *pure LASSO* tend to do with this group, and why is that unstable? (b) How does the *elastic net* behave differently? (c) Which mixing parameter $\alpha$ gives pure LASSO, and which gives pure ridge?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Pure LASSO tends to pick **one** lab from the correlated group somewhat arbitrarily and zero out the other four, because once one is in the model it explains most of the shared variation and the marginal benefit of adding a near-duplicate is below the penalty threshold. *Which* one it picks can flip across resamples or tiny data changes --- the selection is **unstable**, and the dropped labs look spuriously irrelevant.
+
+**(b)** The elastic net's $L_2$ component induces a **grouping effect**: correlated predictors are shrunk *together* and tend to enter or leave the model as a group rather than competing winner-take-all. You get a sparse model that nonetheless keeps the kidney group coherent and is far more stable across samples.
+
+**(c)** $\alpha = 1$ is pure LASSO (all $L_1$); $\alpha = 0$ is pure ridge (all $L_2$). Intermediate values such as $\alpha = 0.5$ blend the two; in scikit-learn this mixing parameter is `l1_ratio`.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Regularization serves the *prediction* mindset: it accepts a little bias to cut variance, minimizing expected test error = bias² + variance + irreducible noise.
+- Ridge ($L_2$, penalty $\sum_j\beta_j^2$) shrinks every coefficient smoothly toward zero and handles collinearity and $p>n$, but never selects --- it keeps all predictors.
+- LASSO ($L_1$, penalty $\sum_j|\beta_j|$) shrinks *and* sets coefficients exactly to zero, performing variable selection; the elastic net blends both to handle correlated groups.
+- The kink in $|\beta|$ / the corner of the $L_1$ diamond is why LASSO yields exact zeros; the smooth $L_2$ disk only shrinks. Choose $\lambda$ by cross-validation ($\lambda_{\min}$ or the sparser $\lambda_{\text{1SE}}$).
+- LASSO is built for prediction; naive inference on selected coefficients is invalid (shrinkage bias + selection bias), which motivates post-double-selection and double machine learning.
+:::
+
+## What Comes Next
+
+Penalized linear models gave us a disciplined way to predict in high dimensions and to let the data select variables --- but they are still *linear*. Many health and economic relationships bend, interact, and threshold in ways a penalized line cannot capture, and we often want a method that finds interactions automatically without our having to specify them. The next page, [Trees, Forests, and Boosting](trees-forests.qmd), introduces a different family of predictors: recursive partitioning that carves the covariate space into regions (decision trees), the variance-reducing ensemble of many trees (random forests), and the bias-reducing sequential ensemble (gradient boosting). These are the flexible nuisance learners that, combined with the orthogonalization ideas previewed above, power modern causal machine learning.

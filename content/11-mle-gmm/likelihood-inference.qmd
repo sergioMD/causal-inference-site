@@ -1,0 +1,608 @@
+---
+title: "The Classical Trinity: LR, Wald, and LM Tests"
+subtitle: "Three roads to the same hypothesis test"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define the Likelihood Ratio, Wald, and Lagrange Multiplier (score) statistics and read each one as a *distance* on the log-likelihood curve
+- Explain why all three share the same $\chi^2_q$ limiting distribution under the null, with $q$ equal to the number of restrictions
+- Match each test to the model you must actually estimate — LM needs only the *restricted* fit, Wald only the *unrestricted* fit, LR needs both
+- Anticipate when the three disagree in finite samples and what their ordering ($W \ge \text{LR} \ge \text{LM}$ in the canonical case) tells you about curvature
+- Compute and reconcile all three for a logistic model of HbA1c target attainment at a Swedish *vårdcentral*
+:::
+
+## One Hypothesis, Three Witnesses
+
+A *vårdcentral* (primary care center) in one of Sweden's 21 *regioner* (regions) runs a diabetes register. Of the 80 Type 2 diabetes patients audited last year, 50 reached the regional HbA1c target ($< 52$ mmol/mol). The region's quality benchmark states that a well-run center should bring **half** of its diabetes patients to target. The medical director's question is sharp: *is our success rate genuinely above the 50% benchmark, or is 50 out of 80 just luck?*
+
+This is a hypothesis test about a single parameter. Let $p$ be the true probability that a patient at this center reaches target, and write the null as $H_0:\,p = p_0$ with $p_0 = 0.50$. The point estimate is the sample proportion $\hat p = 50/80 = 0.625$, comfortably above the benchmark. But "comfortably above" is not a test. We need a statistic with a known distribution under the null.
+
+Here is the surprise that organizes this entire page. There are **three** standard ways to build that statistic from the likelihood, and they look completely different:
+
+- The **Likelihood Ratio (LR)** test asks: *how much log-likelihood do we sacrifice by forcing $p$ down to $p_0$?*
+- The **Wald** test asks: *how far is $\hat p$ from $p_0$, measured in standard errors at the estimate?*
+- The **Lagrange Multiplier (LM)**, or **score**, test asks: *at $p_0$, how steeply is the log-likelihood still climbing toward the unrestricted maximum?*
+
+Vertical gap, horizontal distance, slope. Three different rulers laid against the same curve. The deep result --- proved by Wald (1943), Rao (1948), and Silvey (1959), and unified in the modern treatment of likelihood inference --- is that **all three are testing the same thing**, are asymptotically equivalent, and share the same $\chi^2$ reference distribution. This page is about seeing why, and about knowing which ruler to reach for when.
+
+::: {.glass-card .glass-card--definition}
+Let $\ell(\theta)$ be the **log-likelihood** of a model with parameter $\theta$ (here $\theta = p$). Let $\hat\theta$ be the **unrestricted maximum likelihood estimate** (MLE) --- the value that maximizes $\ell$ --- and let $\theta_0$ be the **null value** we wish to test. Two functions of $\ell$ drive everything that follows:
+
+- the **score** $S(\theta) = \dfrac{\partial \ell}{\partial \theta}$, the slope of the log-likelihood; by definition $S(\hat\theta) = 0$ at the peak.
+- the **information** $I(\theta) = -\,E\!\left[\dfrac{\partial^2 \ell}{\partial \theta^2}\right]$, the curvature of the log-likelihood; a sharply peaked curve carries more information about $\theta$.
+
+A restriction such as $H_0:\,\theta = \theta_0$ imposes $q$ constraints (here $q = 1$). The three classical statistics below all converge to $\chi^2_q$ under $H_0$.
+:::
+
+## The Geometry: Three Views of One Distance
+
+Picture the log-likelihood $\ell(p)$ as a hill. Its summit sits at $\hat p = 0.625$, where the slope is zero. The null value $p_0 = 0.50$ is a point partway down the slope to the left. Every classical test is a way of asking *how far down* $p_0$ sits --- but each test measures "how far" along a different axis.
+
+::: {.glass-card .glass-card--insight}
+**The three rulers, on one curve.**
+
+- **LR (vertical):** the drop in height from the summit $\ell(\hat p)$ to the curve at $\ell(p_0)$. If the hill is barely lower at $p_0$, the data are indifferent between $\hat p$ and $p_0$, and we cannot reject.
+$$
+\text{LR} = 2\big[\ell(\hat\theta) - \ell(\theta_0)\big].
+$$
+- **Wald (horizontal):** the distance $\hat p - p_0$ along the parameter axis, rescaled by the curvature *at the summit*. A sharp peak (large information) turns even a small horizontal gap into strong evidence.
+$$
+W = (\hat\theta - \theta_0)^2 \, I(\hat\theta).
+$$
+- **LM / score (slope):** the steepness of the hill *at $p_0$*, rescaled by the curvature *at $p_0$*. If you are still climbing steeply at $p_0$, the summit is far away and you should reject.
+$$
+\text{LM} = \frac{S(\theta_0)^2}{I(\theta_0)}.
+$$
+:::
+
+Read these aloud. The LR statistic, "two times the gap between the maximized log-likelihood and the log-likelihood under the null," is a *height*. The Wald statistic, "the squared distance from the estimate to the null, times the information at the estimate," is a *width* scaled by curvature. The LM statistic, "the squared score at the null, divided by the information at the null," is a *slope* scaled by curvature. Near the peak, a smooth hill looks like a parabola, and for a parabola the height of the drop, the squared horizontal distance times curvature, and the squared slope divided by curvature are *all the same number*. That parabolic approximation is exactly what makes the three tests asymptotically equivalent --- and exactly what makes them differ when the hill is not quite a parabola in finite samples.
+
+## See It: One Curve, Three Statistics
+
+The interactive below draws the binomial log-likelihood for our audit ($n = 80$, $x = 50$, so $\hat p = 0.625$). Drag the slider to set the null value $p_0$. The figure simultaneously renders all three rulers: the **vertical LR drop** (Uppsala red), the **horizontal Wald distance** with the fitted parabola of curvature (slate), and the **LM tangent line** whose slope is the score at $p_0$ (ochre). The panel beneath reports the three statistics and their $\chi^2_1$ $p$-values, all recomputed live.
+
+::: {.interactive-container}
+
+#### The log-likelihood hill and its three rulers
+
+```{ojs}
+//| echo: false
+
+viewof mletrin_p0 = Inputs.range([0.30, 0.74], {
+  value: 0.50,
+  step: 0.005,
+  label: "Null value p₀"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mletrin_show = Inputs.checkbox(
+  ["LR (vertical gap)", "Wald (horizontal + parabola)", "LM (tangent slope)"],
+  {
+    label: "Show rulers",
+    value: ["LR (vertical gap)", "Wald (horizontal + parabola)", "LM (tangent slope)"]
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed audit data: n patients, x reached the HbA1c target. ──
+mletrin_n = 80
+mletrin_x = 50
+mletrin_phat = mletrin_x / mletrin_n          // 0.625, the unrestricted MLE
+
+// Binomial log-likelihood in p (kernel; the n-choose-x constant cancels in LR).
+mletrin_ll = function (p) {
+  if (p <= 0 || p >= 1) return -Infinity;
+  return mletrin_x * Math.log(p) + (mletrin_n - mletrin_x) * Math.log(1 - p);
+}
+
+// Score S(p) = x/p − (n−x)/(1−p) = (x − n p) / (p(1−p)).
+mletrin_score = function (p) {
+  return (mletrin_x - mletrin_n * p) / (p * (1 - p));
+}
+
+// Expected (= observed, here) information I(p) = n / (p(1−p)).
+mletrin_info = function (p) {
+  return mletrin_n / (p * (1 - p));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The three statistics at the current null p₀. ──
+mletrin_stats = {
+  const p0   = mletrin_p0;
+  const ph   = mletrin_phat;
+  const llph = mletrin_ll(ph);
+  const llp0 = mletrin_ll(p0);
+
+  const LR = 2 * (llph - llp0);
+  const W  = (ph - p0) ** 2 * mletrin_info(ph);
+  const LM = mletrin_score(p0) ** 2 / mletrin_info(p0);
+
+  // χ²₁ survival function via the standard-normal tail: P(χ²₁ > t) = 2·Φ̄(√t).
+  // erfc approximation (Numerical Recipes, abs error < 1.2e-7).
+  const erfc = (z) => {
+    const t = 1 / (1 + 0.5 * Math.abs(z));
+    const ans = t * Math.exp(
+      -z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 +
+      t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 +
+      t * (-0.82215223 + t * 0.17087277)))))))));
+    return z >= 0 ? ans : 2 - ans;
+  };
+  const chi2sf = (s) => (s <= 0 ? 1 : erfc(Math.sqrt(s / 2)));
+
+  return {
+    p0, ph, llph, llp0,
+    LR, W, LM,
+    pLR: chi2sf(LR), pW: chi2sf(W), pLM: chi2sf(LM)
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The log-likelihood hill with the three rulers overlaid. ──
+{
+  const s  = mletrin_stats;
+  const p0 = s.p0, ph = s.ph;
+
+  // Curve sampled densely over a window that always contains both p₀ and p̂.
+  const grid = d3.range(0.30, 0.7401, 0.002).map(p => ({ p, ll: mletrin_ll(p) }));
+
+  // Quadratic (Wald) approximation centred at the MLE:
+  //   ℓ(p) ≈ ℓ(p̂) − ½ I(p̂) (p − p̂)².   Its drop at p₀ IS the Wald statistic/2.
+  const Ihat = mletrin_info(ph);
+  const parab = grid.map(d => ({ p: d.p, ll: s.llph - 0.5 * Ihat * (d.p - ph) ** 2 }));
+
+  // LM tangent at p₀: line through (p₀, ℓ(p₀)) with slope S(p₀).
+  const slope = mletrin_score(p0);
+  const tx = [Math.max(0.30, p0 - 0.10), Math.min(0.74, p0 + 0.10)];
+  const tang = tx.map(p => ({ p, ll: s.llp0 + slope * (p - p0) }));
+
+  const show = mletrin_show;
+  const on = (k) => show.includes(k);
+
+  const yMin = d3.min(grid, d => d.ll) - 1;
+  const yMax = s.llph + 1.5;
+
+  const marks = [
+    // gridlines + axes
+    Plot.ruleY([yMin], { stroke: "#1c1c1a", strokeWidth: 1 }),
+
+    // the log-likelihood hill
+    Plot.line(grid, { x: "p", y: "ll", stroke: "#1c1c1a", strokeWidth: 2.5 }),
+
+    // summit marker (the MLE)
+    Plot.dot([{ p: ph, ll: s.llph }], { x: "p", y: "ll", fill: "#1c1c1a", r: 4.5 }),
+    Plot.text([{ p: ph, ll: s.llph }], {
+      x: "p", y: "ll", text: [`p̂ = ${ph.toFixed(3)}`],
+      dy: -12, fill: "#1c1c1a", fontSize: 12, fontWeight: 600,
+      fontFamily: "Inter, system-ui, sans-serif"
+    }),
+
+    // null-value vertical reference
+    Plot.ruleX([p0], { stroke: "#79766e", strokeWidth: 1, strokeDasharray: "3,3" }),
+    Plot.dot([{ p: p0, ll: s.llp0 }], { x: "p", y: "ll", fill: "#990000", r: 4 }),
+    Plot.text([{ p: p0, ll: yMin }], {
+      x: "p", y: "ll", text: [`p₀ = ${p0.toFixed(2)}`],
+      dy: 14, fill: "#79766e", fontSize: 11,
+      fontFamily: "Inter, system-ui, sans-serif"
+    })
+  ];
+
+  // ── Wald: parabola of curvature I(p̂) + horizontal distance arrow. ──
+  if (on("Wald (horizontal + parabola)")) {
+    marks.push(
+      Plot.line(parab, { x: "p", y: "ll", stroke: "#3d5a6c", strokeWidth: 1.6, strokeDasharray: "5,4" }),
+      Plot.arrow([{ x1: ph, x2: p0, y: s.llph + 0.7 }], {
+        x1: "x1", x2: "x2", y: "y", stroke: "#3d5a6c", strokeWidth: 1.8
+      }),
+      Plot.text([{ p: (ph + p0) / 2, ll: s.llph + 0.7 }], {
+        x: "p", y: "ll", text: [`Wald: |p̂ − p₀| × curvature`],
+        dy: -8, fill: "#3d5a6c", fontSize: 11, fontWeight: 600,
+        fontFamily: "Inter, system-ui, sans-serif"
+      })
+    );
+  }
+
+  // ── LR: vertical gap from summit down to the curve at p₀. ──
+  if (on("LR (vertical gap)")) {
+    marks.push(
+      Plot.arrow([{ x: p0, y1: s.llph, y2: s.llp0 }], {
+        x: "x", y1: "y1", y2: "y2", stroke: "#990000", strokeWidth: 2.2
+      }),
+      Plot.text([{ p: p0, ll: (s.llph + s.llp0) / 2 }], {
+        x: "p", y: "ll", text: [`LR drop = ½ × LR`],
+        dx: -8, textAnchor: "end", fill: "#990000", fontSize: 11, fontWeight: 600,
+        fontFamily: "Inter, system-ui, sans-serif"
+      })
+    );
+  }
+
+  // ── LM: tangent line whose slope is the score at p₀. ──
+  if (on("LM (tangent slope)")) {
+    marks.push(
+      Plot.line(tang, { x: "p", y: "ll", stroke: "#9c7a33", strokeWidth: 2 }),
+      Plot.text([{ p: tx[1], ll: s.llp0 + slope * (tx[1] - p0) }], {
+        x: "p", y: "ll", text: [`LM: slope S(p₀)`],
+        dx: 6, textAnchor: "start", fill: "#9c7a33", fontSize: 11, fontWeight: 600,
+        fontFamily: "Inter, system-ui, sans-serif"
+      })
+    );
+  }
+
+  return Plot.plot({
+    width: 660,
+    height: 420,
+    marginLeft: 62,
+    marginBottom: 48,
+    marginRight: 24,
+    marginTop: 18,
+    style: { fontFamily: "Inter, system-ui, sans-serif", fontSize: "12px", color: "#555555", background: "transparent" },
+    x: { label: "Success probability p", domain: [0.30, 0.74], grid: true, tickFormat: ".0%" },
+    y: { label: "Log-likelihood ℓ(p)", domain: [yMin, yMax], grid: true },
+    marks
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Live readout of the three statistics + χ²₁ p-values. ──
+{
+  const s = mletrin_stats;
+  const crit = 3.841;   // χ²₁ 5% critical value
+  const fmt = (v) => v.toFixed(3);
+  const tile = (name, stat, pval, color) => {
+    const rej = stat > crit;
+    return html`<div style="
+        flex: 1 1 0; min-width: 8rem; text-align: center;
+        padding: 0.65rem 0.4rem; border-radius: 0.4rem;
+        background: #f6f5f1; border: 1px solid #e6e3db;
+        border-top: 3px solid ${color};">
+      <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.68rem;
+          font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+          color:#79766e;">${name}</div>
+      <div style="font-family:'JetBrains Mono',monospace; font-size:1.3rem;
+          font-weight:700; color:${color};">${fmt(stat)}</div>
+      <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.74rem;
+          color:${rej ? '#2e6f40' : '#79766e'}; margin-top:0.15rem;">
+        p = ${pval.toFixed(3)} ${rej ? '· reject' : '· retain'}</div>
+    </div>`;
+  };
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.6rem; margin-top:0.85rem;">
+    ${tile("Likelihood Ratio", s.LR, s.pLR, "#990000")}
+    ${tile("Wald", s.W, s.pW, "#3d5a6c")}
+    ${tile("Lagrange Mult. (score)", s.LM, s.pLM, "#9c7a33")}
+  </div>
+  <div style="margin-top:0.6rem; font-family:'Inter',system-ui,sans-serif;
+      font-size:0.82rem; color:#44443f; line-height:1.5;
+      border-left:3px solid #9c7a33; padding:0.5rem 0.8rem; background:#f6f5f1;">
+    χ²₁ critical value at 5% is <strong>3.841</strong>. All three statistics measure the
+    distance from p₀ to the summit p̂ = 0.625; they coincide as p₀ → p̂ and fan apart
+    as p₀ moves away, because the hill is not exactly a parabola.
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Three-Ruler Plot
+
+Work through these in order; each isolates one ruler.
+
+**Step 1: Find the summit.** The solid black curve is the log-likelihood $\ell(p)$ for the audit. Its peak sits at $\hat p = 0.625$ (the black dot) --- the unrestricted MLE, where the slope is exactly zero. Everything to the left, including the benchmark $p_0$, sits *below* the summit.
+
+**Step 2: Read the LR as a vertical drop.** With the default $p_0 = 0.50$, the red vertical arrow measures how far the curve has fallen from the summit down to $\ell(p_0)$. The LR statistic is *twice* that drop: $\text{LR} = 2[\ell(\hat p) - \ell(p_0)] = 5.05$. A bigger drop means the null sacrifices more fit, so we reject more easily.
+
+**Step 3: Read the Wald as a horizontal distance with curvature.** The slate dashed parabola is the quadratic approximation to the hill *at the summit* --- its steepness encodes the information $I(\hat p)$. The slate arrow is the horizontal gap $\hat p - p_0$. Wald squares that gap and multiplies by the curvature: $W = (\hat p - p_0)^2 I(\hat p) = 5.33$. Notice the parabola hugs the true curve near the peak but falls *below* it on the left --- at $p_0$ the parabola has dropped further than the true log-likelihood (a drop of $W/2 = 2.67$ versus the true $\text{LR}/2 = 2.53$), and that extra plunge is precisely why Wald ($5.33$) exceeds LR ($5.05$) here.
+
+**Step 4: Read the LM as a tangent slope.** The ochre line is tangent to the hill *at $p_0$*; its slope is the score $S(p_0)$. The steeper that tangent, the further you still are from the flat summit, and the larger $\text{LM} = S(p_0)^2 / I(p_0) = 5.00$. LM never even looks at $\hat p$ --- it judges the null purely from how hard the curve is still pulling away at $p_0$.
+
+**Step 5: Slide $p_0$ toward $\hat p$ and watch them merge.** Drag $p_0$ up toward $0.625$. The vertical drop shrinks, the horizontal arrow shortens, the tangent flattens --- and the three numbers in the panel converge toward zero *together*. This is asymptotic equivalence made visible: close to the peak the hill is locally a parabola, and the three rulers agree exactly.
+
+**Step 6: Slide $p_0$ far away and watch them disagree.** Drag $p_0$ down to $0.35$. Now the rulers separate noticeably, with $W > \text{LR} > \text{LM}$. Far from the peak the quadratic approximation breaks down, and *which* curvature you use --- at $\hat p$ (Wald) or at $p_0$ (LM) --- starts to matter. The disagreement is a finite-sample artifact: all three still target the same $\chi^2_1$ truth.
+
+## Why They Agree: The Common $\chi^2$ Limit
+
+The three statistics are built from different ingredients, so why do they share a distribution? Because near the truth each one is a different bookkeeping of the *same* quadratic. Suppose the data were generated at some $\theta^\*$ and we test $H_0:\theta = \theta_0$ when $H_0$ is true ($\theta_0 = \theta^\*$). A second-order Taylor expansion of $\ell$ around $\hat\theta$ gives, for large $n$,
+
+$$
+\ell(\theta_0) \approx \ell(\hat\theta) - \tfrac{1}{2}\,I(\hat\theta)\,(\hat\theta - \theta_0)^2 .
+$$
+
+Read this as: "the log-likelihood at the null is approximately the maximized log-likelihood minus one-half the information times the squared distance from the estimate to the null." Rearranging, $2[\ell(\hat\theta) - \ell(\theta_0)] \approx I(\hat\theta)(\hat\theta-\theta_0)^2$, which is *exactly* $\text{LR} \approx W$. A parallel expansion of the score, $S(\theta_0) \approx -I(\theta^\*)(\theta_0 - \hat\theta)$, gives $\text{LM} \approx I(\theta^\*)(\hat\theta - \theta_0)^2$ as well.
+
+::: {.glass-card .glass-card--insight}
+**The single fact behind all three.** Under $H_0$ and standard regularity conditions, the MLE is asymptotically normal,
+$$
+\sqrt{n}\,(\hat\theta - \theta_0) \;\xrightarrow{d}\; \mathcal{N}\!\big(0,\; I_1(\theta_0)^{-1}\big),
+$$
+where $I_1$ is the *per-observation* information. Squaring a standardized normal gives a $\chi^2_1$. Each of LR, Wald, and LM is, to first order, this same squared standardized distance --- so each converges to $\chi^2_1$ (and to $\chi^2_q$ for $q$ joint restrictions). They differ only in *where* they evaluate the information and *how* they measure the distance, which matters only at order $1/\sqrt{n}$ and vanishes asymptotically.
+:::
+
+That is the whole story. One asymptotic normality result, three equivalent ways to turn it into a test statistic, one shared $\chi^2_q$ reference distribution where $q$ counts the restrictions.
+
+## Which One Should You Run? The Computational Tradeoff
+
+If the three are asymptotically the same, the choice between them is *practical*, and it turns on which models you have to estimate.
+
+::: {.glass-card .glass-card--definition}
+**What each test requires you to fit.**
+
+- **Wald** needs only the **unrestricted** model. You estimate $\hat\theta$ and its standard error, then check how many standard errors $\hat\theta$ sits from $\theta_0$. You never fit the null model. This is why a $t$- or $z$-statistic printed next to a coefficient is a Wald test in disguise --- the software already estimated the full model.
+- **LM (score)** needs only the **restricted** model. You fit the model *with the restriction imposed* (often a much smaller, easier model) and then check whether the score points strongly toward relaxing it. Ideal when the unrestricted model is hard or expensive to estimate.
+- **LR** needs **both** models. You fit the restricted and the unrestricted model and compare their maximized log-likelihoods. More work, but it is invariant to how you parameterize $\theta$ --- a property Wald lacks.
+:::
+
+The asymmetry is genuinely useful. Testing whether you should *add* ten interaction terms to a logistic model? LM lets you stay in the small model and ask "is the score telling me these belong?" without ever fitting the big one. Testing whether a coefficient you already estimated equals zero? Wald reads it straight off the output. Want a test that does not change if you reparameterize from odds to log-odds? Use LR.
+
+::: {.glass-card .glass-card--warning}
+**Wald is not reparameterization-invariant --- and that can bite.** Testing $H_0:\,\theta = 1$ versus the algebraically identical $H_0:\,\log\theta = 0$ can give *different* Wald statistics, because the curvature $I(\hat\theta)$ is evaluated at a different point under each parameterization. LR and (to a lesser degree) LM are far more robust to this. With small samples or skewed likelihoods, prefer LR; treat a borderline Wald $p$-value with suspicion, especially near a parameter boundary (the Hauck--Donner effect, where a Wald statistic can paradoxically *shrink* as the estimate moves further from the null).
+:::
+
+## When the Trinity Disagrees
+
+In our audit the three statistics are $\text{LR} = 5.05$, $W = 5.33$, $\text{LM} = 5.00$. They tell the same story --- reject the 50% benchmark at the 5% level, $p$-values all near $0.02$ --- but they are not identical, and the ordering $W \ge \text{LR} \ge \text{LM}$ is no accident.
+
+This ordering holds exactly for a linear model with normal errors (Berndt--Savin, 1977) and approximately for many nonlinear models. Here the mechanism is transparent: Wald and LM divide the *same* squared gap $(\hat p - p_0)^2$ by *different* variances. Wald uses the variance at the estimate, $\hat p(1-\hat p)/n = 0.00293$; LM uses the variance at the null, $p_0(1-p_0)/n = 0.00313$. Because $p(1-p)$ is maximized at $p = 0.5$ and our null sits *exactly* there, the null variance is the larger of the two --- so LM divides by the bigger number and comes out smallest, while Wald divides by the smaller number (equivalently, uses the larger information $I(\hat p) > I(p_0)$, the curve being *sharper* at the summit than at $p_0$) and comes out largest. LR sits between them because it integrates the curvature along the whole path from $p_0$ to $\hat p$. In *large* samples the gaps close --- they are $O(1/\sqrt n)$ --- so disagreement is a finite-sample signal: when the three diverge materially, your asymptotics are shaky and the $\chi^2$ approximation deserves a skeptical eye (consider a likelihood-ratio bootstrap or an exact test).
+
+<details>
+<summary>Math Details: The three statistics and their common $\chi^2$ limit</summary>
+<div class="details-content">
+
+### Setup
+
+Let $y_1,\dots,y_n$ be i.i.d. with log-likelihood $\ell(\theta) = \sum_i \log f(y_i;\theta)$ for a scalar (or, with obvious vector generalization, $q$-dimensional) $\theta$. Define the score $S(\theta) = \partial\ell/\partial\theta$, the observed information $J(\theta) = -\partial^2\ell/\partial\theta^2$, and the expected information $I(\theta) = E[J(\theta)]$. The MLE $\hat\theta$ solves $S(\hat\theta)=0$. We test $H_0:\theta=\theta_0$ with $q$ restrictions.
+
+### The three statistics
+
+$$
+\text{LR} = 2\big[\ell(\hat\theta) - \ell(\theta_0)\big], \qquad
+W = (\hat\theta - \theta_0)^\top I(\hat\theta)\,(\hat\theta - \theta_0), \qquad
+\text{LM} = S(\theta_0)^\top I(\theta_0)^{-1} S(\theta_0).
+$$
+
+The name "Lagrange multiplier" comes from constrained optimization: maximizing $\ell$ subject to $\theta = \theta_0$ introduces a multiplier $\lambda$, and at the constrained optimum $\lambda = S(\theta_0)$. A large multiplier means the constraint is binding hard --- the data resist the restriction --- which is exactly the score being large.
+
+### Asymptotic equivalence
+
+Expand the score around $\hat\theta$ (using $S(\hat\theta)=0$):
+$$
+S(\theta_0) = S(\hat\theta) - J(\tilde\theta)(\theta_0 - \hat\theta) = J(\tilde\theta)\,(\hat\theta - \theta_0),
+$$
+for some $\tilde\theta$ between $\theta_0$ and $\hat\theta$. Since $J(\tilde\theta)/n \to I_1(\theta_0)$ in probability (and $J \approx I$ under $H_0$),
+$$
+\text{LM} = S(\theta_0)^\top I(\theta_0)^{-1} S(\theta_0)
+\approx (\hat\theta - \theta_0)^\top I(\theta_0)\,(\hat\theta - \theta_0) \approx W,
+$$
+because $I(\theta_0) \approx I(\hat\theta)$ when $\hat\theta \to \theta_0$ under $H_0$. For LR, a second-order expansion of $\ell$ at $\hat\theta$ gives
+$$
+\text{LR} = 2[\ell(\hat\theta)-\ell(\theta_0)] \approx (\hat\theta-\theta_0)^\top I(\hat\theta)(\hat\theta-\theta_0) = W.
+$$
+So $\text{LR} \approx W \approx \text{LM}$ up to terms of order $o_p(1)$.
+
+### The common limit
+
+The MLE is asymptotically normal: $\sqrt n(\hat\theta-\theta_0) \xrightarrow{d} \mathcal{N}(0, I_1(\theta_0)^{-1})$. Hence the standardized quadratic form
+$$
+n(\hat\theta-\theta_0)^\top I_1(\theta_0)(\hat\theta-\theta_0) \;\xrightarrow{d}\; \chi^2_q,
+$$
+and since all three statistics equal this quadratic form to leading order, each converges to $\chi^2_q$ under $H_0$. The degrees of freedom $q$ are the number of restrictions.
+
+### The Bernoulli special case (our audit)
+
+With $y_i \sim \text{Bernoulli}(p)$, $x = \sum y_i$, $n$ trials: $\ell(p) = x\log p + (n-x)\log(1-p)$ (up to a constant), $S(p) = (x-np)/[p(1-p)]$, $I(p) = n/[p(1-p)]$, and $\hat p = x/n$. Substituting:
+$$
+\text{LR} = 2\Big[x\log\tfrac{\hat p}{p_0} + (n-x)\log\tfrac{1-\hat p}{1-p_0}\Big],\quad
+W = \frac{(\hat p - p_0)^2}{\hat p(1-\hat p)/n},\quad
+\text{LM} = \frac{(\hat p - p_0)^2}{p_0(1-p_0)/n}.
+$$
+Wald and LM are the *same* squared distance divided by *different* variance estimates --- $\hat p(1-\hat p)/n$ at the estimate versus $p_0(1-p_0)/n$ at the null. The LM form is exactly the familiar **one-sample $z$-test for a proportion, squared**. With $n=80$, $x=50$, $p_0=0.5$: $\hat p = 0.625$, $\text{LR}=5.05$, $W=5.33$, $\text{LM}=5.00$.
+
+</div>
+</details>
+
+## Computing All Three for a Logistic Model
+
+The binomial above *is* an intercept-only logistic regression: $\text{logit}(p) = \beta_0$ with $p_0 = 0.5 \Leftrightarrow \beta_0 = 0$. Below we fit it both ways --- closed-form on the proportion and as a `glm`/`Logit` --- and extract LR, Wald, and LM. The code generalizes immediately to logistic models with covariates (e.g., adding patient age or center fixed effects), where the same three tests evaluate any restriction on the coefficients.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# Vårdcentral audit: x = 50 of n = 80 diabetes patients reached the HbA1c target.
+# Test H0: p = p0 = 0.50 (the regional benchmark).
+n  <- 80
+x  <- 50
+p0 <- 0.50
+phat <- x / n                       # unrestricted MLE = 0.625
+
+# Binomial log-likelihood kernel.
+ll <- function(p) x * log(p) + (n - x) * log(1 - p)
+
+# ---- Likelihood Ratio: twice the gap between max and restricted log-lik ----
+LR <- 2 * (ll(phat) - ll(p0))
+
+# ---- Wald: squared distance / variance AT THE ESTIMATE ----
+W  <- (phat - p0)^2 / (phat * (1 - phat) / n)
+
+# ---- Lagrange Multiplier (score): squared distance / variance AT THE NULL ----
+# Equivalently  S(p0)^2 / I(p0)  with S(p0) = (x - n p0)/(p0(1-p0)).
+LM <- (phat - p0)^2 / (p0 * (1 - p0) / n)
+
+results <- data.frame(
+  test      = c("LR", "Wald", "LM"),
+  statistic = c(LR, W, LM),
+  p_value   = pchisq(c(LR, W, LM), df = 1, lower.tail = FALSE)
+)
+print(round(results, 4))
+#>   test statistic p_value
+#> 1   LR    5.0534  0.0246
+#> 2 Wald    5.3333  0.0209
+#> 3   LM    5.0000  0.0253
+
+# ---- Same thing as a logistic GLM (intercept-only): H0 is beta0 = 0 ----
+y   <- c(rep(1, x), rep(0, n - x))
+fit <- glm(y ~ 1, family = binomial)        # logit(p) = beta0
+# Wald z is on the log-odds scale; its square is the Wald chi-square:
+summary(fit)$coefficients                    # Estimate / Std.Error -> z
+# LR test of beta0 = 0 via the deviance against the null model:
+anova(glm(y ~ 1, family = binomial),
+      update(fit, . ~ . - 1 + offset(rep(0, n))), test = "LRT")
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy import stats
+import statsmodels.api as sm
+
+# Vårdcentral audit: x = 50 of n = 80 patients reached the HbA1c target.
+# Test H0: p = p0 = 0.50 (the regional benchmark).
+n, x, p0 = 80, 50, 0.50
+phat = x / n                                   # unrestricted MLE = 0.625
+
+ll = lambda p: x*np.log(p) + (n - x)*np.log(1 - p)
+
+# ---- Likelihood Ratio: twice the gap between max and restricted log-lik ----
+LR = 2 * (ll(phat) - ll(p0))
+
+# ---- Wald: squared distance / variance AT THE ESTIMATE ----
+W  = (phat - p0)**2 / (phat*(1 - phat) / n)
+
+# ---- Lagrange Multiplier (score): squared distance / variance AT THE NULL ----
+LM = (phat - p0)**2 / (p0*(1 - p0) / n)
+
+for name, stat in [("LR", LR), ("Wald", W), ("LM", LM)]:
+    p = stats.chi2.sf(stat, df=1)
+    print(f"{name:>4}: stat = {stat:6.4f}   p = {p:.4f}")
+#>   LR: stat = 5.0534   p = 0.0246
+#> Wald: stat = 5.3333   p = 0.0209
+#>   LM: stat = 5.0000   p = 0.0253
+
+# ---- Same thing as a logistic GLM (intercept-only): H0 is beta0 = 0 ----
+y = np.r_[np.ones(x), np.zeros(n - x)]
+X = np.ones((n, 1))
+fit = sm.Logit(y, X).fit(disp=False)           # logit(p) = beta0
+print("Wald (z^2):", float(fit.tvalues[0]**2)) # squared z = Wald chi-square
+print("LR test of beta0 = 0:",
+      2 * (fit.llf - sm.Logit(y, X).loglike(np.array([np.log(p0/(1-p0))]))))
+```
+
+:::
+
+Both languages return $\text{LR} = 5.05$, $W = 5.33$, $\text{LM} = 5.00$, each with a $\chi^2_1$ $p$-value near $0.02$ --- the same three numbers the interactive prints at $p_0 = 0.50$. The GLM route shows the everyday face of these tests: the $z$ printed next to a logistic coefficient is a Wald test, and `anova(..., test = "LRT")` is the likelihood-ratio test.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A second *vårdcentral* audits its fall-prevention program: of $n = 120$ elderly patients offered a balance-training course, $x = 72$ completed it. The region's target completion rate is $p_0 = 0.55$. Compute the LR, Wald, and LM statistics for $H_0:\,p = 0.55$, and state whether you reject at the 5% level ($\chi^2_1$ critical value $3.841$).
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The MLE is $\hat p = 72/120 = 0.600$.
+
+**LR:** $\text{LR} = 2[\,72\log\tfrac{0.600}{0.55} + 48\log\tfrac{0.400}{0.45}\,] = 2[72(0.08701) + 48(-0.11778)] = 2[6.265 - 5.653] = 1.22.$
+
+**Wald** (variance at the estimate, $\hat p(1-\hat p)/n = 0.240/120 = 0.00200$):
+$$
+W = \frac{(0.600 - 0.55)^2}{0.00200} = \frac{0.0025}{0.00200} = 1.25.
+$$
+
+**LM** (variance at the null, $p_0(1-p_0)/n = 0.2475/120 = 0.0020625$):
+$$
+\text{LM} = \frac{(0.600 - 0.55)^2}{0.0020625} = \frac{0.0025}{0.0020625} = 1.21.
+$$
+
+All three statistics ($1.22$, $1.25$, $1.21$) are well below $3.841$, so we **fail to reject** at the 5% level: the completion rate is not significantly different from the 55% target. Note again the ordering $W > \text{LR} > \text{LM}$ and that the three nearly coincide, because $\hat p = 0.60$ is close to $p_0 = 0.55$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain, in terms of the log-likelihood geometry, *why* the Wald and LM tests can disagree even though they are asymptotically equivalent. Which one would you trust more when the estimate $\hat\theta$ is far from the null $\theta_0$, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Wald and LM both measure the squared distance $(\hat\theta - \theta_0)^2$ scaled by curvature (information), but they evaluate the curvature at **different points**: Wald uses $I(\hat\theta)$, the curvature at the summit; LM uses $I(\theta_0)$, the curvature at the null. When the log-likelihood is exactly quadratic (the large-sample ideal), curvature is constant everywhere and the two agree. When the curve departs from a parabola --- which happens in finite samples and away from the peak --- $I(\hat\theta) \ne I(\theta_0)$, and the two statistics diverge. In the binomial case the "curvature" is $n/[p(1-p)]$, which genuinely depends on where you evaluate it.
+
+When $\hat\theta$ is far from $\theta_0$, **neither pure Wald nor pure LM is fully trustworthy**, because both rely on a single-point curvature that the global shape contradicts. The **LR** test is generally preferred there: it integrates the curvature along the entire path from $\theta_0$ to $\hat\theta$ (it is literally the area-like gap in heights), so it is less sensitive to which endpoint you happen to stand on. LR is also invariant to reparameterization, whereas Wald is not --- a decisive advantage near boundaries or with skewed likelihoods.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A regional analyst wants to test whether adding **14 patient-level covariates** (age, sex, comorbidity flags, etc.) significantly improves a logistic model of HbA1c target attainment. Fitting the full 15-parameter model is slow on the region's hardware, but the intercept-only model is trivial. Which of the three tests should the analyst use, how many degrees of freedom does the $\chi^2$ reference have, and what exactly must be computed?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The analyst should use the **Lagrange Multiplier (score) test**, because it requires fitting only the **restricted** model --- here the intercept-only model, which is cheap. The full 15-parameter model never has to be estimated. (Wald would require the full model; LR would require both.)
+
+The restriction sets all 14 covariate coefficients to zero, so $q = 14$ and the reference distribution is $\chi^2_{14}$ (critical value at 5% is $23.68$).
+
+What must be computed: fit the restricted model to get the restricted parameter estimate (just $\hat\beta_0$); evaluate the **score vector** $S(\theta_0)$ of the *full* log-likelihood at that restricted estimate (i.e., the gradient with respect to all 15 parameters, with the 14 covariate coefficients held at zero); and form the quadratic form $\text{LM} = S(\theta_0)^\top I(\theta_0)^{-1} S(\theta_0)$ using the information matrix at the restricted estimate. If the 14 covariates carry no real signal, the score with respect to them will be near zero and LM will be small. This is exactly the logic behind score-based "should I add these terms?" diagnostics.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive, set $p_0 = 0.625$ (equal to $\hat p$). Predict the value of all three statistics before you read the panel, and explain geometrically why each takes that value. Then set $p_0$ to a value where the three visibly disagree and identify which ruler (vertical, horizontal, slope) is largest.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**At $p_0 = \hat p = 0.625$:** all three statistics equal **exactly 0**, with $p$-value $1$. Geometrically: the vertical LR drop is zero because $p_0$ sits *at* the summit, so $\ell(p_0) = \ell(\hat p)$; the horizontal Wald distance is zero because $\hat p - p_0 = 0$; and the LM tangent is *flat* because the score at the summit is zero by definition ($S(\hat p) = 0$). When the null coincides with the estimate, there is nothing to reject --- no height to drop, no width to cross, no slope to climb.
+
+**Where they disagree:** push $p_0$ down to, say, $0.40$ or $0.35$. The three numbers separate, and the **Wald** statistic (horizontal-distance ruler with curvature at the summit) is the **largest**, followed by **LR** (the vertical drop), then **LM** (the tangent-slope ruler with curvature at the null) smallest --- the canonical ordering $W \ge \text{LR} \ge \text{LM}$. The separation grows as $p_0$ moves further from $\hat p$, because the quadratic (parabola) approximation that makes them equal is only accurate near the peak; far away, the choice of where to evaluate curvature dominates.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The LR, Wald, and LM tests are three measurements of one distance on the log-likelihood curve: LR is the vertical drop $2[\ell(\hat\theta)-\ell(\theta_0)]$, Wald is the horizontal gap $(\hat\theta-\theta_0)^2 I(\hat\theta)$, and LM is the squared score $S(\theta_0)^2/I(\theta_0)$.
+- All three converge to $\chi^2_q$ under $H_0$, with $q$ the number of restrictions, because each is the same squared standardized MLE distance to leading order.
+- The choice is computational: Wald needs only the unrestricted fit, LM only the restricted fit, LR both --- so reach for LM when the full model is costly and Wald when you already have the coefficient and its standard error.
+- They agree as $\theta_0 \to \hat\theta$ and fan apart far from the peak; the canonical ordering $W \ge \text{LR} \ge \text{LM}$ and any material disagreement is a finite-sample warning that the $\chi^2$ approximation is strained.
+- A $z$-statistic beside a coefficient is a Wald test; `anova(..., test="LRT")` is a likelihood-ratio test; LR alone is invariant to reparameterization, which makes it the safe default near boundaries.
+:::
+
+## What Comes Next
+
+We have seen that likelihood-based inference hands us a *trinity* of asymptotically equivalent tests --- vertical, horizontal, and slope readings of the same hill --- and that the practical choice hinges on which model you can afford to estimate. These tests apply to *any* likelihood, including the richer models we turn to next. The [Random Effects model](../14-random-effects/random-effects-model.qmd) builds a likelihood for panel data in which each Swedish *vårdcentral* contributes its own random intercept, drawn from a population distribution. There the very same trinity reappears --- LR tests comparing nested variance-component models, Wald tests on the fixed-effect coefficients, and score tests for whether a random effect is needed at all --- now applied to deciding how much of the variation in HbA1c outcomes lives *between* centers versus *within* them.

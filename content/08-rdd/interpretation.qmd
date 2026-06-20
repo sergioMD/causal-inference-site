@@ -1,0 +1,1094 @@
+---
+title: "Interpretation and External Validity"
+subtitle: "The effect at the cutoff and what it does (and does not) tell you"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State precisely *what* a regression discontinuity (RD) design estimates: a **local** average treatment effect at the cutoff, $\tau_{\text{RD}} = E[\tau_i \mid X_i = c]$, and in fuzzy RD, the effect for **compliers** at the cutoff.
+- Distinguish the RD estimand from the population ATE, and explain why they coincide only under restrictive homogeneity conditions.
+- Read a heterogeneous treatment-effect curve along the running variable and see that RD recovers exactly *one point* on it --- the value at $c$ --- and nothing about the rest.
+- Reason about when extrapolating the cutoff effect to other parts of the population is defensible, and name recent methods that attempt principled extrapolation.
+- Reframe the "local" limitation as a *policy* feature: the cutoff is precisely the margin a policymaker can move.
+:::
+
+## The Right Answer to a Narrow Question
+
+The previous page on [validity and falsification](validity-tests.qmd) taught you how to *defend* an RD design: check that the running variable is not manipulated, that covariates are continuous at the cutoff, that the jump survives bandwidth and polynomial choices. Suppose all of those tests pass. You have a credible, well-identified estimate. The natural reaction is relief --- and then a dangerous temptation: to treat that number as *the* effect of the program.
+
+It is not. It is the effect of the program **at one point on the running variable** --- the cutoff --- and the central interpretive discipline of RD is to never forget that qualifier.
+
+Return to a concrete Swedish setting, but a fresh one. A *region* (one of Sweden's 21 regional health authorities) runs a structured **diabetes coordination program** (*Diabetessamordning*) out of its *vårdcentraler* (primary care centers): a dedicated *distriktssköterska* (district nurse) coordinates appointments, titrates medication, and tracks blood sugar for the most at-risk patients. Capacity is finite, so eligibility is rationed by a **clinical risk score** $X_i$ --- a composite built from HbA1c, blood pressure, BMI, and comorbidity flags, normalized so that the enrollment threshold sits at $c = 0$. Patients with a score at or above the cutoff ($X_i \ge 0$) are enrolled; those below are not. The outcome $Y_i$ is each patient's HbA1c twelve months later (lower is better).
+
+RD will hand us a clean estimate of the program's effect on the HbA1c of patients **whose risk score is right at the threshold**. That is genuinely valuable. But the *regiondirektör* (regional health director) who reads the report will almost certainly ask a different question --- "should we expand the program to lower-risk patients?" or "what would it do for the whole diabetic population?" --- and the honest answer is that the RD estimate, by itself, does not say.
+
+::: {.glass-card .glass-card--insight}
+RD buys exceptional **internal validity** (a credible answer for the units at the cutoff) at the cost of **external validity** (silence about units far from the cutoff). It is the mirror image of a representative survey, which has broad coverage but weak identification. Knowing *which* trade you have made is the whole of interpretation.
+:::
+
+## What RD Estimates: The Effect at the Cutoff
+
+Recall the potential-outcomes machinery from [Module 1](../01-fundamental-problem/potential-outcomes.qmd): each patient has an individual treatment effect $\tau_i = Y_i(1) - Y_i(0)$, and these effects vary across patients (**heterogeneity**). The sharp RD estimand is the jump in the conditional mean of the outcome at the cutoff. Under the continuity assumption, that jump equals a very specific average of the $\tau_i$.
+
+::: {.glass-card .glass-card--definition}
+Under continuity of $E[Y_i(0)\mid X_i = x]$ and $E[Y_i(1)\mid X_i = x]$ at $c$, the sharp RD estimand is the **average treatment effect at the cutoff**:
+
+$$
+\tau_{\text{RD}} \;=\; \lim_{x \downarrow c} E[Y_i \mid X_i = x] - \lim_{x \uparrow c} E[Y_i \mid X_i = x]
+\;=\; E\big[\,Y_i(1) - Y_i(0) \;\big|\; X_i = c\,\big].
+$$
+
+**Read this as**: "The RD estimand equals the average, *among patients whose running variable sits exactly at the cutoff*, of the difference between their treated and untreated potential outcomes." It is a conditional average treatment effect --- conditional on $X_i = c$ --- not a population average.
+
+*(An **estimand** is simply the quantity you are trying to learn --- the target of estimation, here a specific average effect --- as opposed to the estimator or the eventual number. And $\lim_{x \downarrow c}$, a **one-sided limit**, is "the height the curve approaches as you slide in toward the cutoff from the right (the treated side)"; $\lim_{x \uparrow c}$ is the same from the left.)*
+:::
+
+This is a **CATE** (conditional average treatment effect) evaluated at a single value of the conditioning variable. Two things follow immediately.
+
+First, RD never reveals $\tau_i$ for any individual --- it is still an average, subject to the fundamental problem of causal inference. Second, and more importantly for this page, RD averages the $\tau_i$ over a *vanishingly thin slice* of the population: patients with $X_i \approx c$. If the treatment effect is the same for everyone, that slice tells you everything. If the treatment effect varies along $X$ --- which is the realistic case --- the slice tells you about the slice, and only the slice.
+
+### The cutoff effect versus the ATE
+
+Define the population average treatment effect in the usual way, $\text{ATE} = E[\tau_i]$, where the expectation is over the whole distribution of patients. Write the **treatment-effect curve** as the function
+
+$$
+\tau(x) \;=\; E\big[\,Y_i(1) - Y_i(0) \;\big|\; X_i = x\,\big],
+$$
+
+which gives the average effect at each level of the risk score. Then RD recovers exactly one value of this curve,
+
+$$
+\tau_{\text{RD}} = \tau(c),
+$$
+
+while the ATE is the *average of the whole curve*, weighted by the density $f_X$ of the running variable:
+
+$$
+\text{ATE} \;=\; \int \tau(x)\, f_X(x)\, dx.
+$$
+
+**Read the last line as**: "The population ATE is the treatment-effect curve $\tau(x)$ averaged over the entire distribution of risk scores." Concretely, the integral *adds up the effect at every risk score, weighting each by how many patients actually have that score* --- the **density** $f_X$ is just "how common each score is." RD gives you the single height $\tau(c)$; the ATE wants the (density-weighted) area under $\tau(x)$. These coincide only in special cases --- when $\tau(x)$ is flat (constant treatment effects, so $\tau(x) = \tau$ everywhere), or by coincidence if the cutoff happens to fall where $\tau(x)$ crosses its own population mean. In general,
+
+$$
+\tau_{\text{RD}} = \tau(c) \;\neq\; \int \tau(x)\, f_X(x)\, dx = \text{ATE}.
+$$
+
+::: {.glass-card .glass-card--warning}
+**The extrapolation trap.** The most common abuse of RD is to quote $\tau_{\text{RD}}$ as if it were the ATE --- "the diabetes program lowers HbA1c by 0.4 points" full stop, with no mention of *for whom*. If the program helps the highest-risk patients a great deal but barely touches moderate-risk patients, then $\tau(c)$ (a moderate-risk margin) understates the effect for the sickest and overstates it for the healthiest. The number is correct; the sentence that drops the qualifier is wrong.
+:::
+
+The picture below makes the "one height versus the weighted area" contrast literal. The slate curve is the effect curve $\tau(x)$; the shaded hill beneath it is the density $f_X$ (how common each risk score is). RD reads off the *single height* at the cutoff (the red dot, $\tau(c)$); the population ATE is the curve *averaged against that hill* --- the density-weighted area, shown as the black dashed level. Here the cutoff sits in the right tail, where few patients live, so $\tau(c)$ is far more beneficial than the ATE the typical patient experiences.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static "point vs. density-weighted area" figure. ──
+// Self-contained: its own constants, no dependence on the live widget's state.
+// τ(x) is the same monotone shape as the running example (sicker gain more);
+// f_X is a standard-normal density. The ATE is the f_X-weighted mean of τ.
+p8i_xMin = -3
+p8i_xMax = 3
+p8i_tauFn = x => -0.45 - 0.30 * x          // effect curve: negative = helps
+p8i_cutoff = 1.4                            // a right-tail cutoff (few patients here)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+p8i_grid = d3.range(p8i_xMin, p8i_xMax + 1e-9, 0.05).map(x => ({
+  x,
+  tau: p8i_tauFn(x),
+  dens: Math.exp(-0.5 * x * x)             // unnormalized N(0,1) density
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Population ATE = density-weighted average of τ(x) on the grid.
+p8i_ate = {
+  let wsum = 0, num = 0;
+  for (const g of p8i_grid) { wsum += g.dens; num += g.dens * g.tau; }
+  return num / wsum;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Density rescaled into the τ-axis band purely for display (so the "hill" sits
+// visibly under the curve). It is a sketch of f_X, not a second quantitative axis.
+p8i_densMax = d3.max(p8i_grid, d => d.dens)
+p8i_densBaseline = 0.95                      // top of the density band (in τ units)
+p8i_densScale = 1.3                          // visual height of the hill
+p8i_densArea = p8i_grid.map(d => ({
+  x: d.x,
+  y: p8i_densBaseline - (d.dens / p8i_densMax) * p8i_densScale
+}))
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 300,
+  marginLeft: 64,
+  marginRight: 24,
+  marginTop: 20,
+  marginBottom: 46,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Clinical risk score X (running variable) →", domain: [p8i_xMin, p8i_xMax], grid: false },
+  y: { label: "Treatment effect τ(x) (negative = helps)", domain: [-1.6, 1.0], grid: true },
+  marks: [
+    Plot.ruleY([0], { stroke: "#e6e3db", strokeWidth: 1 }),
+    // Density "hill" f_X(x) drawn as a soft area beneath the curve.
+    Plot.areaY(p8i_densArea, { x: "x", y1: p8i_densBaseline, y2: "y", fill: "#9c7a33", fillOpacity: 0.16 }),
+    Plot.line(p8i_densArea, { x: "x", y: "y", stroke: "#9c7a33", strokeWidth: 1, strokeOpacity: 0.5 }),
+    Plot.text([{}], {
+      frameAnchor: "bottom", dy: -6, dx: -70,
+      text: ["density f_X(x): how common each score is"], fill: "#9c7a33", fontSize: 10.5, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The effect curve τ(x).
+    Plot.line(p8i_grid, { x: "x", y: "tau", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+    Plot.text([{}], {
+      frameAnchor: "top-left", dx: 6, dy: 6,
+      text: ["τ(x)"], fill: "#3d5a6c", fontSize: 12, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // ATE: the density-weighted level (the "area" answer).
+    Plot.ruleY([p8i_ate], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+    Plot.text([{ y: p8i_ate }], {
+      y: "y", frameAnchor: "left", dx: 4, dy: -8,
+      text: [`ATE = weighted area = ${p8i_ate.toFixed(2)}`], fill: "#1c1c1a", fontSize: 11, fontWeight: 600, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The cutoff and the single height RD recovers.
+    Plot.ruleX([p8i_cutoff], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "3,3" }),
+    Plot.dot([{ x: p8i_cutoff, tau: p8i_tauFn(p8i_cutoff) }], {
+      x: "x", y: "tau", fill: "#990000", r: 6, stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text([{ x: p8i_cutoff, tau: p8i_tauFn(p8i_cutoff) }], {
+      x: "x", y: "tau",
+      text: [`RD reads ONE height: τ(c) = ${p8i_tauFn(p8i_cutoff).toFixed(2)}`],
+      dx: -8, dy: -10, textAnchor: "end",
+      fill: "#990000", fontSize: 11.5, fontWeight: 700,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+The slate line is the effect curve $\tau(x)$; the ochre hill is the density $f_X$ (most patients cluster near the middle of the score). RD recovers the single red height $\tau(c)$ at the cutoff. The population ATE (black dashed) is $\tau(x)$ averaged against the hill --- a *weighted area*, dominated by the crowded middle, not by the sparse right tail where this cutoff sits.
+:::
+
+## See It: RD Recovers One Point on the Effect Curve
+
+The interactive below makes "local" concrete. The top panel shows the **treatment-effect curve** $\tau(x)$ --- how the program's effect on HbA1c varies with the patient's risk score. The bottom panel shows the **outcome** $Y$ against the running variable, with the untreated branch (slate, $X < c$) and the treated branch (red, $X \ge c$); the vertical jump between the fitted limits at the cutoff is what RD estimates.
+
+The key move: **slide the cutoff $c$ left and right**. As you do, watch the RD estimate (the jump in the bottom panel, and the moving dot in the top panel) *trace the curve* $\tau(x)$. RD always recovers $\tau$ evaluated at *wherever you put the cutoff* --- and nothing else. Compare that single point to the dashed line marking the population ATE.
+
+::: {.interactive-container}
+
+#### The Local Effect Tracing a Heterogeneous Curve
+
+::: {.callout-tip appearance="simple"}
+**Start here:** drag the **Cutoff c** slider and watch the red dot in the top panel ride along the τ(x) curve — RD only ever reports the effect at the cutoff. (Full walkthrough below the chart.)
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rdinterp_cutoff = Inputs.range([-2, 2], {
+  value: 0,
+  step: 0.1,
+  label: "Cutoff c (where eligibility switches on)"
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family: 'Inter', sans-serif; font-size: 0.78rem; color: #79766e; margin: -0.25rem 0 0.5rem;">The slider stops at ±2 (inside the plotted ±3 range) so the local fit keeps data on both sides of the cutoff.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdinterp_hetero = Inputs.range([0, 1], {
+  value: 0.6,
+  step: 0.05,
+  label: "Effect heterogeneity (how much τ varies with risk)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdinterp_curveShape = Inputs.radio(
+  ["Monotone (sicker gain more)", "Hump (mid-risk gain most)", "Flat (constant effect)"],
+  { value: "Monotone (sicker gain more)", label: "Shape of τ(x)" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdinterp_noise = Inputs.range([0, 0.5], {
+  value: 0.2,
+  step: 0.02,
+  label: "Noise (dispersion of bin means)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdinterp_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family: 'Inter', sans-serif; font-size: 0.78rem; color: #79766e; margin: -0.25rem 0 0.5rem;">Re-draws the data; watch the jump jitter around τ(c), never around the ATE. Most visible at higher <em>Noise</em>.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Design constants. ──
+// Running variable X = normalized clinical risk score, ranging −3 .. +3.
+// Higher score = sicker. Outcome Y = HbA1c (%) twelve months out; lower is
+// better, so a BENEFICIAL program produces a NEGATIVE jump (and τ(x) < 0).
+rdinterp_xMin = -3
+rdinterp_xMax = 3
+rdinterp_baseline = 7.0        // untreated HbA1c at the very lowest risk
+rdinterp_riskSlope = 0.55      // how fast untreated HbA1c climbs with risk score
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The true treatment-effect curve τ(x). ──
+// We center the effect at a mean of −0.45 HbA1c points and let it bend with the
+// risk score according to the chosen shape. `hetero` scales how strongly τ
+// depends on x; at hetero = 0 the curve is flat at the mean for every shape.
+// Sign convention: τ(x) < 0 means the program LOWERS HbA1c (helps).
+rdinterp_meanEffect = -0.45
+
+rdinterp_tau = function (x) {
+  const h = rdinterp_hetero;
+  const base = rdinterp_meanEffect;
+  if (rdinterp_curveShape === "Flat (constant effect)") {
+    return base;                                  // τ(x) = constant
+  }
+  if (rdinterp_curveShape === "Hump (mid-risk gain most)") {
+    // Sickest benefit most at moderate risk, less at the extremes.
+    return base - h * 0.6 * Math.exp(-0.5 * (x * x));
+  }
+  // Monotone: sicker patients (higher x) gain more (more-negative τ).
+  return base - h * 0.45 * x;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Dense grid for drawing the smooth τ(x) curve.
+rdinterp_tauCurve = d3.range(rdinterp_xMin, rdinterp_xMax + 1e-9, 0.05)
+  .map(x => ({ x, tau: rdinterp_tau(x) }))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Population ATE = average of τ(x) over the running-variable distribution.
+// We take X ~ standard-normal-ish on [−3, 3] (truncated), so we weight the
+// curve by the standard normal density and renormalize on the grid.
+rdinterp_ate = {
+  const grid = rdinterp_tauCurve;
+  const phi = x => Math.exp(-0.5 * x * x);        // unnormalized N(0,1) density
+  let wsum = 0, num = 0;
+  for (const g of grid) {
+    const w = phi(g.x);
+    wsum += w;
+    num += w * g.tau;
+  }
+  return num / wsum;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Generate the observed outcome data given the CURRENT cutoff. ──
+// Each point is a risk-score bin. Untreated mean = baseline + riskSlope*(x−xMin).
+// Treated patients (x ≥ c) additionally receive τ(x). Gaussian noise added.
+// rdinterp_draw is referenced (not mutated) so the button reseeds reactively.
+rdinterp_data = {
+  rdinterp_draw;                                   // reactive reseed on click
+  const c = rdinterp_cutoff;
+  const rnd = d3.randomNormal.source(d3.randomLcg(Math.random()))(0, 1);
+  const pts = [];
+  for (let x = rdinterp_xMin; x <= rdinterp_xMax + 1e-9; x += 0.15) {
+    const treated = x >= c ? 1 : 0;
+    const y0 = rdinterp_baseline + rdinterp_riskSlope * (x - rdinterp_xMin);
+    const mean = y0 + treated * rdinterp_tau(x);
+    const y = mean + rdinterp_noise * rnd();
+    pts.push({
+      x,
+      y,
+      treated,
+      side: treated ? "Treated (≥ c, enrolled)" : "Untreated (< c)"
+    });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// OLS helper: fit y = a + b*(x − c) on a set of rows, centered at the cutoff
+// so the intercept `a` is the predicted value AT the cutoff.
+rdinterp_ols = function (rows, c) {
+  const n = rows.length;
+  const mx = d3.mean(rows, d => d.x - c);
+  const my = d3.mean(rows, d => d.y);
+  let sxx = 0, sxy = 0;
+  for (const r of rows) {
+    const xc = (r.x - c) - mx;
+    sxx += xc * xc;
+    sxy += xc * (r.y - my);
+  }
+  const b = sxy / sxx;
+  const a = my - b * mx;
+  return { a, b, predict: x => a + b * (x - c) };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fit each side using only a local window of width `bw` around the cutoff,
+// then read the limits at x = c and take the jump. A local window keeps the
+// estimate honest: RD is about the curve NEAR c, not a global line.
+rdinterp_bw = 1.2
+
+rdinterp_fits = {
+  const c = rdinterp_cutoff;
+  const inWin = d => Math.abs(d.x - c) <= rdinterp_bw;
+  const left  = rdinterp_data.filter(d => d.treated === 0 && inWin(d));
+  const right = rdinterp_data.filter(d => d.treated === 1 && inWin(d));
+  // Guard: if a side is empty (cutoff at an extreme), fall back to all of it.
+  const L = left.length  >= 2 ? left  : rdinterp_data.filter(d => d.treated === 0);
+  const R = right.length >= 2 ? right : rdinterp_data.filter(d => d.treated === 1);
+  const fitL = rdinterp_ols(L, c);
+  const fitR = rdinterp_ols(R, c);
+  return {
+    left: fitL, right: fitR,
+    limitLeft: fitL.predict(c),
+    limitRight: fitR.predict(c),
+    jump: fitR.predict(c) - fitL.predict(c),
+    bw: rdinterp_bw
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Line segments for the two local fits, drawn only across the bandwidth window.
+rdinterp_lineData = {
+  const c = rdinterp_cutoff;
+  const bw = rdinterp_bw;
+  const loL = Math.max(rdinterp_xMin, c - bw);
+  const hiR = Math.min(rdinterp_xMax, c + bw);
+  return [
+    { x: loL, y: rdinterp_fits.left.predict(loL),  grp: "left" },
+    { x: c,   y: rdinterp_fits.limitLeft,          grp: "left" },
+    { x: c,   y: rdinterp_fits.limitRight,         grp: "right" },
+    { x: hiR, y: rdinterp_fits.right.predict(hiR), grp: "right" }
+  ];
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── TOP PANEL: the treatment-effect curve τ(x). ──
+// RD recovers only τ(c). The moving dot sits at (c, τ(c)); the dashed line is
+// the population ATE. As you drag c, the dot rides the curve — making "local"
+// literally visible.
+Plot.plot({
+  width: Math.min(660, width),
+  height: 240,
+  marginLeft: 64,
+  marginRight: 24,
+  marginTop: 18,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Clinical risk score X (running variable) →", domain: [rdinterp_xMin, rdinterp_xMax], grid: false },
+  // Domain spans the full possible range of τ(x): the monotone curve at max
+  // heterogeneity reaches τ(−3) = +0.90 and τ(3) = −1.80, so a tight window
+  // would clip the curve and its labels. Pad to keep both tails visible.
+  y: { label: "Treatment effect τ(x) (negative = helps)", domain: [-2.0, 1.1], grid: true },
+  marks: [
+    Plot.ruleY([0], { stroke: "#e6e3db", strokeWidth: 1 }),
+    // The full true curve τ(x): the thing RD can see only one point of.
+    Plot.line(rdinterp_tauCurve, { x: "x", y: "tau", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+    // Static curve label anchored to the top-right frame corner so it can never
+    // collide with the moving τ(c) label as the dot rides into the tails.
+    Plot.text([{}], {
+      frameAnchor: "top-right", dx: -6, dy: 6,
+      text: ["τ(x)"], fill: "#3d5a6c", fontSize: 12, fontStyle: "italic",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Population ATE as a horizontal dashed line, labelled at the left frame edge.
+    Plot.ruleY([rdinterp_ate], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+    Plot.text([{ y: rdinterp_ate }], {
+      y: "y", frameAnchor: "left", dx: 4, dy: -8,
+      text: [`ATE = ${rdinterp_ate.toFixed(2)}`], fill: "#1c1c1a", fontSize: 11, fontWeight: 600, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The cutoff position.
+    Plot.ruleX([rdinterp_cutoff], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "3,3" }),
+    // The one point RD recovers: τ(c).
+    Plot.dot([{ x: rdinterp_cutoff, tau: rdinterp_tau(rdinterp_cutoff) }], {
+      x: "x", y: "tau", fill: "#990000", r: 6, stroke: "white", strokeWidth: 1.5
+    }),
+    // Moving τ(c) label: flip side so it stays in-frame when the cutoff is in the
+    // right third of the domain; white halo keeps it legible over the curve.
+    Plot.text([{ x: rdinterp_cutoff, tau: rdinterp_tau(rdinterp_cutoff) }], {
+      x: "x", y: "tau",
+      text: [`RD: τ(c) = ${rdinterp_tau(rdinterp_cutoff).toFixed(2)}`],
+      dx: rdinterp_cutoff > 1.2 ? -8 : 8, dy: -8,
+      fill: "#990000", fontSize: 12, fontWeight: 700,
+      textAnchor: rdinterp_cutoff > 1.2 ? "end" : "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── BOTTOM PANEL: outcome vs running variable, with the jump at c. ──
+Plot.plot({
+  width: Math.min(660, width),
+  height: 320,
+  marginLeft: 64,
+  marginRight: 24,
+  marginBottom: 46,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Clinical risk score X (running variable) →", domain: [rdinterp_xMin, rdinterp_xMax], grid: false },
+  y: { label: "HbA1c (%) at 12 months (lower is better)", domain: [6, 11.5], grid: true },
+  color: {
+    domain: ["Untreated (< c)", "Treated (≥ c, enrolled)"],
+    range: ["#3d5a6c", "#990000"],
+    legend: true
+  },
+  marks: [
+    // Cutoff line — same ochre as the top panel so the paired panels agree.
+    Plot.ruleX([rdinterp_cutoff], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    // 'c = …' label: flip to the left of the rule near the right edge so it
+    // never clips off-frame; white halo for legibility over the scatter.
+    Plot.text([{ x: rdinterp_cutoff, y: 11.3 }], {
+      x: "x", y: "y", text: [`c = ${rdinterp_cutoff.toFixed(1)}`],
+      fill: "#9c7a33", fontSize: 11, fontWeight: 600,
+      dx: rdinterp_cutoff > 1.2 ? -4 : 4,
+      textAnchor: rdinterp_cutoff > 1.2 ? "end" : "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The binned scatter.
+    Plot.dot(rdinterp_data, {
+      x: "x", y: "y", fill: "side", r: 3, fillOpacity: 0.7,
+      title: d => `Risk score ${d.x.toFixed(2)}\nHbA1c: ${d.y.toFixed(2)}\n${d.side}`
+    }),
+    // The two LOCAL fitted lines.
+    Plot.line(rdinterp_lineData.filter(d => d.grp === "left"),  { x: "x", y: "y", stroke: "#3d5a6c", strokeWidth: 3 }),
+    Plot.line(rdinterp_lineData.filter(d => d.grp === "right"), { x: "x", y: "y", stroke: "#990000", strokeWidth: 3 }),
+    // The jump: a vertical link between the two limits at the cutoff.
+    Plot.link([{ x: rdinterp_cutoff, y1: rdinterp_fits.limitLeft, y2: rdinterp_fits.limitRight }], {
+      x: "x", y1: "y1", y2: "y2",
+      stroke: rdinterp_fits.jump <= 0 ? "#2e6f40" : "#b3000b",
+      strokeWidth: 12, strokeOpacity: 0.25, strokeLinecap: "butt"
+    }),
+    Plot.dot([
+      { x: rdinterp_cutoff, y: rdinterp_fits.limitLeft },
+      { x: rdinterp_cutoff, y: rdinterp_fits.limitRight }
+    ], { x: "x", y: "y", fill: "white", stroke: "#1c1c1a", strokeWidth: 1.5, r: 4 }),
+    // 'jump = …' label: flip side near the right edge and nudge clear of the
+    // two limit dots; white halo so it reads over the translucent jump bar.
+    Plot.text([{ x: rdinterp_cutoff, y: (rdinterp_fits.limitLeft + rdinterp_fits.limitRight) / 2 }], {
+      x: "x", y: "y",
+      text: [`jump = ${rdinterp_fits.jump.toFixed(2)}`],
+      dx: rdinterp_cutoff > 1.2 ? -10 : 10, dy: -2,
+      textAnchor: rdinterp_cutoff > 1.2 ? "end" : "start",
+      fill: rdinterp_fits.jump <= 0 ? "#2e6f40" : "#b3000b", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Numeric readout: estimated jump (RD), the true local effect τ(c) it targets,
+// and the population ATE — so the reader sees the gap between local and global.
+html`
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-top: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.82rem;">
+  <div style="padding: 0.5rem 0.75rem; border-radius: 0.5rem; min-height: 4rem; background: rgba(153, 0, 0, 0.06); border: 1px solid rgba(153, 0, 0, 0.18);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">RD estimate (jump)</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #990000;">${rdinterp_fits.jump.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; border-radius: 0.5rem; min-height: 4rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Targets τ(c)</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #1c1c1a;">${rdinterp_tau(rdinterp_cutoff).toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; border-radius: 0.5rem; min-height: 4rem; background: rgba(61, 90, 108, 0.08); border: 1px solid rgba(61, 90, 108, 0.18);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Population ATE</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #3d5a6c;">${rdinterp_ate.toFixed(2)}</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+
+// One-line verdict that updates as the cutoff moves.
+{
+  const tc = rdinterp_tau(rdinterp_cutoff);
+  const ate = rdinterp_ate;
+  const gap = tc - ate;
+  let msg, color;
+  if (rdinterp_curveShape === "Flat (constant effect)" || rdinterp_hetero < 0.01) {
+    msg = `τ(x) is flat, so the local effect at the cutoff (${tc.toFixed(2)}) equals the population ATE (${ate.toFixed(2)}). With constant effects, "local" and "global" coincide — RD generalizes for free.`;
+    color = "#2e6f40";
+  } else if (Math.abs(gap) < 0.05) {
+    msg = `Here the cutoff happens to sit near where τ(x) crosses its own population mean, so τ(c) ≈ ATE (${tc.toFixed(2)} vs ${ate.toFixed(2)}). This is a coincidence of where you placed c — slide it and the agreement breaks.`;
+    color = "#2e6f40";
+  } else if (gap < 0) {
+    msg = `At this cutoff the local effect (${tc.toFixed(2)}) is MORE beneficial than the population ATE (${ate.toFixed(2)}). Quoting τ(c) as "the" effect would OVERSTATE what the program does on average.`;
+    color = "#990000";
+  } else {
+    msg = `At this cutoff the local effect (${tc.toFixed(2)}) is LESS beneficial than the population ATE (${ate.toFixed(2)}). Quoting τ(c) as "the" effect would UNDERSTATE what the program does on average.`;
+    color = "#9c7a33";
+  }
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${color}; background: #f6f5f1;
+      font-family: 'Inter', sans-serif; font-size: 0.86rem;
+      line-height: 1.45; color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Effect-Curve Explorer
+
+Work through the panels in order; each step isolates one idea about *locality*.
+
+**Step 1: Read the two panels as a pair.** The top panel is the *truth you would love to know* --- the full effect curve $\tau(x)$, slate, with the population ATE as a black dashed line. The bottom panel is the *data you actually have* --- noisy HbA1c against risk score, with two local lines fitted on each side of the cutoff. The red dot in the top panel and the shaded jump in the bottom panel are the *same quantity* viewed two ways: the effect at the cutoff. (The cutoff $c$ is the ochre dashed line in **both** panels.)
+
+**Step 2: Confirm RD hits its target.** With the default monotone curve, read the three tiles below the plot. The **RD estimate** (the jump) and the **τ(c)** it targets agree up to noise --- RD is unbiased *for the local effect*. Press **Draw new sample** a few times: the jump jitters around τ(c), never around the ATE.
+
+**Step 3: Slide the cutoff and watch "local" become literal.** Drag the **Cutoff c** slider slowly from left to right. The red dot in the top panel *rides along the curve* $\tau(x)$, and the jump in the bottom panel grows and shrinks to match. This is the entire lesson in one motion: RD reports $\tau$ evaluated *wherever the administrative line happens to fall*. Move the line, move the answer --- even though the program and the patients are unchanged.
+
+**Step 4: Compare local to global.** Keep an eye on the gap between the red dot (τ(c)) and the black dashed ATE line. Park the cutoff at the far right (sickest patients): with the monotone curve, the local effect is far more beneficial than the ATE, so reporting it as "the" effect would *overstate* the program's average value. Park it at the far left and the opposite happens. The one-line verdict box spells out the direction of the error.
+
+**Step 5: Turn off heterogeneity.** Drag **Effect heterogeneity** to 0 (or pick the **Flat** shape). Now $\tau(x)$ is a horizontal line: the local effect equals the ATE *for every cutoff*. The verdict turns green. This is the only situation in which RD generalizes for free --- and it is exactly the assumption (constant effects) you are usually unwilling to make.
+
+**Step 6: Try the hump.** Switch to **Hump (mid-risk gain most)**. Now the program helps moderate-risk patients most and the extremes least. Slide the cutoff across the hump: the local effect peaks in the middle and fades at both tails. A policymaker who set the threshold in the tails would conclude the program barely works --- a conclusion about *where they drew the line*, not about the program.
+
+## Fuzzy RD: Local *and* for Compliers
+
+Everything above assumed **sharp** RD, where crossing the cutoff changes treatment with certainty. In the more common **fuzzy** RD, crossing the cutoff changes only the *probability* of treatment: some eligible patients decline the diabetes program, some ineligible ones get in through a clinician's discretion. As shown on the [fuzzy-RD page](fuzzy-rd.qmd), the estimand becomes a ratio (a local Wald / instrumental-variables estimand), and its interpretation narrows further.
+
+::: {.glass-card .glass-card--definition}
+The **fuzzy RD estimand** identifies a local average treatment effect for **compliers at the cutoff**:
+
+$$
+\tau_{\text{fuzzy}} \;=\; \frac{\displaystyle \lim_{x\downarrow c} E[Y\mid X{=}x] - \lim_{x\uparrow c} E[Y\mid X{=}x]}{\displaystyle \lim_{x\downarrow c} E[D\mid X{=}x] - \lim_{x\uparrow c} E[D\mid X{=}x]}
+\;=\; E\big[\tau_i \;\big|\; X_i = c,\ i \text{ is a complier}\big].
+$$
+
+**Read this as**: "The fuzzy RD estimand is the jump in the outcome divided by the jump in the treatment probability, and it equals the average effect, *at the cutoff*, restricted to the patients who actually take up treatment *because* they crossed the threshold --- the compliers."
+:::
+
+So fuzzy RD layers a *second* restriction on top of locality. It is local in $X$ (only patients near $c$) **and** local in compliance type (only compliers --- not always-takers who would enroll regardless, nor never-takers who would refuse regardless). A **complier** here is a patient who enrolls *because* they crossed the cutoff and would *not* have enrolled had they fallen just below --- the only type whose behavior actually responds to the threshold. The director who wants to know the effect for "all diabetic patients" is now two generalizations removed from the estimate: from compliers-at-$c$ to everyone-at-$c$ to the whole population.
+
+The diagram below sorts the four behavioral types by what they would do just below versus just above the cutoff, shades the one fuzzy RD speaks for, and then draws the "two generalizations" ladder the estimate must climb to reach the whole population.
+
+```{ojs}
+//| echo: false
+
+// ── Static compliance-type figure: a 2×2 of behavioral types + a ladder. ──
+// Self-contained SVG (d3.create), Uppsala palette, no shared mutable state.
+p8i_complianceFig = {
+  const W = Math.min(640, width);
+  const gridH = 250;
+  const ladderH = 132;
+  const H = gridH + ladderH;
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // ── 2×2 grid of compliance types ──
+  const padL = 116, padT = 40, padR = 16, padB = 26;
+  const gw = W - padL - padR, gh = gridH - padT - padB;
+  const cw = gw / 2, ch = gh / 2;
+  const cellX = j => padL + j * cw;
+  const cellY = i => padT + i * ch;
+
+  // rows: would-enroll if BELOW? (i=0 No, i=1 Yes) ; cols: would-enroll if ABOVE? (j=0 No, j=1 Yes)
+  // complier = No below, Yes above (top-right). defier = Yes below, No above (bottom-left, assumed away).
+  // Place: top-left = never-taker (No/No), top-right = complier (No/Yes),
+  //        bottom-left = defier (Yes/No), bottom-right = always-taker (Yes/Yes).
+  const layout = [
+    { i: 0, j: 0, name: "Never-taker", note: "refuses either way", fill: "#f6f5f1", stroke: "#79766e", faded: true },
+    { i: 0, j: 1, name: "Complier", note: "enrolls BECAUSE of crossing", fill: "rgba(153,0,0,0.10)", stroke: "#990000", faded: false },
+    { i: 1, j: 0, name: "Defier", note: "ruled out (monotonicity)", fill: "#fbfbf9", stroke: "#cfccc2", faded: true, dashed: true },
+    { i: 1, j: 1, name: "Always-taker", note: "enrolls either way", fill: "#f6f5f1", stroke: "#79766e", faded: true }
+  ];
+
+  // Axis headers.
+  svg.append("text").attr("x", padL + gw / 2).attr("y", 16)
+    .attr("text-anchor", "middle").attr("font-size", 12).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("Would enroll if just ABOVE the cutoff?");
+  svg.append("text").attr("x", cellX(0) + cw / 2).attr("y", 32)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e").text("No");
+  svg.append("text").attr("x", cellX(1) + cw / 2).attr("y", 32)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e").text("Yes");
+  // Left (rotated) header.
+  svg.append("text")
+    .attr("transform", `translate(16, ${padT + gh / 2}) rotate(-90)`)
+    .attr("text-anchor", "middle").attr("font-size", 12).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("Would enroll if just BELOW?");
+  svg.append("text").attr("x", 34).attr("y", cellY(0) + ch / 2)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .attr("dominant-baseline", "central").text("No");
+  svg.append("text").attr("x", 34).attr("y", cellY(1) + ch / 2)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .attr("dominant-baseline", "central").text("Yes");
+
+  for (const c of layout) {
+    const x = cellX(c.j), y = cellY(c.i);
+    svg.append("rect")
+      .attr("x", x + 5).attr("y", y + 5)
+      .attr("width", cw - 10).attr("height", ch - 10)
+      .attr("rx", 8).attr("ry", 8)
+      .attr("fill", c.fill).attr("stroke", c.stroke)
+      .attr("stroke-width", c.faded ? 1.5 : 2.5)
+      .attr("stroke-dasharray", c.dashed ? "5,4" : null);
+    svg.append("text")
+      .attr("x", x + cw / 2).attr("y", y + ch / 2 - 8)
+      .attr("text-anchor", "middle").attr("font-size", 13.5).attr("font-weight", 700)
+      .attr("fill", c.faded ? "#79766e" : "#990000").text(c.name);
+    svg.append("text")
+      .attr("x", x + cw / 2).attr("y", y + ch / 2 + 12)
+      .attr("text-anchor", "middle").attr("font-size", 10.5)
+      .attr("fill", "#79766e").text(c.note);
+  }
+
+  // ── The "two generalizations" ladder ──
+  const ly = gridH + 24;
+  const rungs = [
+    { label: "Compliers at c", fill: "rgba(153,0,0,0.10)", stroke: "#990000", strong: true },
+    { label: "Everyone at c", fill: "rgba(61,90,108,0.10)", stroke: "#3d5a6c", strong: false },
+    { label: "Whole population", fill: "rgba(156,122,51,0.10)", stroke: "#9c7a33", strong: false }
+  ];
+  const rw = (W - 2 * 16 - 2 * 56) / 3;     // 56px gaps for arrows+labels
+  const gap = 56;
+  const stepNote = ["", "assume effects equal\nacross compliance type", "assume τ(x) flat\n(or model the curve)"];
+  for (let k = 0; k < rungs.length; k++) {
+    const rx = 16 + k * (rw + gap);
+    svg.append("rect")
+      .attr("x", rx).attr("y", ly)
+      .attr("width", rw).attr("height", 40)
+      .attr("rx", 7).attr("ry", 7)
+      .attr("fill", rungs[k].fill).attr("stroke", rungs[k].stroke)
+      .attr("stroke-width", rungs[k].strong ? 2.5 : 1.8);
+    svg.append("text")
+      .attr("x", rx + rw / 2).attr("y", ly + 24)
+      .attr("text-anchor", "middle").attr("font-size", 11.5).attr("font-weight", 700)
+      .attr("fill", rungs[k].stroke).text(rungs[k].label);
+    // Arrow + assumption label between rungs.
+    if (k > 0) {
+      const ax = rx - gap + 6, ax2 = rx - 6, ay = ly + 20;
+      svg.append("defs").append("marker")
+        .attr("id", `p8i-lad-arrow-${k}`).attr("viewBox", "0 -5 10 10")
+        .attr("refX", 9).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7)
+        .attr("orient", "auto")
+        .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#79766e");
+      svg.append("line")
+        .attr("x1", ax).attr("y1", ay).attr("x2", ax2).attr("y2", ay)
+        .attr("stroke", "#79766e").attr("stroke-width", 2)
+        .attr("marker-end", `url(#p8i-lad-arrow-${k})`);
+      const lines = stepNote[k].split("\n");
+      lines.forEach((ln, li) =>
+        svg.append("text")
+          .attr("x", (ax + ax2) / 2).attr("y", ay - 16 + li * 11)
+          .attr("text-anchor", "middle").attr("font-size", 8.5).attr("font-style", "italic")
+          .attr("fill", "#79766e").text(ln));
+    }
+  }
+  svg.append("text")
+    .attr("x", 16).attr("y", ly - 6)
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("Two generalizations to reach the whole population:");
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+Fuzzy RD speaks only for the shaded **complier** cell (enrolls just above, not just below). *Defiers* (the opposite) are assumed away by monotonicity. The ladder shows the two assumption-laden steps needed to widen the estimate from compliers-at-$c$ to the whole diabetic population.
+:::
+
+## When Is Extrapolation Defensible?
+
+The "local" critique is not a counsel of despair. There are disciplined ways to reach beyond the cutoff --- but each one buys generalization by *adding an assumption*, and you must be able to defend that assumption on substantive grounds.
+
+::: {.glass-card .glass-card--assumption}
+**Routes to (cautious) external validity.** Extrapolating $\tau_{\text{RD}}$ away from the cutoff is credible only when you can argue one of the following:
+
+1. **Effect homogeneity near $c$.** If $\tau(x)$ is approximately flat in a neighborhood of the cutoff, $\tau_{\text{RD}}$ generalizes to that neighborhood. Defend it by showing the *treated* and *untreated* slopes of $E[Y\mid X]$ are similar around $c$ (parallel local trends), or that pre-determined risk factors do not predict $\tau$.
+2. **A modeled effect curve.** If you observe the *same* cutoff effect at *several different cutoffs* (e.g., a program reorganized over years with different thresholds, or different regions using different scores), you can trace out $\tau(x)$ at multiple points and interpolate. This is the multi-cutoff / "RD with many thresholds" idea (Cattaneo, Keele, Titiunik, Vazquez-Bare 2016, 2021).
+3. **Bounds, not points.** Rather than assume a shape, derive *bounds* on the ATE using monotonicity or smoothness restrictions on the potential-outcome functions (Dong & Lewbel 2015 use the derivative of the RD curve --- the "treatment effect derivative" --- to extrapolate locally; Angrist & Rokkanen 2015 extrapolate by *conditioning on covariates* that render the running variable ignorable away from $c$).
+:::
+
+Two further remarks keep this honest. The **derivative of the RD curve** at the cutoff (Dong & Lewbel's $\tau'(c)$, the *treatment effect derivative*) tells you the *direction and local rate* at which the effect changes as you move away from $c$ --- a first-order extrapolation that is far more defensible than assuming the effect is constant. And the **bandwidth** debate from the [estimation and bandwidth](estimation-bandwidth.qmd) page is a *within-cutoff* concern (how wide a window estimates $\tau(c)$ well); it is not a route to external validity. A wider bandwidth does **not** estimate the ATE --- it estimates $\tau(c)$ with different bias-variance properties. Confusing "wide bandwidth" with "population effect" is a common and serious error.
+
+## Why "Local" Is Often Exactly What Policy Needs
+
+It is tempting to treat the locality of RD as a pure weakness. For many policy questions it is the opposite --- a near-perfect match between *what RD estimates* and *what a policymaker can actually do*.
+
+::: {.glass-card .glass-card--insight}
+**The marginal-policy argument.** A *region* almost never asks "should we treat everyone or no one?" It asks "should we move the threshold?" --- enroll patients with risk scores down to $-0.2$ instead of $0$, say. The patients affected by that decision are *exactly the ones at the current cutoff*. So $\tau_{\text{RD}} = \tau(c)$ is precisely the effect for the **marginal** patients a threshold change would pull in or push out. RD answers the marginal-expansion question with no extrapolation at all.
+:::
+
+The figure below shows why. It is the risk-score density again; the current cutoff $c = 0$ sits in the middle. Lowering it to $c' = -0.2$ pulls in exactly the patients in the shaded band between the two lines --- the patients clustered *right at the old margin*. Those are precisely the units $\tau(c)$ already describes, so the RD estimate answers the threshold-move question directly, with no extrapolation.
+
+```{ojs}
+//| echo: false
+
+// ── Static marginal-policy figure: which patients a threshold move pulls in. ──
+// Self-contained; uses the same N(0,1) score density sketch as the ATE figure.
+p8i_marginFig = {
+  const cOld = 0.0, cNew = -0.2;
+  const grid = d3.range(p8i_xMin, p8i_xMax + 1e-9, 0.04).map(x => ({
+    x, dens: Math.exp(-0.5 * x * x)
+  }));
+  const band = grid.filter(d => d.x >= cNew && d.x <= cOld);
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 250,
+    marginLeft: 64,
+    marginRight: 24,
+    marginTop: 20,
+    marginBottom: 46,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Clinical risk score X (running variable) →", domain: [p8i_xMin, p8i_xMax], grid: false },
+    y: { label: "Patient density f_X(x)", domain: [0, 1.15], grid: false, ticks: [] },
+    marks: [
+      Plot.areaY(grid, { x: "x", y: "dens", fill: "#3d5a6c", fillOpacity: 0.10 }),
+      Plot.line(grid, { x: "x", y: "dens", stroke: "#3d5a6c", strokeWidth: 1.5 }),
+      // The marginal band a threshold move pulls in.
+      Plot.areaY(band, { x: "x", y: "dens", fill: "#990000", fillOpacity: 0.28 }),
+      // Old and proposed cutoffs.
+      Plot.ruleX([cOld], { stroke: "#1c1c1a", strokeWidth: 1.5 }),
+      Plot.ruleX([cNew], { stroke: "#990000", strokeWidth: 1.5, strokeDasharray: "4,3" }),
+      Plot.text([{ x: cOld }], {
+        x: "x", frameAnchor: "top", dy: 2, dx: 30,
+        text: ["current cutoff c = 0"], fill: "#1c1c1a", fontSize: 10.5, fontWeight: 600, textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: cNew }], {
+        x: "x", frameAnchor: "top", dy: 18, dx: -4,
+        text: ["proposed c′ = −0.2"], fill: "#990000", fontSize: 10.5, fontWeight: 600, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: -0.1, y: 0.40 }], {
+        x: "x", y: "y",
+        text: ["patients pulled in →\nexactly the units τ(c) speaks for"],
+        fill: "#990000", fontSize: 10.5, fontWeight: 700, textAnchor: "middle", dy: 70, lineHeight: 1.2,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Lowering the enrollment threshold from $c = 0$ to $c' = -0.2$ enrolls exactly the patients in the shaded red band --- those sitting at the old margin. Because $\tau_{\text{RD}} = \tau(c)$ is the effect *for patients at the cutoff*, it is precisely the right number for costing this threshold move. No extrapolation is required.
+:::
+
+Put differently: the cutoff effect is the *policy-relevant* effect whenever the policy lever is the cutoff itself. If the *regiondirektör* is deciding whether to lower the enrollment threshold by a notch, the average effect over the whole diabetic population (the ATE) is the *wrong* number; the effect at the margin (the RD estimate) is the *right* one. The book's running theme --- match the estimand to the decision (from the [potential-outcomes](../01-fundamental-problem/potential-outcomes.qmd) page) --- resolves the "local" worry cleanly: locality is a defect only when the decision is global.
+
+::: {.glass-card .glass-card--warning}
+**But state the decision out loud.** The marginal-policy defense works *only* for marginal decisions. If the report will be used to justify a *wholesale* rollout to low-risk patients, or to compare the program against an unrelated intervention for the average patient, then $\tau_{\text{RD}}$ is being asked to do a job it cannot do, and you must say so. The same number is policy-perfect for one question and misleading for another.
+:::
+
+<details>
+<summary>Math Details: Why τ_RD = τ(c), and the cutoff-vs-ATE gap</summary>
+<div class="details-content">
+
+### The jump is the conditional average effect at $c$
+
+Write the observed outcome through the switching equation, $Y_i = D_i Y_i(1) + (1 - D_i) Y_i(0)$, and recall that in sharp RD $D_i = \mathbf{1}\{X_i \ge c\}$. Just to the right of the cutoff everyone is treated, so
+
+$$
+\lim_{x \downarrow c} E[Y_i \mid X_i = x] = \lim_{x \downarrow c} E[Y_i(1) \mid X_i = x] = E[Y_i(1)\mid X_i = c],
+$$
+
+where the last equality uses **right-continuity** of $x \mapsto E[Y_i(1)\mid X_i = x]$ at $c$. Just to the left everyone is untreated, so by **left-continuity** of $E[Y_i(0)\mid X_i = x]$,
+
+$$
+\lim_{x \uparrow c} E[Y_i \mid X_i = x] = E[Y_i(0)\mid X_i = c].
+$$
+
+Subtracting,
+
+$$
+\tau_{\text{RD}} = E[Y_i(1)\mid X_i = c] - E[Y_i(0)\mid X_i = c] = E[\,Y_i(1) - Y_i(0)\mid X_i = c\,] = \tau(c).
+$$
+
+The continuity assumption does the work: it lets the *untreated* limit (which we observe only below $c$) stand in for the treated group's *missing* untreated potential outcome at $c$. That is why RD identifies the effect *at the cutoff* and nowhere else --- continuity is a statement about behavior *at a single point*.
+
+### Decomposing the cutoff-vs-ATE gap
+
+Let $\mu = \text{ATE} = \int \tau(x) f_X(x)\,dx$. The interpretive error of quoting $\tau_{\text{RD}}$ as the ATE is exactly
+
+$$
+\tau_{\text{RD}} - \text{ATE} = \tau(c) - \int \tau(x)\, f_X(x)\, dx .
+$$
+
+A first-order Taylor expansion of $\tau(x)$ around the population mean score $\bar{X} = E[X]$ makes the drivers explicit. Writing $\tau(x) \approx \tau(\bar X) + \tau'(\bar X)(x - \bar X)$, the ATE is approximately $\tau(\bar X)$ (the linear term integrates against the mean-zero deviation $x - \bar X$ to zero), so
+
+$$
+\tau_{\text{RD}} - \text{ATE} \;\approx\; \tau'(\bar X)\,(c - \bar X).
+$$
+
+**Read this as**: "The gap between the cutoff effect and the population ATE is approximately the *slope of the effect curve* times the *distance from the cutoff to the average patient*." Two conditions make the gap vanish: a flat effect curve ($\tau' = 0$, i.e., no heterogeneity), or a cutoff that sits at the average patient ($c = \bar X$). Move the cutoff into the tail of the score distribution while effects are heterogeneous, and the gap grows linearly --- precisely the behavior you see when you drag the cutoff slider in the interactive.
+
+### The treatment-effect derivative
+
+Dong & Lewbel (2015) note that with a richer local fit you can identify not just $\tau(c)$ but its derivative $\tau'(c)$ at the cutoff, by contrasting the *slopes* of $E[Y\mid X]$ on the two sides:
+
+$$
+\tau'(c) = \lim_{x\downarrow c}\frac{d}{dx}E[Y\mid X{=}x] - \lim_{x\uparrow c}\frac{d}{dx}E[Y\mid X{=}x].
+$$
+
+This gives a *local linear extrapolation* of the effect, $\tau(c + \delta) \approx \tau(c) + \tau'(c)\,\delta$, valid for small $\delta$ --- a principled half-step beyond the cutoff that does not require assuming the effect is constant.
+
+</div>
+</details>
+
+## Estimating and Interpreting the Local Effect
+
+The code below simulates the diabetes-coordination RD with a *heterogeneous* effect curve, estimates the local effect at the cutoff with `rdrobust`, and then --- crucially --- contrasts it with the population ATE that a researcher would *wrongly* report if they ignored heterogeneity. The gap between the two is the entire lesson of this page, made numerical.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(rdrobust)
+library(tidyverse)
+
+set.seed(70)
+n <- 4000
+
+# Running variable: normalized clinical risk score, ~ N(0, 1), cutoff c = 0.
+x <- rnorm(n)
+c <- 0
+treated <- as.integer(x >= c)
+
+# Untreated potential outcome: HbA1c rises with risk.
+y0 <- 7.0 + 0.55 * (x + 3) + rnorm(n, 0, 0.2)
+
+# HETEROGENEOUS effect: sicker patients (higher x) gain more (more-negative tau).
+tau_x <- -0.45 - 0.45 * x            # tau(x): the true effect curve
+y1 <- y0 + tau_x
+y  <- ifelse(treated == 1, y1, y0)   # observed outcome
+
+# --- RD estimate: the local effect at the cutoff ---
+rd <- rdrobust(y = y, x = x, c = c)
+tau_rd <- rd$coef["Conventional", 1]
+
+# What RD TARGETS: tau(c) = tau evaluated at x = 0.
+tau_at_cutoff <- -0.45 - 0.45 * 0    # = -0.45
+
+# The population ATE: average of tau(x) over the WHOLE score distribution.
+ate <- mean(tau_x)
+
+cat(sprintf("RD estimate (local, at cutoff): %.3f\n", tau_rd))
+cat(sprintf("Targets tau(c) = tau(0):        %.3f\n", tau_at_cutoff))
+cat(sprintf("Population ATE (whole curve):    %.3f\n", ate))
+cat(sprintf("Interpretive gap (RD - ATE):     %.3f\n", tau_rd - ate))
+
+# Lesson: tau_rd ~ tau(c) = -0.45, but ATE ~ -0.45 here only because the mean
+# score is ~0 = c. Shift the cutoff (e.g., c <- 1) and RD tracks tau(1) = -0.90
+# while the ATE is unchanged -- "local" and "global" diverge.
+```
+
+### Python
+
+```python
+import numpy as np
+from rdrobust import rdrobust
+
+rng = np.random.default_rng(70)
+n = 4000
+
+# Running variable: normalized clinical risk score, ~ N(0, 1), cutoff c = 0.
+x = rng.normal(size=n)
+c = 0.0
+treated = (x >= c).astype(int)
+
+# Untreated potential outcome: HbA1c rises with risk.
+y0 = 7.0 + 0.55 * (x + 3) + rng.normal(0, 0.2, n)
+
+# HETEROGENEOUS effect: sicker patients (higher x) gain more (more-negative tau).
+tau_x = -0.45 - 0.45 * x              # tau(x): the true effect curve
+y1 = y0 + tau_x
+y  = np.where(treated == 1, y1, y0)   # observed outcome
+
+# --- RD estimate: the local effect at the cutoff ---
+rd = rdrobust(y=y, x=x, c=c)
+tau_rd = rd.coef.loc["Conventional"].iloc[0]
+
+# What RD TARGETS: tau(c) = tau evaluated at x = 0.
+tau_at_cutoff = -0.45 - 0.45 * 0.0    # = -0.45
+
+# The population ATE: average of tau(x) over the WHOLE score distribution.
+ate = tau_x.mean()
+
+print(f"RD estimate (local, at cutoff): {tau_rd:.3f}")
+print(f"Targets tau(c) = tau(0):        {tau_at_cutoff:.3f}")
+print(f"Population ATE (whole curve):    {ate:.3f}")
+print(f"Interpretive gap (RD - ATE):     {tau_rd - ate:.3f}")
+
+# Lesson: tau_rd ~ tau(c) = -0.45, but ATE ~ -0.45 here only because the mean
+# score is ~0 = c. Shift the cutoff (e.g., c = 1) and RD tracks tau(1) = -0.90
+# while the ATE is unchanged -- "local" and "global" diverge.
+```
+
+:::
+
+Both implementations return an RD estimate close to $\tau(c) = -0.45$ --- the local effect for marginal patients --- not the effect for the sickest patients ($\tau(2) = -1.35$) nor the healthiest ($\tau(-2) = +0.45$, i.e., a slight *harm*). The single number is correct and useful; the sentence "the program lowers HbA1c by 0.45 points" is true *only at the cutoff*.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region evaluates its diabetes coordination program with a sharp RD at risk-score cutoff $c = 0$ and reports a clean estimate of $\tau_{\text{RD}} = -0.50$ HbA1c points. The true effect curve is $\tau(x) = -0.50 - 0.40\,x$ (more-negative = more beneficial; higher $x$ = sicker), and the risk score is distributed standard normal across the diabetic population. (a) What is the program's average effect for patients at risk score $x = 1.5$? At $x = -1.5$? (b) What is the population ATE? (c) The *regiondirektör* concludes "the program cuts HbA1c by half a point for our diabetic patients." For which patients is this exactly right, and for which is it wrong?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Plug into the curve. At $x = 1.5$: $\tau(1.5) = -0.50 - 0.40(1.5) = -0.50 - 0.60 = -1.10$ --- the sickest patients benefit by 1.10 HbA1c points, more than twice the cutoff effect. At $x = -1.5$: $\tau(-1.5) = -0.50 - 0.40(-1.5) = -0.50 + 0.60 = +0.10$ --- for the healthiest patients the program is *slightly harmful* (HbA1c rises by 0.10).
+
+**(b)** The ATE is $E[\tau(X)] = E[-0.50 - 0.40 X] = -0.50 - 0.40\,E[X]$. With a standard normal score $E[X] = 0$, so $\text{ATE} = -0.50$. (Here the ATE *coincides* with $\tau_{\text{RD}}$ only because the cutoff sits at the mean score.)
+
+**(c)** The statement "$-0.50$" is exactly right for patients **at the cutoff** ($x = 0$), and --- in this particular case --- it happens to equal the population *average* too, because $c = \bar X = 0$. But it is wrong for almost every *individual* group: it understates the benefit for high-risk patients ($-1.10$ at $x = 1.5$) and overstates it for low-risk patients (where the program may even harm). The director's sentence is defensible as a statement about the *average* and about the *marginal* patient, but not as a description of what any particular non-marginal patient should expect.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the same curve $\tau(x) = -0.50 - 0.40\,x$ with $X \sim N(0,1)$, suppose the region *raises* the enrollment threshold to $c = 1.0$ (rationing the program to only the sickest). (a) What does a valid RD design now estimate? (b) Has the population ATE changed? (c) Use the Taylor approximation $\tau_{\text{RD}} - \text{ATE} \approx \tau'(\bar X)(c - \bar X)$ to predict the gap, and compare it to the exact gap.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** RD now estimates $\tau(c) = \tau(1.0) = -0.50 - 0.40(1.0) = -0.90$. Moving the administrative line moved the answer, even though neither the program nor the patients changed --- RD always reports $\tau$ at *whatever* the cutoff is.
+
+**(b)** No. The ATE is a property of the whole population and the curve, $\text{ATE} = -0.50 - 0.40\,E[X] = -0.50$, independent of where the cutoff sits. Changing $c$ changes *who is at the margin*, not the population average.
+
+**(c)** The curve is linear, so $\tau'(x) = -0.40$ everywhere and $\bar X = 0$. The approximation gives $\tau_{\text{RD}} - \text{ATE} \approx -0.40 \times (1.0 - 0) = -0.40$. The exact gap is $\tau(1.0) - \text{ATE} = -0.90 - (-0.50) = -0.40$. They match exactly, because for a *linear* effect curve the first-order Taylor expansion is the function itself --- the approximation is only approximate when $\tau(x)$ is curved.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A fuzzy RD at $c = 0$ estimates the effect of the diabetes program where crossing the cutoff raises the enrollment *probability* from 0.15 (below) to 0.80 (above). The estimated jump in mean HbA1c at the cutoff is $-0.39$. (a) Compute the fuzzy RD estimate. (b) State, precisely, the subpopulation for which this is the average effect. (c) Why is this estimate *two* generalizations removed from "the effect for all diabetic patients in the region"?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The fuzzy RD estimate is the ratio of the outcome jump to the treatment-probability jump:
+
+$$
+\tau_{\text{fuzzy}} = \frac{-0.39}{0.80 - 0.15} = \frac{-0.39}{0.65} = -0.60.
+$$
+
+**(b)** It is the average effect for **compliers at the cutoff** --- patients with risk score $X_i \approx 0$ who enroll in the program *because* they crossed the threshold (and would not have enrolled had they fallen just below). It is *not* the effect for always-takers (who would enroll regardless, e.g., through clinician discretion) nor never-takers (who decline regardless).
+
+**(c)** First generalization: from *compliers at the cutoff* to *all patients at the cutoff* --- requires that compliers' effects equal always-/never-takers' effects at $c$ (an effect-homogeneity-across-compliance-type assumption). Second generalization: from *all patients at the cutoff* to *the whole population* --- requires that $\tau(x)$ is flat (or that you model/extrapolate the curve). Each step needs its own defense; the raw estimate $-0.60$ supports neither without further argument.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the shape to **Hump (mid-risk gain most)** with high heterogeneity. A colleague argues: "If we just widen the bandwidth enough, RD will average over more of the curve and recover the ATE." (a) Explain why this is wrong. (b) What *does* widening the bandwidth change? (c) Propose a design that *would* let you trace out $\tau(x)$ at several points, and name the assumption it relies on.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** It is wrong because RD always targets $\tau(c)$ --- the effect *at the cutoff* --- regardless of bandwidth. A wider window includes patients farther from $c$, but their job is to help *estimate the limits of the regression function at $c$* (by fitting the local slope), not to shift the estimand toward an average over the curve. As the bandwidth grows, the local-linear fit can become *biased* for $\tau(c)$ (it starts mistaking curvature for a jump), but it never starts estimating the ATE. "Wide bandwidth" trades variance for bias *in estimating $\tau(c)$*; it is not a route to external validity.
+
+**(b)** Widening the bandwidth changes the **bias-variance trade-off** of the estimator of $\tau(c)$: more data (lower variance) at the cost of including points where the linear approximation to $E[Y\mid X]$ is poorer (higher bias). The optimal bandwidth (e.g., the MSE-optimal choice `rdrobust` uses) balances these --- but the *target* is fixed at $\tau(c)$ throughout.
+
+**(c)** A **multi-cutoff** design: if the program (or comparable programs in different regions) uses *several distinct thresholds* $c_1, c_2, \dots$, each one identifies $\tau(c_k)$, and stacking them traces the effect curve at multiple points --- which you can then interpolate. The key assumption is that the *same* effect curve $\tau(x)$ governs all the cutoffs (no other differences across the settings drive the effects), so that the points $\{(c_k, \tau(c_k))\}$ lie on one common curve. (Cattaneo, Keele, Titiunik & Vazquez-Bare 2016/2021.) Alternatively, Angrist & Rokkanen (2015) extrapolate by conditioning on covariates rich enough to make the running variable ignorable away from $c$.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- RD estimates a **local** effect at the cutoff, $\tau_{\text{RD}} = \tau(c) = E[\tau_i \mid X_i = c]$ --- one point on the treatment-effect curve, not the population ATE.
+- In **fuzzy** RD the estimand narrows further, to the effect for **compliers at the cutoff** --- local in the running variable *and* in compliance type.
+- $\tau_{\text{RD}} = \text{ATE}$ only when effects are constant ($\tau(x)$ flat) or the cutoff coincidentally sits at the mean score; the gap grows with heterogeneity $\tau'$ and with the distance $c - \bar X$.
+- Widening the bandwidth changes the bias-variance trade-off in estimating $\tau(c)$; it does **not** turn the local effect into the ATE.
+- Locality is a *defect* for global decisions but a *feature* for marginal ones: the cutoff effect is exactly the effect for the patients a threshold change would move --- so match the estimand to the decision.
+:::
+
+## What Comes Next
+
+RD earns its credibility by exploiting a known, sharp assignment rule --- and pays for it with a narrowly local estimand. But most observational settings hand us no such rule. When treatment is decided by a tangle of observable patient and clinic characteristics rather than a single threshold, we need a strategy that builds comparable treated and control groups *on those characteristics*. The next module, [Matching & Propensity Scores](../09-matching/index.qmd), develops exactly that: how to balance covariates between the treated and untreated --- by matching, by weighting, and through the propensity score --- so that a difference in observed outcomes can again be read as a causal effect, this time for a much broader population than the units at any single cutoff.

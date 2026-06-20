@@ -1,0 +1,1182 @@
+---
+title: "Staggered Adoption"
+subtitle: "When treatment rolls out at different times"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define staggered adoption with cohorts and an absorbing treatment indicator $D_{it} = \mathbf{1}\{t \ge G_i\}$
+- Interpret the Goodman-Bacon decomposition: TWFE as a weighted average of clean and *forbidden* 2x2 comparisons
+- Explain why "later-treated vs. already-treated" comparisons attach negative weights to real, beneficial effects and can flip the sign of $\hat\beta$
+- Distinguish the conditions under which TWFE is safe (homogeneous static effects or common timing) from when it is biased (staggered timing plus dynamic or heterogeneous effects)
+- Recognize why dropping never-treated units makes the bias worse rather than better
+:::
+
+## A Reform That Arrives in Waves
+
+On the previous page we studied the clean two-group, two-period difference-in-differences design: one group adopts a reform at a single date, another never does, and we compare their before-and-after changes. Real Swedish health policy almost never looks like that.
+
+Consider a concrete case. In 2016, *Socialstyrelsen* publishes new national guidelines for a structured fall-prevention program (*fallpreventionsprogram*) in elderly care. The 21 *regioner* do not all adopt it at once. Some early movers --- Region Stockholm, Region Skåne --- roll it out across their *vårdcentraler* in 2017. A middle wave adopts in 2019. The late adopters wait until 2021, constrained by budgets and competing priorities. A few small regions never adopt it during the study window at all.
+
+You observe every region every year from 2014 to 2023. The outcome is the annual rate of fall-related hospitalizations per 1,000 residents aged 75+. The treatment --- being enrolled in the program --- switches on for each region at *its own* adoption year and stays on thereafter.
+
+This is **staggered adoption**: an absorbing treatment that different units turn on at different times. It is the dominant structure in panel-data policy evaluation, and for two decades the default tool was a single regression. That regression, it turns out, can be badly --- even catastrophically --- wrong. This page explains why, and the next page tells you what to do instead.
+
+::: {.glass-card .glass-card--definition}
+A panel of units $i = 1, \dots, N$ is observed over periods $t = 1, \dots, T$. Each unit has an **adoption time** $G_i \in \{2, \dots, T\} \cup \{\infty\}$ --- the first period in which its treatment switches on. Units that never adopt have $G_i = \infty$.
+
+Units that share an adoption time form a **cohort**. The treatment indicator is
+
+$$
+D_{it} = \mathbf{1}\{t \ge G_i\},
+$$
+
+read as "$D_{it}$ equals one when the current period $t$ is at or past unit $i$'s adoption time $G_i$, and zero before." Because $D_{it}$ never switches back off, treatment is **absorbing** (staggered, not switching).
+:::
+
+The picture below is the whole rollout at a glance. Each row is a cohort, each column a year; a cell turns **filled** the moment that cohort adopts and *stays* filled forever after --- that "switches on and never off" pattern is exactly what **absorbing** means. The never-treated row stays empty across the entire window and supplies the clean comparison group.
+
+```{ojs}
+//| echo: false
+
+// ── Static adoption-timeline grid: rows = cohorts, columns = years. A cell is
+// filled from a cohort's adoption year onward (absorbing on-switch). Pure d3
+// figure, no shared mutable state, no controls. ──
+p2_adoptionGrid = {
+  const years = d3.range(2014, 2024);
+  const rows = [
+    { name: "Early cohort",  g: 2017, color: "#3d5a6c" },
+    { name: "Middle cohort", g: 2019, color: "#9c7a33" },
+    { name: "Late cohort",   g: 2021, color: "#990000" },
+    { name: "Never-treated", g: Infinity, color: "#79766e" }
+  ];
+
+  const W = Math.min(620, width);
+  const padL = 118, padT = 30, padR = 14, padB = 8;
+  const cellH = 30, cellGap = 4;
+  const gridW = W - padL - padR;
+  const cw = gridW / years.length;
+  const H = padT + rows.length * (cellH + cellGap) + padB;
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // Year column headers
+  svg.append("g").selectAll("text").data(years).join("text")
+    .attr("x", (d, j) => padL + j * cw + cw / 2)
+    .attr("y", padT - 12)
+    .attr("text-anchor", "middle")
+    .attr("font-size", 10).attr("fill", "#79766e")
+    .text(d => d);
+
+  const rg = svg.append("g");
+  rows.forEach((row, i) => {
+    const y = padT + i * (cellH + cellGap);
+    // Row label
+    rg.append("text")
+      .attr("x", padL - 10).attr("y", y + cellH / 2)
+      .attr("text-anchor", "end").attr("dominant-baseline", "central")
+      .attr("font-size", 12).attr("font-weight", 600).attr("fill", "#1c1c1a")
+      .text(row.name);
+    // Cells
+    years.forEach((t, j) => {
+      const treated = row.g !== Infinity && t >= row.g;
+      rg.append("rect")
+        .attr("x", padL + j * cw + 1).attr("y", y)
+        .attr("width", cw - 2).attr("height", cellH)
+        .attr("rx", 3)
+        .attr("fill", treated ? row.color : "#f6f5f1")
+        .attr("fill-opacity", treated ? 0.85 : 1)
+        .attr("stroke", treated ? row.color : "#e6e3db")
+        .attr("stroke-width", 1);
+    });
+    // Adoption marker: small "ON →" label at the switch year
+    if (row.g !== Infinity) {
+      const j = years.indexOf(row.g);
+      rg.append("text")
+        .attr("x", padL + j * cw + cw / 2).attr("y", y + cellH / 2)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 9).attr("font-weight", 700).attr("fill", "white")
+        .attr("stroke", row.color).attr("stroke-width", 2.5).attr("paint-order", "stroke")
+        .text("adopts");
+    }
+  });
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+Filled = treated (program switched on); empty = untreated. Treatment is **absorbing**: once a cohort's cell fills, every later cell in that row is filled too --- no region ever leaves the program. The never-treated row is empty throughout.
+:::
+
+The whole difficulty of this page lives in one fact: when units adopt at *different* times, a unit that adopted *early* is already treated when a *later* cohort is still untreated. That makes the early adopter look, superficially, like a usable "control" for the late adopter --- and that temptation is where everything goes wrong.
+
+
+## The Default Tool: Two-Way Fixed Effects
+
+For decades, applied researchers estimated staggered designs with a single **two-way fixed-effects** (TWFE) regression:
+
+$$
+Y_{it} = \alpha_i + \gamma_t + \beta\, D_{it} + \varepsilon_{it}.
+$$
+
+::: {.glass-card .glass-card--definition}
+**How to read the TWFE regression.**
+
+- $\alpha_i$ is a **unit fixed effect** --- one intercept per region. It absorbs every time-invariant difference between regions (Skåne is simply a higher-falls region than Jämtland, for reasons that never change over the window).
+- $\gamma_t$ is a **time fixed effect** --- one intercept per year. It absorbs every shock that hits *all* regions in a given year equally (a nationwide cold snap in 2018, a change in coding practice).
+- $D_{it}$ is the treatment indicator from above; $\beta$ is the coefficient we care about.
+- $\varepsilon_{it}$ is the idiosyncratic error, clustered by region in practice.
+
+The hope is that $\hat\beta$ recovers "the" treatment effect of the fall-prevention program, purged of fixed regional differences and common time trends.
+:::
+
+In the clean 2×2 case, this hope is justified: with one treated group, one control group, and one switch date, $\hat\beta$ is *exactly* the difference-in-differences estimate. The trouble is that researchers assumed the same single coefficient would keep meaning "the treatment effect" once adoption was staggered. **It does not.**
+
+The reason is subtle and was not widely understood until around 2018--2021, in a wave of papers --- Goodman-Bacon (2021), de Chaisemartin & D'Haultfœuille (2020), Callaway & Sant'Anna (2021), Sun & Abraham (2021) --- now collectively called the "DiD revolution." We focus on the cleanest diagnostic: the Goodman-Bacon decomposition.
+
+
+## What $\hat\beta$ Actually Averages
+
+Goodman-Bacon's (2021) result is a theorem about *arithmetic*, not about assumptions. It says: the TWFE coefficient $\hat\beta$ from a staggered design is *identically equal* to a weighted average of every possible **2×2 difference-in-differences** you could build by picking a pair of cohorts and a pair of periods.
+
+There are three kinds of these 2×2 building blocks. Two are perfectly sensible. One is poison.
+
+::: {.glass-card .glass-card--definition}
+**The three flavors of 2×2 comparison.**
+
+1. **Treated vs. never-treated.** An adopting cohort is compared, before and after its switch, to units that never adopt. *Clean.* The control group's treatment status never changes, so it provides an honest counterfactual trend.
+
+2. **Earlier-treated vs. later-treated, in the window before the later group adopts.** An early cohort (already on) is the treated group; a not-yet-treated late cohort is the control. *Clean.* The control is genuinely untreated during this window.
+
+3. **Later-treated vs. earlier-treated, in the window after BOTH have adopted.** Here the *late* cohort is the treated group --- and the *already-treated early cohort serves as its control.* This is the **forbidden comparison**.
+:::
+
+The schematic below draws the three flavors side by side. In each mini-panel, the bar's **green** segment is a unit while it is untreated; the **red** segment is a unit while it is treated. A clean 2×2 needs a control bar that is *green* (untreated) throughout the comparison window. Flavor 3 fails exactly that test --- its "control" is already red.
+
+```{ojs}
+//| echo: false
+
+// ── Static schematic of the three Goodman-Bacon 2x2 flavors. Each panel shows
+// the treated row and the control row as time-bars: green = untreated segment,
+// red = treated segment. The shaded comparison window highlights whether the
+// control is genuinely untreated (clean) or already treated (forbidden). Pure
+// d3 figure; no controls, no shared mutable state. ──
+p2_flavorSchematic = {
+  const W = Math.min(640, width);
+  const colGreen = "#2e6f40", colRed = "#990000", colWin = "#990000";
+
+  // Each flavor: two rows; each row has an adoption fraction (0..1 along the
+  // bar, or null = never); winStart/winEnd mark the comparison window.
+  const panels = [
+    {
+      title: "1 · Treated vs. never-treated",
+      verdict: "CLEAN", clean: true,
+      rows: [
+        { label: "Treated: adopting cohort", adopt: 0.45 },
+        { label: "Control: never-treated",   adopt: null }
+      ],
+      winStart: 0.0, winEnd: 1.0
+    },
+    {
+      title: "2 · Earlier vs. later (before later adopts)",
+      verdict: "CLEAN", clean: true,
+      rows: [
+        { label: "Treated: early cohort", adopt: 0.30 },
+        { label: "Control: late cohort (not yet on)", adopt: 0.80 }
+      ],
+      winStart: 0.30, winEnd: 0.78
+    },
+    {
+      title: "3 · Later vs. earlier (after BOTH adopt)",
+      verdict: "FORBIDDEN", clean: false,
+      rows: [
+        { label: "Treated: late cohort", adopt: 0.55 },
+        { label: "Control: early cohort (already on!)", adopt: 0.20 }
+      ],
+      winStart: 0.55, winEnd: 1.0
+    }
+  ];
+
+  const padL = 8, padT = 6, gapPanel = 14;
+  const labelW = 188;            // room for the row labels
+  const barX = padL + labelW;
+  const barW = W - barX - 12;
+  const rowH = 20, rowGap = 8, titleH = 22, verdictH = 4;
+  const panelH = titleH + 2 * rowH + rowGap + 16;
+  const H = padT + panels.length * (panelH + gapPanel);
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  panels.forEach((p, pi) => {
+    const py = padT + pi * (panelH + gapPanel);
+    const g = svg.append("g");
+
+    // Comparison-window shading (spans both rows)
+    const wx1 = barX + p.winStart * barW;
+    const wx2 = barX + p.winEnd * barW;
+    g.append("rect")
+      .attr("x", wx1).attr("y", py + titleH - 4)
+      .attr("width", wx2 - wx1).attr("height", 2 * rowH + rowGap + 8)
+      .attr("fill", p.clean ? "#2e6f40" : "#990000")
+      .attr("fill-opacity", 0.06)
+      .attr("stroke", p.clean ? "#2e6f40" : "#990000")
+      .attr("stroke-opacity", 0.35)
+      .attr("stroke-dasharray", "3,3").attr("rx", 4);
+
+    // Title + verdict tag
+    g.append("text")
+      .attr("x", padL).attr("y", py + 12)
+      .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(p.title);
+    g.append("text")
+      .attr("x", W - 12).attr("y", py + 12)
+      .attr("text-anchor", "end")
+      .attr("font-size", 10).attr("font-weight", 800)
+      .attr("fill", p.clean ? "#2e6f40" : "#990000")
+      .text(p.verdict);
+
+    p.rows.forEach((row, ri) => {
+      const ry = py + titleH + ri * (rowH + rowGap);
+      // Row label
+      g.append("text")
+        .attr("x", barX - 8).attr("y", ry + rowH / 2)
+        .attr("text-anchor", "end").attr("dominant-baseline", "central")
+        .attr("font-size", 10.5).attr("fill", "#44443f")
+        .text(row.label);
+      // Untreated (green) portion
+      const splitX = row.adopt === null ? barX + barW : barX + row.adopt * barW;
+      g.append("rect")
+        .attr("x", barX).attr("y", ry).attr("width", splitX - barX).attr("height", rowH)
+        .attr("rx", 3).attr("fill", colGreen).attr("fill-opacity", 0.8);
+      // Treated (red) portion
+      if (row.adopt !== null) {
+        g.append("rect")
+          .attr("x", splitX).attr("y", ry).attr("width", barX + barW - splitX).attr("height", rowH)
+          .attr("rx", 3).attr("fill", colRed).attr("fill-opacity", 0.8);
+      }
+    });
+  });
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+<span style="color:#2e6f40; font-weight:700;">Green</span> = unit is untreated; <span style="color:#990000; font-weight:700;">red</span> = unit is treated. The dashed box marks the comparison window. Flavors 1 and 2 have a control bar that is green (untreated) across the window --- a valid counterfactual. In flavor 3 the "control" bar is already red inside the window: an already-treated cohort masquerading as a control. That is the forbidden comparison.
+:::
+
+The third comparison is the villain. Look closely at what it does. To estimate the late cohort's effect, it differences out the change in the early cohort over the same window. But the early cohort is *already treated and still responding* --- if the program's benefit keeps growing year after year, the early cohort's outcome is still moving *because of its own treatment*. Subtracting that movement does not net out a common trend; it subtracts a treatment effect.
+
+::: {.glass-card .glass-card--warning}
+In a forbidden 2×2, the control group's outcome is contaminated by *its own ongoing treatment dynamics*. The DiD subtracts that dynamic path as if it were a counterfactual trend. When a beneficial effect grows over time, the early "control" cohort's outcome is still *falling* because of its own treatment; subtracting that falling path *adds* a positive amount, so the estimated effect of the later cohort is pushed *up --- toward zero, toward apparent harm*. Equivalently, the early cohort's true (beneficial, negative) dynamics enter $\hat\beta$ with a *negative weight*, turning real benefit into spurious harm.
+:::
+
+The causal picture below makes the contamination explicit. The late cohort's outcome moves for two reasons: its *own* treatment (the **green** causal arrow, the thing we want to measure) and the shared secular trend. The forbidden 2×2 tries to net out that trend by subtracting the early cohort's change --- but the early cohort's outcome is being driven by *its own treatment* (a second green arrow). When that contaminated path is used as the "control trend," it injects the early cohort's effect into $\hat\beta$ along the **red** route: a back-door that opens *because* an already-treated unit was pressed into service as a control.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Small static DAG component for the forbidden-comparison structure.
+// Page-tag-prefixed (p2_), pure: depends only on global d3, returns svg.node().
+// nodes {id,x,y,label} in normalized [0,1]; conditioned ids => rounded squares;
+// edges {source,target,kind}: 'causal'=#2e6f40, 'backdoor-open'=#b3000b,
+// 'blocked'=#79766e dashed. One arrowhead marker per colour. ──
+p2_drawDAG = function ({ nodes, edges, width = 460, height = 240, conditioned = [] }) {
+  const pad = 52, r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "backdoor-open" || k === "biasing") ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "p2dag-green" :
+    (k === "backdoor-open" || k === "biasing") ? "p2dag-red" : "p2dag-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2dag-green", "#2e6f40"], ["p2dag-red", "#b3000b"], ["p2dag-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 14).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 14)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 10.5).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One call: the forbidden-comparison causal structure. The early cohort's own
+// treatment (green) drives its outcome; pressing that already-treated outcome
+// into service as the late cohort's "control trend" opens the red back-door
+// into the late-cohort estimate.
+p2_drawDAG({
+  width: Math.min(540, width),
+  height: 232,
+  nodes: [
+    { id: "De", x: 0.06, y: 0.16, label: "Dₑ", caption: "early treated" },
+    { id: "Ye", x: 0.06, y: 0.84, label: "Yₑ", caption: "early outcome" },
+    { id: "Dl", x: 0.94, y: 0.16, label: "Dₗ", caption: "late treated" },
+    { id: "Yl", x: 0.94, y: 0.84, label: "Yₗ", caption: "late outcome" },
+    { id: "C",  x: 0.50, y: 0.84, label: "ctrl", caption: "used as control trend" }
+  ],
+  conditioned: ["C"],
+  edges: [
+    { source: "De", target: "Ye", kind: "causal" },        // early's own effect (real)
+    { source: "Dl", target: "Yl", kind: "causal" },         // late's own effect (target)
+    { source: "Ye", target: "C",  kind: "blocked" },        // early outcome enters as "control"
+    { source: "C",  target: "Yl", kind: "backdoor-open" }   // contaminating subtraction into late estimate
+  ]
+})
+```
+
+::: {.aside}
+<span style="color:#2e6f40; font-weight:700;">Green</span> = real causal effect; <span style="color:#b3000b; font-weight:700;">red</span> = the opened back-door; <span style="color:#79766e; font-weight:700;">grey dashed</span> = the early outcome being routed in as a "control." The early cohort's outcome ($Y_e$) is still falling *because of $D_e$*; subtracting it as the late cohort's counterfactual trend (boxed node) opens a back-door into $\hat\beta_\ell$ that injects the early cohort's effect with the wrong sign.
+:::
+
+Read the punchline carefully: $\hat\beta$ can place **negative weights** on perfectly real, beneficial treatment effects. With enough dynamics, $\hat\beta$ can be smaller in magnitude than the smallest unit-level effect, larger than the largest, or even carry the *opposite sign* of every single true effect in the data. A program that helps every region in every year can produce a TWFE estimate saying it does harm.
+
+One subtlety worth settling now, because it sounds contradictory: the weights Goodman-Bacon attaches to the *2×2 comparisons* are all **positive** (they are sample shares times a variance, both non-negative). The negative weights appear only when you re-express the same $\hat\beta$ at the finer level of individual *unit-time treatment effects* $\tau_{it}$. A positively-weighted but *poisoned* forbidden comparison --- one that subtracts a treatment effect as if it were a trend --- is algebraically identical to attaching a negative weight to that subtracted effect. Same number, two bookkeeping levels: positive weights on contaminated 2×2 targets, negative weights on the underlying effects.
+
+
+## See It: Cohorts, Dynamics, and a Lying Coefficient
+
+The interactive below builds a synthetic staggered rollout of the fall-prevention program. There are three adopting cohorts (2017, 2019, 2021) plus a never-adopting control group. The outcome is fall-related hospitalizations per 1,000 (lower is better, so a *beneficial* effect is *negative*).
+
+You control how the treatment effect evolves after adoption with the **dynamics** slider. At zero, every treated region drops by the same fixed amount the instant it adopts and stays there (a static, homogeneous effect). Crank it up and the benefit *grows* with **event-time** --- *event-time is simply years since a cohort adopted, $e = t - G_i$, so $e=0$ is the adoption year, $e=1$ the next year, and so on*. The longer a region has been in the program, the larger its benefit, since fall-prevention routines compound. Watch the true overall ATT and the TWFE estimate diverge. A second toggle lets you **drop the never-treated regions** --- a "fix" that, as you will see, makes everything worse.
+
+The pink number is not an approximation: the widget runs the genuine OLS two-way fixed-effects estimator under the hood (it demeans the treatment indicator and the outcome by unit and by year, then takes the slope --- the **Frisch–Waugh–Lovell** *partial-out-then-regress* step that yields the exact TWFE coefficient). So when it disagrees with the truth, that is real OLS bias, not a shortcut.
+
+::: {.interactive-container}
+
+#### TWFE vs. the Truth Under Growing Effects
+
+::: {.callout-note appearance="minimal"}
+**Start here:** leave dynamics at 0 and note the two numbers agree. Then drag dynamics toward 1 and watch the red TWFE number barely move while the green truth plunges. To force the sign flip, set on-impact to about $-0.5$, push dynamics high, then turn on *Drop the never-treated regions*.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof stg_dynamics = Inputs.range([0, 1], {
+  value: 0,
+  step: 0.05,
+  label: "Effect dynamics (0 = static, 1 = strongly growing)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof stg_jump = Inputs.range([-3, -0.2], {
+  value: -1.5,
+  step: 0.1,
+  label: "On-impact effect (falls/1,000 at adoption)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin:-0.3rem 0 0.4rem 0;">Negative = beneficial. A small on-impact (about &minus;0.5) with strong dynamics is where TWFE breaks. Each extra program-year then adds <strong style="color:#2e6f40;">${(stg_dynamics * 2.2).toFixed(2)}</strong> falls/1,000 of benefit.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof stg_dropNever = Inputs.toggle({
+  label: "Drop the never-treated regions (the analyst's tempting 'fix')",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin:-0.3rem 0 0.4rem 0;">Triggers the wrong-sign result only when dynamics are high${stg_dynamics < 0.4 ? ` <strong style="color:#990000;">— raise the dynamics slider first.</strong>` : `.`}</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof stg_show2x2 = Inputs.toggle({
+  label: "Show the forbidden window (late cohort controlled by already-treated cohorts)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ---- Synthetic staggered panel -------------------------------------------
+// Years 2014..2023; three adopting cohorts + a never-treated group.
+stg_years = d3.range(2014, 2024)
+
+stg_cohorts = [
+  { name: "Early (2017)",  g: 2017, color: "#3d5a6c", base: 42, n: 6 },
+  { name: "Middle (2019)", g: 2019, color: "#9c7a33", base: 40, n: 6 },
+  { name: "Late (2021)",   g: 2021, color: "#990000", base: 44, n: 5 },
+  { name: "Never",         g: Infinity, color: "#79766e", base: 41, n: 4 }
+]
+
+// Dynamic treatment effect for a cohort treated for `e` full event-years
+// (e = t - g >= 0). On-impact = stg_jump; benefit grows linearly in event-time
+// as the dynamics slider rises. Effect is on falls/1,000, so negative = good.
+stg_effect = function (e) {
+  if (e < 0) return 0;
+  const growth = stg_dynamics * (-2.2);   // extra benefit per event-year
+  return stg_jump + growth * e;
+}
+
+// Common (untreated) trend: a mild secular decline shared by all regions.
+stg_trend = (t) => -0.25 * (t - 2014)
+
+// Cohort-mean outcome at year t (idiosyncratic noise omitted so the geometry
+// is legible).
+stg_outcome = function (coh, t) {
+  const e = (coh.g === Infinity) ? -1 : (t - coh.g);
+  return coh.base + stg_trend(t) + stg_effect(e);
+}
+
+stg_panel = stg_cohorts.flatMap(coh =>
+  stg_years.map(t => ({
+    cohort: coh.name,
+    g: coh.g,
+    color: coh.color,
+    year: t,
+    treated: coh.g !== Infinity && t >= coh.g,
+    y: stg_outcome(coh, t)
+  }))
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ---- True overall ATT ----------------------------------------------------
+// Size-weighted average treatment effect over all treated (cohort, year) cells.
+// This is the honest, dynamics-aware target.
+stg_trueATT = {
+  let num = 0, den = 0;
+  for (const coh of stg_cohorts) {
+    if (coh.g === Infinity) continue;
+    for (const t of stg_years) {
+      if (t >= coh.g) {
+        num += coh.n * stg_effect(t - coh.g);
+        den += coh.n;
+      }
+    }
+  }
+  return num / den;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ---- TWFE estimate via the within (two-way demeaning) estimator ----------
+// Expand cohorts into individual units, apply the Frisch–Waugh–Lovell within
+// transform to D and Y (subtract unit means and time means, add back the grand
+// mean), then beta = sum(Dtilde*Ytilde) / sum(Dtilde^2). This equals the OLS
+// TWFE coefficient exactly.
+stg_twfe = {
+  // When stg_dropNever is on, the never-treated regions are removed before
+  // estimation — exactly the "fix" a worried analyst might try. The estimator
+  // is then forced to lean on already-treated cohorts as controls (the
+  // forbidden comparisons), which is where the sign flip comes from.
+  const usableCohorts = stg_dropNever
+    ? stg_cohorts.filter(coh => coh.g !== Infinity)
+    : stg_cohorts;
+
+  const units = [];
+  for (const coh of usableCohorts) {
+    for (let k = 0; k < coh.n; k++) units.push(coh);
+  }
+
+  const D = [], Y = [], ui = [], ti = [];
+  units.forEach((coh, u) => {
+    stg_years.forEach((t, j) => {
+      const treated = coh.g !== Infinity && t >= coh.g ? 1 : 0;
+      D.push(treated);
+      Y.push(stg_outcome(coh, t));
+      ui.push(u);
+      ti.push(j);
+    });
+  });
+
+  const n = D.length;
+  const grandD = d3.mean(D), grandY = d3.mean(Y);
+
+  const uMeanD = d3.rollup(D.map((d, i) => ({ u: ui[i], d })), v => d3.mean(v, x => x.d), x => x.u);
+  const uMeanY = d3.rollup(Y.map((y, i) => ({ u: ui[i], y })), v => d3.mean(v, x => x.y), x => x.u);
+  const tMeanD = d3.rollup(D.map((d, i) => ({ t: ti[i], d })), v => d3.mean(v, x => x.d), x => x.t);
+  const tMeanY = d3.rollup(Y.map((y, i) => ({ t: ti[i], y })), v => d3.mean(v, x => x.y), x => x.t);
+
+  let sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) {
+    const dt = D[i] - uMeanD.get(ui[i]) - tMeanD.get(ti[i]) + grandD;
+    const yt = Y[i] - uMeanY.get(ui[i]) - tMeanY.get(ti[i]) + grandY;
+    sxx += dt * dt;
+    sxy += dt * yt;
+  }
+  return sxy / sxx;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ---- Step-function panel: cohort outcome paths ---------------------------
+{
+  // Data-driven y-extent so the forbidden band and its label track the lines
+  // even when strong dynamics push the early cohort far down the axis.
+  const yvals = stg_panel.map(d => d.y);
+  const yMin = d3.min(yvals) - 1.5;
+  const yMax = d3.max(yvals) + 1.5;
+
+  // Short right-edge labels (the adoption year is already shown by dot + gridline).
+  const stg_shortName = { "Early (2017)": "Early", "Middle (2019)": "Middle", "Late (2021)": "Late", "Never": "Never" };
+
+  return Plot.plot({
+  width: Math.min(680, width),
+  height: 340,
+  marginLeft: 64,
+  marginRight: 78,
+  marginTop: 26,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Year", tickFormat: "d", domain: [2014, 2023] },
+  y: { label: "Falls / 1,000 (75+)", grid: true, domain: [yMin, yMax] },
+  color: { domain: stg_cohorts.map(c => c.name), range: stg_cohorts.map(c => c.color), legend: true },
+  marks: [
+    // shaded forbidden window (toggle) — spans the full vertical extent
+    stg_show2x2 ? Plot.rectY([{ x1: 2021, x2: 2023 }],
+      { x1: "x1", x2: "x2", y1: yMin, y2: yMax, fill: "#990000", fillOpacity: 0.07 }) : null,
+
+    // adoption gridlines
+    Plot.ruleX([2017, 2019, 2021], { stroke: "#e6e3db", strokeDasharray: "3,3" }),
+
+    // pre-treatment segments (dashed, faded) for adopting cohorts
+    Plot.line(stg_panel.filter(d => !d.treated && d.g !== Infinity),
+      { x: "year", y: "y", z: "cohort", stroke: "cohort", strokeWidth: 2, strokeDasharray: "4,3", strokeOpacity: 0.55 }),
+    // post-treatment segments (solid)
+    Plot.line(stg_panel.filter(d => d.treated),
+      { x: "year", y: "y", z: "cohort", stroke: "cohort", strokeWidth: 3 }),
+    // never-treated (dotted; faded out when dropped from the estimation)
+    Plot.line(stg_panel.filter(d => d.g === Infinity),
+      { x: "year", y: "y", z: "cohort", stroke: "cohort", strokeWidth: 2.5,
+        strokeDasharray: "1,3", strokeOpacity: stg_dropNever ? 0.15 : 1 }),
+
+    // adoption dots
+    Plot.dot(stg_panel.filter(d => d.g !== Infinity && d.year === d.g),
+      { x: "year", y: "y", fill: "cohort", r: 5, stroke: "white", strokeWidth: 1.5 }),
+
+    // cohort labels at right edge (short names + white halo)
+    Plot.text(stg_panel.filter(d => d.year === 2023),
+      { x: "year", y: "y", text: d => stg_shortName[d.cohort], fill: "cohort", dx: 8, textAnchor: "start",
+        fontWeight: 600, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+
+    // forbidden-window annotation: frame-anchored to the top-right (over the
+    // shaded band, which sits on the right), so it wraps leftward/downward and
+    // never clips the right margin at narrow responsive widths.
+    stg_show2x2 ? Plot.text(["Forbidden window: late cohort 'controlled' by already-treated cohorts"],
+      { frameAnchor: "top-right", dx: -6, dy: 8, text: d => d, fill: "#990000", fontSize: 10, fontWeight: 700,
+        textAnchor: "end", lineWidth: 9, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }) : null
+  ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ---- Scoreboard: true ATT vs TWFE ---------------------------------------
+{
+  const att = stg_trueATT, twfe = stg_twfe;
+  const gap = twfe - att;
+  const flipped = Math.sign(att) !== Math.sign(twfe) && Math.abs(att) > 0.05;
+  return html`
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem,1fr)); gap:0.6rem; margin-top:0.9rem; font-family:'Inter',sans-serif; font-size:0.82rem;">
+    <div style="min-height:5.4rem; padding:0.6rem 0.9rem; border-radius:0.6rem; background:rgba(46,111,64,0.07); border:1px solid rgba(46,111,64,0.22);">
+      <div style="font-weight:600; color:#79766e; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em;">True ATT</div>
+      <div style="font-size:1.35rem; font-weight:800; color:#2e6f40;">${att >= 0 ? "+" : ""}${att.toFixed(2)}</div>
+      <div style="color:#79766e; font-size:0.7rem;">size-weighted, dynamics-aware</div>
+    </div>
+    <div style="min-height:5.4rem; padding:0.6rem 0.9rem; border-radius:0.6rem; background:rgba(153,0,0,0.07); border:1px solid rgba(153,0,0,0.22);">
+      <div style="font-weight:600; color:#79766e; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em;">TWFE (β̂)</div>
+      <div style="font-size:1.35rem; font-weight:800; color:#990000;">${twfe >= 0 ? "+" : ""}${twfe.toFixed(2)}</div>
+      <div style="color:#79766e; font-size:0.7rem;">OLS${stg_dropNever ? " · never-treated dropped" : ""}</div>
+    </div>
+    <div style="min-height:5.4rem; padding:0.6rem 0.9rem; border-radius:0.6rem; background:${flipped ? "rgba(153,0,0,0.1)" : "rgba(121,118,110,0.07)"}; border:1px solid ${flipped ? "rgba(153,0,0,0.28)" : "#e6e3db"};">
+      <div style="font-weight:600; color:#79766e; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.05em;">Bias (β̂ − ATT)</div>
+      <div style="font-size:1.35rem; font-weight:800; color:${flipped ? "#990000" : "#1c1c1a"};">${gap >= 0 ? "+" : ""}${gap.toFixed(2)}</div>
+      <div style="color:${flipped ? "#990000" : "#79766e"}; font-size:0.7rem; font-weight:${flipped ? 700 : 400};">${flipped ? "WRONG SIGN" : "same sign as truth"}</div>
+    </div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Additive overlay: the forbidden 2x2 made VISIBLE. Tied to the existing
+// stg_show2x2 toggle; consumes only already-defined reactive values
+// (stg_outcome, stg_cohorts, stg_show2x2). Draws the two changes being
+// differenced over 2021->2023 — the LATE cohort's change and the already-
+// treated EARLY cohort's change — and reports DiD = late change − early change.
+// No DGP, no controls, no shared mutable state are altered. ──
+stg_forbiddenArrows = {
+  if (!stg_show2x2) {
+    return html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin-top:0.6rem; padding:0.5rem 0.75rem; background:#f6f5f1; border-left:3px solid #9c7a33; border-radius:0 0.35rem 0.35rem 0;">Toggle <strong>Show the forbidden window</strong> above to see the exact subtraction — late cohort's change minus the already-treated early cohort's change — that manufactures the spurious effect.</div>`;
+  }
+
+  const early = stg_cohorts.find(c => c.name === "Early (2017)");
+  const late  = stg_cohorts.find(c => c.name === "Late (2021)");
+  // The forbidden 2x2 must STRADDLE the late cohort's adoption (2021): t0 in the
+  // window where the late cohort is still untreated but the early cohort is
+  // already treated, t1 after both are treated. (Differencing two post-adoption
+  // years instead would cancel under linear dynamics and show nothing.) So the
+  // late arrow captures the genuine on-impact + ramp, while the early "control"
+  // arrow is pure already-treated contamination.
+  const t0 = 2020, t1 = 2023;
+
+  // Changes over the forbidden window (these are exactly what the 2x2 differences).
+  const lateChg  = stg_outcome(late, t1)  - stg_outcome(late, t0);
+  const earlyChg = stg_outcome(early, t1) - stg_outcome(early, t0);
+  const did = lateChg - earlyChg;                 // forbidden 2x2 estimate
+  const spurious = did > 0.05;                     // positive = harmful-looking
+
+  // Mini-chart geometry.
+  const W = Math.min(560, width);
+  const padL = 150, padR = 96, padT = 16, padB = 30, H = 168;
+  const xs = t => padL + (t - t0) / (t1 - t0) * (W - padL - padR);
+
+  const ys = [stg_outcome(late, t0), stg_outcome(late, t1),
+              stg_outcome(early, t0), stg_outcome(early, t1)];
+  const yMin = d3.min(ys) - 1.2, yMax = d3.max(ys) + 1.2;
+  const yScale = v => padT + (yMax - v) / (yMax - yMin) * (H - padT - padB);
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // forbidden-window backdrop
+  svg.append("rect")
+    .attr("x", xs(t0)).attr("y", padT).attr("width", xs(t1) - xs(t0))
+    .attr("height", H - padT - padB).attr("fill", "#990000").attr("fill-opacity", 0.05)
+    .attr("stroke", "#990000").attr("stroke-opacity", 0.25).attr("stroke-dasharray", "3,3");
+
+  // x ticks
+  [t0, t1].forEach(t => {
+    svg.append("text").attr("x", xs(t)).attr("y", H - 10)
+      .attr("text-anchor", "middle").attr("font-size", 10).attr("fill", "#79766e").text(t);
+  });
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["stgarr-late", "#990000"], ["stgarr-early", "#3d5a6c"]]) {
+    defs.append("marker").attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 8).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  // One change-arrow per cohort + an end label with white halo.
+  const drawArrow = (coh, col, mk, label) => {
+    const x0 = xs(t0), x1 = xs(t1);
+    const y0 = yScale(stg_outcome(coh, t0)), y1 = yScale(stg_outcome(coh, t1));
+    svg.append("circle").attr("cx", x0).attr("cy", y0).attr("r", 3.5).attr("fill", col);
+    svg.append("line").attr("x1", x0).attr("y1", y0).attr("x2", x1).attr("y2", y1)
+      .attr("stroke", col).attr("stroke-width", 2.5).attr("marker-end", `url(#${mk})`);
+    svg.append("text").attr("x", x1 + 8).attr("y", y1)
+      .attr("dominant-baseline", "central").attr("font-size", 10.5).attr("font-weight", 700)
+      .attr("fill", col).attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+      .text(label);
+  };
+  drawArrow(late,  "#990000", "stgarr-late",  "late Δ");
+  drawArrow(early, "#3d5a6c", "stgarr-early", "early Δ (already treated!)");
+
+  // Left-side arithmetic readout.
+  const fmt = v => (v >= 0 ? "+" : "") + v.toFixed(2);
+  const block = html`<div style="position:absolute; left:0; top:0; width:${padL - 12}px; font-family:'Inter',sans-serif; font-size:0.72rem; line-height:1.5; color:#44443f;">
+    <div style="font-weight:700; color:#1c1c1a; font-size:0.74rem; margin-bottom:0.2rem;">Forbidden 2×2 (${t0}→${t1})</div>
+    <div><span style="color:#990000; font-weight:700;">late Δ</span> = ${fmt(lateChg)}</div>
+    <div><span style="color:#3d5a6c; font-weight:700;">early Δ</span> = ${fmt(earlyChg)}</div>
+    <div style="border-top:1px solid #e6e3db; margin:0.25rem 0 0.2rem;"></div>
+    <div>DiD = late − early</div>
+    <div style="font-size:1.05rem; font-weight:800; color:${spurious ? "#b3000b" : "#1c1c1a"};">= ${fmt(did)}</div>
+    <div style="font-size:0.66rem; font-weight:700; color:${spurious ? "#b3000b" : "#79766e"};">${spurious ? "spurious HARM" : did < -0.05 ? "reads as benefit" : "≈ no effect"}</div>
+  </div>`;
+
+  const wrap = html`<div style="position:relative; margin-top:0.7rem;"></div>`;
+  wrap.appendChild(block);
+  wrap.appendChild(svg.node());
+  return wrap;
+}
+```
+
+:::
+
+::: {.aside}
+Reading the scoreboard: **True ATT** (green) is the average benefit actually delivered across every treated region-year --- the honest, dynamics-aware target. **TWFE β̂** (red) is the single OLS coefficient. **Bias** is their difference; it flips to *WRONG SIGN* when β̂ and the truth disagree on whether the program helps or harms. With the forbidden window shown, the small panel beneath the scoreboard draws the actual subtraction --- the late cohort's change *minus* the already-treated early cohort's change --- so you can watch the DiD turn into spurious harm as you raise dynamics.
+:::
+
+### How to Read the Cohort Plot
+
+**Step 1: Start with no dynamics.** Leave the dynamics slider at 0. Each adopting cohort's line follows the shared secular decline until its adoption year --- marked by the colored dot and the dashed vertical gridline --- then drops by the on-impact amount and runs parallel again. The early cohort drops first (2017), the middle next (2019), the late last (2021). The gray dotted line is the never-treated group. In the scoreboard, the **True ATT** and the **TWFE estimate** sit right on top of each other and the bias is essentially zero. This is the world where TWFE is fine: a static, homogeneous effect.
+
+**Step 2: Turn dynamics on.** Drag the dynamics slider toward 1. Now each treated cohort keeps *falling further* every year it stays in the program --- the benefit compounds. The early cohort, having adopted in 2017, accumulates the most benefit by 2023; the late cohort has barely begun. The **True ATT** (green) becomes far more negative, correctly reflecting the larger average benefit. But watch the **TWFE estimate** (pink): it barely budges. By the time dynamics are near 1 with a modest on-impact effect ($-0.5$), the true ATT can be below $-5$ while TWFE still hovers near $-2$ --- a massive *attenuation toward zero*. TWFE is already badly wrong; it just has not yet crossed zero, because the never-treated group still supplies enough clean comparisons to hold the sign.
+
+**Step 3: Catch the sign flip.** Now toggle **Drop the never-treated regions** --- the very "fix" a nervous analyst reaches for (Exercise 4). With the clean never-treated anchor gone, TWFE must lean almost entirely on already-treated cohorts as controls: the forbidden comparisons now dominate. Keep the on-impact effect modest ($-0.5$) and dynamics high, and the bias box turns red and reads **WRONG SIGN**. TWFE now reports that the program *raises* fall hospitalizations, even though every cohort in every year is *lowering* them. The decomposition tells you exactly why: the forbidden comparisons subtract the early cohorts' accumulating benefit as if it were a counterfactual trend.
+
+**Step 4: Visualize the forbidden window.** Toggle **Show the forbidden window**. The shaded pink band marks the period from 2021 onward, where the late cohort has just adopted and is "controlled" by the early and middle cohorts --- which are deep into their own growing treatment effects. In that band, the early cohort's line is steeply sloping *downward because of its own treatment*. Using it as the control trend for the late cohort manufactures a spurious *upward* (harmful) effect. That is the negative weight, made visible. The small panel directly beneath the scoreboard now draws that exact subtraction live --- the late cohort's change *minus* the already-treated early cohort's change, with the running DiD --- so you can watch it tip into spurious harm as dynamics rise; to do the same arithmetic by hand on a three-region version, work **Exercises 2 and 3** below.
+
+::: {.glass-card .glass-card--insight}
+The lesson is not "fixed effects are bad." It is that a *single* coefficient cannot summarize a *heterogeneous, dynamic* set of effects without an implicit weighting scheme --- and that weighting scheme, chosen by OLS rather than by you, can include negative weights on real effects. When effects are static and homogeneous, the weighting is benign and TWFE is unbiased. The danger lives entirely in the interaction of *staggered timing* with *non-constant effects*.
+:::
+
+
+## When Is TWFE Safe?
+
+The decomposition lets us state the conditions precisely.
+
+::: {.glass-card .glass-card--assumption}
+The TWFE coefficient $\hat\beta$ is an unbiased, sensibly weighted estimate of the ATT when **either** of the following holds:
+
+1. **Homogeneous, static effects.** Every unit has the same constant treatment effect $\tau$ that does not vary over event-time. Then all 2×2 comparisons --- forbidden ones included --- estimate the same $\tau$, the contaminating terms vanish, and $\hat\beta = \tau$.
+
+2. **No variation in treatment timing.** If all adopters switch in the same period (a single 2×2), there *are* no forbidden comparisons, and TWFE collapses to ordinary DiD.
+
+Conversely, TWFE is **biased** for the ATT whenever treatment timing is staggered **and** treatment effects vary --- either across cohorts (heterogeneity) or across event-time within a cohort (dynamics). Real reforms almost always have dynamics, so this is the typical case.
+:::
+
+In our fall-prevention setting, the program's benefit plausibly grows for several years as clinics build routines, train *distriktssköterskor*, and accumulate at-risk patients into the program. That is exactly the dynamic-effects case where TWFE misleads.
+
+
+<details>
+<summary>Math Details: The Goodman-Bacon Weighting</summary>
+<div class="details-content">
+
+### The decomposition theorem
+
+Goodman-Bacon (2021) proves that the TWFE estimator can be written exactly as
+
+$$
+\hat\beta_{\text{TWFE}} = \sum_{(k,\ell)} s_{k\ell}\, \hat\beta^{2\times2}_{k\ell},
+$$
+
+read as "the TWFE coefficient is a weighted sum, over all pairs of timing groups $(k,\ell)$, of the simple 2×2 DiD estimate $\hat\beta^{2\times2}_{k\ell}$ formed from that pair, with weights $s_{k\ell}$." The weights are *non-negative*, sum to one, and are proportional to each pair's share of the sample times the **variance of treatment** within that 2×2:
+
+$$
+s_{k\ell} \;\propto\; (n_k + n_\ell)^2 \cdot \bar{D}_{k\ell}\,(1 - \bar{D}_{k\ell}),
+$$
+
+where $\bar{D}_{k\ell}$ is the fraction of treated observations in the pairwise subsample. **How to read this:** a comparison gets more weight when the two groups are large and when treatment is "balanced" (roughly half the cells treated) within the pair, because that is where OLS sees the most identifying variation.
+
+### Why the weights are benign but the *targets* are poisoned
+
+The weights $s_{k\ell}$ are always positive. The trouble is *what each 2×2 estimates* when effects are dynamic. Take a forbidden pair: the later group $\ell$ (adopting at $G_\ell$) is the treated group, and the earlier group $k$ (adopting at $G_k < G_\ell$) is the control during the post-$G_\ell$ window. Its 2×2 **estimand** --- the quantity this comparison actually targets in the population, as opposed to the noisy *estimate* a finite sample returns --- decomposes as
+
+$$
+\hat\beta^{2\times2}_{\text{forbidden}} \;=\; \underbrace{\text{ATT}_\ell(\text{post})}_{\text{what we want}} \;-\; \underbrace{\big[\text{ATT}_k(\text{post}) - \text{ATT}_k(\text{mid})\big]}_{\text{change in the EARLY group's own effect}}.
+$$
+
+**How to read this:** the first term is the late cohort's genuine effect, which we want. The second bracket is the *change in the early cohort's treatment effect* between the two sub-windows. If the early cohort's effect is constant (static), the bracket is zero and the forbidden 2×2 is clean. But if the early effect is *growing more beneficial*, the bracket is negative, so subtracting it *adds* a positive (harmful-looking) bias.
+
+### The bottom line
+
+Aggregating across all forbidden pairs, de Chaisemartin & D'Haultfœuille (2020) show that $\hat\beta$ equals a weighted average of unit-time treatment effects in which **some weights can be negative**:
+
+$$
+\hat\beta = E\!\left[\sum_{i,t} w_{it}\,\tau_{it}\right], \qquad \sum_{i,t} w_{it} = 1, \quad \text{but possibly } w_{it} < 0.
+$$
+
+If enough weight sits on the forbidden comparisons --- which happens when early cohorts are large and treatment is dynamic --- the negative weights can dominate, and $\hat\beta$ can fall outside the convex hull of all the true $\tau_{it}$ (the *convex hull* is just the range spanned by the true effects --- everything from the smallest to the largest; an honest weighted average can never escape it, but one with negative weights can). That is the formal statement of "TWFE can have the wrong sign." The fix, developed on the next page, is to estimate cohort-by-event-time effects directly and aggregate them with *weights you choose*, never using an already-treated unit as a control.
+
+</div>
+</details>
+
+
+## Code: Reproducing the Bias and Diagnosing It
+
+The code below simulates a staggered fall-prevention rollout with *growing* effects (every cohort benefits, more so the longer it has been treated), then shows (a) that naive TWFE is severely attenuated toward zero --- roughly *half* the true magnitude --- and (b) the Goodman-Bacon decomposition that explains why. (With a never-treated comparison group present, TWFE keeps the right sign here; strip that clean anchor away --- as in the interactive's "drop never-treated" toggle --- and the same forces flip the sign outright.)
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(fixest)
+library(bacondecomp)
+
+set.seed(2016)
+
+# --- Simulate a staggered panel: 21 regioner, years 2014–2023 ---
+years   <- 2014:2023
+cohorts <- tibble(
+  region = 1:21,
+  g = sample(c(2017, 2019, 2021, Inf), 21, replace = TRUE,
+             prob = c(.3, .3, .25, .15))         # adoption year (Inf = never)
+)
+
+panel <- expand_grid(region = 1:21, year = years) |>
+  left_join(cohorts, by = "region") |>
+  mutate(
+    event   = if_else(is.finite(g), year - g, -99L),
+    treated = as.integer(is.finite(g) & year >= g),
+    # GROWING, beneficial effect: -1.5 on impact, extra -1.1 per event-year
+    tau     = if_else(treated == 1, -1.5 - 1.1 * pmax(event, 0), 0),
+    reg_fe  = rnorm(21, 41, 3)[region],
+    y = reg_fe - 0.25 * (year - 2014) + tau + rnorm(n(), 0, 0.8)
+  )
+
+# True ATT (size-weighted average over treated cells)
+true_att <- panel |> filter(treated == 1) |> summarise(att = mean(tau)) |> pull()
+
+# --- Naive TWFE (the wrong tool) ---
+twfe <- feols(y ~ treated | region + year, data = panel, cluster = ~region)
+
+cat("True overall ATT :", round(true_att, 3), "\n")
+cat("TWFE estimate    :", round(coef(twfe)["treated"], 3), "\n")
+# TWFE is biased heavily TOWARD zero (here ~half the true magnitude): the
+# forbidden comparisons subtract the already-treated cohorts' growing effects
+# as if they were trends. The never-treated group keeps the sign correct here;
+# without a clean control group the same bias can flip the sign entirely.
+
+# --- Goodman-Bacon decomposition: see the forbidden weights ---
+bacon_out <- bacon(y ~ treated, data = panel,
+                   id_var = "region", time_var = "year")
+bacon_out |>
+  group_by(type) |>
+  summarise(weight = sum(weight),
+            avg_est = weighted.mean(estimate, weight)) |>
+  print()
+# Watch the "Later vs Earlier Treated" row: those are the forbidden
+# comparisons. With growing effects their estimates are badly biased toward
+# zero (and can turn positive under stronger dynamics); they drag the overall
+# TWFE coefficient toward zero — and, absent clean controls, past it.
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import pyfixest as pf
+
+rng = np.random.default_rng(2016)
+
+# --- Simulate a staggered panel: 21 regioner, years 2014–2023 ---
+years   = np.arange(2014, 2024)
+regions = np.arange(1, 22)
+g = rng.choice([2017, 2019, 2021, np.inf], size=21,
+               p=[.30, .30, .25, .15])           # adoption year (inf = never)
+region_fe = rng.normal(41, 3, size=21)
+
+rows = []
+for r in regions:
+    gi = g[r - 1]
+    for t in years:
+        treated = int(np.isfinite(gi) and t >= gi)
+        event   = (t - gi) if np.isfinite(gi) else -99
+        # GROWING beneficial effect: -1.5 on impact, extra -1.1 per event-year
+        tau = (-1.5 - 1.1 * max(event, 0)) if treated else 0.0
+        y = (region_fe[r - 1] - 0.25 * (t - 2014) + tau
+             + rng.normal(0, 0.8))
+        rows.append((r, t, gi, treated, tau, y))
+
+panel = pd.DataFrame(rows, columns=["region", "year", "g",
+                                    "treated", "tau", "y"])
+
+true_att = panel.loc[panel.treated == 1, "tau"].mean()
+
+# --- Naive TWFE (the wrong tool) ---
+twfe = pf.feols("y ~ treated | region + year", data=panel,
+                vcov={"CRV1": "region"})
+beta = twfe.coef()["treated"]
+
+print(f"True overall ATT : {true_att:6.3f}")
+print(f"TWFE estimate    : {beta:6.3f}")
+# TWFE is biased heavily TOWARD zero (here ~half the true magnitude):
+# forbidden comparisons use already-treated cohorts as controls and subtract
+# their growing effects. The never-treated group keeps the sign correct here;
+# without a clean control group the same bias can flip the sign entirely.
+
+# --- Where the contaminated weight comes from ---
+# The bigger the early-adopting cohorts, the more forbidden 2x2s exist.
+shares = (panel[panel.treated == 1].groupby("g").size()
+          / (panel.treated == 1).sum())
+print("\nShare of treated cells by adoption cohort:")
+print(shares.round(3))
+# For a publication-grade decomposition + a clean estimator, use the
+# Callaway–Sant'Anna group-time approach (next page): R `did::att_gt`
+# or Python `pip install differences`, which never uses already-treated
+# units as controls.
+```
+
+:::
+
+Run either snippet and you will see the TWFE coefficient sitting well above (less negative than) the true ATT --- typically around half its magnitude, a severe attenuation. The Goodman-Bacon output pinpoints the culprit: the "Later vs. Earlier Treated" comparisons carry meaningful weight and badly-biased estimates (severely attenuated, and wrong-signed under stronger dynamics), dragging the headline number toward zero. (Whether the bias merely shrinks the estimate or flips its sign depends on how much *clean* comparison weight survives: with a never-treated group the sign holds; remove it and the forbidden comparisons take over.)
+
+The figure below previews the canonical **Goodman-Bacon diagnostic plot** that the `bacon()` call produces: each point is one 2×2 comparison, placed by its weight (horizontal) and its estimated effect (vertical), and colored by flavor. The dashed line is the overall TWFE coefficient --- a weighted average of all the points. The clean comparisons (green, blue) sit near the true beneficial effect; the **forbidden** "later vs. earlier" comparisons (red) are pulled up toward zero (or above it), and because they carry real weight they drag the dashed TWFE line away from the truth.
+
+```{ojs}
+//| echo: false
+
+// ── Static preview of the Goodman-Bacon weight-vs-estimate scatter. Values are
+// ILLUSTRATIVE (consistent with the page's growing-effects narrative), not the
+// exact simulation output, which varies with the random seed. Pure Plot figure;
+// no controls, no shared mutable state. ──
+p2_baconPoints = [
+  { type: "Treated vs never-treated",   weight: 0.34, est: -4.4 },
+  { type: "Treated vs never-treated",   weight: 0.18, est: -3.9 },
+  { type: "Earlier vs later (clean)",   weight: 0.16, est: -3.6 },
+  { type: "Earlier vs later (clean)",   weight: 0.09, est: -3.1 },
+  { type: "Later vs earlier (forbidden)", weight: 0.14, est: -0.4 },
+  { type: "Later vs earlier (forbidden)", weight: 0.09, est:  0.6 }
+]
+```
+
+```{ojs}
+//| echo: false
+
+{
+  const truth = -4.0;     // illustrative true ATT
+  const twfe = -2.1;      // illustrative weighted-average TWFE
+  const cats = ["Treated vs never-treated", "Earlier vs later (clean)", "Later vs earlier (forbidden)"];
+  const pal = ["#3d5a6c", "#2e6f40", "#990000"];
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 360,
+    marginLeft: 64,
+    marginBottom: 48,
+    marginRight: 16,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Weight of the comparison →", domain: [0, 0.4], grid: true },
+    y: { label: "2×2 estimate (falls / 1,000)", domain: [-5, 1.5], grid: true },
+    color: { domain: cats, range: pal, legend: true },
+    marks: [
+      // zero line (apparent harm above it)
+      Plot.ruleY([0], { stroke: "#79766e", strokeWidth: 1 }),
+      // true ATT reference
+      Plot.ruleY([truth], { stroke: "#2e6f40", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+      Plot.text([{ x: 0.4, y: truth }], { x: "x", y: "y", text: () => "true ATT",
+        fill: "#2e6f40", fontSize: 10, fontWeight: 700, textAnchor: "end", dy: -6,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      // overall TWFE (weighted average of points)
+      Plot.ruleY([twfe], { stroke: "#990000", strokeWidth: 1.5, strokeDasharray: "2,3" }),
+      Plot.text([{ x: 0.4, y: twfe }], { x: "x", y: "y", text: () => "TWFE β̂",
+        fill: "#990000", fontSize: 10, fontWeight: 700, textAnchor: "end", dy: -6,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      // the 2x2 comparisons, sized by weight
+      Plot.dot(p2_baconPoints, { x: "weight", y: "est", fill: "type", r: 7,
+        stroke: "white", strokeWidth: 1.2 })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Illustrative Goodman-Bacon decomposition (values chosen to match the page's growing-effects story, not exact seed output). Each dot is one 2×2 DiD. The <span style="color:#2e6f40; font-weight:700;">green dashed</span> line is the true ATT; the <span style="color:#990000; font-weight:700;">red dotted</span> line is the weighted-average TWFE coefficient. The <span style="color:#990000; font-weight:700;">forbidden</span> comparisons sit near (or above) zero despite the true effect being strongly negative --- and their weight pulls TWFE away from the truth.
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A study evaluates the fall-prevention program with TWFE and finds $\hat\beta = +0.4$ (i.e., the program appears to *increase* fall hospitalizations by 0.4 per 1,000), statistically significant. A colleague who knows the clinical literature insists the program is beneficial in every region that adopted it. Without re-running anything, explain how *both* claims can be simultaneously true, and name the specific features of the rollout that make this possible.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Both can be true because $\hat\beta$ is not "the" treatment effect --- it is a weighted average of 2×2 DiDs in which **some weights are effectively negative**. If the program's benefit *grows over event-time* (dynamic effects) and adoption is *staggered*, the forbidden comparisons (later-adopting cohorts "controlled" by already-treated earlier cohorts) subtract the early cohorts' accumulating benefit as though it were a common trend. That subtraction manufactures a spurious positive (harmful-looking) contribution. With enough early adopters and strong enough dynamics, these contributions can dominate and push $\hat\beta$ above zero even though every unit-time treatment effect $\tau_{it}$ is negative (beneficial).
+
+The two ingredients that make this possible, named precisely: **(1) staggered adoption timing** (so forbidden comparisons exist at all) and **(2) treatment-effect dynamics or cohort heterogeneity** (so the early cohorts' outcomes keep moving because of their own treatment). Remove either one --- a single adoption date, or static/homogeneous effects --- and the paradox disappears.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Consider a minimal staggered panel: three regions, three years ($t = 1, 2, 3$). Region A adopts at $t = 2$; Region B adopts at $t = 3$; Region C never adopts. Suppose the true treatment effect is *constant and homogeneous*: every treated cell has effect $\tau = -2$ (lowers falls by 2), with no trend and no noise, and every region has untreated outcome 40.
+
+(a) Write out the outcome $Y_{it}$ for all 9 cells.
+(b) Identify the forbidden 2×2 comparison.
+(c) Show that even the forbidden comparison gives the correct $-2$ here. Why does the negative-weight problem vanish?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With baseline 40 and $\tau = -2$ on every treated cell ($D_{it} = 1$ when $t \ge G_i$):
+
+| Region | $t=1$ | $t=2$ | $t=3$ |
+|:------:|:-----:|:-----:|:-----:|
+| A ($G=2$) | 40 | 38 | 38 |
+| B ($G=3$) | 40 | 40 | 38 |
+| C (never) | 40 | 40 | 40 |
+
+**(b)** The forbidden comparison: in period $t=3$, the *later* cohort B is treated and the *already-treated* cohort A is used as its control (comparing $t=2 \to t=3$).
+
+**(c)** Compute that forbidden 2×2 (B vs. A, $t=2 \to t=3$):
+
+- B's change: $38 - 40 = -2$.
+- A's change: $38 - 38 = 0$.
+- DiD $= (-2) - (0) = -2$. ✓ Correct.
+
+It works because A's effect is **static**: A had already fully absorbed its $-2$ by $t=2$, so A's outcome does *not* move between $t=2$ and $t=3$. The "control trend" contributed by A is zero, exactly as a valid control should be. In the Math Details notation, the contaminating bracket is $[\text{ATT}_A(t=3) - \text{ATT}_A(t=2)] = (-2) - (-2) = 0$, so there is no bias. This is precisely condition (1) of the "When is TWFE safe?" card.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Now keep the design of Exercise 2 but make the effect *dynamic*: a treated region's effect is $-2$ in its first treated year and $-4$ in its second treated year (the benefit grows). Outcomes are otherwise as before (baseline 40, no trend, no noise).
+
+(a) Rebuild the 3×3 outcome table.
+(b) Compute the forbidden 2×2 (B treated at $t=3$, controlled by already-treated A, comparing $t=2 \to t=3$).
+(c) Compare it to B's *true* first-year effect of $-2$. What is the bias, and what sign does it have?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Region A adopts at $t=2$: effect $-2$ at $t=2$ (its 1st treated year), $-4$ at $t=3$ (its 2nd treated year). Region B adopts at $t=3$: effect $-2$ at $t=3$ (its 1st treated year). Region C: never treated.
+
+| Region | $t=1$ | $t=2$ | $t=3$ |
+|:------:|:-----:|:-----:|:-----:|
+| A ($G=2$) | 40 | 38 | 36 |
+| B ($G=3$) | 40 | 40 | 38 |
+| C (never) | 40 | 40 | 40 |
+
+**(b)** Forbidden 2×2 (B vs. A, $t=2 \to t=3$):
+
+- B's change: $38 - 40 = -2$.
+- A's change: $36 - 38 = -2$.
+- DiD $= (-2) - (-2) = 0$.
+
+**(c)** B's *true* effect in its first treated year is $-2$. The forbidden comparison reports **$0$**. The bias is $0 - (-2) = +2$ --- a **positive** (harmful-looking) bias that exactly wipes out B's real benefit.
+
+The mechanism is transparent: A's outcome fell by 2 between $t=2$ and $t=3$ *because A's own treatment effect grew from $-2$ to $-4$*. Using A as B's "control" subtracts that $-2$ change, crediting it to a counterfactual trend. The contaminating bracket is $[\text{ATT}_A(t=3) - \text{ATT}_A(t=2)] = (-4) - (-2) = -2$, and subtracting it adds $+2$ of bias. A program that helps both regions can, through enough such comparisons, be reported as doing nothing --- or, with stronger dynamics, as doing harm. This is the negative-weight problem in three regions.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the on-impact effect to $-0.5$ and push dynamics high. With the never-treated regions *kept*, TWFE is badly attenuated but still negative (still the right sign). A policy analyst now proposes "fixing" the attenuation by simply dropping the never-treated regions from the regression, reasoning that the never-treated group might be unusual. Toggle **Drop the never-treated regions** and watch the bias box. Did dropping them help? Explain *why* the result moves the way it does, and state what actually fixes the problem.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**No --- dropping the never-treated group makes things *worse*, not better.** In the interactive you can watch it happen: with the never-treated regions kept, TWFE is attenuated toward zero but still negative; the moment you toggle them off, the bias box flips to red and reads **WRONG SIGN**. The never-treated units are the source of the *clean* comparisons (flavor 1: treated vs. never-treated). Removing them forces $\hat\beta$ to lean *almost entirely* on the earlier-vs-later and later-vs-earlier 2×2s built from the adopting cohorts --- which is exactly where the forbidden comparisons live. With a small on-impact effect and strong dynamics, the contaminated forbidden comparisons then carry the lion's share of the weight, so the wrong-sign problem does not just persist --- it appears.
+
+What actually fixes it is a *different estimator*, not a different sample. The fix is to:
+
+1. Estimate **cohort-by-event-time** average treatment effects $\text{ATT}(g, t)$ directly, each using only a *clean* control group (never-treated or not-yet-treated units), so an already-treated unit is **never** used as a control; then
+2. Aggregate those clean building blocks with **transparent, non-negative weights you choose** (e.g., a simple overall ATT, or an event-study profile).
+
+This is the Callaway–Sant'Anna (2021) approach (and the closely related Sun–Abraham and de Chaisemartin–D'Haultfœuille estimators), the subject of the next page. The honest target was never in doubt; the problem was forcing a single OLS coefficient to find it.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Under staggered adoption, the single TWFE coefficient is *not* "the DiD" --- the Goodman-Bacon decomposition shows it is a weighted average of every 2x2 comparison in the panel.
+- The villain is the *forbidden comparison*: using an already-treated cohort as the control for a later cohort subtracts that cohort's own ongoing treatment dynamics as if it were a counterfactual trend.
+- With staggered timing *and* effects that grow or vary, $\hat\beta$ can place negative weights on real effects --- attenuating toward zero, or even reporting harm when every unit was helped.
+- TWFE is safe only with homogeneous, static effects or with no variation in treatment timing; real reforms with dynamic effects are the dangerous typical case.
+- Dropping the never-treated group --- the source of clean comparisons --- makes things worse; the fix is a different estimator, not a different sample.
+:::
+
+## What Comes Next
+
+We have seen the disease: a single TWFE coefficient silently averages clean and *forbidden* 2×2 comparisons, and under staggered timing with dynamic effects the forbidden ones can carry negative weight and flip the sign of a real, beneficial program. The Goodman-Bacon decomposition is the diagnosis.
+
+The next page, **[Modern Estimators](modern-estimators.qmd)**, delivers the cure --- the Callaway–Sant'Anna group-time estimator and its relatives, which estimate clean cohort-by-event-time effects using only never-treated or not-yet-treated controls, then aggregate them with weights you can see and defend. We will rebuild the fall-prevention analysis the right way and recover the effect that TWFE hid.

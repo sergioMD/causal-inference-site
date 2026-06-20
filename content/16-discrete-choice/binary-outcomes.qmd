@@ -1,0 +1,751 @@
+---
+title: "Binary Outcomes: LPM, Logit, and Probit"
+subtitle: "Modeling a yes/no outcome"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Set up a regression for a $0/1$ outcome and explain why the conditional mean $E[y \mid x]$ *is* the probability $P(y=1\mid x)$
+- Fit and read the linear probability model (LPM), reading each slope directly as a change in probability --- and diagnose its two structural flaws: out-of-range fitted probabilities and built-in heteroskedasticity
+- Derive logit and probit from a latent-variable / random-utility model, $y^\* = x'\beta + \varepsilon$ with $y = \mathbf{1}\{y^\* > 0\}$
+- Map a linear index through the logistic or standard-normal CDF onto an S-curve that is guaranteed to stay in $[0,1]$
+- Write the logit log-likelihood and connect its estimation to the maximum likelihood machinery of [Module 11](../11-mle-gmm/)
+:::
+
+## The Question Behind a Yes/No Outcome
+
+A *distriktssköterska* (district nurse) at a *vårdcentral* (primary care center) in Region Uppsala manages a panel of Type 2 diabetes patients. For the regional quality register, each patient is scored on one binary indicator: did they reach the HbA1c target of 52 mmol/mol at their annual review? The answer is yes ($y_i = 1$) or no ($y_i = 0$) --- there is no "partly."
+
+The *verksamhetschef* (clinic manager) wants to know how that yes/no outcome depends on **nurse staffing** --- the number of diabetes-nurse full-time equivalents (FTE) per 1,000 enrolled patients --- after adjusting for patient age. Better-staffed centers presumably reach target more often, but by *how much*, and on *what scale*? "Each extra nurse raises the chance of hitting target by 8 percentage points" is a very different statement from "each extra nurse multiplies the odds of hitting target by 1.6."
+
+Ordinary regression was built for a continuous outcome that can wander anywhere on the real line; a probability cannot --- it is trapped between 0 and 1. This page develops three ways to regress a binary outcome --- the **linear probability model**, **logit**, and **probit** --- and shows exactly where the simplest one breaks and how the curved models repair it.
+
+## The Outcome Is a Probability
+
+Start from a fact that makes the whole enterprise possible. When $y_i \in \{0,1\}$, its conditional expectation *is* a conditional probability:
+
+$$
+E[\,y_i \mid x_i\,] \;=\; 1\cdot P(y_i = 1\mid x_i) + 0\cdot P(y_i = 0\mid x_i) \;=\; P(y_i = 1 \mid x_i).
+$$
+
+**Read this as**: "the expected value of $y$ given $x$ equals one times the probability that $y=1$, plus zero times the probability that $y=0$, which collapses to just the probability that $y=1$." So any model for the *mean* of a $0/1$ variable is automatically a model for the *probability* that it equals one. The entire question becomes: what functional form should $P(y_i=1\mid x_i)$ take?
+
+::: {.glass-card .glass-card--definition}
+For a binary outcome $y_i \in \{0,1\}$, define the **conditional response probability**
+
+$$
+p(x_i) \;=\; P(y_i = 1 \mid x_i) \;=\; E[\,y_i \mid x_i\,].
+$$
+
+A binary-outcome model specifies a functional form $p(x_i) = G(x_i'\beta)$ for some function $G$ mapping the **linear index** $\eta_i = x_i'\beta$ into $[0,1]$. The three models on this page differ only in the choice of $G$:
+
+- **LPM**: $G(\eta) = \eta$ (the identity --- a straight line).
+- **Logit**: $G(\eta) = \Lambda(\eta) = \dfrac{e^{\eta}}{1+e^{\eta}}$ (the logistic CDF).
+- **Probit**: $G(\eta) = \Phi(\eta)$ (the standard-normal CDF).
+:::
+
+## The Linear Probability Model
+
+The most direct idea is to ignore the $[0,1]$ constraint and run OLS straight onto the $0/1$ outcome:
+
+$$
+y_i \;=\; \beta_0 + \beta_1 x_{i1} + \dots + \beta_k x_{ik} + u_i,
+\qquad
+P(y_i = 1\mid x_i) \;=\; \beta_0 + \beta_1 x_{i1} + \dots + \beta_k x_{ik}.
+$$
+
+This is the **linear probability model** (LPM). Its great virtue is interpretability. Because the right-hand side *is* the probability, each slope is a **change in probability per unit of the regressor**, read off directly with no transformation:
+
+$$
+\frac{\partial P(y_i = 1\mid x_i)}{\partial x_{ij}} \;=\; \beta_j .
+$$
+
+**Read this as**: "the partial derivative of the probability of success with respect to regressor $j$ equals $\beta_j$" --- a *constant* marginal effect, the same for every patient regardless of their other characteristics. If the staffing slope is $\hat\beta_1 = 0.11$, then one more diabetes-nurse FTE per 1,000 patients is associated with an estimated $11$-percentage-point rise in the probability of reaching target, period.
+
+::: {.glass-card .glass-card--insight}
+**Why practitioners still reach for the LPM.** Its coefficients are probabilities, so they need no exponentiating, no CDF, no "marginal effect at the mean." For describing average associations, for interaction terms, and inside fixed-effects or instrumental-variables designs --- where the curved models are awkward --- a robust-standard-error LPM is often the workhorse. It is a genuinely useful model, *provided you know its two failure modes.*
+:::
+
+### Flaw 1: Predictions escape [0,1]
+
+A straight line, extended far enough, leaves the unit interval. With $\hat p(x) = 0.18 + 0.11\,x$ where $x$ is nurse FTE per 1,000 patients, the fitted probability hits $1$ at $x = (1-0.18)/0.11 \approx 7.45$ and keeps climbing: a center with $x=8$ gets a predicted probability of $0.18 + 0.11(8) = 1.06$. A probability of $1.06$ is meaningless. In the other direction the line dips below $0$ for small or negative indices. The LPM cannot promise a legitimate probability for every patient.
+
+### Flaw 2: The errors are inherently heteroskedastic
+
+Even where it stays in range, the LPM violates the homoskedasticity assumption *by construction*. For a Bernoulli outcome with success probability $p(x_i)$, the conditional variance of the error is
+
+$$
+\operatorname{Var}(u_i \mid x_i) \;=\; p(x_i)\,\big(1 - p(x_i)\big),
+$$
+
+which **depends on $x_i$** through $p(x_i)$. **Read this as**: "the error variance equals $p$ times $(1-p)$" --- largest at $p = 0.5$ (variance $0.25$) and shrinking toward $0$ as the probability approaches either $0$ or $1$. Because the variance changes with the regressors, the textbook OLS standard errors are wrong. The fix is routine --- **heteroskedasticity-robust (White) standard errors** --- but it is not optional, and it does nothing about Flaw 1.
+
+::: {.glass-card .glass-card--warning}
+**Two LPM habits to keep.** (1) Always report **robust standard errors**; the default OLS errors are biased because $\operatorname{Var}(u_i\mid x_i)=p(x_i)(1-p(x_i))$ is non-constant. (2) Always **inspect the fitted values**: if a noticeable share fall outside $[0,1]$, the linear approximation is failing in the region you care about, and a logit or probit is the honest choice.
+:::
+
+## A Curve That Cannot Escape: The Latent-Variable Story
+
+To keep the probability inside $[0,1]$ we need an $S$-shaped curve: nearly flat near $0$ for very negative indices, nearly flat near $1$ for very positive indices, and steepest in the middle. Both logit and probit deliver such a curve, and both fall out of the *same* compelling derivation --- a **latent variable** (equivalently, a **random-utility**) model.
+
+Imagine that behind the observed yes/no lies an unobserved continuous "propensity to reach target," $y_i^\*$ --- think of it as the patient's underlying metabolic control net of everything the clinic does. It is linear in the regressors plus noise:
+
+$$
+y_i^\* \;=\; x_i'\beta + \varepsilon_i .
+$$
+
+We never see $y_i^\*$. We see only whether it crosses a threshold (normalized to $0$):
+
+$$
+y_i \;=\;
+\begin{cases}
+1 & \text{if } y_i^\* > 0,\\[2pt]
+0 & \text{if } y_i^\* \le 0.
+\end{cases}
+$$
+
+**Read this as**: "we observe $y_i = 1$ exactly when the latent propensity $y_i^\*$ rises above zero, and $y_i = 0$ otherwise." Now translate the observation rule into a probability:
+
+$$
+P(y_i = 1 \mid x_i) = P(y_i^\* > 0 \mid x_i)
+= P(\varepsilon_i > -x_i'\beta)
+= P(\varepsilon_i \le x_i'\beta)
+= F(x_i'\beta),
+$$
+
+where the last step uses the symmetry of $\varepsilon$ around zero and writes $F$ for the CDF of the error. **The shape of the S-curve is just the CDF of the latent error.** Two natural choices for that error distribution give the two classic models.
+
+::: {.glass-card .glass-card--definition}
+With latent error $\varepsilon_i$ symmetric about $0$ and CDF $F$, the response probability is $p(x_i) = F(x_i'\beta)$.
+
+- **Logit** assumes $\varepsilon_i$ follows the standard **logistic** distribution, so $F = \Lambda$:
+$$
+p(x_i) \;=\; \Lambda(x_i'\beta) \;=\; \frac{e^{\,x_i'\beta}}{1 + e^{\,x_i'\beta}} \;=\; \frac{1}{1 + e^{-x_i'\beta}}.
+$$
+
+- **Probit** assumes $\varepsilon_i$ follows the standard **normal** distribution, so $F = \Phi$:
+$$
+p(x_i) \;=\; \Phi(x_i'\beta) \;=\; \int_{-\infty}^{x_i'\beta} \frac{1}{\sqrt{2\pi}}\,e^{-t^2/2}\,dt .
+$$
+
+Both $\Lambda$ and $\Phi$ are CDFs, so both return a value in $[0,1]$ for *any* index $x_i'\beta$ --- the out-of-range problem is gone by design.
+:::
+
+The logit form has an extra gift: its **log-odds are linear**. Rearranging $p = \Lambda(\eta)$ gives
+
+$$
+\log\!\frac{p(x_i)}{1 - p(x_i)} \;=\; x_i'\beta .
+$$
+
+**Read this as**: "the log of the odds of success is linear in the regressors." A unit increase in $x_{ij}$ adds $\beta_j$ to the log-odds, which means it *multiplies the odds* by $e^{\beta_j}$ --- the **odds ratio**. This is why logit coefficients are so often reported as odds ratios; probit has no comparably clean closed form, which (along with heavier tails for the logistic) is the main reason logit dominates in practice.
+
+::: {.glass-card .glass-card--insight}
+**Logit vs. probit: a distinction without much difference.** The logistic distribution has fatter tails and a larger variance ($\pi^2/3$) than the standard normal (variance $1$), so logit coefficients run about $1.6$--$1.8$ times the corresponding probit coefficients. But the two fitted *probability* curves are visually almost identical across the bulk of the data, and they yield nearly the same marginal effects and predictions. Choose logit for the odds-ratio interpretation; choose probit when a normal latent error is natural (e.g. selection models). The substantive conclusions rarely hinge on which you pick.
+:::
+
+## See It: One Outcome, Three Curves
+
+The interactive below puts all three models on the same picture. The dots are $400$ patients: each sits at its nurse-staffing level on the $x$-axis and at its outcome ($1$ = reached target, on top; $0$ = missed, on the bottom). The **slate straight line** is the LPM; the **Uppsala-red S-curve** is the logistic fit. Drag the LPM's **intercept** and **slope** and watch the straight line march out of the legal $[0,1]$ band (its illegal stretches turn bright red) while the logistic curve, anchored to the same data, stays politely inside.
+
+::: {.interactive-container}
+
+#### LPM line vs. logistic S-curve on a 0/1 outcome
+
+```{ojs}
+//| echo: false
+// Concise "Start here" prompt above the controls; fuller tour sits below.
+html`<p style="
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.85rem;
+    color: ${bclpm_pal.axis};
+    background: ${bclpm_pal.fill};
+    border-left: 3px solid ${bclpm_pal.lpm};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> press <em>Fit LPM to data (OLS)</em> and
+  <em>Fit logit to data (MLE)</em> to snap both curves onto the points, then drag
+  the LPM <em>intercept</em> and <em>slope</em> and watch the straight line leave
+  the legal 0–1 band (turning red) while the red S-curve never does. Full guided
+  tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof bclpm_intercept = Inputs.range([-0.4, 1.0], {
+  value: 0.18,
+  step: 0.01,
+  label: "LPM intercept  β₀"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bclpm_slope = Inputs.range([-0.05, 0.30], {
+  value: 0.11,
+  step: 0.005,
+  label: "LPM slope  β₁ (Δ probability per nurse FTE / 1000)"
+})
+```
+
+```{ojs}
+//| echo: false
+// Buttons snap the sliders' *visual reference* to the fitted values. We do not
+// write to the sliders (that would create a read+write cycle); instead each
+// "Fit" button is a reduce-counter that toggles drawing the fitted overlay.
+viewof bclpm_showOLS = Inputs.toggle({ label: "Show OLS-fitted LPM line", value: true })
+```
+
+```{ojs}
+//| echo: false
+viewof bclpm_showLogit = Inputs.toggle({ label: "Show MLE-fitted logit S-curve", value: true })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Uppsala-academic palette shared across this page's interactives. ──
+bclpm_pal = ({
+  logit:  "#990000",   // focal series — logistic S-curve (Uppsala red)
+  lpm:    "#3d5a6c",   // comparison series — LPM straight line (slate)
+  good:    "#2e6f40",  // in-range / on-target (green)
+  ochre:   "#9c7a33",  // highlight / true-value (ochre)
+  bad:     "#b3000b",  // out-of-range warning (bright red)
+  ink:     "#1c1c1a",  // ink text / reference lines
+  axis:    "#79766e",  // axis label text (Uppsala muted ink)
+  hair:    "#e6e3db",  // gridlines / hairlines
+  muted:   "#79766e",  // muted ink
+  fill:    "#f6f5f1"   // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Logistic CDF helper used by the data-generating process and both curves.
+bclpm_Lam = z => 1 / (1 + Math.exp(-z))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Synthetic patient panel. x = diabetes-nurse FTE per 1000 patients, U(0.5,6).
+// The true DGP is itself a logit, so the fitted logit recovers a sensible curve
+// and the LPM is a visibly imperfect straight-line proxy. Reproducible via LCG.
+bclpm_data = {
+  const rng = d3.randomLcg(42);            // reproducible uniform stream
+  const n = 400;
+  const b0_true = -1.6, b1_true = 0.62;    // latent logit truth
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = 0.5 + 5.5 * rng();           // staffing 0.5 .. 6.0
+    const p = bclpm_Lam(b0_true + b1_true * x);
+    const y = rng() < p ? 1 : 0;
+    out.push({ x, y });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── OLS fit of the LPM (closed form: simple regression of y on x). ──
+bclpm_olsFit = {
+  const d = bclpm_data;
+  const n = d.length;
+  const mx = d3.mean(d, p => p.x);
+  const my = d3.mean(d, p => p.y);
+  let sxx = 0, sxy = 0;
+  for (const p of d) { sxx += (p.x - mx) ** 2; sxy += (p.x - mx) * (p.y - my); }
+  const b1 = sxy / sxx;
+  const b0 = my - b1 * mx;
+  return ({ b0, b1 });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── MLE fit of the logit by Newton–Raphson; converges in a few steps. ──
+bclpm_logitFit = {
+  const d = bclpm_data;
+  let b0 = 0, b1 = 0;
+  for (let iter = 0; iter < 60; iter++) {
+    let g0 = 0, g1 = 0, h00 = 0, h01 = 0, h11 = 0;
+    for (const pt of d) {
+      const eta = b0 + b1 * pt.x;
+      const p = bclpm_Lam(eta);
+      const w = p * (1 - p);
+      const r = pt.y - p;
+      g0 += r;          g1 += r * pt.x;
+      h00 += w;         h01 += w * pt.x;   h11 += w * pt.x * pt.x;
+    }
+    const det = h00 * h11 - h01 * h01;
+    if (Math.abs(det) < 1e-10) break;
+    const d0 = (h11 * g0 - h01 * g1) / det;
+    const d1 = (-h01 * g0 + h00 * g1) / det;
+    b0 += d0; b1 += d1;
+    if (Math.abs(d0) + Math.abs(d1) < 1e-9) break;
+  }
+  return ({ b0, b1 });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// x-grid for drawing the two smooth curves.
+bclpm_grid = d3.range(0, 6.51, 0.05)
+
+// The reader's LPM line, split into "legal" (inside [0,1]) and "illegal"
+// (outside) segments so the out-of-range stretches can be drawn in alarm red.
+bclpm_userLine = bclpm_grid.map(x => {
+  const p = bclpm_intercept + bclpm_slope * x;
+  return ({ x, p, legal: p >= 0 && p <= 1 });
+})
+
+// The OLS-fitted LPM line (for the "show fitted" overlay).
+bclpm_olsLine = bclpm_grid.map(x => ({
+  x, p: bclpm_olsFit.b0 + bclpm_olsFit.b1 * x
+}))
+
+// The MLE-fitted logistic S-curve.
+bclpm_logitCurve = bclpm_grid.map(x => ({
+  x, p: bclpm_Lam(bclpm_logitFit.b0 + bclpm_logitFit.b1 * x)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Bin the raw 0/1 data into staffing deciles and plot the empirical share that
+// reached target in each bin — the "truth" the curves are trying to trace.
+bclpm_bins = {
+  const d = bclpm_data;
+  const nbins = 8;
+  const xs = d.map(p => p.x);
+  const lo = d3.min(xs), hi = d3.max(xs);
+  const w = (hi - lo) / nbins;
+  const out = [];
+  for (let b = 0; b < nbins; b++) {
+    const a = lo + b * w, z = (b === nbins - 1) ? hi + 1e-9 : lo + (b + 1) * w;
+    const grp = d.filter(p => p.x >= a && p.x < z);
+    if (grp.length > 0) out.push({ x: (a + z) / 2, p: d3.mean(grp, p => p.y), n: grp.length });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 420,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginTop: 30,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: bclpm_pal.muted },
+  x: {
+    label: "Diabetes-nurse staffing  (FTE per 1000 patients)  →",
+    domain: [0, 6.5],
+    grid: false
+  },
+  y: {
+    label: "↑  P(reached HbA1c target)",
+    domain: [-0.25, 1.25],
+    grid: true,
+    ticks: [-0.25, 0, 0.25, 0.5, 0.75, 1, 1.25]
+  },
+  marks: [
+    Plot.gridY({ stroke: bclpm_pal.hair }),
+    // Shade the legal [0,1] probability band.
+    Plot.rect([{ y1: 0, y2: 1 }], {
+      x1: 0, x2: 6.5, y1: "y1", y2: "y2",
+      fill: bclpm_pal.good, fillOpacity: 0.05
+    }),
+    // The 0 and 1 boundaries of legality.
+    Plot.ruleY([0, 1], { stroke: bclpm_pal.good, strokeWidth: 1, strokeDasharray: "3,3" }),
+
+    // Raw 0/1 outcomes — nudged a hair off the 0 and 1 lines so the bands read.
+    Plot.dot(bclpm_data, {
+      x: "x",
+      y: "y",
+      r: 2.2,
+      fill: bclpm_pal.muted,
+      fillOpacity: 0.28,
+      dy: d => d.y === 1 ? -2 : 2
+    }),
+
+    // Empirical bin proportions — ochre highlight dots (the "truth").
+    Plot.dot(bclpm_bins, {
+      x: "x", y: "p", r: 5, fill: bclpm_pal.ochre, stroke: "white", strokeWidth: 1.2,
+      title: d => `staffing ≈ ${d.x.toFixed(2)}\nshare on target = ${d.p.toFixed(3)} (n=${d.n})`
+    }),
+
+    // OLS-fitted LPM line (thin slate, dashed) if toggled on.
+    bclpm_showOLS ? Plot.line(bclpm_olsLine, {
+      x: "x", y: "p", stroke: bclpm_pal.lpm, strokeWidth: 1.4, strokeDasharray: "5,4"
+    }) : null,
+
+    // MLE-fitted logistic S-curve (thin red, dashed) if toggled on.
+    bclpm_showLogit ? Plot.line(bclpm_logitCurve, {
+      x: "x", y: "p", stroke: bclpm_pal.logit, strokeWidth: 1.4, strokeDasharray: "5,4"
+    }) : null,
+
+    // The reader's draggable LPM line — legal stretch in slate ...
+    Plot.line(bclpm_userLine.filter(d => d.legal), {
+      x: "x", y: "p", stroke: bclpm_pal.lpm, strokeWidth: 3
+    }),
+    // ... and illegal stretches in alarm red (two separate runs at the ends).
+    Plot.line(bclpm_userLine.filter(d => !d.legal && d.x <= 3), {
+      x: "x", y: "p", stroke: bclpm_pal.bad, strokeWidth: 3
+    }),
+    Plot.line(bclpm_userLine.filter(d => !d.legal && d.x > 3), {
+      x: "x", y: "p", stroke: bclpm_pal.bad, strokeWidth: 3
+    }),
+
+    // The reader's logistic S-curve using THEIR intercept/slope mapped through Λ,
+    // so they can compare "same coefficients, two link functions".
+    Plot.line(bclpm_grid.map(x => ({ x, p: bclpm_Lam(bclpm_logit_safe(bclpm_intercept + bclpm_slope * x)) })), {
+      x: "x", y: "p", stroke: bclpm_pal.logit, strokeWidth: 3, strokeOpacity: 0.35
+    }),
+
+    // Curve labels with a white halo (Plot.line has no text channel).
+    Plot.text([{ x: 6.0, p: bclpm_intercept + bclpm_slope * 6.0 }], {
+      x: "x", y: d => Math.max(-0.2, Math.min(1.2, d.p)),
+      text: () => "LPM (your line)",
+      fill: bclpm_pal.lpm, fontWeight: 700, fontSize: 11, textAnchor: "end", dy: -8,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: 5.2, p: bclpm_Lam(bclpm_logitFit.b0 + bclpm_logitFit.b1 * 5.2) }], {
+      x: "x", y: "p",
+      text: () => "logit (MLE)",
+      fill: bclpm_pal.logit, fontWeight: 700, fontSize: 11, textAnchor: "start", dy: -10,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Clamp the index so the reader's logistic overlay never overflows numerically.
+bclpm_logit_safe = z => Math.max(-30, Math.min(30, z))
+```
+
+```{ojs}
+//| echo: false
+// Live readout: how much of the reader's LPM line is out of range, plus the
+// fitted-coefficient comparison. Built in an html`` cell so reactive values
+// interpolate (a markdown ${...} would render literally).
+{
+  const frac = bclpm_userLine.filter(d => !d.legal).length / bclpm_userLine.length;
+  const pct = (100 * frac).toFixed(0);
+  const inRange = frac < 1e-9;
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${bclpm_pal.fill}; border: 1px solid ${bclpm_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${bclpm_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Your LPM out of [0,1]", inRange ? "0% (legal)" : pct + "% of range",
+        inRange ? bclpm_pal.good : bclpm_pal.bad)}
+    ${tile("OLS-fitted β₀, β₁",
+        `${bclpm_olsFit.b0.toFixed(2)}, ${bclpm_olsFit.b1.toFixed(3)}`, bclpm_pal.lpm)}
+    ${tile("logit-fitted β₀, β₁ (MLE)",
+        `${bclpm_logitFit.b0.toFixed(2)}, ${bclpm_logitFit.b1.toFixed(2)}`, bclpm_pal.logit)}
+    ${tile("logit odds ratio  e^β₁",
+        Math.exp(bclpm_logitFit.b1).toFixed(2) + "×", bclpm_pal.ink)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Three-Curve Chart
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the cloud of dots.** Faint grey dots are the $400$ patients --- the top band is "reached target" ($y=1$), the bottom band is "missed" ($y=0$). More dots sit in the top band as staffing rises to the right. The **ochre dots** are the empirical share on target within each staffing bin: they trace the truth the models are chasing, and they already curve.
+
+**Step 2: Watch the LPM leave the legal band.** The green dashed lines at $0$ and $1$ mark the only legal values a probability can take; the faint green shading is the legal zone. Drag the **slope** up: the slate LPM line tilts, and the moment any stretch pokes above $1$ or below $0$ it switches to **alarm red**. The "Your LPM out of $[0,1]$" tile counts how much of the plotted range is illegal. There is no setting of a straight line that fits a steep cloud *and* stays legal everywhere.
+
+**Step 3: Watch the S-curve stay home.** The bold red logistic curve uses *your* intercept and slope, but pushed through the logistic CDF. No matter how hard you drag the sliders, it flattens out smoothly toward $0$ on the left and $1$ on the right --- it physically cannot leave the band. That is the latent-variable derivation paying off.
+
+**Step 4: Compare the two fits to the truth.** Toggle **Show OLS-fitted LPM line** and **Show MLE-fitted logit S-curve**. The thin dashed slate line is the best straight line OLS can draw; the thin dashed red curve is the maximum-likelihood logit. Notice the logit hugs the ochre empirical dots through the curved middle and tails, while the straight line can only split the difference.
+
+**Step 5: Read the coefficients.** The tiles report the OLS-fitted $(\beta_0,\beta_1)$ in *probability* units, the logit-fitted $(\beta_0,\beta_1)$ in *log-odds* units, and the implied **odds ratio** $e^{\beta_1}$. These scales are not comparable directly --- converting a logit back to a probability change is the subject of the next page.
+
+## Estimation: Maximum Likelihood
+
+The LPM is fit by OLS. Logit and probit have no closed-form estimator; they are fit by **maximum likelihood**, the machinery built in [Module 11](../11-mle-gmm/). Because each $y_i$ is a Bernoulli draw with success probability $p_i = G(x_i'\beta)$, the contribution of patient $i$ to the likelihood is $p_i^{\,y_i}(1-p_i)^{1-y_i}$, and the log-likelihood over the sample is
+
+$$
+\ell(\beta) \;=\; \sum_{i=1}^{n}\Big[\, y_i \log G(x_i'\beta) + (1 - y_i)\log\big(1 - G(x_i'\beta)\big)\,\Big].
+$$
+
+**Read this as**: "sum over patients of: if they reached target, the log of the model's predicted probability; if they did not, the log of one minus that probability." Each success rewards parameters that push $G(x_i'\beta)$ up; each failure rewards parameters that push it down. The MLE $\hat\beta$ is the value that balances all $n$ of these pulls --- the argmax of $\ell$, found by setting the score to zero exactly as in Module 11. For logit, $G=\Lambda$ makes the score especially clean; the [Math Details](#math-details) carry the derivation through.
+
+::: {.glass-card .glass-card--assumption}
+**What logit/probit by MLE assume:**
+
+1. **Correct link and index.** The probability really is $G(x_i'\beta)$ with the chosen CDF $G$ and a linear index. A badly wrong link or omitted nonlinearity biases $\hat\beta$.
+2. **Correct latent-error distribution.** Logit assumes logistic errors, probit assumes normal --- and (unlike linear regression) the error variance is *not* separately estimated; it is normalized to fix the scale of $\beta$. Get the family badly wrong and the coefficients are distorted.
+3. **Independent observations.** The likelihood factorizes across patients. If outcomes cluster by *läkare* (physician) or vårdcentral, use cluster-robust standard errors.
+:::
+
+## Code: Fitting LPM, Logit, and Probit
+
+Both panels simulate the staffing data, then fit all three models. The LPM gets **robust** standard errors; logit and probit are fit by maximum likelihood. We also recover an odds ratio from the logit.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("sandwich", "lmtest"))  # for robust SEs
+library(sandwich); library(lmtest)
+
+set.seed(42)
+n  <- 400
+x  <- runif(n, 0.5, 6.0)                     # nurse FTE per 1000 patients
+p  <- plogis(-1.6 + 0.62 * x)                # true latent logit
+y  <- rbinom(n, size = 1, prob = p)          # 0/1: reached HbA1c target?
+dat <- data.frame(y, x)
+
+## ---- Linear probability model: OLS + heteroskedasticity-robust SEs ----
+lpm <- lm(y ~ x, data = dat)
+coeftest(lpm, vcov = vcovHC(lpm, type = "HC1"))   # robust (White) SEs
+cat("Share of fitted values outside [0,1]: ",
+    mean(fitted(lpm) < 0 | fitted(lpm) > 1), "\n")
+
+## ---- Logit and probit by maximum likelihood (glm) ----
+logit  <- glm(y ~ x, data = dat, family = binomial(link = "logit"))
+probit <- glm(y ~ x, data = dat, family = binomial(link = "probit"))
+
+summary(logit)$coefficients
+summary(probit)$coefficients
+
+## Odds ratio for staffing: exp of the logit coefficient
+exp(coef(logit)["x"])                          # multiplicative effect on odds
+
+## Logit coefs run ~1.6–1.8x the probit coefs:
+cbind(logit = coef(logit), probit = coef(probit),
+      ratio = coef(logit) / coef(probit))
+```
+
+### Python
+
+```python
+import numpy as np
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+import pandas as pd
+
+rng = np.random.default_rng(42)
+n = 400
+x = rng.uniform(0.5, 6.0, n)                   # nurse FTE per 1000 patients
+p = 1 / (1 + np.exp(-(-1.6 + 0.62 * x)))       # true latent logit
+y = rng.binomial(1, p)                         # 0/1: reached HbA1c target?
+dat = pd.DataFrame({"y": y, "x": x})
+X = sm.add_constant(dat["x"])
+
+# ---- Linear probability model: OLS with heteroskedasticity-robust SEs ----
+lpm = sm.OLS(dat["y"], X).fit(cov_type="HC1")  # White/HC1 robust SEs
+print(lpm.summary().tables[1])
+fitted = lpm.predict(X)
+print("Share of fitted outside [0,1]:", np.mean((fitted < 0) | (fitted > 1)))
+
+# ---- Logit and probit by maximum likelihood ----
+logit  = sm.Logit(dat["y"], X).fit(disp=False)
+probit = sm.Probit(dat["y"], X).fit(disp=False)
+print(logit.params)
+print(probit.params)
+
+# Odds ratio for staffing: exp of the logit coefficient
+print("Odds ratio (staffing):", np.exp(logit.params["x"]))
+
+# Logit coefs run ~1.6–1.8x the probit coefs:
+print(pd.DataFrame({"logit": logit.params,
+                    "probit": probit.params,
+                    "ratio": logit.params / probit.params}))
+```
+
+:::
+
+In both languages the LPM slope reads directly as a probability change but flags a handful of out-of-range fitted values; the logit and probit slopes are on the log-odds and probit scales respectively, with the logit roughly $1.6$ times the probit. The next page turns those raw coefficients into the quantity a manager actually wants --- a marginal effect in percentage points.
+
+<details>
+<summary>Math Details: the latent-variable derivation and the logit log-likelihood</summary>
+<div class="details-content" id="math-details">
+
+### From latent variable to S-curve
+
+Posit the latent regression $y_i^\* = x_i'\beta + \varepsilon_i$ with $\varepsilon_i$ independent of $x_i$, symmetric about $0$, and CDF $F$. We observe $y_i = \mathbf{1}\{y_i^\* > 0\}$. Then
+
+$$
+\begin{aligned}
+P(y_i = 1 \mid x_i)
+&= P(x_i'\beta + \varepsilon_i > 0 \mid x_i)\\
+&= P(\varepsilon_i > -x_i'\beta \mid x_i)\\
+&= 1 - F(-x_i'\beta)\\
+&= F(x_i'\beta),
+\end{aligned}
+$$
+
+where the last line uses symmetry, $1 - F(-a) = F(a)$. Choosing $F = \Lambda$ (logistic) gives logit; $F = \Phi$ (standard normal) gives probit.
+
+**Why the scale of $\beta$ is only identified up to the error variance.** Multiply the latent equation by any constant $c>0$: $c\,y_i^\* = x_i'(c\beta) + c\varepsilon_i$. The sign of $y_i^\*$ --- and therefore $y_i$ --- is unchanged, so the data cannot distinguish $(\beta, \operatorname{sd}(\varepsilon))$ from $(c\beta, c\operatorname{sd}(\varepsilon))$. We must fix the scale by *normalizing the error variance*: probit sets $\operatorname{Var}(\varepsilon)=1$, logit sets it to $\pi^2/3$. This normalization is exactly why logit coefficients are about $\pi/\sqrt{3}\approx 1.81$ times probit coefficients in large samples, and why neither set of coefficients is a probability.
+
+### The logit log-likelihood and score
+
+For logit, $p_i = \Lambda(\eta_i)$ with $\eta_i = x_i'\beta$. A convenient identity is $\log(1-\Lambda(\eta)) = -\eta + \log\Lambda(\eta) = -\log(1+e^{\eta})$. The Bernoulli log-likelihood is
+
+$$
+\ell(\beta) = \sum_{i=1}^n \Big[\, y_i \log \Lambda(\eta_i) + (1-y_i)\log\big(1-\Lambda(\eta_i)\big)\,\Big]
+= \sum_{i=1}^n \Big[\, y_i \eta_i - \log\!\big(1 + e^{\eta_i}\big)\,\Big].
+$$
+
+Differentiate using the defining property of the logistic CDF, $\Lambda'(\eta) = \Lambda(\eta)\big(1-\Lambda(\eta)\big)$. The score is remarkably clean:
+
+$$
+\frac{\partial \ell}{\partial \beta}
+= \sum_{i=1}^n \Big( y_i - \Lambda(\eta_i) \Big)\, x_i
+= \sum_{i=1}^n \big( y_i - p_i \big)\, x_i \;=\; 0 .
+$$
+
+**Read this as**: "the MLE sets the sum of $x_i$ weighted by the residual $(y_i - \hat p_i)$ to zero." The fitted probabilities make the prediction errors orthogonal to the regressors --- the binary-outcome echo of the OLS normal equations. There is no closed-form solution, so we solve it numerically (Newton–Raphson / IRLS); the negative second derivative
+
+$$
+-\frac{\partial^2 \ell}{\partial\beta\,\partial\beta'}
+= \sum_{i=1}^n p_i(1-p_i)\, x_i x_i'
+$$
+
+is positive definite whenever the data are not perfectly separated, so $\ell$ is globally concave and the MLE is unique. (Perfect separation --- a regressor that predicts the outcome flawlessly --- sends a coefficient to $\pm\infty$, the logit analogue of the boundary problem from Module 11.)
+
+### Where the LPM heteroskedasticity comes from
+
+For the LPM, $u_i = y_i - p(x_i)$ with $y_i$ Bernoulli$(p(x_i))$, so $\operatorname{Var}(u_i\mid x_i)=\operatorname{Var}(y_i\mid x_i)=p(x_i)\big(1-p(x_i)\big)$. This is a maximum at $p=0.5$ (value $0.25$) and vanishes as $p\to 0$ or $p\to 1$ --- it varies with $x_i$ by construction, which is why robust standard errors are mandatory.
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A vårdcentral fits an LPM for reaching the HbA1c target as a function of nurse staffing $x$ (FTE per 1000 patients): $\hat p(x) = 0.18 + 0.11\,x$.
+
+(a) Interpret the slope $0.11$ in plain language. (b) What is the predicted probability at $x = 2$ and at $x = 8$? (c) What is structurally wrong with the prediction at $x=8$, and at what staffing level does the line first leave the legal range?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Each additional diabetes-nurse FTE per 1,000 patients is associated with a $0.11 = 11$-percentage-point increase in the probability of reaching the HbA1c target --- a *constant* effect, identical at every staffing level (that constancy is itself an LPM limitation).
+
+**(b)** At $x=2$: $\hat p = 0.18 + 0.11(2) = 0.40$. At $x=8$: $\hat p = 0.18 + 0.11(8) = 1.06$.
+
+**(c)** A predicted probability of $1.06$ is impossible --- probabilities cannot exceed $1$. The line crosses $1$ at $x = (1 - 0.18)/0.11 \approx 7.45$, so any vårdcentral staffed above about $7.5$ nurse-FTE per 1,000 patients gets an illegal prediction. (It also dips below $0$ for $x < (0-0.18)/0.11 \approx -1.64$, outside the data here.) A logit or probit would bend toward $1$ instead and stay legal.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain why the LPM error term is heteroskedastic *by construction*, derive the conditional error variance, and state at what success probability the variance is largest. What is the practical consequence for inference?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The outcome $y_i$ is Bernoulli with success probability $p(x_i)$, so its variance is $\operatorname{Var}(y_i\mid x_i)=p(x_i)\big(1-p(x_i)\big)$. The LPM error is $u_i = y_i - p(x_i)$, which has the *same* conditional variance:
+
+$$
+\operatorname{Var}(u_i \mid x_i) = p(x_i)\big(1 - p(x_i)\big).
+$$
+
+This depends on $x_i$ through $p(x_i)$, so it cannot be constant unless $p(x_i)$ is constant --- i.e. heteroskedasticity is unavoidable. The variance is a downward parabola in $p$, maximized at $p=0.5$ (value $0.25$) and falling to $0$ at $p=0$ and $p=1$. For example $p=0.1\Rightarrow 0.09$, $p=0.5\Rightarrow 0.25$, $p=0.9\Rightarrow 0.09$.
+
+**Practical consequence:** the default OLS standard errors are biased (usually too small), so $t$-statistics and $p$-values are unreliable. The remedy is **heteroskedasticity-robust (White / HC1) standard errors**, which the LPM should always report.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A logit for reaching target gives the model $\log\!\dfrac{p}{1-p} = -0.4 + 0.6931\,x$, where $x$ is nurse staffing.
+
+(a) What is the odds ratio for a one-unit increase in staffing? (b) Compute the predicted probability at $x=0$ and at $x=2$. (c) The probability rose from $x=0$ to $x=2$; did the *odds* rise by the same multiplicative factor each step? Verify.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The odds ratio is $e^{\beta_1} = e^{0.6931} = 2.00$. Each extra nurse-FTE per 1,000 patients *doubles the odds* of reaching target.
+
+**(b)** Index at $x=0$: $\eta = -0.4$, so $p = \Lambda(-0.4) = 1/(1+e^{0.4}) = 0.4013$. Index at $x=2$: $\eta = -0.4 + 0.6931(2) = 0.9863$, so $p = \Lambda(0.9863) = 0.7284$.
+
+**(c)** Yes for the odds, no for the probability. Odds at $x=0$: $0.4013/(1-0.4013) = 0.670$. Odds at $x=1$: $e^{-0.4+0.6931} = e^{0.2931} = 1.341 = 0.670 \times 2$. Odds at $x=2$: $e^{0.9863} = 2.681 = 1.341 \times 2$. The odds multiply by exactly $2$ at each step --- that is what "linear in log-odds" means. The *probabilities* ($0.401 \to 0.573 \to 0.728$) do **not** rise by a constant amount or factor: the probability change per step depends on where you are on the S-curve, which is precisely why a single logit coefficient is not a marginal effect.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Four patients have staffing levels $x = (1, 2, 3, 4)$ and outcomes $y = (0, 0, 1, 1)$. For the candidate logit coefficients $\beta_0 = -1$, $\beta_1 = 0.5$, compute each patient's predicted probability and the total log-likelihood $\ell(\beta)$. Recall $\Lambda(\eta) = 1/(1+e^{-\eta})$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Compute the index $\eta_i = -1 + 0.5\,x_i$, the probability $p_i = \Lambda(\eta_i)$, and each contribution $\ell_i = y_i\log p_i + (1-y_i)\log(1-p_i)$:
+
+| $x_i$ | $y_i$ | $\eta_i$ | $p_i$ | contribution $\ell_i$ |
+|:----:|:----:|:------:|:------:|:-----:|
+| 1 | 0 | $-0.5$ | $0.3775$ | $\log(1-0.3775) = -0.4741$ |
+| 2 | 0 | $0.0$ | $0.5000$ | $\log(0.5) = -0.6931$ |
+| 3 | 1 | $0.5$ | $0.6225$ | $\log(0.6225) = -0.4741$ |
+| 4 | 1 | $1.0$ | $0.7311$ | $\log(0.7311) = -0.3133$ |
+
+Summing the contributions:
+
+$$
+\ell(\beta) = -0.4741 - 0.6931 - 0.4741 - 0.3133 = -1.9546 .
+$$
+
+The total log-likelihood at these candidate coefficients is $\approx -1.95$. Maximum likelihood would search over $(\beta_0,\beta_1)$ for the values that push this number as high (close to $0$) as possible --- exactly the score-equals-zero optimization from [Module 11](../11-mle-gmm/properties-asymptotics.qmd), here solved numerically because no closed form exists.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- For a $0/1$ outcome the conditional mean *is* the response probability, $E[y\mid x] = P(y=1\mid x)$, so every binary-outcome model is a model of a probability.
+- The LPM (OLS on $y$) gives coefficients that read directly as probability changes, but it produces fitted values outside $[0,1]$ and has built-in heteroskedasticity $\operatorname{Var}(u\mid x)=p(x)(1-p(x))$ --- always pair it with robust standard errors.
+- Logit and probit come from one latent-variable / random-utility model, $y^\*=x'\beta+\varepsilon$ with $y=\mathbf{1}\{y^\*>0\}$; the response probability is the CDF of the latent error, $P(y=1\mid x)=F(x'\beta)$, which keeps the S-curve inside $[0,1]$ by design.
+- Logit uses the logistic CDF (log-odds linear in $x$, so $e^{\beta_j}$ is an odds ratio); probit uses the normal CDF; logit coefficients run about $1.6$–$1.8$ times probit, but fitted probabilities and conclusions barely differ.
+- Logit and probit are estimated by maximum likelihood (Module 11); the logit score $\sum_i (y_i - \hat p_i)x_i = 0$ mirrors the OLS normal equations, and the log-likelihood is globally concave absent perfect separation.
+:::
+
+## What Comes Next
+
+We can now fit a yes/no outcome three ways and explain why the curved models keep the probability legal. But the coefficients are awkward to communicate: an LPM slope is a probability change, a logit slope is a log-odds change, and a probit slope lives on yet another scale. A clinic manager does not want a log-odds --- they want "how many *more patients per hundred* reach target if we add a nurse?" The next page, [Interpreting Nonlinear Models: Marginal Effects](marginal-effects.qmd), shows how to convert any of these coefficients into a marginal effect in probability units --- the average marginal effect, the marginal effect at the mean, and the way that effect changes along the S-curve --- so that nonlinear models can be read in the same plain language as the LPM.

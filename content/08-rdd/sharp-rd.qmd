@@ -1,0 +1,1253 @@
+---
+title: "Sharp Regression Discontinuity"
+subtitle: "Identification at a cutoff"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Recognize a sharp regression discontinuity (RD) design: a treatment that is a deterministic step function of a continuous running variable at a known cutoff.
+- State the sharp RD estimand $\tau_{\text{RD}}$ as the jump in the conditional mean of the outcome at the cutoff, and read it as a *local* average treatment effect.
+- Explain why **continuity** of the untreated potential outcome at the cutoff identifies the effect --- the "local randomization" intuition --- and contrast this with a selection-on-observables strategy.
+- Read an outcome-vs-running-variable plot: separate the *jump* (the causal effect) from the *slope* (the confounding relationship that RD nets out).
+- Anticipate how the choice of functional form near the cutoff can manufacture or destroy a spurious discontinuity.
+:::
+
+## A Threshold That Decides Who Gets the Program
+
+Sweden's 21 *regioner* (regions) run their *vårdcentraler* (primary care centers) under tight budgets, and not every patient can be enrolled in every program. So eligibility is often decided by a **rule with a sharp cutoff**. Consider one that *Socialstyrelsen* (the National Board of Health and Welfare) might plausibly set: starting at **age 70**, every patient is automatically enrolled in a structured **fall-prevention and medication-review program** (*fallprevention och läkemedelsgenomgång*) run by the vårdcentral's *distriktssköterskor* (district nurses). Turn 70 and the system enrolls you; one day short of 70 and it does not.
+
+The policy question is the usual one: does the program work? The outcome we will track is the number of **fall-related emergency visits per 1,000 patients per year** --- lower is better. The obstacle is the usual one too. We cannot simply compare enrolled 75-year-olds to non-enrolled 60-year-olds, because age is a powerful confounder: older patients fall more *regardless* of any program. A naive treated-minus-control comparison would conflate the program's effect with the brute fact that the treated group is older and frailer. This is exactly the [selection-on-observables](../01-fundamental-problem/selection-bias.qmd) trap, and here it would make a *beneficial* program look harmful.
+
+But the assignment rule hands us something precious. Consider patients clustered tightly around the threshold --- someone who is 69 years and 11 months versus someone who is 70 years and 1 month. They are, for all practical purposes, *the same kind of patient*: same average frailty, same average comorbidities, same average baseline fall risk. The only thing that differs is which side of an administrative line their birthday fell on. One is enrolled; the other is not. Comparing these near-identical patients isolates the program's effect from the confounding march of age.
+
+This is the entire idea of **regression discontinuity** (RD), introduced by Thistlethwaite and Campbell (1960) to study the effect of merit awards and now one of the most credible quasi-experimental designs in applied economics. When the assignment rule is a deterministic step --- treated *if and only if* you cross the cutoff --- the design is called **sharp RD**, the subject of this page.
+
+## The Ingredients of a Sharp RD Design
+
+Three objects define the design.
+
+::: {.glass-card .glass-card--definition}
+A **sharp regression discontinuity design** has:
+
+- A **running variable** (also called the *forcing variable* or *score*) $X_i$ --- a continuous variable measured for every unit. In our example, $X_i$ is patient $i$'s age in years.
+- A known **cutoff** $c$ --- the threshold at which assignment changes. Here $c = 70$.
+- A **treatment** $D_i$ that is a *deterministic step function* of the running variable:
+
+$$
+D_i = \mathbf{1}\{X_i \ge c\} = \begin{cases} 1 & \text{if } X_i \ge c, \\ 0 & \text{if } X_i < c. \end{cases}
+$$
+
+**Read this as**: "Patient $i$ is treated ($D_i = 1$) exactly when their age is at least 70, and untreated ($D_i = 0$) otherwise." The treatment is a *function of $X_i$ alone* --- knowing the age tells you the treatment status with certainty.
+:::
+
+The word **sharp** refers to that determinism. Treatment status jumps from 0 to 1 with probability 1 as $X$ crosses $c$: everyone above the cutoff is treated, nobody below it is. There is no slippage, no non-compliance, no discretion. (When the *probability* of treatment jumps but not all the way from 0 to 1 --- because some eligible patients decline, or some ineligible ones get in --- the design is **fuzzy RD**, which we treat as an instrumental-variables problem two pages from now.)
+
+The picture below makes the sharp/fuzzy contrast concrete. The vertical axis is the **probability of being treated**, $P(D_i = 1 \mid X_i)$; the horizontal axis is the running variable. In a **sharp** design (left) that probability leaps cleanly from 0 to 1 at the cutoff. In a **fuzzy** design (right, shown greyed for contrast) it still rises at the cutoff but only partway --- some eligible units stay untreated, some ineligible ones slip in --- so the jump is smaller than 1.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static step-function data for the sharp-vs-fuzzy contrast. Treatment
+// PROBABILITY as a function of the centered running variable x = age - 70.
+// Sharp: 0 below the cutoff, 1 at/above it. Fuzzy: a partial jump (0.15 -> 0.75)
+// plus a faint slope, so the probability never reaches 1. Pure data, no inputs.
+rdsharp_stepData = {
+  const sharp = [], fuzzy = [];
+  for (let x = -10; x <= 10 + 1e-9; x += 0.25) {
+    sharp.push({ x, p: x >= 0 ? 1 : 0 });
+    // Fuzzy: low baseline take-up below (≈0.15 at the cutoff), higher (≈0.75,
+    // but < 1) above; slight drift. Endpoints match the "0.15 → 0.75" gloss.
+    const base = x < 0 ? 0.05 + 0.010 * (x + 10) : 0.75 + 0.010 * x;
+    fuzzy.push({ x, p: Math.max(0, Math.min(1, base)) });
+  }
+  return { sharp, fuzzy };
+}
+```
+
+```{ojs}
+//| echo: false
+
+rdsharp_stepFig = {
+  const mk = (rows, title, lineColor, dotColor) => Plot.plot({
+    width: Math.min(320, width),
+    height: 230,
+    marginLeft: 60,
+    marginTop: 34,
+    marginBottom: 46,
+    marginRight: 16,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "11px", background: "transparent" },
+    x: { label: "Running variable (age − c) →", domain: [-10, 10], grid: false },
+    y: { label: "P(treated)", domain: [-0.08, 1.12], ticks: [0, 0.5, 1], grid: true },
+    marks: [
+      Plot.text([{}], {
+        frameAnchor: "top", dy: -18, text: [title],
+        fill: "#1c1c1a", fontSize: 12, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.ruleX([0], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      Plot.text([{ x: 0, y: 1.12 }], {
+        x: "x", y: "y", text: ["cutoff c"], fill: "#1c1c1a", fontSize: 10,
+        fontWeight: 600, dx: -5, dy: 2, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The two flat segments (below / at-or-above) drawn separately so the
+      // vertical jump is not bridged by a sloped connector.
+      Plot.line(rows.filter(d => d.x < 0), { x: "x", y: "p", stroke: lineColor, strokeWidth: 3 }),
+      Plot.line(rows.filter(d => d.x >= 0), { x: "x", y: "p", stroke: lineColor, strokeWidth: 3 }),
+      // Hollow / filled endpoints at the cutoff to show the open/closed jump.
+      Plot.dot([{ x: 0, y: rows.find(d => d.x >= 0).p }], { x: "x", y: "y", fill: dotColor, r: 4 }),
+      Plot.dot([{ x: 0, y: rows.filter(d => d.x < 0).slice(-1)[0].p }], {
+        x: "x", y: "y", fill: "white", stroke: lineColor, strokeWidth: 2, r: 4
+      })
+    ]
+  });
+  return html`<div style="display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; align-items:flex-start; margin:1.25rem 0;">
+    <figure style="margin:0;">${mk(rdsharp_stepData.sharp, "Sharp RD", "#990000", "#990000")}
+      <figcaption style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; text-align:center; max-width:18rem; margin:0.15rem auto 0;">Probability leaps the full 0 → 1 at the cutoff. This page.</figcaption>
+    </figure>
+    <figure style="margin:0;">${mk(rdsharp_stepData.fuzzy, "Fuzzy RD", "#79766e", "#79766e")}
+      <figcaption style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; text-align:center; max-width:18rem; margin:0.15rem auto 0;">Probability jumps only partway (here ≈ 0.15 → 0.75). An IV problem, two pages on.</figcaption>
+    </figure>
+  </div>`;
+}
+```
+
+The defining feature, and the source of both its power and its limitation, is that **the running variable that assigns treatment is also a direct cause of the outcome**. Age determines enrollment *and* age drives fall risk. In a randomized trial we would break that link; in RD we cannot. Instead, we exploit the fact that the link is *smooth* while the assignment is a *jump*.
+
+## The Estimand: A Jump in the Conditional Mean
+
+Picture the cloud of patients plotted with age on the horizontal axis and the fall-visit rate on the vertical axis. Fall risk rises with age, so the cloud trends upward. If the program works, it should carve a **downward step** into that trend precisely at age 70: the moment enrollment switches on, fall visits should drop.
+
+The size of that step is the causal **estimand** --- the precise population quantity we are trying to learn (as distinct from any particular *estimate* of it from a sample).
+
+::: {.glass-card .glass-card--definition}
+The **sharp RD estimand** is the difference between the right-hand and left-hand limits of the outcome's conditional mean at the cutoff:
+
+$$
+\tau_{\text{RD}} = \lim_{x \downarrow c} E[Y_i \mid X_i = x] \;-\; \lim_{x \uparrow c} E[Y_i \mid X_i = x].
+$$
+
+**Read this as**: "Take the average outcome for patients *just above* the cutoff (the limit as age approaches 70 from above, $x \downarrow c$), and subtract the average outcome for patients *just below* it ($x \uparrow c$). The gap between those two limits is the RD effect." It is the vertical size of the jump in the regression curve at $x = c$. (Notation: $x \downarrow c$ means "$x$ approaches the cutoff *from the right* --- patients a hair older than 70"; $x \uparrow c$ means "*from the left* --- a hair younger." The two limits need not be equal: their difference *is* the jump.)
+:::
+
+Two features of this estimand deserve emphasis.
+
+First, $\tau_{\text{RD}}$ is built from **limits**, not from group averages over wide age ranges. We are not comparing all treated to all untreated; we are comparing the curve infinitesimally to the right of 70 with the curve infinitesimally to the left. The upward slope of the cloud --- the confounding effect of age --- is shared by both limits and therefore *differences out*, exactly as the common time trend differenced out in [difference-in-differences](../06-did/classic-2x2.qmd). What remains is the discontinuity.
+
+Second, $\tau_{\text{RD}}$ is a **local** quantity. It is the average treatment effect *for patients at the cutoff* --- those right around age 70. It tells us nothing directly about how the program would affect a 55-year-old or an 85-year-old, because we only ever see the jump at one point on the age axis. We will return to this "local" caveat; it is the central interpretive limitation of every RD design.
+
+## See It: The Jump at the Cutoff
+
+The plot below shows simulated patients: each dot is a vårdcentral's catchment averaged into an age bin, with the fall-visit rate on the vertical axis. Slate dots (left of the cutoff) are the untreated (age below 70); red dots (right of the cutoff) are the treated (age 70 and over). Two regression lines are fit *separately* on each side of the cutoff, and the vertical gap between them at age 70 is the estimated RD effect.
+
+Use the sliders to take the design apart. The **true jump** is the actual program effect baked into the data --- the thing RD is trying to recover. The **slope of the age--risk relationship** controls how steeply fall risk climbs with age (the confounder). The **noise** knob adds dispersion. Watch what stays fixed and what moves.
+
+::: {.interactive-container}
+
+#### Sharp RD: Outcome vs. Running Variable
+
+::: {.callout-tip collapse="false"}
+**Start here:** drag the **slope** slider and watch the vertical gap at age 70 barely move --- that gap (τ̂) is the program effect. The fuller walkthrough is in *How to Read the RD Plot* below.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_trueJump = Inputs.range([-12, 4], {
+  value: -6,
+  step: 0.5,
+  label: "True jump at cutoff (program effect, falls/1000)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_slope = Inputs.range([0, 2.5], {
+  value: 1.2,
+  step: 0.1,
+  label: "Slope of age–risk relationship (confounder)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_noise = Inputs.range([0, 6], {
+  value: 2.5,
+  step: 0.25,
+  label: "Noise (dispersion of bin means)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_showFits = Inputs.toggle({
+  label: "Show fitted lines + the jump",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-size:0.78rem; color:#79766e; margin:-0.25rem 0 0.25rem;
+    font-family:'Inter',sans-serif;">Resamples the noise — has a visible effect only when <strong>Noise &gt; 0</strong>.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed design constants.
+rdsharp_cutoff = 70           // age threshold
+rdsharp_baseline = 40         // fall-visit rate (per 1000) at the cutoff, untreated
+rdsharp_ageMin = 60
+rdsharp_ageMax = 80
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Generate the data deterministically from the sliders. ──
+// Each point is an age bin (half-year steps from 60 to 80). The TRUE conditional
+// mean is:  baseline + slope*(age - cutoff) + trueJump * 1{age >= cutoff}.
+// So the underlying curve is a straight line in age with a vertical STEP of size
+// `trueJump` at age 70. We add Gaussian noise so the fitted lines must estimate,
+// not read off, the jump. rdsharp_draw is referenced (not mutated) so pressing
+// "Draw new sample" reseeds the randomness reactively — no mutable, no cycle.
+rdsharp_data = {
+  rdsharp_draw;                                   // reactive dependency: reseed on click
+  const rnd = d3.randomNormal.source(d3.randomLcg(Math.random()))(0, 1);
+  const pts = [];
+  for (let age = rdsharp_ageMin; age <= rdsharp_ageMax + 1e-9; age += 0.5) {
+    const treated = age >= rdsharp_cutoff ? 1 : 0;
+    const mean = rdsharp_baseline
+               + rdsharp_slope * (age - rdsharp_cutoff)
+               + rdsharp_trueJump * treated;
+    const y = mean + rdsharp_noise * rnd();
+    pts.push({
+      age,
+      x: age - rdsharp_cutoff,                     // centered running variable
+      y,
+      treated,
+      side: treated ? "Treated (enrolled)" : "Untreated"
+    });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Ordinary-least-squares helper: fit y = a + b*x on a set of points. ──
+// Returns the intercept `a`, slope `b`, and a predict() function. Used to fit
+// each side of the cutoff separately on the CENTERED running variable x = age-70,
+// so the intercept `a` is exactly the line's predicted value AT the cutoff.
+rdsharp_ols = function (rows) {
+  const n = rows.length;
+  const mx = d3.mean(rows, d => d.x);
+  const my = d3.mean(rows, d => d.y);
+  let sxx = 0, sxy = 0;
+  for (const r of rows) {
+    sxx += (r.x - mx) * (r.x - mx);
+    sxy += (r.x - mx) * (r.y - my);
+  }
+  const b = sxy / sxx;
+  const a = my - b * mx;
+  return { a, b, predict: x => a + b * x };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fit each side, read off the limits at the cutoff (x = 0), and take the jump.
+rdsharp_fits = {
+  const left  = rdsharp_ols(rdsharp_data.filter(d => d.treated === 0));
+  const right = rdsharp_ols(rdsharp_data.filter(d => d.treated === 1));
+  const limitLeft  = left.a;    // predicted Y just below cutoff (x -> 0^-)
+  const limitRight = right.a;   // predicted Y just above cutoff (x -> 0^+)
+  const jump = limitRight - limitLeft;
+  return { left, right, limitLeft, limitRight, jump };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Line segments for plotting, evaluated at the endpoints of each side.
+rdsharp_lineData = [
+  { age: rdsharp_ageMin, y: rdsharp_fits.left.predict(rdsharp_ageMin - rdsharp_cutoff), grp: "left" },
+  { age: rdsharp_cutoff, y: rdsharp_fits.left.predict(0), grp: "left" },
+  { age: rdsharp_cutoff, y: rdsharp_fits.right.predict(0), grp: "right" },
+  { age: rdsharp_ageMax, y: rdsharp_fits.right.predict(rdsharp_ageMax - rdsharp_cutoff), grp: "right" }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(660, width),
+  height: 420,
+  marginLeft: 64,
+  marginTop: 36,
+  marginRight: 28,
+  marginBottom: 46,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    label: "Age (running variable) →",
+    domain: [rdsharp_ageMin - 0.5, rdsharp_ageMax + 0.5],
+    grid: false
+  },
+  y: {
+    label: "Fall-related ER visits / 1,000 / yr",
+    domain: [10, 80],
+    grid: true
+  },
+  color: {
+    domain: ["Untreated", "Treated (enrolled)"],
+    range: ["#3d5a6c", "#990000"],
+    legend: true
+  },
+  marks: [
+    // Caption-style note that lower is better (kept out of the axis title).
+    // Pure frame-anchored so it never tracks the data domain or clips the top margin.
+    Plot.text([{}], {
+      frameAnchor: "top-left", text: ["↓ lower is better"],
+      dx: 2, dy: 4, fill: "#79766e", fontSize: 11, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // The cutoff line.
+    Plot.ruleX([rdsharp_cutoff], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    Plot.text([{ age: rdsharp_cutoff, y: 80 }], {
+      x: "age", y: "y", text: ["cutoff c = 70"],
+      fill: "#1c1c1a", fontSize: 11, fontWeight: 600, dx: -6, dy: -4,
+      textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // The binned scatter.
+    Plot.dot(rdsharp_data, {
+      x: "age", y: "y", fill: "side", r: 3.2, fillOpacity: 0.75,
+      title: d => `Age ${d.age}\nVisits/1000: ${d.y.toFixed(1)}\n${d.side}`
+    }),
+
+    // Fitted lines on each side.
+    rdsharp_showFits ? Plot.line(rdsharp_lineData.filter(d => d.grp === "left"), {
+      x: "age", y: "y", stroke: "#3d5a6c", strokeWidth: 3
+    }) : null,
+    rdsharp_showFits ? Plot.line(rdsharp_lineData.filter(d => d.grp === "right"), {
+      x: "age", y: "y", stroke: "#990000", strokeWidth: 3
+    }) : null,
+
+    // Direct line labels anchored to the frame edges (non-color cue).
+    rdsharp_showFits ? Plot.text([{}], {
+      frameAnchor: "bottom-left", dx: 8, dy: -8,
+      text: ["Untreated side"], fill: "#3d5a6c", fontSize: 11, fontWeight: 600,
+      textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+    rdsharp_showFits ? Plot.text([{}], {
+      frameAnchor: "top-right", dx: -8, dy: 8,
+      text: ["Treated side"], fill: "#990000", fontSize: 11, fontWeight: 600,
+      textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+
+    // The two limit points at the cutoff.
+    rdsharp_showFits ? Plot.dot([
+      { age: rdsharp_cutoff, y: rdsharp_fits.limitLeft },
+      { age: rdsharp_cutoff, y: rdsharp_fits.limitRight }
+    ], { x: "age", y: "y", fill: "white", stroke: "#1c1c1a", strokeWidth: 2, r: 5 }) : null,
+
+    // The jump itself, drawn as a thick vertical band between the two limits.
+    rdsharp_showFits ? Plot.link([{
+      x1: rdsharp_cutoff, x2: rdsharp_cutoff,
+      y1: rdsharp_fits.limitLeft, y2: rdsharp_fits.limitRight
+    }], {
+      x1: "x1", x2: "x2", y1: "y1", y2: "y2",
+      stroke: rdsharp_fits.jump <= 0 ? "#2e6f40" : "#990000",
+      strokeWidth: 12, strokeOpacity: 0.28, strokeLinecap: "butt"
+    }) : null,
+
+    // The jump label (Plot.link carries no text channel), with a halo.
+    rdsharp_showFits ? Plot.text([{
+      age: rdsharp_cutoff,
+      y: (rdsharp_fits.limitLeft + rdsharp_fits.limitRight) / 2
+    }], {
+      x: "age", y: "y",
+      text: [`τ̂ = ${rdsharp_fits.jump >= 0 ? "+" : ""}${rdsharp_fits.jump.toFixed(1)} ${rdsharp_fits.jump <= 0 ? "↓ helps" : "↑ harms"}`],
+      fill: rdsharp_fits.jump <= 0 ? "#2e6f40" : "#990000",
+      fontWeight: 700, fontSize: 13, dx: -8, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Numeric readout: estimated jump vs. the true jump baked into the data.
+{
+  const est  = rdsharp_fits.jump;
+  const truth = rdsharp_trueJump;
+  const err  = est - truth;
+  const card = (label, value, color, bg, border) => html`<div style="
+      padding: 0.5rem 0.75rem; border-radius: 0.5rem; min-height: 3.5rem;
+      background: ${bg}; border: 1px solid ${border};">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem;
+        text-transform:uppercase; letter-spacing:0.04em;
+        font-family:'Inter',sans-serif;">${label}</div>
+    <div style="font-size:1.2rem; font-weight:700; color:${color};
+        font-family:'JetBrains Mono',monospace;">${value}</div>
+  </div>`;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
+  return html`<div style="display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+      gap:0.5rem; margin-top:0.5rem;">
+    ${card("True jump", fmt(truth), "#990000",
+        "rgba(153,0,0,0.06)", "rgba(153,0,0,0.15)")}
+    ${card("Estimated jump (τ̂)", fmt(est), "#1c1c1a",
+        "#f6f5f1", "#e6e3db")}
+    ${card("Error (τ̂ − truth)",
+        Math.abs(err) < 0.05 ? "0.0" : fmt(err),
+        Math.abs(err) < 1 ? "#2e6f40" : "#990000",
+        Math.abs(err) < 1 ? "rgba(46,111,64,0.08)" : "rgba(153,0,0,0.06)",
+        Math.abs(err) < 1 ? "rgba(46,111,64,0.2)" : "rgba(153,0,0,0.15)")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the RD Plot
+
+Work through these steps in order; each isolates one moving part of the design.
+
+**Step 1: See the confounder.** With the default settings, the whole cloud slopes *upward* --- fall visits climb with age regardless of the program. This upward drift is the confounding effect of age, and it is exactly why a naive comparison of all treated (older) to all untreated (younger) patients would be hopelessly biased: the treated are older, so they fall more, *program or no program*.
+
+**Step 2: Find the jump.** Look at age 70. The slate line (left, untreated side) and the red line (right, treated side) do *not* meet --- there is a vertical gap between the two hollow limit points (the one-sided limits at the cutoff). That gap is the RD estimate $\hat{\tau}$, drawn as a shaded band: green with a "↓ helps" tag when the program helps (a downward step), red with "↑ harms" when it backfires. With the defaults it sits near $-6$: enrollment knocks about 6 fall visits per 1,000 off the trend right at the threshold.
+
+**Step 3: Confirm the slope does not move the answer.** Drag the **slope of the age--risk relationship** up and down. The entire cloud tilts and both fitted lines steepen together --- but the *vertical gap at the cutoff barely changes*. This is the heart of RD: the confounding slope is shared by both sides and differences out of the jump. Compare the "True jump" and "Estimated jump (τ̂)" tiles; the estimation error stays near zero no matter how steep you make the confounder.
+
+**Step 4: Change the true effect.** Drag the **true jump** slider. Now only the step at the cutoff resizes; the estimate tracks it. Push the slider to 0 and the two lines join up seamlessly --- no jump, no effect. Push it positive (a *harmful* program) and the band turns red ("↑ harms") and points the other way.
+
+**Step 5: Feel the cost of noise --- and resampling.** Raise the **noise** knob and press **Draw new sample** a few times. The estimate now wobbles around the truth from draw to draw: with dispersed data, the two limits are estimated imprecisely, so $\hat{\tau}$ has sampling variability. This previews the central practical tension of RD --- we want data *near* the cutoff (where comparability is best), but near the cutoff there is little data, so the estimate is noisy. Trading bias against variance through the choice of *bandwidth* is the entire subject of the next page.
+
+## Why Continuity Identifies the Effect
+
+What licenses us to call that jump a *causal* effect? Not randomization --- treatment here is the opposite of random; it is a perfectly deterministic function of age. The justification is a smoothness assumption on the potential outcomes.
+
+Recall from [potential outcomes](../01-fundamental-problem/potential-outcomes.qmd) that each patient has $Y_i(1)$ (outcome if enrolled) and $Y_i(0)$ (outcome if not). Define the two **conditional response functions**:
+
+$$
+\mu_1(x) = E[Y_i(1) \mid X_i = x], \qquad \mu_0(x) = E[Y_i(0) \mid X_i = x].
+$$
+
+**Read these as**: "$\mu_1(x)$ is the average outcome patients of age $x$ *would* have if enrolled; $\mu_0(x)$ is the average outcome they *would* have if not enrolled." Both are functions of age. We never observe both at any single age --- below the cutoff everyone is untreated, so we only trace out $\mu_0$ there; above it everyone is treated, so we only trace out $\mu_1$.
+
+The figure below is the whole identification argument in one picture. Each response function runs across *all* ages, but we only ever **observe one half of each** (solid): $\mu_0$ to the left of the cutoff, $\mu_1$ to the right. The other halves are **counterfactual** (dashed) --- the $\mu_0$ of the treated and the $\mu_1$ of the untreated, which we never see. Continuity says no curve lurches at $c$, so the *observed* $\mu_0$ just below the cutoff extends smoothly to give $\mu_0(c)$, the unseen baseline of the patients just above. The vertical gap at $c$ between the two curves is $\tau_{\text{RD}} = \mu_1(c) - \mu_0(c)$.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static identification figure: the two response functions mu_0 and mu_1 across
+// all ages, with the OBSERVED half of each solid and the COUNTERFACTUAL half
+// dashed. mu_0 is a gentle upward curve (fall risk rises with age); mu_1 sits
+// a fixed program effect BELOW it (the program lowers fall visits). Pure data.
+rdsharp_idData = {
+  const c = 70, eff = -8;            // program lowers visits by 8 at every age
+  const mu0 = x => 40 + 1.4 * (x - c) + 0.05 * (x - c) * (x - c);
+  const mu1 = x => mu0(x) + eff;
+  const rows = [];
+  for (let age = 60; age <= 80 + 1e-9; age += 0.25) {
+    rows.push({ age, y: mu0(age), curve: "mu0", observed: age < c });   // mu0 observed LEFT
+    rows.push({ age, y: mu1(age), curve: "mu1", observed: age >= c });  // mu1 observed RIGHT
+  }
+  return { rows, c, atC0: mu0(c), atC1: mu1(c) };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 380,
+  marginLeft: 64,
+  marginTop: 40,
+  marginRight: 28,
+  marginBottom: 48,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+  x: { label: "Age (running variable) →", domain: [59.5, 80.5], grid: false },
+  y: { label: "Fall-related ER visits / 1,000 / yr", domain: [20, 75], grid: true },
+  marks: [
+    Plot.ruleX([rdsharp_idData.c], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    Plot.text([{ age: rdsharp_idData.c, y: 75 }], {
+      x: "age", y: "y", text: ["cutoff c"], fill: "#1c1c1a", fontSize: 11,
+      fontWeight: 600, dx: -6, dy: 2, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Counterfactual (unobserved) halves: dashed.
+    Plot.line(rdsharp_idData.rows.filter(d => d.curve === "mu0" && !d.observed),
+      { x: "age", y: "y", stroke: "#3d5a6c", strokeWidth: 2, strokeDasharray: "3,4", strokeOpacity: 0.7 }),
+    Plot.line(rdsharp_idData.rows.filter(d => d.curve === "mu1" && !d.observed),
+      { x: "age", y: "y", stroke: "#990000", strokeWidth: 2, strokeDasharray: "3,4", strokeOpacity: 0.7 }),
+    // Observed halves: solid + thick.
+    Plot.line(rdsharp_idData.rows.filter(d => d.curve === "mu0" && d.observed),
+      { x: "age", y: "y", stroke: "#3d5a6c", strokeWidth: 3.5 }),
+    Plot.line(rdsharp_idData.rows.filter(d => d.curve === "mu1" && d.observed),
+      { x: "age", y: "y", stroke: "#990000", strokeWidth: 3.5 }),
+    // The two limit points at the cutoff and the tau gap between them.
+    Plot.link([{ x1: rdsharp_idData.c, x2: rdsharp_idData.c, y1: rdsharp_idData.atC0, y2: rdsharp_idData.atC1 }], {
+      x1: "x1", x2: "x2", y1: "y1", y2: "y2", stroke: "#2e6f40", strokeWidth: 12, strokeOpacity: 0.28, strokeLinecap: "butt"
+    }),
+    Plot.dot([
+      { age: rdsharp_idData.c, y: rdsharp_idData.atC0 },
+      { age: rdsharp_idData.c, y: rdsharp_idData.atC1 }
+    ], { x: "age", y: "y", fill: "white", stroke: "#1c1c1a", strokeWidth: 2, r: 5 }),
+    Plot.text([{ age: rdsharp_idData.c, y: (rdsharp_idData.atC0 + rdsharp_idData.atC1) / 2 }], {
+      x: "age", y: "y", text: ["τ = μ₁(c) − μ₀(c)"], fill: "#2e6f40", fontWeight: 700, fontSize: 12,
+      dx: 8, textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Curve labels (solid observed ends), non-color cue.
+    Plot.text([{ age: 60.2, y: rdsharp_idData.rows.find(d => d.curve === "mu0").y }], {
+      x: "age", y: "y", text: ["μ₀  (no program)"], fill: "#3d5a6c", fontSize: 11, fontWeight: 600,
+      dy: -10, textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ age: 79.8, y: rdsharp_idData.rows.filter(d => d.curve === "mu1").slice(-1)[0].y }], {
+      x: "age", y: "y", text: ["μ₁  (program)"], fill: "#990000", fontSize: 11, fontWeight: 600,
+      dy: 14, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{}], {
+      frameAnchor: "bottom-right", dx: -6, dy: -6,
+      text: ["solid = observed   ┄ dashed = counterfactual (never seen)"],
+      fill: "#79766e", fontSize: 10.5, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Solid segments are what the data actually trace out (untreated $\mu_0$ left of $c$, treated $\mu_1$ right of $c$); dashed segments are the counterfactual halves we never observe. The green band at the cutoff is $\tau_{\text{RD}}$. Continuity is the bridge: it lets the *solid* $\mu_0$ from the left supply the *dashed* $\mu_0(c)$ the treated would have had.
+:::
+
+::: {.glass-card .glass-card--assumption}
+**Continuity at the cutoff.** The conditional response functions $\mu_0(x)$ and $\mu_1(x)$ are **continuous** in the running variable $x$ at the cutoff $c$:
+
+$$
+\lim_{x \to c} \mu_0(x) = \mu_0(c), \qquad \lim_{x \to c} \mu_1(x) = \mu_1(c).
+$$
+
+**Read this as**: "If we could see how patients of *every* age would fare *without* the program, that curve would not itself jump at age 70 --- and likewise for the with-program curve." Nothing else about a patient's prospects changes discontinuously exactly at the cutoff. The only thing that jumps at $c$ is *treatment status*.
+:::
+
+The payoff is immediate. Just below the cutoff we observe $\mu_0$, so the left-hand limit of the observed regression is $\lim_{x \uparrow c} E[Y \mid X = x] = \mu_0(c)$. Just above the cutoff we observe $\mu_1$, so the right-hand limit is $\mu_1(c)$. The jump in the *observed* regression is therefore
+
+$$
+\tau_{\text{RD}} = \mu_1(c) - \mu_0(c) = E[Y_i(1) - Y_i(0) \mid X_i = c],
+$$
+
+which is precisely the **average treatment effect at the cutoff**.
+
+**Read the last equality as**: "The jump we measure equals the average difference between the with-program and without-program outcomes, among patients sitting exactly at age 70." Continuity is what lets us substitute the *observed* curve just below the cutoff for the *unobserved* counterfactual $\mu_0(c)$ of the patients just above it. The patients just above 70 are treated, so we cannot see their $Y(0)$; continuity says the untreated patients just below 70 are a valid stand-in, because $\mu_0$ does not lurch at the threshold.
+
+::: {.glass-card .glass-card--insight}
+**Local randomization.** Continuity gives RD a "local experiment" flavor. Among patients in a vanishingly thin window around age 70, *which side of the line they fall on is as good as random* --- it depends on whether a birthday landed a few weeks earlier or later, which is unrelated to frailty, income, or motivation. So near the cutoff, treatment is effectively assigned by coin flip, and the comparison is clean. This is why RD is widely regarded as the closest thing to a randomized trial that observational data can offer --- *but only locally*, for patients right at the threshold.
+:::
+
+### Continuity vs. Selection on Observables
+
+It is worth contrasting RD's logic with the [selection-on-observables](../01-fundamental-problem/selection-bias.qmd) strategy that dominates the rest of observational work. A selection-on-observables (or "unconfoundedness") design assumes that, *after conditioning on a rich set of covariates*, treatment is as good as randomly assigned --- it requires you to measure and control for *every* confounder, an assumption that is strong, untestable, and usually heroic.
+
+RD asks for something different and, in the right setting, far more credible. It does **not** require you to observe all confounders. Age is an enormous confounder here, and RD makes no attempt to "control it away" across the whole age range. Instead, RD requires only that confounders vary *smoothly* across the cutoff --- that whatever drives the outcome does not itself jump discontinuously at exactly age 70. You buy identification not by measuring confounders but by exploiting an arbitrary administrative discontinuity in the assignment rule. The price you pay is generality: unconfoundedness (if it holds) identifies effects across the whole population, whereas RD identifies an effect only *at the cutoff*.
+
+The two strategies sit side by side below. Read down each column to see what you must assume, what you must measure, what you get back, and where each is most likely to fail.
+
+```{=html}
+<table class="science-table">
+  <thead>
+    <tr>
+      <th style="text-align:left;"></th>
+      <th>Selection on observables<br><span style="font-weight:400; text-transform:none; letter-spacing:0;">(unconfoundedness)</span></th>
+      <th>Sharp RD</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align:left; font-weight:600;">What must hold</td>
+      <td>Treatment is as good as random <em>after conditioning on covariates</em></td>
+      <td>Potential-outcome curves are <em>continuous</em> at the cutoff</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">What you must measure</td>
+      <td><em>Every</em> confounder of treatment and outcome</td>
+      <td>Only the running variable and the cutoff — confounders may be unmeasured</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">What is identified</td>
+      <td>Effects across the <em>whole population</em> (given the model)</td>
+      <td>The effect <em>only at the cutoff</em> — a local quantity</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; font-weight:600;">Key vulnerability</td>
+      <td>An <em>unmeasured</em> confounder — untestable, often heroic</td>
+      <td>A coincident policy or <em>sorting</em> at the cutoff that breaks continuity</td>
+    </tr>
+  </tbody>
+</table>
+```
+
+## Break It: When the Jump Is an Artifact
+
+RD's credibility rests on continuity, and continuity can fail or be faked in instructive ways.
+
+::: {.glass-card .glass-card--warning}
+**A discontinuity in the data is not always a treatment effect.** Two distinct failures can manufacture a jump that RD will happily mislabel as causal:
+
+- **Confounders that jump at the cutoff.** If *something else* changes discontinuously at exactly age 70 --- say, patients also become eligible for the national pension and a transit discount on the same birthday --- then $\mu_0$ itself jumps, and the measured step blends the program with those coincident policies. Continuity of $\mu_0$ is violated. RD identifies a clean effect only when the cutoff triggers *one* thing.
+- **Manipulation of the running variable (sorting).** If patients (or staff) can *precisely control* which side of the cutoff they land on --- e.g., a clinic backdates a record so a nearly-70 patient is enrolled early --- then the units just above and just below the line are no longer comparable. The famous diagnostic is the **McCrary density test** --- a check for whether the *number of units* piles up (or thins out) right at the cutoff, which is what manipulation would produce. A spike or hole in the density of the running variable at the cutoff signals sorting. Genuine birthdays cannot be manipulated, which is part of why age cutoffs make such credible RDs.
+:::
+
+The two failures look different on a plot, and learning to spot them is half the battle. The left panel below shows the **McCrary density test**: how many patients sit at each age. With no manipulation the bars step down smoothly (grey); under sorting, units bunch *just above* the cutoff and thin *just below* it (red), leaving a tell-tale notch. The right panel shows the **coincident-policy** failure: the without-program curve $\mu_0$ itself jumps at $c$, so the gap RD measures (red) is *larger* than the true program effect (green) --- it has absorbed a second policy that switches on at the same birthday.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static diagnostic data. (a) Density of the running variable: a clean,
+// smoothly declining histogram vs a "sorted" one with a hole just below c and a
+// spike just above. (b) A mu_0 that itself JUMPS at c (coincident policy), so
+// the observed step exceeds the true program effect. Pure data, no inputs.
+rdsharp_diagData = {
+  const c = 70, bins = [];
+  for (let age = 62; age <= 78 + 1e-9; age += 1) {
+    const base = 120 - 2.5 * (age - 62);          // gently declining true density
+    let sorted = base;
+    if (age === 69) sorted = base * 0.45;          // hole just below cutoff
+    if (age === 70) sorted = base * 1.75;          // spike just above cutoff
+    bins.push({ age, smooth: base, sorted });
+  }
+  return { bins, c };
+}
+```
+
+```{ojs}
+//| echo: false
+
+rdsharp_diagFig = {
+  // ── Left: McCrary density (smooth vs sorted) ──
+  const density = Plot.plot({
+    width: Math.min(320, width),
+    height: 250,
+    marginLeft: 60,
+    marginTop: 36,
+    marginBottom: 48,
+    marginRight: 14,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "11px", background: "transparent" },
+    x: { label: "Age (running variable) →", domain: [61, 79], grid: false },
+    y: { label: "# patients", domain: [0, 230], grid: true },
+    marks: [
+      Plot.text([{}], { frameAnchor: "top", dy: -20, text: ["McCrary density test"],
+        fill: "#1c1c1a", fontSize: 12, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.ruleX([rdsharp_diagData.c - 0.5], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      Plot.barY(rdsharp_diagData.bins, { x: "age", y: "smooth", fill: "#79766e", fillOpacity: 0.25, inset: 1 }),
+      Plot.barY(rdsharp_diagData.bins, { x: "age", y: "sorted", fill: "#990000", fillOpacity: 0.55, inset: 3 }),
+      Plot.text([{ age: 70, y: 225 }], { x: "age", y: "y", text: ["spike + hole = sorting"],
+        fill: "#990000", fontSize: 10, fontWeight: 700, dx: 4, textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+    ]
+  });
+  // ── Right: mu_0 jumps at c (coincident policy) ──
+  const c = 70, trueEff = -6, coincident = -5;
+  const mu0L = a => 42 + 1.2 * (a - c);
+  const mu0R = a => 42 + 1.2 * (a - c) + coincident;          // mu_0 itself drops at c
+  const muObsR = a => mu0R(a) + trueEff;                       // observed = mu_0(jumped) + program
+  const policy = Plot.plot({
+    width: Math.min(320, width),
+    height: 250,
+    marginLeft: 60,
+    marginTop: 36,
+    marginBottom: 48,
+    marginRight: 14,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "11px", background: "transparent" },
+    x: { label: "Age (running variable) →", domain: [61, 79], grid: false },
+    y: { label: "Fall visits / 1,000", domain: [15, 60], grid: true },
+    marks: [
+      Plot.text([{}], { frameAnchor: "top", dy: -20, text: ["A confounder that jumps too"],
+        fill: "#1c1c1a", fontSize: 12, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.ruleX([c], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      // Observed left (mu_0) and observed right (mu_0 jumped + program).
+      Plot.line([{ a: 62, y: mu0L(62) }, { a: c, y: mu0L(c) }], { x: "a", y: "y", stroke: "#3d5a6c", strokeWidth: 3 }),
+      Plot.line([{ a: c, y: muObsR(c) }, { a: 78, y: muObsR(78) }], { x: "a", y: "y", stroke: "#990000", strokeWidth: 3 }),
+      // Counterfactual mu_0 continued (no coincident jump) - dashed.
+      Plot.line([{ a: c, y: mu0L(c) }, { a: 78, y: mu0L(78) }], { x: "a", y: "y", stroke: "#3d5a6c", strokeWidth: 1.5, strokeDasharray: "3,4", strokeOpacity: 0.7 }),
+      // True program effect (green): from the ACTUAL (jumped) baseline mu0R down
+      // to the observed-with-program curve — this is only the program's own step,
+      // NOT the coincident jump. Smaller than the measured gap by design.
+      Plot.link([{ x1: 71.4, x2: 71.4, y1: mu0R(71.4), y2: muObsR(71.4) }], {
+        x1: "x1", x2: "x2", y1: "y1", y2: "y2", stroke: "#2e6f40", strokeWidth: 9, strokeOpacity: 0.3, strokeLinecap: "butt" }),
+      // Measured (inflated) gap at the cutoff (red band).
+      Plot.link([{ x1: c, x2: c, y1: mu0L(c), y2: muObsR(c) }], {
+        x1: "x1", x2: "x2", y1: "y1", y2: "y2", stroke: "#990000", strokeWidth: 9, strokeOpacity: 0.25, strokeLinecap: "butt" }),
+      Plot.text([{ a: c, y: (mu0L(c) + muObsR(c)) / 2 }], { x: "a", y: "y", text: ["measured"],
+        fill: "#990000", fontSize: 9.5, fontWeight: 700, dx: -5, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ a: 71.4, y: (mu0R(71.4) + muObsR(71.4)) / 2 }], { x: "a", y: "y", text: ["true"],
+        fill: "#2e6f40", fontSize: 9.5, fontWeight: 700, dx: 5, textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+    ]
+  });
+  return html`<div style="display:flex; flex-wrap:wrap; gap:1rem; justify-content:center; align-items:flex-start; margin:1.25rem 0;">
+    <figure style="margin:0;">${density}
+      <figcaption style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; text-align:center; max-width:18rem; margin:0.15rem auto 0;">Grey = no manipulation (smooth). Red = sorting: a hole below and a pile-up above the cutoff.</figcaption>
+    </figure>
+    <figure style="margin:0;">${policy}
+      <figcaption style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; text-align:center; max-width:18rem; margin:0.15rem auto 0;">μ₀ drops at c on its own (dashed = what it would have been). The measured red gap overstates the true green program effect.</figcaption>
+    </figure>
+  </div>`;
+}
+```
+
+A subtler trap is **functional form**. We never see the true response curve; we *fit* one. If the true relationship between age and fall risk is curved (risk accelerates in old age) but we force a *straight line* through each side, the fit can bend near the cutoff and conjure a jump where none exists --- or hide a real one. The next interactive makes this danger visible.
+
+In the lab below, the true without-program curve is genuinely **continuous** --- it has *no jump* --- but it is *nonlinear* (gently curved). There is also a real program effect you control. Toggle between fitting a global straight line and fitting flexible curves, and watch a straight-line fit invent a discontinuity out of pure curvature.
+
+::: {.interactive-container}
+
+#### The "Break It" Lab: Curvature Masquerading as a Jump
+
+::: {.callout-tip collapse="false"}
+**Start here:** set **True program effect = 0**, keep some **curvature**, and leave **Global straight lines** selected --- a fake jump appears. Then switch to the local fit and watch it dissolve. Full steps are in *How to Read the "Break It" Lab* below.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_labEffect = Inputs.range([-10, 4], {
+  value: 0,
+  step: 0.5,
+  label: "True program effect at the cutoff (falls/1000)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_labCurv = Inputs.range([0, 1.2], {
+  value: 0.7,
+  step: 0.05,
+  label: "Curvature of the age–risk relationship"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdsharp_labFit = Inputs.radio(
+  ["Global straight lines", "Local quadratic (flexible) fit"],
+  { label: "Functional form fitted to each side", value: "Global straight lines" }
+)
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-size:0.78rem; color:#79766e; margin:-0.25rem 0 0.25rem;
+    font-family:'Inter',sans-serif;">The local fit uses a 4-year window around the cutoff — the bandwidth knob the next page makes explicit.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// True conditional mean WITHOUT a jump in the baseline: a curved function of
+// centered age x = age - 70, plus a genuine program step of size labEffect at
+// the cutoff. The curvature term curv*x^2 makes mu_0 nonlinear but CONTINUOUS:
+// it does NOT jump at the cutoff. Any apparent jump beyond labEffect produced by
+// the fit is therefore an ARTIFACT of forcing the wrong functional form.
+rdsharp_labData = {
+  const cutoff = 70, baseline = 40;
+  const pts = [];
+  for (let age = 60; age <= 80 + 1e-9; age += 0.5) {
+    const x = age - cutoff;
+    const treated = age >= cutoff ? 1 : 0;
+    // Curved-but-continuous baseline: rises gently, then accelerates with age.
+    const mu0 = baseline + 1.0 * x + rdsharp_labCurv * x * x;
+    const mean = mu0 + rdsharp_labEffect * treated;
+    pts.push({ age, x, y: mean, treated,
+               side: treated ? "Treated" : "Untreated" });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Weighted OLS on a polynomial basis of x. degree=1 -> straight line;
+// degree=2 -> quadratic. Local fits down-weight points far from the cutoff with
+// a triangular kernel of bandwidth h, so they track the curve near c. Global
+// straight lines use a flat weight over the whole side. Returns predict() and
+// the intercept value at x = 0 (the limit at the cutoff).
+rdsharp_labFitSide = function (rows, degree, h) {
+  // Build design rows [1, x, x^2...] with weights.
+  const X = [], W = [], Y = [];
+  for (const r of rows) {
+    const basis = [];
+    for (let p = 0; p <= degree; p++) basis.push(Math.pow(r.x, p));
+    X.push(basis);
+    Y.push(r.y);
+    const u = Math.abs(r.x) / h;
+    W.push(h === Infinity ? 1 : Math.max(0, 1 - u));   // triangular kernel
+  }
+  const k = degree + 1;
+  // Normal equations (X'WX) beta = X'WY, solved by Gaussian elimination.
+  const A = Array.from({ length: k }, () => new Array(k).fill(0));
+  const bvec = new Array(k).fill(0);
+  for (let i = 0; i < X.length; i++) {
+    for (let a = 0; a < k; a++) {
+      bvec[a] += W[i] * X[i][a] * Y[i];
+      for (let b = 0; b < k; b++) A[a][b] += W[i] * X[i][a] * X[i][b];
+    }
+  }
+  // Gaussian elimination with partial pivoting.
+  for (let col = 0; col < k; col++) {
+    let piv = col;
+    for (let r = col + 1; r < k; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+    [A[col], A[piv]] = [A[piv], A[col]];
+    [bvec[col], bvec[piv]] = [bvec[piv], bvec[col]];
+    for (let r = 0; r < k; r++) {
+      if (r === col) continue;
+      const f = A[r][col] / A[col][col];
+      for (let cc = col; cc < k; cc++) A[r][cc] -= f * A[col][cc];
+      bvec[r] -= f * bvec[col];
+    }
+  }
+  const beta = bvec.map((v, i) => v / A[i][i]);
+  const predict = x => beta.reduce((s, b, p) => s + b * Math.pow(x, p), 0);
+  return { beta, predict, atCutoff: beta[0] };   // intercept = value at x = 0
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+rdsharp_labFits = {
+  const left  = rdsharp_labData.filter(d => d.treated === 0);
+  const right = rdsharp_labData.filter(d => d.treated === 1);
+  const isGlobalLine = rdsharp_labFit === "Global straight lines";
+  const degree = isGlobalLine ? 1 : 2;
+  const h = isGlobalLine ? Infinity : 4;          // 4-year bandwidth for local fit
+  const fitL = rdsharp_labFitSide(left, degree, h);
+  const fitR = rdsharp_labFitSide(right, degree, h);
+  const jump = fitR.atCutoff - fitL.atCutoff;
+  return { fitL, fitR, jump, degree, h };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Dense prediction curves for plotting (so quadratics render smoothly).
+rdsharp_labCurves = {
+  const pts = [];
+  for (let age = 60; age <= 70 + 1e-9; age += 0.25)
+    pts.push({ age, y: rdsharp_labFits.fitL.predict(age - 70), grp: "left" });
+  for (let age = 70; age <= 80 + 1e-9; age += 0.25)
+    pts.push({ age, y: rdsharp_labFits.fitR.predict(age - 70), grp: "right" });
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(660, width),
+  height: 420,
+  marginLeft: 64,
+  marginTop: 36,
+  marginRight: 28,
+  marginBottom: 46,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: { label: "Age (running variable) →", domain: [59.5, 80.5], grid: false },
+  y: {
+    label: "Fall-related ER visits / 1,000 / yr",
+    domain: [20, 100],
+    grid: true
+  },
+  color: {
+    domain: ["Untreated", "Treated"],
+    range: ["#3d5a6c", "#990000"],
+    legend: true
+  },
+  marks: [
+    // Caption: the band is the fitted jump (which may be a curvature artifact).
+    // Frame-anchored inside the top margin with a halo so it never clips or
+    // collides with gridlines / the top-right line label on narrow widths.
+    Plot.text([{}], {
+      frameAnchor: "top-left", dx: 2, dy: 4,
+      text: ["ochre band = fitted jump τ̂ (may be an artifact)"],
+      fill: "#9c7a33", fontSize: 11, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.ruleX([70], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    Plot.dot(rdsharp_labData, {
+      x: "age", y: "y", fill: "side", r: 3, fillOpacity: 0.55,
+      title: d => `Age ${d.age}\nTrue mean: ${d.y.toFixed(1)}`
+    }),
+    Plot.line(rdsharp_labCurves.filter(d => d.grp === "left"), {
+      x: "age", y: "y", stroke: "#3d5a6c", strokeWidth: 3
+    }),
+    Plot.line(rdsharp_labCurves.filter(d => d.grp === "right"), {
+      x: "age", y: "y", stroke: "#990000", strokeWidth: 3
+    }),
+    // Direct line labels anchored to the frame (non-color cue).
+    Plot.text([{}], {
+      frameAnchor: "bottom-left", dx: 8, dy: -8,
+      text: ["Untreated side"], fill: "#3d5a6c", fontSize: 11, fontWeight: 600,
+      textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{}], {
+      frameAnchor: "top-right", dx: -8, dy: 8,
+      text: ["Treated side"], fill: "#990000", fontSize: 11, fontWeight: 600,
+      textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.dot([
+      { age: 70, y: rdsharp_labFits.fitL.atCutoff },
+      { age: 70, y: rdsharp_labFits.fitR.atCutoff }
+    ], { x: "age", y: "y", fill: "white", stroke: "#1c1c1a", strokeWidth: 2, r: 5 }),
+    Plot.link([{
+      x1: 70, x2: 70,
+      y1: rdsharp_labFits.fitL.atCutoff, y2: rdsharp_labFits.fitR.atCutoff
+    }], {
+      x1: "x1", x2: "x2", y1: "y1", y2: "y2",
+      stroke: "#9c7a33", strokeWidth: 12, strokeOpacity: 0.3, strokeLinecap: "butt"
+    }),
+    Plot.text([{
+      age: 70, y: (rdsharp_labFits.fitL.atCutoff + rdsharp_labFits.fitR.atCutoff) / 2
+    }], {
+      x: "age", y: "y",
+      text: [`τ̂ = ${rdsharp_labFits.jump >= 0 ? "+" : ""}${rdsharp_labFits.jump.toFixed(1)}`],
+      fill: "#9c7a33", fontWeight: 700, fontSize: 13, dx: -8, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Verdict line: compare the estimated jump to the TRUE program effect.
+{
+  const est = rdsharp_labFits.jump;
+  const truth = rdsharp_labEffect;
+  const bias = est - truth;
+  let msg, color;
+  if (Math.abs(bias) < 0.4) {
+    msg = `The fitted jump (τ̂ = ${est.toFixed(1)}) matches the true effect (${truth.toFixed(1)}). This functional form recovers the discontinuity faithfully.`;
+    color = "#2e6f40";
+  } else {
+    msg = `The fitted jump is τ̂ = ${est.toFixed(1)}, but the true effect is only ${truth.toFixed(1)} — a bias of ${bias >= 0 ? "+" : ""}${bias.toFixed(1)}. The straight line cannot follow the curved baseline, so it bends near the cutoff and reports curvature as if it were a treatment jump. A flexible local fit removes most of this artifact.`;
+    color = "#990000";
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem;
+      min-height:4.5rem; border-radius:0.5rem; border-left:3px solid ${color};
+      background:#f6f5f1; font-family:'Inter',sans-serif;
+      font-size:0.86rem; line-height:1.45; color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the "Break It" Lab
+
+This lab plots the *true* (noise-free) conditional means, so any gap you see at the cutoff that exceeds the true program effect is a pure modeling artifact.
+
+**Step 1: Start with no program at all.** Leave **True program effect** at 0 and set **Curvature** above zero, with **Global straight lines** selected. There is no real jump in the data --- the baseline curve is continuous --- yet the two straight lines meet at the cutoff with a visible ochre gap, and $\hat\tau$ is *not* zero. The verdict line turns red. The straight line, unable to bend to follow the curve, tilts to minimize error across each whole side, and the tilts on the two sides disagree at the boundary. **Curvature has been laundered into a fake discontinuity.**
+
+**Step 2: Fix it with a flexible fit.** Switch to **Local quadratic (flexible) fit**. The fitted curves now bow to follow the true baseline, the limits at the cutoff line up, and $\hat\tau$ collapses back toward 0 --- the verdict turns green. The lesson: near the cutoff, let the data choose the shape; do not impose a global line.
+
+::: {.aside}
+A caveat so you draw the right moral: the quadratic fit lands *exactly* on target here only because the true baseline in this lab *happens to be* quadratic --- the model is correctly specified by construction. With an unknown, wigglier truth a global quadratic would also miss. The robust fix is not "use a higher-degree polynomial" but **shrink the window** (the *bandwidth* --- the width of the data window around the cutoff that the fit is allowed to use): the local fit here already restricts itself to a 4-year window, and over a narrow enough window *any* smooth curve is nearly straight. That bandwidth/bias--variance trade-off is the whole subject of the next page.
+:::
+
+**Step 3: Add a real effect and confirm honesty.** Now dial **True program effect** to, say, $-6$. With the flexible fit, $\hat\tau$ lands near $-6$ --- it recovers the genuine step. Switch back to **Global straight lines** with curvature still on, and the straight-line estimate is *biased*: it mixes the real $-6$ with the spurious curvature gap.
+
+**Step 4: Crank the curvature.** Push **Curvature** to its maximum with global straight lines. The bias balloons --- the more nonlinear the truth, the more damage a straight line does. This is the practical reason modern RD practice (next page) fits *local* polynomials in a *narrow* window around the cutoff rather than global lines across the whole sample.
+
+<details>
+<summary>Math Details: Continuity, the Identification Result, and the Bias of a Wrong Functional Form</summary>
+<div class="details-content">
+
+### Setup
+
+Each unit has potential outcomes $\{Y_i(0), Y_i(1)\}$ and a running variable $X_i$. Treatment is the deterministic step $D_i = \mathbf{1}\{X_i \ge c\}$. By the [switching equation](../01-fundamental-problem/potential-outcomes.qmd), the observed outcome is
+
+$$
+Y_i = D_i\, Y_i(1) + (1 - D_i)\, Y_i(0) = \begin{cases} Y_i(1) & X_i \ge c, \\ Y_i(0) & X_i < c. \end{cases}
+$$
+
+Define the conditional response functions $\mu_d(x) = E[Y_i(d) \mid X_i = x]$ for $d \in \{0, 1\}$.
+
+### The observed regression and its one-sided limits
+
+Because treatment is determined by $X$, the *observed* conditional mean equals one response function or the other depending on which side of $c$ we are on:
+
+$$
+m(x) \equiv E[Y_i \mid X_i = x] = \begin{cases} \mu_1(x) & x \ge c, \\ \mu_0(x) & x < c. \end{cases}
+$$
+
+Taking one-sided limits at the cutoff:
+
+$$
+\lim_{x \downarrow c} m(x) = \lim_{x \downarrow c} \mu_1(x), \qquad
+\lim_{x \uparrow c} m(x) = \lim_{x \uparrow c} \mu_0(x).
+$$
+
+### Invoking continuity
+
+Assume $\mu_0$ and $\mu_1$ are continuous at $c$. Continuity means the limit equals the function value:
+
+$$
+\lim_{x \downarrow c} \mu_1(x) = \mu_1(c), \qquad \lim_{x \uparrow c} \mu_0(x) = \mu_0(c).
+$$
+
+Therefore the jump in the *observed* regression is
+
+$$
+\tau_{\text{RD}} = \lim_{x \downarrow c} m(x) - \lim_{x \uparrow c} m(x) = \mu_1(c) - \mu_0(c).
+$$
+
+But $\mu_1(c) - \mu_0(c) = E[Y_i(1) \mid X_i = c] - E[Y_i(0) \mid X_i = c] = E[Y_i(1) - Y_i(0) \mid X_i = c]$, so
+
+$$
+\boxed{\;\tau_{\text{RD}} = E[Y_i(1) - Y_i(0) \mid X_i = c].\;}
+$$
+
+The RD jump identifies the **average treatment effect at the cutoff**. The only non-trivial step is the continuity of $\mu_0$: it lets the *observed* left limit (untreated patients just below $c$) stand in for the *unobserved* counterfactual $\mu_0(c)$ of the treated patients just above $c$.
+
+### Why "at the cutoff" cannot be relaxed
+
+Identification used the response functions only *at* $x = c$. Away from the cutoff, one of the two response functions is never observed (e.g., we never see $\mu_0(x)$ for $x > c$, because everyone there is treated). So RD says nothing about $E[Y_i(1) - Y_i(0) \mid X_i = x]$ for $x \ne c$ without an *extrapolation* assumption (such as constant treatment effects). This is the precise sense in which the RD estimand is irreducibly **local**.
+
+### The bias of an incorrect functional form
+
+Suppose the truth on the untreated side is curved, $\mu_0(x) = \alpha + \beta x + \gamma x^2$ with $\gamma \ne 0$ (here $x$ is centered, $x = X - c$), and there is *no* jump. If we instead fit a global straight line $a + b x$ by least squares over a side spanning $x \in [-w, 0]$, the fitted intercept $\hat a$ does **not** converge to $\mu_0(0) = \alpha$. Because the quadratic curve is systematically above (or below) the best-fit line near the boundary, $\hat a - \alpha$ is a nonzero function of $\gamma$ and the window width $w$. Crucially, the *left* fit spans $x \in [-w, 0]$ and the *right* fit spans $x \in [0, w]$, so each line is tilted by a different portion of the same curve and lands at a *different* value at the boundary $x = 0$ --- even though both sides share one continuous function. (For a convex truth, $\gamma > 0$, both intercepts fall *below* $\alpha$, but by unequal amounts; the bias does not cancel.) Hence $\hat\tau = \hat a_{\text{right}} - \hat a_{\text{left}} \ne 0$ even though $\tau_{\text{RD}} = 0$. This is the **specification bias** the second interactive exhibits. Shrinking the window $w \to 0$ (local estimation) drives the approximation error to zero, because over a vanishing window any smooth curve is approximately linear --- the formal justification for the local-polynomial, narrow-bandwidth methods of the next page.
+
+</div>
+</details>
+
+## Estimating the Jump in Practice
+
+The cleanest estimator fits a regression on each side of the cutoff using only data within a bandwidth $h$ of $c$, and reports the difference of the two intercepts at the cutoff. The code below builds the age-70 fall-prevention example, recovers the jump by hand with two local regressions, and then confirms it with the field-standard `rdrobust` package (Calonico, Cattaneo, and Titiunik), which automates bandwidth selection and bias correction --- the machinery of the next page.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(rdrobust)
+
+set.seed(70)
+
+# --- Simulate patients around the age-70 cutoff ---
+# Running variable: age in [60, 80]. Treatment: enrolled iff age >= 70.
+# DGP: fall-visit rate rises with age (slope 1.2) and the program cuts it by 6
+# at the cutoff. Lower visits = better, so the true effect is -6.
+n      <- 4000
+cutoff <- 70
+true_jump <- -6
+
+dat <- tibble(
+  age     = runif(n, 60, 80),
+  treated = as.integer(age >= cutoff),
+  x       = age - cutoff,                              # centered running variable
+  falls   = 40 + 1.2 * x + true_jump * treated + rnorm(n, 0, 8)
+)
+
+# --- By hand: local linear fit on each side within a 5-year bandwidth ---
+h <- 5
+left  <- lm(falls ~ x, data = filter(dat, treated == 0, abs(x) <= h))
+right <- lm(falls ~ x, data = filter(dat, treated == 1, abs(x) <= h))
+
+limit_left  <- coef(left)[["(Intercept)"]]            # prediction at x = 0
+limit_right <- coef(right)[["(Intercept)"]]
+cat("By-hand RD jump:", round(limit_right - limit_left, 2), "\n")
+
+# --- Field-standard estimator with data-driven bandwidth ---
+rd <- rdrobust(y = dat$falls, x = dat$x, c = 0)       # x already centered at 0
+summary(rd)
+cat("rdrobust point estimate:", round(rd$coef[1], 2), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from rdrobust import rdrobust          # pip install rdrobust
+
+rng = np.random.default_rng(70)
+
+# --- Simulate patients around the age-70 cutoff ---
+n, cutoff, true_jump = 4000, 70, -6
+age     = rng.uniform(60, 80, n)
+treated = (age >= cutoff).astype(int)
+x       = age - cutoff                                  # centered running variable
+falls   = 40 + 1.2 * x + true_jump * treated + rng.normal(0, 8, n)
+
+dat = pd.DataFrame({"age": age, "treated": treated, "x": x, "falls": falls})
+
+# --- By hand: local linear fit on each side within a 5-year bandwidth ---
+h = 5
+left  = smf.ols("falls ~ x", data=dat[(dat.treated == 0) & (dat.x.abs() <= h)]).fit()
+right = smf.ols("falls ~ x", data=dat[(dat.treated == 1) & (dat.x.abs() <= h)]).fit()
+
+limit_left  = left.params["Intercept"]                 # prediction at x = 0
+limit_right = right.params["Intercept"]
+print("By-hand RD jump:", round(limit_right - limit_left, 2))
+
+# --- Field-standard estimator with data-driven bandwidth ---
+rd = rdrobust(y=dat["falls"], x=dat["x"], c=0)          # x already centered at 0
+print(rd)
+print("rdrobust point estimate:", round(float(rd.coef.iloc[0]), 2))
+```
+
+:::
+
+Both routes return a jump near the true $-6$ visits per 1,000: the program cuts fall-related emergencies by about six per thousand patients right at the threshold. The hand-rolled two-regression estimator and the automated `rdrobust` estimate agree because, at bottom, they are doing the same thing --- estimating two one-sided limits at the cutoff and subtracting --- differing only in how they pick the bandwidth and correct for the small bias that any nonzero window introduces, which is exactly the agenda of the next page.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region enrolls patients in a diabetes-coordination program if and only if their *Care Need Index* (CNI) is at least $c = 1.2$ (higher CNI = greater social need). A local linear fit on each side of the cutoff, using the centered running variable $x = \text{CNI} - 1.2$, yields:
+
+- Below the cutoff: $\hat{Y} = 7.6 + 0.40\,x$
+- Above the cutoff: $\hat{Y} = 7.1 + 0.35\,x$
+
+where $Y$ is mean HbA1c (lower is better).
+
+(a) Compute the two one-sided limits at the cutoff and the sharp RD estimate. (b) Interpret the sign. (c) Why is it the *intercepts*, and not the slopes, that carry the treatment effect?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Because $x$ is centered at the cutoff, the limit at $c$ from each side is just that side's intercept (set $x = 0$):
+
+- Left limit: $\lim_{x \uparrow 0} \hat Y = 7.6$.
+- Right limit: $\lim_{x \downarrow 0} \hat Y = 7.1$.
+
+$$
+\hat\tau_{\text{RD}} = 7.1 - 7.6 = -0.5 \text{ percentage points of HbA1c.}
+$$
+
+**(b)** The estimate is negative, and lower HbA1c is better, so the program *reduces* HbA1c by about 0.5 points for patients right at the eligibility threshold. It worked at the margin.
+
+**(c)** The RD effect is the *vertical gap between the two curves at the cutoff*, which by construction is the difference of the values at $x = 0$ --- i.e., the intercepts of the centered regressions. The slopes ($0.40$ and $0.35$) describe how HbA1c varies *with CNI within each group*; they capture the confounding CNI--HbA1c gradient, which RD nets out. Only the discontinuity in level at the threshold is attributed to the program.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+For the same program, a colleague proposes a different analysis: "Let's just compare the average HbA1c of *all* enrolled patients (CNI $\ge 1.2$) to *all* non-enrolled patients (CNI $< 1.2$)." Enrolled patients have higher CNI on average, and higher CNI independently predicts worse (higher) HbA1c. (a) Will this naive difference over- or under-state the program's benefit? (b) Explain in one sentence why RD avoids this problem.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The enrolled group has *higher* CNI, and higher CNI independently raises HbA1c, so the enrolled group would have had higher HbA1c *even with no program*. This positive selection-on-the-running-variable inflates the enrolled group's observed HbA1c, dragging the naive difference toward (or past) zero --- it makes the program look *less* beneficial than it truly is, and can even flip the sign to make a helpful program appear harmful. Formally, the naive comparison carries a selection-bias term $E[Y(0)\mid \text{enrolled}] - E[Y(0)\mid \text{not}] > 0$.
+
+**(b)** RD compares patients in a thin window *around* CNI $= 1.2$, where the two groups have nearly identical CNI and hence nearly identical baseline HbA1c, so the confounding CNI gradient cancels in the jump rather than contaminating it.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher studies the age-70 fall-prevention program and finds a clean downward jump in fall visits at exactly age 70. A reviewer objects: "Swedes also start collecting the national state pension and qualify for a free public-transit pass at age 70, and pensioners walk less and stay home more." (a) Which RD assumption does this objection threaten? (b) Does it imply the measured jump is too large or too small as an estimate of the *fall-prevention program's* effect, if more time at home reduces falls? (c) Suggest one strategy to address the concern.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** It threatens **continuity of $\mu_0$** (the without-program response function). The objection says that *something other than the program* --- pension receipt and a transit pass that change behavior --- also changes discontinuously at age 70. If $\mu_0$ itself jumps at the cutoff, the measured discontinuity blends the fall-prevention program with these coincident policies; the cutoff no longer triggers exactly *one* thing.
+
+**(b)** If retiring/staying home *also* reduces falls, then the coincident policies push fall visits *down* at the cutoff too. The measured downward jump therefore *overstates* the fall-prevention program's own effect (it absorbs the pension-driven reduction). The estimate is too large in magnitude.
+
+**(c)** Several defenses are possible: (i) find a setting where the program cutoff and the pension/transit cutoff *differ* (e.g., a region that uses age 67 or 72 for one of them), isolating the program; (ii) use a *placebo outcome* known to be affected by retirement but not by fall prevention (e.g., grocery-delivery uptake) and check for a jump there; (iii) restrict to a subpopulation already retired before 70, for whom the pension cutoff is irrelevant. Each tries to break the confounding policies away from the program cutoff.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the second interactive ("Break It" lab), set the **true program effect** to 0 and the **curvature** to a positive value with **Global straight lines** selected. You will observe a nonzero $\hat\tau$. (a) Explain precisely why a nonzero jump appears even though the baseline is continuous and there is no real effect. (b) What happens to $\hat\tau$ as you switch to the local quadratic fit, and why? (c) Connect your answer to the formal claim in the Math Details that shrinking the bandwidth $w \to 0$ eliminates the bias.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The true baseline $\mu_0(x) = 40 + x + \gamma x^2$ is *curved* but *continuous* --- it has no jump. A global straight line fit to each whole side cannot bend to follow the curve, so it settles for the best straight-line approximation over that side. But the left line is fit only to $x \in [-10, 0)$ and the right line only to $x \in [0, 10]$, so each is tilted by a *different half* of the same parabola. As a result the two lines arrive at the boundary $x = 0$ at *different* values --- both miss the true $\mu_0(0) = 40$ (for the convex curve here, both fall below it), but by *unequal* amounts, so the misses do not cancel. Their intercepts at $x = 0$ therefore differ, producing a spurious $\hat\tau \ne 0$. The jump is an artifact of imposing the wrong functional form on a curved truth.
+
+**(b)** Switching to the local quadratic fit makes $\hat\tau$ collapse toward 0. The quadratic basis can exactly represent the curved baseline (which is itself quadratic), so each side's fitted intercept recovers the true $\mu_0(0) = 40$, and the difference vanishes. More generally, even a local *linear* fit in a narrow window would shrink the artifact, because over a small window the curve is nearly straight.
+
+**(c)** The Math Details show that the straight-line intercept bias $\hat a - \alpha$ depends on the curvature $\gamma$ and the window width $w$. As $w \to 0$, any smooth function is approximately linear over the window (Taylor's theorem), so the curvature contribution to the bias vanishes and $\hat a \to \mu_0(0)$ on each side, hence $\hat\tau \to \tau_{\text{RD}} = 0$. This is exactly why estimation in practice uses *local* polynomials in a *narrow* bandwidth rather than global fits: you trade a little extra variance (fewer points) for a large reduction in functional-form bias.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A **sharp RD** design has a continuous running variable, a known cutoff, and treatment assigned by a deterministic step $D_i = \mathbf{1}\{X_i \ge c\}$ --- everyone above the cutoff is treated, nobody below it is.
+- The estimand $\tau_{\text{RD}} = \lim_{x \downarrow c}E[Y\mid X{=}x] - \lim_{x \uparrow c}E[Y\mid X{=}x]$ is the **vertical jump** in the outcome curve at the cutoff; the confounding *slope* of the running variable differences out, leaving only the step.
+- Identification rests on **continuity** of the potential-outcome response functions at $c$. Under continuity, the jump equals $E[Y(1)-Y(0)\mid X{=}c]$ --- the average treatment effect *at the cutoff*, a strictly **local** quantity.
+- RD needs far less than selection-on-observables: not that all confounders are measured, only that they vary *smoothly* across the cutoff. Near $c$, which side a unit lands on is "as good as random."
+- The two ways to break it: a *confounder that also jumps* at $c$ (a coincident policy), and *manipulation/sorting* of the running variable. Beware too of **functional-form bias** --- a global straight line through a curved truth can manufacture a fake discontinuity.
+:::
+
+## What Comes Next
+
+We have established *what* sharp RD identifies (the average effect at the cutoff) and *why* (continuity of the potential-outcome curves makes the units just above and just below the threshold comparable). What we have left deliberately loose is *how* to estimate the jump well. The interactives already hinted at the central tension: comparability is best right at the cutoff, but data are scarcest there, and the choice of functional form near the boundary can make or break the estimate. The next page, [Estimation and Bandwidth](estimation-bandwidth.qmd), confronts this head-on --- local polynomial regression, kernel weighting, the bias--variance trade-off in choosing the bandwidth $h$, the data-driven (MSE-optimal) bandwidth selectors and robust bias-corrected inference behind `rdrobust`, and the validity and placebo checks (McCrary density test, covariate-balance and donut-hole specifications) that turn a suggestive jump into a defensible causal estimate.

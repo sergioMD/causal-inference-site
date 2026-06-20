@@ -1,0 +1,1211 @@
+---
+title: "Case Study: A Swedish Regional Reform"
+subtitle: "Synthetic control from start to finish"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Frame a single-treated-unit policy question and decide when synthetic control --- not DiD --- is the right design
+- Assemble a balanced panel of the 21 *regioner*, separate a clean pre-period from the post-period, and define a donor pool that excludes contaminated units
+- Read a fitted synthetic control: the donor weights, the pre-treatment fit (RMSPE), and the treated-minus-synthetic gap as the estimated ATT
+- Run placebo (permutation) inference, compute the post/pre RMSPE ratio, and convert the placebo cloud into a one-sided $p$-value
+- Critique a finished case study --- interpolation bias, anticipation, donor contamination, and the limits of a one-region conclusion
+:::
+
+## The Question Behind a Single Reform
+
+Every page in this module has built toward one moment: a real region commits to a real reform, and a policymaker at *Socialstyrelsen* (the National Board of Health and Welfare) asks the question that justified the whole enterprise --- *did it work?* This page walks that question from a blank panel to a defended causal estimate, reusing every tool the module assembled: the [donor-weighted counterfactual](method.qmd), [placebo inference](inference.qmd), and the [practical guardrails](extensions.qmd) that keep us honest.
+
+Here is the setting. In **2015**, one region --- call it **Region Älvdal** --- launched an ambitious, region-wide overhaul of chronic-disease management in its *vårdcentraler* (primary care centers). Every Type 2 diabetes patient was assigned a dedicated *distriktssköterska* (district nurse) as a care coordinator; the region funded shared digital dashboards, standing recall lists, and quarterly structured reviews. The stated goal was concrete and measurable: raise the share of diabetes patients whose blood sugar is *in control* --- defined as **HbA1c below 52 mmol/mol** --- as recorded in the *Nationella Diabetesregistret* (National Diabetes Register).
+
+No other region adopted anything comparable in the same window. So the natural evaluation design --- difference-in-differences against a matched control region --- runs into the problem this whole module exists to solve.
+
+::: {.glass-card .glass-card--definition}
+**Why not just use DiD?** Difference-in-differences needs a control unit (or group) whose *untreated trend* would have matched the treated unit's. With **one** treated region and **twenty** candidate controls, every choice is a judgment call: pick the geographically nearest region, the demographically closest, the one with the most similar baseline? Each gives a different answer, and none has a credible parallel pre-trend on its own.
+
+Synthetic control replaces that judgment with an optimization. Instead of picking one donor, it builds a **weighted average** of the donor pool whose pre-treatment HbA1c-control trajectory hugs Region Älvdal's. That weighted average --- the *synthetic Älvdal* --- becomes the counterfactual.
+:::
+
+**The whole idea, side by side.** The two mini-panels below contrast the designs on the same pre-period. *Left:* DiD must commit to **one** donor (here a slate line) and simply hope its untreated trend would have paralleled Älvdal's --- a single arbitrary bet. *Right:* synthetic control blends **many** faint donors into one optimized line (slate) that is fitted to hug Älvdal's pre-2015 path. Same goal --- a credible stand-in for the missing untreated Älvdal --- but the right panel earns it from data instead of asserting it.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DiD-vs-Synthetic motivation schematic ─────────────────
+// Illustrative pre-period trajectories only (not the live DGP). Älvdal vs:
+//   left  — ONE arbitrarily chosen donor (DiD's single control)
+//   right — MANY donors blended into one fitted line (synthetic control)
+sccase_motYears = d3.range(2008, 2016)
+sccase_motTreated = sccase_motYears.map(y => ({ year: y, y: 56 + 1.0 * (y - 2008) }))
+// one DiD donor: parallel-ish but offset, the "judgment call"
+sccase_motDid = sccase_motYears.map(y => ({ year: y, y: 53 + 0.8 * (y - 2008) }))
+// many donors (faint) scattered around, plus their fitted blend hugging treated
+sccase_motDonors = d3.range(8).map(k =>
+  sccase_motYears.map(y => ({
+    year: y, k,
+    y: 56 + (k - 3.5) * 1.6 + (0.7 + 0.08 * (k - 3.5)) * (y - 2008)
+  }))
+).flat()
+sccase_motSynth = sccase_motYears.map(y => ({ year: y, y: 56 + 1.0 * (y - 2008) - 0.15 }))
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(15rem,1fr)); gap:0.75rem; align-items:start;">
+  <div>
+    <div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.82rem; color:#1c1c1a; margin-bottom:0.2rem;">DiD &mdash; pick ONE control</div>
+    ${Plot.plot({
+      width: 320, height: 200, marginLeft: 38, marginBottom: 28, marginTop: 10, marginRight: 10,
+      style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+      x: { label: null, tickFormat: "d", ticks: [2008, 2011, 2014] },
+      y: { label: "control (%)", grid: true, domain: [50, 66] },
+      marks: [
+        Plot.line(sccase_motDid, { x: "year", y: "y", stroke: "#3d5a6c", strokeWidth: 2.5, strokeDasharray: "5,4" }),
+        Plot.line(sccase_motTreated, { x: "year", y: "y", stroke: "#990000", strokeWidth: 3 }),
+        Plot.text([sccase_motDid[0]], { x: "year", y: "y", dy: 14, text: () => "one chosen donor", fill: "#3d5a6c", fontSize: 10, fontWeight: 600, textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+        Plot.text([sccase_motTreated[sccase_motTreated.length - 1]], { x: "year", y: "y", dy: -8, dx: -2, text: () => "Älvdal", fill: "#990000", fontSize: 10, fontWeight: 700, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+      ]
+    })}
+  </div>
+  <div>
+    <div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.82rem; color:#1c1c1a; margin-bottom:0.2rem;">Synthetic &mdash; blend MANY, optimized</div>
+    ${Plot.plot({
+      width: 320, height: 200, marginLeft: 38, marginBottom: 28, marginTop: 10, marginRight: 10,
+      style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+      x: { label: null, tickFormat: "d", ticks: [2008, 2011, 2014] },
+      y: { label: "control (%)", grid: true, domain: [50, 66] },
+      marks: [
+        Plot.line(sccase_motDonors, { x: "year", y: "y", z: "k", stroke: "#e6e3db", strokeWidth: 1 }),
+        Plot.line(sccase_motSynth, { x: "year", y: "y", stroke: "#3d5a6c", strokeWidth: 2.5, strokeDasharray: "5,4" }),
+        Plot.line(sccase_motTreated, { x: "year", y: "y", stroke: "#990000", strokeWidth: 3 }),
+        Plot.text([sccase_motDonors[2]], { x: "year", y: "y", dy: 12, text: () => "donor pool", fill: "#79766e", fontSize: 10, fontWeight: 600, textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+        Plot.text([sccase_motSynth[sccase_motSynth.length - 1]], { x: "year", y: "y", dy: 14, dx: -2, text: () => "fitted blend", fill: "#3d5a6c", fontSize: 10, fontWeight: 600, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+      ]
+    })}
+  </div>
+</div>`
+```
+
+::: {.aside}
+<span style="color:#990000; font-weight:700;">Red</span> = Region Älvdal. <span style="color:#3d5a6c; font-weight:700;">Slate</span> = the counterfactual: one arbitrarily chosen control (left) versus a fitted blend of the whole <span style="color:#79766e; font-weight:700;">donor pool</span> (right). Illustrative pre-period trajectories, not the live simulation.
+:::
+
+The estimand is the same one DiD targets, the **ATT** for the single treated region, period by period after 2015:
+
+$$
+\tau_t = Y_{1t}(1) - Y_{1t}(0), \qquad t \ge T_0 = 2015,
+$$
+
+where unit $1$ is Region Älvdal, $T_0 = 2015$ is the **first treated year**, $Y_{1t}(1)$ is its observed control rate with the reform, and $Y_{1t}(0)$ is the unobservable rate it *would* have had without it. **Read this as**: "the treatment effect in year $t$ is the treated region's observed outcome minus the outcome it would have shown had it never reformed." The entire method is a disciplined way to fill in that second, missing term.
+
+
+## Step 1 --- Assemble the Panel
+
+A synthetic control study lives or dies on the panel. We need the *same outcome*, measured the *same way*, for *every* region, in *every* year, spanning a generous pre-period and a meaningful post-period.
+
+- **Units.** All 21 *regioner*. One is treated (Älvdal); the other 20 are the **donor pool** --- candidates from which the synthetic counterfactual is built.
+- **Outcome.** Share of registered Type 2 diabetes patients with HbA1c $< 52$ mmol/mol, in percent. Higher is better.
+- **Time.** Annual, **2008--2022**. The reform lands at $T_0 = 2015$, giving **seven pre-years (2008--2014)** to fit on and **eight post-years (2015--2022)** to measure over.
+
+::: {.glass-card .glass-card--warning}
+**Curate the donor pool before you fit, not after.** Two contamination risks must be handled at this step, by hand, using domain knowledge --- never by letting the optimizer sort it out:
+
+- **Spillover / partial adoption.** Drop any region that quietly copied parts of Älvdal's program, ran an overlapping pilot, or shares a procurement consortium that pushed the same digital dashboards. A donor that is itself partly treated biases the synthetic toward the treated trajectory and *shrinks* the estimated effect.
+- **Structural outliers.** Drop regions whose diabetes registry coverage changed mid-panel (a denominator break masquerading as a trend), or whose population is so small that the control rate is dominated by sampling noise. They add variance without adding a credible counterfactual.
+
+In our case study we drop **two** regions on these grounds, leaving an **18-region donor pool**. Curating the pool is a modeling decision you must pre-register and defend; doing it after seeing the gap is how good intentions become $p$-hacking.
+:::
+
+The curation is bookkeeping you should be able to show a reviewer at a glance. Here is the 21 &rarr; 18 ledger for this case: the treated unit, the two excluded regions with their one-line reasons, and the surviving donor pool.
+
+```{ojs}
+//| echo: false
+
+// ── Static donor-curation ledger (21 → 18) ───────────────────────
+// Documents which units are dropped and why, so the panel-stage
+// decision is concrete and auditable rather than buried in prose.
+html`<table class="science-table" style="margin:0.75rem 0;">
+  <thead><tr>
+    <th style="text-align:left;">Region</th><th>Role</th><th style="text-align:left;">Why</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td style="text-align:left; font-weight:700; color:#990000;">Älvdal</td>
+      <td>Treated</td>
+      <td style="text-align:left;">The reforming unit &mdash; the question is about it.</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; color:#b3000b; font-weight:600;">Region&nbsp;X</td>
+      <td style="color:#b3000b;">Dropped</td>
+      <td style="text-align:left;"><strong>Spillover:</strong> shared a procurement consortium that pushed the same dashboards &mdash; partly treated, biases the synthetic toward Älvdal.</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; color:#b3000b; font-weight:600;">Region&nbsp;Y</td>
+      <td style="color:#b3000b;">Dropped</td>
+      <td style="text-align:left;"><strong>Structural outlier:</strong> registry coverage broke mid-panel &mdash; a denominator artefact masquerading as a trend.</td>
+    </tr>
+    <tr>
+      <td style="text-align:left; color:#3d5a6c; font-weight:700;">18 remaining regioner</td>
+      <td style="color:#3d5a6c;">Donor pool</td>
+      <td style="text-align:left;">Clean, comparable units &mdash; the candidates the synthetic is built from.</td>
+    </tr>
+  </tbody>
+</table>
+<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin-top:0.3rem;">
+  21 regioner = 1 treated + 2 dropped + 18 donors. Every exclusion is decided <strong>before</strong> fitting, on documented grounds &mdash; not after seeing the gap.
+</div>`
+```
+
+
+## Step 2 --- Fit the Synthetic Control
+
+With the panel in hand, the method chooses non-negative donor weights $w_j$ that sum to one, so that the weighted donor trajectory matches Älvdal's *pre-treatment* outcomes as closely as possible.
+
+::: {.glass-card .glass-card--definition}
+Let $Y_{1t}$ be Älvdal's outcome and $Y_{jt}$ the outcome of donor $j$ in year $t$. The synthetic control picks weights $\mathbf{w} = (w_2, \dots, w_{19})$ solving
+
+$$
+\min_{\mathbf{w}} \; \sum_{t < T_0} \Big( Y_{1t} - \sum_{j \ge 2} w_j\, Y_{jt} \Big)^2
+\quad\text{subject to}\quad
+w_j \ge 0,\;\; \sum_{j \ge 2} w_j = 1 .
+$$
+
+**Read this as**: "find the mixture of donor regions --- with no negative shares, totalling 100% --- whose blended history comes closest, in squared error, to Älvdal's history *before* the reform." The two constraints are the method's discipline: non-negativity and the sum-to-one rule force the synthetic to be a genuine *interpolation* of real regions, never an extrapolation beyond the observed data. (A weighted average with non-negative shares that add to 100% is called a **convex combination** --- *convex* simply meaning the result can never land outside the range of the values it averages. **Interpolation** = staying *inside* the observed donor range; **extrapolation** = projecting *beyond* it.)
+:::
+
+**Why the two constraints matter --- in one picture.** The figure below freezes a single pre-treatment year. The grey dots are the donor regions' control rates; the shaded band is their observed range (the *convex hull*). A synthetic control's value (slate) is a convex combination of those dots, so it is mathematically trapped *inside* the band --- it interpolates. An unconstrained least-squares fit (red), free to use negative or above-one weights, can land *outside* the band entirely --- it extrapolates to a counterfactual no real region ever exhibited. That discipline is exactly what makes the synthetic credible: it is always a blend of regions that actually existed.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static interpolation-vs-extrapolation illustration ───────────
+// One frozen pre-period year: donor values as dots on a vertical scale,
+// their observed range shaded (the convex hull). A convex combination
+// (synthetic) is trapped inside; an unconstrained fit can shoot outside.
+// Purely illustrative numbers — independent of the live dashboard DGP.
+sccase_interpDonors = [
+  { id: "R03", v: 56.2 }, { id: "R07", v: 58.0 }, { id: "R01", v: 59.4 },
+  { id: "R12", v: 60.1 }, { id: "R05", v: 61.7 }, { id: "R09", v: 63.0 }
+]
+sccase_interpLo = d3.min(sccase_interpDonors, d => d.v)
+sccase_interpHi = d3.max(sccase_interpDonors, d => d.v)
+sccase_interpSynth = 60.4   // a convex blend → inside [lo, hi]
+sccase_interpExtrap = 65.6  // unconstrained fit → above the donor range
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(560, width),
+  height: 230,
+  marginLeft: 150,
+  marginRight: 130,
+  marginTop: 24,
+  marginBottom: 30,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { domain: [0, 3], axis: null },
+  y: { label: "HbA1c control rate (%)", grid: true, domain: [54, 67] },
+  marks: [
+    // convex hull of the donors = the interpolation band
+    Plot.rect([{}], {
+      x1: 0.55, x2: 2.45, y1: sccase_interpLo, y2: sccase_interpHi,
+      fill: "#2e6f40", fillOpacity: 0.08
+    }),
+    Plot.ruleY([sccase_interpLo, sccase_interpHi], {
+      x1: 0.55, x2: 2.45, stroke: "#79766e", strokeDasharray: "3,3", strokeWidth: 1
+    }),
+    Plot.text([{ y: sccase_interpHi }, { y: sccase_interpLo }], {
+      x: 0.55, dx: -6, y: "y", textAnchor: "end",
+      text: d => d.y === sccase_interpHi ? "donor max" : "donor min",
+      fill: "#79766e", fontSize: 10
+    }),
+    // donor dots (jittered horizontally for visibility)
+    Plot.dot(sccase_interpDonors.map((d, i) => ({ ...d, x: 1 + (i % 3) * 0.5 })), {
+      x: "x", y: "v", r: 4, fill: "#79766e", fillOpacity: 0.7
+    }),
+    // synthetic (convex combination) — trapped inside the band
+    Plot.dot([{ x: 1.5, v: sccase_interpSynth }], {
+      x: "x", y: "v", r: 7, fill: "#3d5a6c", stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text([{ x: 1.5, v: sccase_interpSynth }], {
+      x: "x", y: "v", dx: 12, textAnchor: "start", lineWidth: 12,
+      text: () => "synthetic = convex blend (inside → interpolation)",
+      fill: "#3d5a6c", fontSize: 11, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // unconstrained fit — escapes the band
+    Plot.dot([{ x: 2.6, v: sccase_interpExtrap }], {
+      x: "x", y: "v", r: 7, fill: "#990000", stroke: "white", strokeWidth: 1.5, symbol: "diamond"
+    }),
+    Plot.text([{ x: 2.6, v: sccase_interpExtrap }], {
+      x: "x", y: "v", dx: 10, textAnchor: "start", lineWidth: 11,
+      text: () => "unconstrained fit (outside → extrapolation)",
+      fill: "#990000", fontSize: 11, fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Grey dots = donor regions' control rates in one pre-period year; the <span style="color:#2e6f40; font-weight:700;">green band</span> is their observed range. The <span style="color:#3d5a6c; font-weight:700;">synthetic</span> (a convex blend) is forced *inside* the band --- interpolation. An <span style="color:#990000; font-weight:700;">unconstrained fit</span> can escape *above* it --- extrapolation to a region that never existed.
+:::
+
+The quality of that fit is summarized by the **pre-treatment root-mean-square prediction error** (RMSPE --- the typical size, in percentage points, of the synthetic's pre-period prediction miss):
+
+$$
+\text{RMSPE}_{\text{pre}} = \sqrt{\frac{1}{T_0 - t_0} \sum_{t < T_0} \Big(Y_{1t} - \widehat{Y}_{1t}(0)\Big)^2}, \qquad \widehat{Y}_{1t}(0) = \sum_{j \ge 2} w_j\, Y_{jt},
+$$
+
+where $t_0 = 2008$ is the first year of the panel, so the sum runs over the $T_0 - t_0 = 7$ pre-treatment years 2008--2014.
+
+**Read this as**: "the typical year-to-year distance, in percentage points, between Älvdal and its synthetic twin during the pre-period." A small pre-RMSPE is the license to believe the post-period gap. If the synthetic cannot track Älvdal *before* the reform --- when, by construction, the true gap is zero --- we have no business trusting it *after*. This is the synthetic-control analogue of checking pre-trends in DiD.
+
+Once the weights are fixed using *only* pre-period data, we extend the synthetic forward and read the **gap**:
+
+$$
+\widehat{\tau}_t = Y_{1t} - \widehat{Y}_{1t}(0) = Y_{1t} - \sum_{j \ge 2} w_j\, Y_{jt}, \qquad t \ge T_0 .
+$$
+
+**Read this as**: "the estimated effect in each post-year is how far Älvdal pulled away from the counterfactual the donors predicted." A persistent positive gap that opens up only *after* 2015 --- and not before --- is the signature of a real effect.
+
+
+## See It: The Capstone Synthetic-Control Dashboard
+
+The dashboard below ties the entire module together for *this* case. The top panel shows Älvdal (solid) against its synthetic twin (dashed); the middle shows the year-by-year gap; the bottom overlays the **placebo cloud** --- the same procedure run with each donor pretending to be treated --- and a table of the donor weights. Everything recomputes from a handful of controls so you can watch the logic, not just the result.
+
+The data are simulated from a transparent process: a common national upward trend in diabetes control, region-specific levels and slopes, idiosyncratic year noise, and a **true reform effect** that switches on in 2015 and grows. You control the size of that true effect, the noise, whether anticipation leaks into 2014, and how strict the placebo filter is.
+
+::: {.glass-card .glass-card--warning}
+**One honest caveat about this demo.** In the simulation, Älvdal is *built* to be a genuine convex blend of three donor regions, so a near-perfect synthetic exists *by construction* --- which is why you will see a tiny pre-RMSPE and a weight table dominated by just a few donors. Real panels are rarely this kind: a clean pre-fit is something you have to *earn and check*, not something the method guarantees. Read the dashboard as a best-case illustration of the mechanics, then carry the diagnostics --- not the optimism --- to your own data.
+:::
+
+::: {.interactive-container}
+
+#### Synthetic Control for Region Älvdal's Diabetes Reform
+
+::: {.callout-tip collapse="false" appearance="minimal"}
+**Start here:** all four controls below recompute every panel. Set a *True reform effect*, then read the three panels top to bottom --- **trajectories**, **gap**, **placebo cloud** --- and the headline tiles beneath them.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof sccase_trueEffect = Inputs.range([0, 8], {
+  value: 5,
+  step: 0.5,
+  label: "True reform effect by 2022 (pp of HbA1c control)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof sccase_noise = Inputs.range([0, 2.5], {
+  value: 0.8,
+  step: 0.1,
+  label: "Idiosyncratic year noise (SD, pp)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof sccase_anticipation = Inputs.toggle({
+  value: false,
+  label: "Anticipation leak (effect starts a year early, in 2014)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof sccase_filterFit = Inputs.toggle({
+  value: true,
+  label: "Placebo filter: drop donors with poor pre-fit (RMSPE > 2× treated)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof sccase_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-size:0.8rem; color:#79766e; margin:-0.25rem 0 0.5rem;">
+  All four controls above recompute every panel below. <strong>Draw new sample</strong>
+  reshuffles the simulated panel --- use it to check the result is not a lucky draw.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Panel constants ──────────────────────────────────────────────
+sccase_years = d3.range(2008, 2023)            // 2008..2022 inclusive
+sccase_T0 = 2015                               // reform year (first treated period)
+sccase_preYears = sccase_years.filter(y => y < sccase_T0)
+sccase_postYears = sccase_years.filter(y => y >= sccase_T0)
+sccase_nDonors = 18                            // curated donor pool size
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Simulate the full panel ──────────────────────────────────────
+// Reading sccase_draw makes the whole panel resample on the button click,
+// without ever using a mutable. The DGP:
+//   * national trend: control rate rises ~0.9 pp/yr everywhere
+//   * each region has its own intercept and a small slope wobble
+//   * Älvdal is built so a sum-to-one mixture of donors fits it pre-2015
+//   * the reform adds a ramp from 2015 (or 2014 if anticipation is on)
+sccase_panel = {
+  sccase_draw;  // dependency: resample on click
+  const rnd = d3.randomNormal.source(d3.randomLcg(0.42 + 0.07 * sccase_draw));
+  const noiseGen = d3.randomNormal.source(d3.randomLcg(0.91 + 0.13 * sccase_draw));
+
+  const base2008 = 55;          // national starting control rate (%)
+  const natTrend = 0.9;         // pp per year, common to all regions
+
+  // Donor regions: random intercept offsets and gentle slope offsets.
+  const donors = d3.range(sccase_nDonors).map(j => ({
+    id: `R${String(j + 1).padStart(2, "0")}`,
+    intercept: rnd() * 4.0,             // ± a few pp around the national level
+    slope: 0.18 * rnd()                 // small heterogeneity in trend
+  }));
+
+  // Älvdal is engineered as a clean convex blend of three donors PLUS a
+  // tiny own wobble, so a good synthetic genuinely exists in the pool.
+  const anchorW = [0.45, 0.32, 0.23];   // true mixing weights (donors 0,1,2)
+  const anchorIdx = [0, 1, 2];
+
+  const noiseSD = sccase_noise;
+  const effBy2022 = sccase_trueEffect;
+  const rampStart = sccase_T0;          // reform's true onset (2015)
+  const rampEnd = 2022;
+
+  // Post-treatment ramp: 0 at 2015, rising linearly to effBy2022 at 2022.
+  const rampEffect = (y) => {
+    if (y < rampStart) return 0;
+    const frac = (y - rampStart) / (rampEnd - rampStart);
+    return effBy2022 * Math.min(1, Math.max(0, frac));
+  };
+
+  // One ramp increment, used as the size of any anticipation leak.
+  const stepSize = effBy2022 / (rampEnd - rampStart);
+
+  // Full effect path. When the anticipation toggle is on, the announcement
+  // leaks one ramp-step of effect into 2014 — the LAST pre-treatment year —
+  // contaminating the fitting window exactly as the prose warns. The post-2015
+  // path is unchanged, so anticipation shows up as a pre-period lift, not a
+  // bigger post-period effect.
+  const reformEffect = (y) => {
+    if (sccase_anticipation && y === sccase_T0 - 1) return stepSize;
+    return rampEffect(y);
+  };
+
+  const levelOf = (region, y) =>
+    base2008 + region.intercept + (natTrend + region.slope) * (y - 2008);
+
+  // Build donor series.
+  const series = donors.map(region => ({
+    id: region.id,
+    treated: false,
+    values: sccase_years.map(y => ({
+      year: y,
+      y: levelOf(region, y) + noiseGen() * noiseSD
+    }))
+  }));
+
+  // Build Älvdal: convex combo of the three anchor donors' *structural*
+  // levels (no donor noise), plus own small noise, plus the reform ramp.
+  const alvdal = {
+    id: "Älvdal",
+    treated: true,
+    values: sccase_years.map(y => {
+      let structural = 0;
+      anchorIdx.forEach((di, k) => {
+        structural += anchorW[k] * levelOf(donors[di], y);
+      });
+      return {
+        year: y,
+        y: structural + noiseGen() * (noiseSD * 0.7) + reformEffect(y)
+      };
+    })
+  };
+
+  return { treated: alvdal, donors: series, anchorW, anchorIdx };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Synthetic-control fitter ─────────────────────────────────────
+// Fit non-negative, sum-to-one weights minimizing pre-period squared
+// error by projected gradient descent on the simplex. Lightweight but
+// genuine: it returns the donor weights, the synthetic trajectory, the
+// pre-RMSPE, and the gap series. Used for the treated unit AND every
+// placebo, so the whole dashboard runs one consistent estimator.
+sccase_fit = function (targetVals, donorSeries) {
+  const pre = sccase_preYears;
+  const yT = pre.map(y => targetVals.find(d => d.year === y).y);
+  const X = donorSeries.map(s => pre.map(y => s.values.find(d => d.year === y).y));
+  const J = donorSeries.length;
+
+  // init: uniform weights
+  let w = new Array(J).fill(1 / J);
+
+  const predictPre = (ww) =>
+    pre.map((_, t) => d3.sum(ww.map((wj, j) => wj * X[j][t])));
+
+  const lr = 0.0008;
+  for (let iter = 0; iter < 4000; iter++) {
+    const pred = predictPre(w);
+    const resid = pred.map((p, t) => p - yT[t]);          // pred - target
+    // gradient of SSE wrt w_j = 2 * sum_t resid_t * X[j][t]
+    const grad = X.map(xj => 2 * d3.sum(xj.map((v, t) => v * resid[t])));
+    w = w.map((wj, j) => wj - lr * grad[j]);
+    // project onto simplex {w >= 0, sum w = 1}
+    w = sccase_projectSimplex(w);
+  }
+
+  // pre-RMSPE
+  const predPre = predictPre(w);
+  const preMSE = d3.mean(predPre.map((p, t) => (p - yT[t]) ** 2));
+  const preRMSPE = Math.sqrt(preMSE);
+
+  // full synthetic trajectory + gap
+  const synth = sccase_years.map(y => ({
+    year: y,
+    y: d3.sum(donorSeries.map(s => {
+      const wj = w[donorSeries.indexOf(s)];
+      return wj * s.values.find(d => d.year === y).y;
+    }))
+  }));
+  const gap = sccase_years.map((y, i) => ({
+    year: y,
+    gap: targetVals.find(d => d.year === y).y - synth[i].y
+  }));
+
+  return { w, synth, gap, preRMSPE };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Euclidean projection onto the probability simplex (Wang & Carreira-Perpiñán).
+sccase_projectSimplex = function (v) {
+  const u = [...v].sort((a, b) => b - a);
+  const css = d3.cumsum(u);
+  let rho = 0;
+  for (let i = 0; i < u.length; i++) {
+    if (u[i] + (1 - css[i]) / (i + 1) > 0) rho = i;
+  }
+  const theta = (css[rho] - 1) / (rho + 1);
+  return v.map(x => Math.max(0, x - theta));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fit the treated unit ─────────────────────────────────────────
+sccase_treatedFit = sccase_fit(sccase_panel.treated.values, sccase_panel.donors)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Run the placebo / permutation study ──────────────────────────
+// Each donor takes a turn as the "treated" unit; the remaining donors are
+// its pool. We record each placebo's gap series and pre-RMSPE, then
+// (optionally) drop placebos whose pre-fit is much worse than the treated's
+// — comparing a region the model fits well to regions it fits badly is the
+// standard apples-to-oranges trap the filter guards against.
+sccase_placebos = {
+  const out = [];
+  const donors = sccase_panel.donors;
+  for (let i = 0; i < donors.length; i++) {
+    const target = donors[i];
+    const pool = donors.filter((_, k) => k !== i);
+    const f = sccase_fit(target.values, pool);
+    out.push({ id: target.id, gap: f.gap, preRMSPE: f.preRMSPE });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Apply the fit filter and split placebos for plotting / inference.
+sccase_placeboKept = sccase_filterFit
+  ? sccase_placebos.filter(p => p.preRMSPE <= 2 * sccase_treatedFit.preRMSPE)
+  : sccase_placebos
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Inference: post/pre RMSPE ratio + permutation p-value ────────
+sccase_ratioOf = function (gapSeries) {
+  const preGaps = gapSeries.filter(d => d.year < sccase_T0).map(d => d.gap);
+  const postGaps = gapSeries.filter(d => d.year >= sccase_T0).map(d => d.gap);
+  const preR = Math.sqrt(d3.mean(preGaps.map(g => g * g)));
+  const postR = Math.sqrt(d3.mean(postGaps.map(g => g * g)));
+  return postR / (preR + 1e-9);
+}
+
+sccase_inference = {
+  const treatedRatio = sccase_ratioOf(sccase_treatedFit.gap);
+  const placeboRatios = sccase_placeboKept.map(p => sccase_ratioOf(p.gap));
+  // one-sided permutation p-value: share of units (treated + placebos) with
+  // a ratio at least as extreme as the treated's.
+  const all = [treatedRatio, ...placeboRatios];
+  const atLeast = all.filter(r => r >= treatedRatio).length;
+  const pval = atLeast / all.length;
+  return { treatedRatio, placeboRatios, pval, nUnits: all.length };
+}
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.9rem;
+    color:#1c1c1a; margin:1rem 0 0.25rem;">1. Trajectories &mdash; Älvdal vs its synthetic twin</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── TOP: treated vs synthetic trajectory ─────────────────────────
+Plot.plot({
+  width: Math.min(640, width),
+  height: 320,
+  marginLeft: 64,
+  marginTop: 28,
+  marginRight: 20,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: null, tickFormat: "d", grid: false },
+  y: { label: "HbA1c control rate (%)", grid: true },
+  color: {
+    domain: ["Älvdal (observed)", "Synthetic Älvdal"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    Plot.ruleX([sccase_T0], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    Plot.text([{}], {
+      frameAnchor: "top-left", dx: 8, dy: 6,
+      text: () => "reform 2015", fill: "#9c7a33", fontSize: 11,
+      textAnchor: "start", fontWeight: 600,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.line(sccase_treatedFit.synth, {
+      x: "year", y: "y", stroke: "#3d5a6c", strokeWidth: 2.5, strokeDasharray: "5,4"
+    }),
+    Plot.line(sccase_panel.treated.values, {
+      x: "year", y: "y", stroke: "#990000", strokeWidth: 3
+    }),
+    Plot.dot(sccase_panel.treated.values, {
+      x: "year", y: "y", fill: "#990000", r: 3,
+      title: d => `${d.year}\nÄlvdal: ${d.y.toFixed(2)}%`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin-top:0.25rem;">
+  <span style="color:#990000; font-weight:700;">&#9472;&#9472;</span> Älvdal (observed) &nbsp;
+  <span style="color:#3d5a6c; font-weight:700;">&#8211;&#8211;</span> synthetic twin &nbsp;&middot;&nbsp;
+  higher control rate is better.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.9rem;
+    color:#1c1c1a; margin:1rem 0 0.25rem;">2. Gap &mdash; how far Älvdal pulls away from synthetic</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── MIDDLE: the gap (treated − synthetic) ────────────────────────
+Plot.plot({
+  width: Math.min(640, width),
+  height: 220,
+  marginLeft: 64,
+  marginTop: 16,
+  marginRight: 56,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: null, tickFormat: "d", grid: false },
+  y: { label: "Gap (pp)", grid: true },
+  marks: [
+    Plot.ruleY([0], { stroke: "#79766e" }),
+    Plot.ruleX([sccase_T0], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    Plot.areaY(sccase_treatedFit.gap.filter(d => d.year >= sccase_T0), {
+      x: "year", y: "gap", fill: "#990000", fillOpacity: 0.10
+    }),
+    Plot.line(sccase_treatedFit.gap, {
+      x: "year", y: "gap", stroke: "#990000", strokeWidth: 2.5
+    }),
+    Plot.dot(sccase_treatedFit.gap, {
+      x: "year", y: "gap", fill: "#990000", r: 3,
+      title: d => `${d.year}\ngap: ${d.gap >= 0 ? "+" : ""}${d.gap.toFixed(2)} pp`
+    }),
+    Plot.text([sccase_treatedFit.gap[sccase_treatedFit.gap.length - 1]], {
+      frameAnchor: "right", dx: -4, dy: -8,
+      text: d => `${d.gap >= 0 ? "+" : ""}${d.gap.toFixed(1)} pp`,
+      textAnchor: "end", fill: "#990000", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin-top:0.25rem;">
+  Gap = Älvdal &minus; synthetic. Should hover near <strong>0</strong> before 2015; the
+  <span style="color:#990000; font-weight:700;">shaded</span> region is the post-reform effect.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.9rem;
+    color:#1c1c1a; margin:1rem 0 0.25rem;">3. Placebo cloud &mdash; Älvdal against every donor-as-treated</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── BOTTOM: the placebo cloud ────────────────────────────────────
+Plot.plot({
+  width: Math.min(640, width),
+  height: 260,
+  marginLeft: 64,
+  marginTop: 16,
+  marginRight: 56,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: null, tickFormat: "d", grid: false },
+  y: { label: "Gap (pp)", grid: true },
+  marks: [
+    Plot.ruleY([0], { stroke: "#79766e" }),
+    Plot.ruleX([sccase_T0], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    // placebo gaps in hairline grey
+    Plot.line(
+      sccase_placeboKept.flatMap(p => p.gap.map(g => ({ ...g, id: p.id }))),
+      { x: "year", y: "gap", z: "id", stroke: "#e6e3db", strokeWidth: 1 }
+    ),
+    // treated gap on top in Uppsala red
+    Plot.line(sccase_treatedFit.gap, {
+      x: "year", y: "gap", stroke: "#990000", strokeWidth: 3
+    }),
+    Plot.text([sccase_treatedFit.gap[sccase_treatedFit.gap.length - 1]], {
+      frameAnchor: "right", dx: -4, dy: -8, text: () => "Älvdal",
+      textAnchor: "end", fill: "#990000", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin-top:0.25rem;">
+  <span style="color:#990000; font-weight:700;">&#9472;&#9472;</span> Älvdal (treated) &nbsp;
+  <span style="color:#79766e; font-weight:700;">&#9472;&#9472;</span> ${sccase_placeboKept.length} placebo regions (each donor as pretend-treated).
+  Älvdal should stand out from the cloud after 2015.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── Headline numbers ─────────────────────────────────────────────
+{
+  const finalGap = sccase_treatedFit.gap[sccase_treatedFit.gap.length - 1].gap;
+  const postGaps = sccase_treatedFit.gap.filter(d => d.year >= sccase_T0).map(d => d.gap);
+  const avgGap = d3.mean(postGaps);
+  const inf = sccase_inference;
+
+  const tile = (name, value, color, bg) => html`<div style="
+      text-align: center; min-height: 4.2rem;
+      display:flex; flex-direction:column; justify-content:center;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e; min-height:1.8em; display:flex; align-items:center;
+        justify-content:center;">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.2rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  const sig = inf.pval <= 0.10;
+  return html`<div style="display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+      gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Pre-RMSPE", `${sccase_treatedFit.preRMSPE.toFixed(2)} pp`, "#1c1c1a", "#f6f5f1")}
+    ${tile("Avg post gap", `${avgGap >= 0 ? "+" : ""}${avgGap.toFixed(2)} pp`, "#990000", "#f6f5f1")}
+    ${tile("2022 gap", `${finalGap >= 0 ? "+" : ""}${finalGap.toFixed(2)} pp`, "#990000", "#f6f5f1")}
+    ${tile("Ratio", inf.treatedRatio.toFixed(2), "#1c1c1a", "#f6f5f1")}
+    ${tile("Placebos kept", `${sccase_placeboKept.length} / ${sccase_placebos.length}`, "#3d5a6c", "#f6f5f1")}
+    ${tile("p-value", inf.pval.toFixed(3),
+        sig ? "#2e6f40" : "#b3000b",
+        sig ? "rgba(46,111,64,0.08)" : "rgba(179,0,11,0.06)")}
+  </div>
+  <div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin-top:0.4rem;">
+    The <strong>p-value</strong> tile turns green at the 0.10 threshold; with 19 units the
+    floor is 1/19 &approx; 0.053.
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.9rem;
+    color:#1c1c1a; margin:1.25rem 0 0.25rem;">4. Ranked RMSPE ratios &mdash; the p-value is Älvdal's rank</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Build the ranked ratio table (treated + kept placebos) ───────
+// Additive: reuses sccase_inference (already computed above). The
+// permutation p-value is literally Älvdal's RANK in this list, so a
+// ranked bar chart makes "top of the distribution = small p" visible
+// — the one piece of the inference logic the dashboard only printed.
+sccase_rankRows = {
+  const inf = sccase_inference;
+  const rows = [
+    { id: "Älvdal", ratio: inf.treatedRatio, treated: true },
+    ...sccase_placeboKept.map((p, i) => ({
+      id: p.id, ratio: inf.placeboRatios[i], treated: false
+    }))
+  ];
+  rows.sort((a, b) => b.ratio - a.ratio);
+  return rows.map((d, i) => ({ ...d, rank: i + 1 }));
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Horizontal ranked bars: Älvdal in Uppsala red, placebos in stone.
+Plot.plot({
+  width: Math.min(640, width),
+  height: Math.max(150, 18 * sccase_rankRows.length + 60),
+  marginLeft: 70,
+  marginTop: 16,
+  marginRight: 70,
+  marginBottom: 45,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "post/pre RMSPE ratio →", grid: true },
+  y: {
+    label: null,
+    domain: sccase_rankRows.map(d => d.id)
+  },
+  marks: [
+    Plot.barX(sccase_rankRows, {
+      x: "ratio", y: "id",
+      fill: d => d.treated ? "#990000" : "#79766e",
+      fillOpacity: d => d.treated ? 1 : 0.55
+    }),
+    Plot.text(sccase_rankRows, {
+      x: "ratio", y: "id", dx: 5, textAnchor: "start",
+      text: d => d.ratio.toFixed(2),
+      fill: d => d.treated ? "#990000" : "#79766e",
+      fontSize: 10, fontWeight: d => d.treated ? 700 : 400
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e; margin-top:0.25rem;">
+  <span style="color:#990000; font-weight:700;">&#9646;</span> Älvdal &nbsp;
+  <span style="color:#79766e; font-weight:700;">&#9646;</span> kept placebos, sorted by ratio.
+  Älvdal ranks <strong>${sccase_rankRows.find(d => d.treated).rank}</strong> of ${sccase_rankRows.length};
+  the one-sided $p$ is that rank divided by the count =
+  <strong>${(sccase_rankRows.find(d => d.treated).rank / sccase_rankRows.length).toFixed(3)}</strong>.
+  The higher Älvdal sits, the smaller the $p$.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// ── Donor-weight table (the recipe for synthetic Älvdal) ─────────
+html`<div style="margin-top:1rem;">
+  <div style="font-family:'Inter',sans-serif; font-size:0.72rem;
+      font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+      color:#79766e; margin-bottom:0.4rem;">Donor weights (sum = 1.00)</div>
+  <table class="science-table">
+    <thead><tr><th>Donor region</th><th>Weight</th><th>Share of synthetic</th></tr></thead>
+    <tbody>
+      ${sccase_panel.donors
+        .map((s, j) => ({ id: s.id, w: sccase_treatedFit.w[j] }))
+        .sort((a, b) => b.w - a.w)
+        .filter(d => d.w > 0.001)
+        .map(d => html`<tr>
+          <td>${d.id}</td>
+          <td>${d.w.toFixed(3)}</td>
+          <td><div style="background:#990000; height:10px; border-radius:3px;
+                width:${Math.max(2, d.w * 100).toFixed(0)}%;"></div></td>
+        </tr>`)}
+    </tbody>
+  </table>
+  <div style="font-family:'Inter',sans-serif; font-size:0.78rem;
+      color:#79766e; margin-top:0.4rem;">
+    Donors with weight ≈ 0 are omitted. A sparse handful of donors carrying
+    most of the weight is the hallmark of a well-identified synthetic control.
+  </div>
+</div>`
+```
+
+:::
+
+### How to Read the Dashboard
+
+Work through the panels in order; each isolates one stage of the method.
+
+**Step 1: Check the pre-period fit first --- always.** In the *top* panel, look only at the years *before* the ochre 2015 line. The solid red line (observed Älvdal) and the dashed slate line (synthetic Älvdal) should sit almost on top of each other. The **Pre-RMSPE** tile quantifies that overlap in percentage points. This is your credibility check: if the synthetic cannot reproduce Älvdal's *known* pre-reform history, nothing after 2015 is trustworthy. With the default settings the pre-RMSPE is well under one percentage point.
+
+**Step 2: Read the divergence as the effect.** After 2015 the solid red line lifts away from the dashed synthetic. That widening wedge is the reform's estimated impact: Älvdal's diabetes patients reached blood-sugar control at a higher rate than the donor mixture predicts they would have without the program.
+
+**Step 3: Read the gap directly.** The *middle* panel plots exactly that wedge --- $Y_{1t} - \widehat{Y}_{1t}(0)$ --- with a reference line at zero. Before 2015 it should hover near zero (the synthetic tracks the truth); after 2015 it climbs to the shaded post-period region. The label prints the final 2022 gap, and the **Avg post gap** tile reports the mean over 2015--2022.
+
+**Step 4: Calibrate against placebos.** The *bottom* panel runs the whole procedure again, letting *each donor pretend to be treated*. Their gaps form the grey cloud --- the distribution of "effects" we would see by pure chance for a region that did nothing. Älvdal's red line should stand out from the cloud after 2015. If it is buried inside the grey, the apparent effect is no larger than placebo noise.
+
+**Step 5: Turn the picture into a $p$-value.** The **Ratio** tile divides Älvdal's post-period gap size by its pre-period gap size --- a unit-free measure of "how much louder is the post than the pre." Formally,
+
+$$
+\text{RMSPE ratio} = \frac{\text{RMSPE}_{\text{post}}}{\text{RMSPE}_{\text{pre}}}, \qquad
+\text{RMSPE}_{\text{post}} = \sqrt{\tfrac{1}{|\{t \ge T_0\}|}\textstyle\sum_{t \ge T_0} \widehat{\tau}_t^{\,2}} .
+$$
+
+**Read this as**: "divide the typical size of the gap *after* the reform by its typical size *before*; a big ratio means the post-period gap is large relative to whatever noise the pre-period already had." The **p-value** tile is then the share of all regions (treated plus *kept* placebos) whose ratio is at least as large as Älvdal's. With one treated unit and all 18 placebos retained, the smallest attainable $p$ is $1/19 \approx 0.053$; the tile turns green at the conventional 0.10 threshold. Note the trade-off: turning the placebo filter on (the default) drops the worst-fitting donors, which tightens the cloud but *shrinks the pool* and therefore *raises* the $1/(J+1)$ floor --- the same bias--resolution tension flagged on the [inference page](inference.qmd). The **Placebos kept** tile shows how many donors survive the filter.
+
+The **ranked-ratio chart** (panel 4) makes that rank literal: every region is a bar, sorted by its post/pre RMSPE ratio, with Älvdal in red. The $p$-value is just Älvdal's *position from the top* divided by the number of bars --- if Älvdal's bar is the longest, it sits at rank 1 and $p$ hits the $1/19$ floor; if it is buried mid-pack, $p$ climbs accordingly. This is the entire logic of permutation inference in one picture: a small $p$ means "no placebo region matched Älvdal's post-vs-pre jump."
+
+**Step 6: Read the recipe.** The **donor-weight table** is the synthetic's ingredient list. A few regions carry most of the weight and the rest are near zero --- which is exactly what you want: a sparse, interpretable counterfactual built from a handful of genuinely similar regions, not a diffuse smear over all 18.
+
+**Step 7: Now break it.** Drag **True reform effect** to 0 and watch Älvdal's line sink into the placebo cloud and the $p$-value go red --- the method correctly finds nothing when nothing is there. Crank the **noise** up and watch the pre-RMSPE rise until even a real effect drowns. Toggle **Anticipation** and notice the gap lift a year *early*, in 2014, contaminating the "clean" pre-period --- the classic warning that effects which start before the policy did are a red flag, not a bonus. Finally toggle the **placebo filter** off and see the cloud widen with badly-fit donors, inflating the $p$-value: comparing a well-fit treated region to poorly-fit placebos is the apples-to-oranges trap the filter exists to prevent. Click **Draw new sample** to confirm the story is robust across realizations, not a lucky draw.
+
+
+## Step 3 --- Read and Defend the Result
+
+Suppose the dashboard, at its defaults, returns a pre-RMSPE of about 0.6 pp, an average post-period gap of roughly +3 pp, a 2022 gap near +5 pp, and a permutation $p \approx 0.05$. How do we report this responsibly?
+
+::: {.glass-card .glass-card--insight}
+**The honest sentence.** "Relative to a synthetic control built from a weighted average of 18 comparison regions that closely matched its 2008--2014 trajectory (pre-RMSPE 0.6 pp), Region Älvdal's share of diabetes patients in HbA1c control was about **3 percentage points higher on average** over 2015--2022, reaching roughly **5 points** by the end of the window. A permutation test placing Älvdal against 18 placebo regions yields a one-sided $p \approx 0.05$: only one region in nineteen --- Älvdal itself --- shows a post/pre divergence this large."
+
+Notice what the sentence does *not* claim. It does not assert a population ATE, does not generalize to other regions, and does not call $0.05$ "significant" with a straight face when nineteen units cap the resolution. It reports an effect *for this region* with inference that is honest about its granularity.
+:::
+
+Three diagnostics turn this from a plot into a defensible claim, each inherited from an earlier page in the module:
+
+1. **Pre-fit (from [the method](method.qmd)).** The pre-RMSPE is small and the pre-period gap hugs zero. The synthetic is a credible stand-in.
+2. **Placebo inference (from [inference](inference.qmd)).** Älvdal's RMSPE ratio sits at the top of the permutation distribution; the cloud calibrates "how surprised should we be."
+3. **Robustness (from [extensions](extensions.qmd)).** The conclusion survives leave-one-donor-out reweighting, an in-time placebo (pretending the reform happened in 2012 should show *no* gap), and trimming the most influential donor. The "Draw new sample" button is a crude stand-in for that robustness sweep.
+
+
+## Connecting Back to the Module
+
+This case study is the module's three ideas working in concert:
+
+- **Build a counterfactual without picking a single control** --- the donor-weighted synthetic from [The Synthetic Control Method](method.qmd).
+- **Do inference when $N_{\text{treated}} = 1$** --- the placebo cloud and RMSPE-ratio permutation test from [Inference for Synthetic Control](inference.qmd).
+- **Stay honest about the failure modes** --- interpolation bias, anticipation, donor contamination, and the limits of a one-region conclusion from [Extensions and Practical Issues](extensions.qmd).
+
+And it closes the loop on the entire book. Synthetic control is, at bottom, the same potential-outcomes logic from Module 1: we want $Y_{1t}(1) - Y_{1t}(0)$, we observe only the first term, and every method in this book is a different strategy for reconstructing the second. DiD reconstructs it from a parallel-trending control; synthetic control reconstructs it from a *bespoke, data-built* control. Same question, more disciplined answer.
+
+
+<details>
+<summary>Math Details: Why the Pre-Fit Licenses the Post-Gap</summary>
+<div class="details-content">
+
+### The identifying assumption, made explicit
+
+Suppose each region's untreated outcome follows a linear factor model (Abadie, Diamond & Hainmueller, 2010):
+
+$$
+Y_{jt}(0) = \delta_t + \boldsymbol{\theta}_t^{\top} \mathbf{Z}_j + \boldsymbol{\lambda}_t^{\top} \boldsymbol{\mu}_j + \varepsilon_{jt},
+$$
+
+where $\delta_t$ is a common time effect, $\mathbf{Z}_j$ are observed covariates, $\boldsymbol{\mu}_j$ are **unobserved** region-specific factor loadings, $\boldsymbol{\lambda}_t$ are the (time-varying) factors, and $\varepsilon_{jt}$ is noise.
+
+**Read this as**: "each region's no-reform outcome is a national trend, plus its response to observed traits, plus its response to *unobserved* traits that themselves evolve over time, plus noise." The last term is what makes ordinary DiD fragile: if $\boldsymbol{\lambda}_t$ changes over time, two regions with different loadings $\boldsymbol{\mu}_j$ will *not* trend in parallel.
+
+### Where the weights earn their keep
+
+Suppose we find weights $\mathbf{w}$ with $\sum_j w_j = 1$, $w_j \ge 0$, such that the synthetic matches the treated unit on *both* its pre-period outcomes and its covariates:
+
+$$
+\sum_{j \ge 2} w_j\, Y_{jt} = Y_{1t} \;\; (t < T_0), \qquad \sum_{j \ge 2} w_j\, \mathbf{Z}_j = \mathbf{Z}_1 .
+$$
+
+Abadie et al. show that if a synthetic matches the treated unit on a *sufficiently long* pre-period of outcomes, it must also (approximately) match the **unobserved loadings** $\boldsymbol{\mu}_1$ --- because reproducing many pre-period outcomes that each load on $\boldsymbol{\lambda}_t$ pins down the loadings that generated them. Then for the post-period:
+
+$$
+\widehat{Y}_{1t}(0) = \sum_{j} w_j Y_{jt}(0)
+= \delta_t + \boldsymbol{\theta}_t^{\top}\!\!\sum_j w_j \mathbf{Z}_j + \boldsymbol{\lambda}_t^{\top}\!\!\sum_j w_j \boldsymbol{\mu}_j + \sum_j w_j \varepsilon_{jt}
+\approx Y_{1t}(0),
+$$
+
+because each piece is matched: the time effect $\delta_t$ is common, $\sum_j w_j \mathbf{Z}_j = \mathbf{Z}_1$, and $\sum_j w_j \boldsymbol{\mu}_j \approx \boldsymbol{\mu}_1$.
+
+### The punchline
+
+This is exactly why **a good pre-fit is the whole ballgame**. The pre-period match is not a cosmetic nicety --- it is the *evidence* that the synthetic has captured the unobserved confounders' loadings, which is the only thing that lets the post-period synthetic stand in for the missing $Y_{1t}(0)$. A poor pre-fit means the loadings are *not* matched, the factor structure leaks into the post-period gap, and the estimate is biased by exactly the unobserved-confounding that synthetic control was supposed to absorb. No amount of post-period storytelling rescues a synthetic that could not reproduce the past.
+
+### Why inference must be permutation-based
+
+With one treated unit, there is no sampling distribution to lean on: we cannot appeal to a central limit theorem over treated units when there is exactly one. The placebo (permutation) approach instead asks a Fisherian sharp-null question --- "if the reform had *no* effect, how unusual is a post/pre RMSPE ratio this large among regions that did nothing?" --- and reads significance off the rank of the treated unit in that distribution. The minimum attainable $p$-value is $1/(J+1)$, where $J$ is the number of placebos: a hard, honest ceiling on resolution that no clever standard error can lift.
+
+</div>
+</details>
+
+
+## Reproduce the Core Computation
+
+Both implementations build the panel, fit the synthetic with proper packages, read the post-period gap, and run the placebo permutation test.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(tidysynth)
+
+# --- Long panel: 19 regions (1 treated + 18 donors), 2008-2022 ---
+# `region`, `year`, `control_rate` (HbA1c < 52 mmol/mol, %).
+# Älvdal (id "Alvdal") is treated from 2015.
+set.seed(2015)
+regions <- c("Alvdal", paste0("R", sprintf("%02d", 1:18)))
+
+panel <- expand_grid(region = regions, year = 2008:2022) |>
+  group_by(region) |>
+  mutate(
+    intercept = first(rnorm(1, 0, 4)),
+    slope     = first(rnorm(1, 0, 0.18)),
+    base      = 55 + intercept + (0.9 + slope) * (year - 2008),
+    # Reform ramp for the treated region only, switching on in 2015.
+    effect    = if_else(region == "Alvdal" & year >= 2015,
+                        5 * pmin(1, (year - 2015) / (2022 - 2015)), 0),
+    control_rate = base + effect + rnorm(n(), 0, 0.8)
+  ) |>
+  ungroup()
+
+# --- Fit synthetic control with tidysynth ---
+sc <- panel |>
+  synthetic_control(
+    outcome    = control_rate,
+    unit       = region,
+    time       = year,
+    i_unit     = "Alvdal",
+    i_time     = 2015,
+    generate_placebos = TRUE          # run the donor placebos for inference
+  ) |>
+  generate_predictor(
+    time_window = 2008:2014,          # pre-period predictors
+    mean_pre    = mean(control_rate, na.rm = TRUE)
+  ) |>
+  generate_weights(optimization_window = 2008:2014) |>
+  generate_control()
+
+# --- Read the results ---
+sc |> grab_synthetic_control()        # treated vs synthetic by year
+sc |> grab_unit_weights()             # donor weights (the recipe)
+
+# Average post-period gap (the headline effect)
+sc |> grab_synthetic_control() |>
+  filter(time_unit >= 2015) |>
+  summarise(avg_gap = mean(real_y - synth_y))
+
+# Permutation inference: post/pre RMSPE ratio + Fisher p-value
+sc |> grab_significance()             # mspe_ratio, rank, fishers_exact_pvalue
+plot_placebos(sc)                     # the placebo cloud
+plot_mspe_ratio(sc)                   # ratio bar chart
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+
+# --- Long panel: 19 regions (1 treated + 18 donors), 2008-2022 ---
+rng = np.random.default_rng(2015)
+regions = ["Alvdal"] + [f"R{j:02d}" for j in range(1, 19)]
+years = np.arange(2008, 2023)
+
+rows = []
+for r in regions:
+    intercept = rng.normal(0, 4.0)
+    slope = rng.normal(0, 0.18)
+    for y in years:
+        base = 55 + intercept + (0.9 + slope) * (y - 2008)
+        effect = 5 * min(1, (y - 2015) / (2022 - 2015)) if (r == "Alvdal" and y >= 2015) else 0
+        rows.append((r, y, base + effect + rng.normal(0, 0.8)))
+panel = pd.DataFrame(rows, columns=["region", "year", "control_rate"])
+
+# --- Fit synthetic control (pysyncon) ---
+# pip install pysyncon
+from pysyncon import Dataprep, Synth
+
+dataprep = Dataprep(
+    foo=panel,
+    predictors=["control_rate"],
+    predictors_op="mean",
+    dependent="control_rate",
+    unit_variable="region",
+    time_variable="year",
+    treatment_identifier="Alvdal",
+    controls_identifier=[r for r in regions if r != "Alvdal"],
+    time_predictors_prior=range(2008, 2015),   # pre-period fit window
+    time_optimize_ssr=range(2008, 2015),
+)
+synth = Synth()
+synth.fit(dataprep)
+
+print(synth.weights())                          # donor weights (the recipe)
+gaps = synth.gaps()                             # treated - synthetic, by year
+avg_post_gap = gaps.loc[2015:2022].mean()
+print(f"Average post-period gap: {avg_post_gap:+.2f} pp")
+
+# --- Placebo / permutation inference ---
+from pysyncon import PlaceboTest
+placebo = PlaceboTest()
+placebo.fit(dataprep=dataprep, scm=Synth())
+print(placebo.pvalue(scm=synth))                # post/pre RMSPE-ratio p-value
+placebo.gaps_plot()                             # the placebo cloud
+```
+
+:::
+
+Both routes return the same story: a small pre-period gap, a post-period gap that grows to roughly the +5 pp effect baked into the simulation, a sparse donor recipe, and a permutation $p$-value near the $1/19$ floor.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A reviewer objects: "Your synthetic Älvdal puts weight 0.45 on Region R01, but R01 sits in the same procurement consortium as Älvdal and bought the *same* digital diabetes dashboards in 2016." Explain precisely how this contaminates the estimate, and state which way the bias goes (toward zero or away from zero). What is the fix?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+If R01 partially adopted the same intervention, then R01's *own* post-period outcome contains a slice of the treatment effect. The synthetic counterfactual $\widehat{Y}_{1t}(0) = \sum_j w_j Y_{jt}$ is supposed to represent the *untreated* world, but with $w_{R01} = 0.45$ it now imports 45% of R01's partially-treated trajectory. Because R01 is also improving post-2015, the synthetic counterfactual rises *too high*, so the gap $Y_{1t} - \widehat{Y}_{1t}(0)$ is **too small** --- the bias is **toward zero** (attenuation). A genuinely effective reform is made to look weaker than it is.
+
+**The fix is at Step 1, the panel stage, not the fitting stage.** Drop R01 from the donor pool *before* optimizing and refit on the clean 17-region pool. You must never "fix" contamination by reweighting after seeing the gap --- that is choosing donors to get the answer you want. Donor curation is a pre-registered modeling decision defended by domain knowledge (here, the procurement records).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the dashboard, set the **True reform effect** to 0 and **noise** to a moderate value, then click "Draw new sample" several times. (a) What does the gap panel show before and after 2015? (b) Roughly what permutation $p$-values do you see, and why can the $p$-value never drop below a fixed floor here? (c) What is the smallest possible $p$ with this 18-donor pool?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With a true effect of 0, the gap fluctuates around zero in *both* the pre- and post-periods --- there is no systematic post-2015 divergence. Älvdal's red line sits *inside* the grey placebo cloud rather than rising above it.
+
+**(b)** The permutation $p$-value bounces around the middle and upper part of $[0,1]$ --- frequently 0.3, 0.5, 0.7 --- because Älvdal's post/pre RMSPE ratio is just one unremarkable draw among 19 exchangeable regions. The method correctly *fails to reject* a true null. The $p$-value cannot fall below a floor because it is a rank statistic: it is the *fraction* of the 19 units (treated + 18 placebos) with a ratio at least as large as the treated's.
+
+**(c)** The smallest attainable value is $1/(J+1) = 1/19 \approx 0.053$, achieved only when Älvdal has the single largest ratio of all 19 units. No standard error can beat this ceiling; resolution is capped by the number of placebos, which is why a larger, cleaner donor pool buys you sharper inference.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Toggle **Anticipation leak** on in the dashboard. (a) Describe what changes in the gap panel around 2014. (b) Why is a gap that opens *before* the official reform year a threat rather than evidence of a strong effect? (c) Propose a concrete redefinition of $T_0$ that restores a clean design, and state the cost of your fix.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With anticipation on, the gap lifts off zero a year early --- in **2014** --- instead of staying flat until 2015. The pre-period is no longer clean: the last pre-year now contains part of the effect.
+
+**(b)** Synthetic control's credibility rests on a flat pre-period gap: that flatness is the evidence the synthetic matches the treated unit's untreated factor loadings (see Math Details). If patients, nurses, or administrators *anticipated* the 2015 reform --- stocking up on coordination effort, recoding patients, front-loading reviews in 2014 --- then 2014's outcome is already partly "treated." Fitting the weights on a window that includes 2014 forces the synthetic to match a *contaminated* target, biasing the weights and muddying the very baseline that licenses the post-period read.
+
+**(c)** Redefine the treatment onset to the **first plausibly-affected year**: set $T_0 = 2014$ and use only 2008--2013 as the fitting window, treating 2014 onward as post. This restores a clean pre-period. The **cost** is twofold: you lose a year of fitting data (a shorter pre-period gives a noisier, less identified synthetic), and you must defend 2014 as the true onset on institutional grounds (e.g., the budget was approved and announced in late 2013), not merely because the gap happens to start there.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A health-economics colleague says: "Your estimate is +3 pp for Älvdal, so Sweden should roll this reform out to all 21 regions and expect +3 pp nationally." Give two distinct reasons this generalization is unwarranted, framing each in the language of estimands and assumptions from earlier modules. Then state one additional study you would run to support (or undercut) the national claim.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Reason 1 --- estimand mismatch (Module 1).** The synthetic control identifies the **ATT for one region**, $\tau_t = Y_{1t}(1) - Y_{1t}(0)$ for Älvdal. A national rollout asks for the **ATE** (or the ATU for the not-yet-treated regions). These coincide only under constant effects with no selection on gains. Älvdal *chose* to reform; if it did so because it had unusually motivated leadership, well-staffed *vårdcentraler*, or a patient population poised to respond, then its ATT exceeds what other regions would experience --- selection on gains, exactly the trap from the potential-outcomes page.
+
+**Reason 2 --- SUTVA / general-equilibrium failure (Module 1).** The estimate was obtained while *only Älvdal* reformed, drawing on a fixed national pool of *distriktssköterskor* and a stable supply of training. A simultaneous 21-region rollout violates SUTVA's no-interference condition at scale: nurse labor markets, training capacity, and procurement prices would shift under universal demand, so the per-region effect of *everyone* reforming need not equal the effect estimated when *one* region did. A partial-equilibrium estimate does not extrapolate to a general-equilibrium policy.
+
+**Additional study.** Stagger the rollout and use a **staggered-adoption / event-study DiD** (Module 6) across several reforming regions over time, or apply synthetic control to *each* new adopter and pool the ATTs. Either lets you see whether the effect replicates beyond Älvdal and whether early adopters differ systematically from late ones --- direct evidence on the selection-on-gains and interference concerns above.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Synthetic control is the design of choice when *one* unit is treated and no single control is obviously right: it builds a transparent, weighted, non-extrapolating counterfactual instead of forcing you to pick a comparison region.
+- The workflow is four disciplined steps --- frame the single-unit ATT, assemble and *curate* the panel (drop contaminated and outlier donors before fitting), fit weights on the pre-period only, then read the post-period gap.
+- A small pre-treatment RMSPE is the whole ballgame: it is the evidence that the synthetic captured the unobserved factor loadings, which is the only thing licensing the post-period gap as a causal estimate.
+- Inference is permutation-based: the placebo cloud and the post/pre RMSPE ratio give a Fisherian $p$-value whose floor is $1/(J+1)$ --- an honest, hard ceiling on resolution set by the donor count.
+- Report the effect *for this region*, not as a national ATE; generalizing requires confronting selection on gains and SUTVA, and is best supported by replication across adopters, not by one case study.
+:::
+
+## What Comes Next
+
+You have reached the end of the journey. We began at the [fundamental problem of causal inference](../01-fundamental-problem/potential-outcomes.qmd) --- two potential outcomes per unit, only ever one observed --- and we have just watched synthetic control reconstruct that missing potential outcome for a single Swedish region with nothing but a curated donor pool and a fitting window. Every design in between was a different answer to the same question: *what would have happened otherwise?* Randomization answers it by balancing potential outcomes in expectation; difference-in-differences by borrowing a parallel-trending control; matching and propensity scores by rebuilding overlap on observables; instrumental variables by isolating exogenous variation; regression discontinuity by exploiting a sharp cutoff; and synthetic control by *building* a bespoke counterfactual when only one unit was treated.
+
+The thread tying them together is the discipline you have practiced on every page: state the estimand precisely, make the identifying assumption explicit, *see* the counterfactual, try to *break* it, and only then *prove* the effect with inference honest about its limits. That habit --- not any single estimator --- is what you carry away.
+
+Now turn it loose on your own questions. Sweden's 21 *regioner* run natural experiments constantly: a vaccination push in one county, a fall-prevention program in a handful of *vårdcentraler*, a waiting-time guarantee phased in by region, a *distriktssköterska* staffing reform. Each is a chance to choose a design, defend an assumption, and estimate an effect that could change how care is delivered. You now have the full toolkit --- and, more importantly, the judgment to wield it.
+
+Thank you for working through *Causal Inference --- See It, Break It, Prove It*. Return to the [Home page](../index.qmd) to revisit any module, and go build something that proves what it claims.

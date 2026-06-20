@@ -1,0 +1,960 @@
+---
+title: "Correlated Random Effects: The Mundlak Device"
+subtitle: "Getting fixed-effects consistency inside a random-effects model"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write the Mundlak (1978) correlated-random-effects (CRE) model by letting the unit effect depend on the unit means, $\alpha_i = \gamma\,\bar{x}_i + a_i$, and adding $\bar{x}_i$ to a random-effects regression
+- Explain why the coefficient on the *time-varying* regressor in the augmented model equals the fixed-effects (within) estimator exactly, so CRE inherits FE's consistency
+- Decompose the naive random-effects slope into a *within* effect and a *between* effect, and read the Mundlak coefficient $\gamma$ as the between-confounding that plain RE mistakes for a causal effect
+- Use a test of $\gamma = 0$ as a regression-based, cluster-robust alternative to the Hausman test for FE versus RE
+- Keep RE's advantages — time-invariant regressors and efficiency — while neutralizing the bias from a correlated $\alpha_i$, in a Swedish primary-care panel
+:::
+
+## The Dilemma We Were Left With
+
+The [previous page](fe-vs-re.qmd) framed fixed versus random effects as a bias-efficiency tradeoff and left us with an uncomfortable either/or. Fixed effects (FE) is consistent whether or not the unit effect $\alpha_i$ is correlated with the regressors --- but it deletes $\alpha_i$ by demeaning, and with it any chance of estimating a *time-invariant* regressor (whether a region is coastal, whether it runs a teaching hospital). Random effects (RE) keeps that between-unit variation and is more efficient --- but the moment $\operatorname{Cov}(\alpha_i, x_{it}) \neq 0$, it is biased and inconsistent. And in observational panels that correlation is the rule: the same persistent traits of a Swedish *region* that drive its diabetes outcomes --- affluence, administrative culture, age structure --- usually also *drive how much it spends* on a coordination program.
+
+Mundlak (1978) showed that the choice is false. His insight is almost embarrassingly simple: instead of *assuming* $\operatorname{Cov}(\alpha_i, x_{it}) = 0$, or *differencing* $\alpha_i$ away, we **model the correlation directly** --- and then a random-effects regression reproduces the FE slope exactly, while still being able to carry time-invariant regressors. The device that does this is the addition of one set of variables: the unit time-averages $\bar{x}_i$.
+
+## Mundlak's Move: Let the Unit Effect Depend on the Means
+
+Start from the random-effects model from two pages back, for a single time-varying regressor $x_{it}$ (regional program spending, in units of 100 SEK per resident) and outcome $y_{it}$ (regional average HbA1c, in percentage points):
+
+$$
+y_{it} = \mu + \beta\, x_{it} + \alpha_i + e_{it}, \qquad e_{it} \sim (0, \sigma_e^2).
+$$
+
+Plain RE assumes $\alpha_i$ is orthogonal to $x_{it}$. Mundlak refuses that assumption and replaces it with a **specification** for how the unit effect relates to the regressor. The natural, minimal choice is a linear projection of $\alpha_i$ on the unit's *average* level of the regressor:
+
+::: {.glass-card .glass-card--definition}
+The **Mundlak device** models the unit effect as a linear function of the unit time-average of the time-varying regressors plus an orthogonal remainder:
+
+$$
+\alpha_i = \gamma\,\bar{x}_i + a_i, \qquad \bar{x}_i = \frac{1}{T}\sum_{t=1}^{T} x_{it}, \qquad \operatorname{Cov}(a_i, \bar{x}_i) = 0.
+$$
+
+**Read this as**: "Whatever persistent trait $\alpha_i$ a region carries, we allow the part of it that tracks the region's *average* program spending, $\gamma\,\bar{x}_i$, and we relegate the genuinely-random remainder to $a_i$, which is by construction uncorrelated with that average." The coefficient $\gamma$ is the strength of the correlation Mundlak refused to assume away --- it is no longer a banned quantity but a parameter we estimate.
+:::
+
+Now substitute this expression for $\alpha_i$ back into the model. The unit effect $\gamma\,\bar{x}_i + a_i$ takes the place of the old $\alpha_i$:
+
+$$
+y_{it} = \mu + \beta\, x_{it} + \gamma\,\bar{x}_i + a_i + e_{it}.
+$$
+
+This is the **correlated random effects (CRE)** regression. It is *just* the random-effects model with the unit means $\bar{x}_i$ added as extra regressors, and the new composite error $a_i + e_{it}$ now satisfies the RE orthogonality assumption *by construction*, because we explicitly pulled the offending $\gamma\,\bar{x}_i$ piece out of $\alpha_i$ and put it on the right-hand side. The remaining unit effect $a_i$ is, by the projection, uncorrelated with the regressors. RE is once again legitimate --- but we changed the model to make it so.
+
+::: {.glass-card .glass-card--insight}
+The Mundlak device turns a *violated assumption* into an *estimated parameter*. Plain RE is consistent only if $\operatorname{Cov}(\alpha_i, x_{it}) = 0$; CRE simply estimates that correlation as the coefficient $\gamma$ on $\bar{x}_i$ and *adjusts the slope for it*. You pay one degree of freedom per time-varying regressor (the added mean) and, in return, the estimator stops requiring an assumption that was almost never true.
+:::
+
+## The Equivalence: The Within Coefficient Reappears
+
+Here is the result that makes the device worth its weight: in the augmented regression, the coefficient $\hat\beta$ on the time-varying regressor $x_{it}$ is *numerically identical* to the fixed-effects (within) estimator $\hat\beta_{\text{FE}}$.
+
+To see why, it helps to write the model in an algebraically equivalent **within--between** form. Decompose each observation's regressor into its unit mean and its deviation from that mean, $x_{it} = \bar{x}_i + (x_{it} - \bar{x}_i)$, and rewrite:
+
+$$
+y_{it} = \mu + \beta\,(x_{it} - \bar{x}_i) + \underbrace{(\beta + \gamma)}_{\;\equiv\,\delta\;}\,\bar{x}_i + a_i + e_{it}.
+$$
+
+**Read this as**: "Split each region's spending into its long-run average $\bar{x}_i$ and its year-to-year *deviation* $x_{it} - \bar{x}_i$ from that average. The deviation carries the coefficient $\beta$ --- the *within* effect --- while the average carries a separate coefficient $\delta = \beta + \gamma$ --- the *between* effect." This is exactly equivalent to the previous equation; we have merely relabelled the mean's coefficient. The point is that the within and between channels are now allowed to have *different* slopes, which is precisely what plain RE forbids.
+
+::: {.glass-card .glass-card--definition}
+The two estimable parameters of the Mundlak regression have clean interpretations:
+
+- $\hat\beta$ --- the coefficient on the **demeaned** regressor $x_{it} - \bar{x}_i$ --- is the **within** effect, identified only from variation *inside* each region over time. It equals the FE estimator: $\hat\beta = \hat\beta_{\text{FE}}$.
+- $\hat\delta = \hat\beta + \hat\gamma$ --- the coefficient on the **mean** $\bar{x}_i$ --- is the **between** effect, identified from variation *across* regions. It equals the between estimator: $\hat\delta = \hat\beta_{\text{Between}}$.
+
+The gap between them is Mundlak's $\hat\gamma = \hat\delta - \hat\beta = \hat\beta_{\text{Between}} - \hat\beta_{\text{Within}}$ --- the **between-confounding** that plain RE blends into a single slope.
+:::
+
+Because the demeaned regressor $x_{it} - \bar{x}_i$ is, by construction, orthogonal to the unit mean $\bar{x}_i$ (each region's deviations sum to zero), the two columns are uncorrelated, and OLS estimates their coefficients *separately*. The slope on the deviation column is therefore computed from within-region variation alone --- which is precisely the calculation FE performs. The within coefficient reappears, untouched by the between-region confounding, which has been quarantined onto the $\bar{x}_i$ term. We prove this orthogonality and the resulting equivalence in the Math Details below.
+
+::: {.glass-card .glass-card--insight}
+Plain RE reports a single slope that is a *precision-weighted average* of the within effect $\beta$ and the between effect $\delta$. When the two differ --- i.e. when $\gamma \neq 0$ --- that blend is neither: it is biased toward the contaminated between effect. CRE *unbundles* the two, hands you the clean within effect as $\hat\beta$, and shows you the contamination explicitly as $\hat\gamma$. Nothing is hidden in a weighted average anymore.
+:::
+
+## See It: RE Drifts, the Mundlak Slope Lands on FE
+
+The interactive simulates a panel of Swedish regions, exactly as on the previous page: a single latent trait $z_i$ drives *both* a region's fixed effect $\alpha_i$ and its average program spending $\bar{x}_i$, so $\operatorname{Corr}(\alpha_i, x)$ is whatever the slider says. The true *within* effect of spending on HbA1c is fixed at $\beta = -0.30$ (more coordination spending lowers HbA1c). Watch three estimators of that slope as you drag the correlation:
+
+- the **plain RE** slope (slate) drifts away from the truth, contaminated by the between channel,
+- the **Mundlak within** slope --- the coefficient on the *demeaned* regressor --- stays locked on the true $\beta$, coinciding with **FE**,
+- the **Mundlak $\gamma$** (the coefficient on the group mean $\bar{x}_i$) grows away from zero, measuring exactly the between-confounding that pollutes plain RE.
+
+::: {.interactive-container}
+
+#### Plain RE bends; the Mundlak within-slope holds; $\gamma$ captures the confounding
+
+```{ojs}
+//| echo: false
+
+viewof remund_corr = Inputs.range([-0.4, 0.9], {
+  value: 0.55,
+  step: 0.05,
+  label: "Corr(αᵢ, spending): between-confounding"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof remund_betweenGap = Inputs.range([-0.6, 0.6], {
+  value: 0.0,
+  step: 0.05,
+  label: "Extra between-only effect (δ − β beyond confounding)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof remund_nRegions = Inputs.range([12, 40], {
+  value: 21,
+  step: 1,
+  label: "Number of regions (N)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof remund_T = Inputs.range([3, 12], {
+  value: 6,
+  step: 1,
+  label: "Years per region (T)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof remund_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Uppsala-academic palette tokens shared across this page's interactives. ──
+remund_pal = ({
+  within:  "#990000",   // focal: the within / FE / true within effect (Uppsala red)
+  re:      "#3d5a6c",   // plain random-effects slope (slate)
+  good:    "#2e6f40",   // on-target / "no confounding" success (forest green)
+  gamma:   "#9c7a33",   // Mundlak γ / between channel / annotation (ochre)
+  ink:     "#1c1c1a",   // reference lines & ink text
+  axis:    "#555555",   // axis / muted label text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed structural truth (held constant across the interactive). ──
+// Mirrors the previous page so the two interactives are directly comparable.
+// β is the WITHIN effect of +100 SEK/resident of program spending on HbA1c (%).
+remund_trueBeta   = -0.30   // true within effect (per 100 SEK/resident)
+remund_alphaSD    = 0.55    // SD of regional fixed effect α_i (HbA1c points)
+remund_xWithinSD  = 1.00    // within-region year-to-year spending variation
+remund_noiseSD    = 0.35    // idiosyncratic shock e_it (HbA1c points)
+remund_xBaseMean  = 5.0     // mean spending (100 SEK/resident)
+remund_yBaseMean  = 7.4     // anchor HbA1c level (%)
+remund_xBetweenSD = 1.4     // SD of region-average spending across regions
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Simulate one balanced panel. Reactive on slider, N, T, and the button. ──
+// Each region i has a latent standard-normal z_i driving BOTH its fixed effect
+// α_i AND its average spending x̄_i, with target correlation = remund_corr.
+//
+// The data-generating process gives spending a single STRUCTURAL slope β over
+// its FULL level (so the within AND the baseline-between effect are both β), then
+// layers two distortions onto the BETWEEN channel only:
+//   y_it = μ + β·(x_it − x̄global)                    [β acts within AND between]
+//            + α_i                                    [α confounding: corr with x̄_i]
+//            + γ_extra·(x̄_i − x̄global)               [optional pure between-only effect]
+//            + e_it
+// Decomposing β·(x_it − x̄global) = β·(x_it − x̄_i) + β·(x̄_i − x̄global) shows the
+// WITHIN slope is always exactly β, while the structural BETWEEN slope is
+// β (baseline) + the α-confounding (set by corr) + γ_extra (remund_betweenGap).
+// => at corr = 0 and betweenGap = 0, between = within = β and EVERY estimator
+//    agrees near β with γ ≈ 0; turning on either distortion opens γ = δ − β.
+remund_panel = {
+  remund_draw; // dependency: clicking the button forces a fresh draw
+  const N    = remund_nRegions;
+  const T    = remund_T;
+  const rho  = remund_corr;
+  const nrm  = d3.randomNormal.source(Math.random)(0, 1);
+  const rows = [];
+
+  for (let i = 0; i < N; i++) {
+    const z        = nrm();                                  // shared latent
+    const indep    = nrm();                                  // independent part of α
+    const alphaStd = rho * z + Math.sqrt(1 - rho * rho) * indep;
+    const alpha_i  = remund_alphaSD * alphaStd;              // fixed effect (centered 0)
+    const xbar_i   = remund_xBaseMean + remund_xBetweenSD * z;   // region avg spending
+
+    for (let t = 0; t < T; t++) {
+      const x = xbar_i + remund_xWithinSD * nrm();           // within variation
+      const e = remund_noiseSD * nrm();
+      // β acts on the FULL deviation from the GLOBAL mean, so the within slope is
+      // β AND the baseline between slope is β; α_i adds confounding that travels
+      // with x̄_i, and betweenGap adds an extra pure-between effect on top.
+      const y = remund_yBaseMean
+                + alpha_i
+                + remund_trueBeta * (x - remund_xBaseMean)
+                + remund_betweenGap * (xbar_i - remund_xBaseMean)
+                + e;
+      rows.push({ region: i, t, x, y });
+    }
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Per-region means: x̄_i, ȳ_i, and group size. ──
+remund_groupMeans = {
+  const g = d3.group(remund_panel, d => d.region);
+  const m = new Map();
+  for (const [r, rows] of g) {
+    m.set(r, { xbar: d3.mean(rows, d => d.x), ybar: d3.mean(rows, d => d.y), n: rows.length });
+  }
+  return m;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed-effects / within estimator: OLS slope on within-demeaned data. ──
+remund_FE = {
+  let Sxx = 0, Sxy = 0;
+  for (const d of remund_panel) {
+    const m = remund_groupMeans.get(d.region);
+    const xt = d.x - m.xbar, yt = d.y - m.ybar;
+    Sxx += xt * xt; Sxy += xt * yt;
+  }
+  return { beta: Sxy / Sxx };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Between estimator: OLS slope of region means ȳ_i on x̄_i. ──
+remund_Between = {
+  const gm = Array.from(remund_groupMeans.values());
+  const xb = d3.mean(gm, g => g.xbar);
+  const yb = d3.mean(gm, g => g.ybar);
+  let Sxx = 0, Sxy = 0;
+  for (const g of gm) { Sxx += (g.xbar - xb) ** 2; Sxy += (g.xbar - xb) * (g.ybar - yb); }
+  return { delta: Sxy / Sxx };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Plain random-effects (feasible GLS) slope — the BIASED single number. ──
+// Standard one-way error-components: σ_e² from the within residuals, σ_α² from
+// the between regression, θ = 1 − sqrt(σ_e²/(σ_e² + T σ_α²)), then OLS on the
+// quasi-demeaned data (with an intercept) gives β_RE.
+remund_RE = {
+  const N = remund_nRegions, T = remund_T;
+
+  // within residual variance σ_e²
+  let Sxx_w = 0, Sxy_w = 0;
+  for (const d of remund_panel) {
+    const m = remund_groupMeans.get(d.region);
+    Sxx_w += (d.x - m.xbar) ** 2;
+    Sxy_w += (d.x - m.xbar) * (d.y - m.ybar);
+  }
+  const bW = Sxy_w / Sxx_w;
+  let sseW = 0;
+  for (const d of remund_panel) {
+    const m = remund_groupMeans.get(d.region);
+    const r = (d.y - m.ybar) - bW * (d.x - m.xbar);
+    sseW += r * r;
+  }
+  const sigma_e2 = sseW / (N * T - N - 1);
+
+  // between regression residual variance → σ_α²
+  const gm = Array.from(remund_groupMeans.values());
+  const xb = d3.mean(gm, g => g.xbar), yb = d3.mean(gm, g => g.ybar);
+  let Sxx_b = 0, Sxy_b = 0;
+  for (const g of gm) { Sxx_b += (g.xbar - xb) ** 2; Sxy_b += (g.xbar - xb) * (g.ybar - yb); }
+  const bB = Sxy_b / Sxx_b;
+  let sseB = 0;
+  for (const g of gm) { const r = (g.ybar - yb) - bB * (g.xbar - xb); sseB += r * r; }
+  const sigma1_2 = (sseB / (N - 2)) * T;
+  const sigma_a2 = Math.max((sigma1_2 - sigma_e2) / T, 1e-6);
+
+  const theta = 1 - Math.sqrt(sigma_e2 / (sigma_e2 + T * sigma_a2));
+
+  // OLS on quasi-demeaned data with intercept (2×2 normal equations)
+  const c = 1 - theta;
+  let Scc = 0, Scx = 0, Scy = 0, Sxxs = 0, Sxys = 0;
+  for (const d of remund_panel) {
+    const m = remund_groupMeans.get(d.region);
+    const xs = d.x - theta * m.xbar;
+    const ys = d.y - theta * m.ybar;
+    Scc += c * c; Scx += c * xs; Scy += c * ys;
+    Sxxs += xs * xs; Sxys += xs * ys;
+  }
+  const det = Scc * Sxxs - Scx * Scx;
+  const beta = (Scc * Sxys - Scx * Scy) / det;
+  return { beta, theta };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Mundlak / CRE regression: OLS of y on [const, (x − x̄_i), x̄_i]. ──
+// Because (x − x̄_i) ⟂ x̄_i by construction, the within column's coefficient
+// equals the FE slope exactly, the mean column's coefficient is the between
+// slope δ, and γ = δ − β. We also return SEs (homoskedastic) for a t-test of γ.
+remund_Mundlak = {
+  const dat = remund_panel.map(d => {
+    const m = remund_groupMeans.get(d.region);
+    return { dev: d.x - m.xbar, xbar: m.xbar, y: d.y };
+  });
+  const n = dat.length;
+
+  // Means of the three regressors (const is 1; dev has mean ~0).
+  const mDev  = d3.mean(dat, d => d.dev);
+  const mBar  = d3.mean(dat, d => d.xbar);
+  const mY    = d3.mean(dat, d => d.y);
+
+  // Build the 3×3 X'X and 3×1 X'y for regressors [1, dev, xbar] using
+  // centered cross-products for the two slopes (intercept handled via means).
+  let Sdd = 0, Sdb = 0, Sbb = 0, Sdy = 0, Sby = 0;
+  for (const d of dat) {
+    const dd = d.dev - mDev, bb = d.xbar - mBar, yy = d.y - mY;
+    Sdd += dd * dd; Sdb += dd * bb; Sbb += bb * bb;
+    Sdy += dd * yy; Sby += bb * yy;
+  }
+  // Solve the 2×2 system for [β_dev, δ_bar].
+  const det = Sdd * Sbb - Sdb * Sdb;
+  const beta  = (Sbb * Sdy - Sdb * Sby) / det;   // within slope = FE
+  const delta = (Sdd * Sby - Sdb * Sdy) / det;   // between slope
+  const intercept = mY - beta * mDev - delta * mBar;
+  const gamma = delta - beta;                     // Mundlak coefficient
+
+  // Residual variance and SEs of the two slopes (homoskedastic OLS, 3 params).
+  let sse = 0;
+  for (const d of dat) {
+    const r = d.y - intercept - beta * d.dev - delta * d.xbar;
+    sse += r * r;
+  }
+  const s2 = sse / (n - 3);
+  const seBeta  = Math.sqrt(s2 * Sbb / det);
+  const seDelta = Math.sqrt(s2 * Sdd / det);
+  // Var(γ) = Var(δ) + Var(β) − 2Cov(δ,β); Cov(δ,β) = −s2·Sdb/det.
+  const covDB = -s2 * Sdb / det;
+  const varGamma = seDelta * seDelta + seBeta * seBeta - 2 * covDB;
+  const seGamma = Math.sqrt(Math.max(varGamma, 1e-12));
+  const tGamma  = gamma / seGamma;
+
+  return { beta, delta, gamma, intercept, seBeta, seGamma, tGamma };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Estimate readout cards (Inter font, Uppsala palette) ──
+html`
+<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:0.5rem; margin-bottom:0.85rem;
+            font-family:'Inter',system-ui,sans-serif; font-size:0.8rem;">
+  <div style="padding:0.5rem 0.7rem; border-radius:0.4rem; background:#f6f5f1; border:1px solid #e6e3db;">
+    <div style="font-weight:700; color:#555555; font-size:0.58rem; text-transform:uppercase; letter-spacing:0.04em;">True within β</div>
+    <div style="font-size:1.1rem; font-weight:700; color:#1c1c1a;">${remund_trueBeta.toFixed(3)}</div>
+  </div>
+  <div style="padding:0.5rem 0.7rem; border-radius:0.4rem; background:rgba(61,90,108,0.07); border:1px solid rgba(61,90,108,0.25);">
+    <div style="font-weight:700; color:#555555; font-size:0.58rem; text-transform:uppercase; letter-spacing:0.04em;">Plain RE β̂</div>
+    <div style="font-size:1.1rem; font-weight:700; color:#3d5a6c;">${remund_RE.beta.toFixed(3)}</div>
+  </div>
+  <div style="padding:0.5rem 0.7rem; border-radius:0.4rem; background:rgba(153,0,0,0.05); border:1px solid rgba(153,0,0,0.22);">
+    <div style="font-weight:700; color:#555555; font-size:0.58rem; text-transform:uppercase; letter-spacing:0.04em;">Mundlak within β̂ (= FE)</div>
+    <div style="font-size:1.1rem; font-weight:700; color:#990000;">${remund_Mundlak.beta.toFixed(3)}</div>
+  </div>
+  <div style="padding:0.5rem 0.7rem; border-radius:0.4rem; background:rgba(156,122,51,0.08); border:1px solid rgba(156,122,51,0.3);">
+    <div style="font-weight:700; color:#555555; font-size:0.58rem; text-transform:uppercase; letter-spacing:0.04em;">Mundlak γ̂ (on x̄ᵢ)</div>
+    <div style="font-size:1.1rem; font-weight:700; color:#9c7a33;">${remund_Mundlak.gamma >= 0 ? "+" : ""}${remund_Mundlak.gamma.toFixed(3)}</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── A "number line" of the slope estimates, so the reader SEES plain RE drift
+//    off the true β while the Mundlak within-slope (and FE) stay anchored. ──
+remund_slopeMarks = [
+  { label: "True within β", value: remund_trueBeta,        color: remund_pal.ink,    kind: "true" },
+  { label: "FE / within",   value: remund_FE.beta,          color: remund_pal.within, kind: "fe" },
+  { label: "Mundlak within",value: remund_Mundlak.beta,     color: remund_pal.within, kind: "mund" },
+  { label: "Plain RE",      value: remund_RE.beta,          color: remund_pal.re,     kind: "re" },
+  { label: "Between δ",     value: remund_Between.delta,     color: remund_pal.gamma,  kind: "btw" }
+]
+```
+
+```{ojs}
+//| echo: false
+
+// ── Slope number-line: the headline visual. ──
+// All slope estimates plotted on a shared β axis. The dashed ochre line is the
+// true within β. FE and the Mundlak within-slope sit on top of each other, on
+// target; plain RE drifts toward the between estimate δ as confounding grows.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 235,
+  marginLeft: 130,
+  marginRight: 24,
+  marginTop: 30,
+  marginBottom: 45,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", background: "transparent" },
+  x: {
+    label: "Estimated slope on spending (effect of +100 SEK/resident on HbA1c) →",
+    grid: true
+  },
+  y: {
+    domain: ["Between δ", "Plain RE", "Mundlak within", "FE / within", "True within β"],
+    label: null
+  },
+  marks: [
+    // true within β reference (ochre dashed)
+    Plot.ruleX([remund_trueBeta], { stroke: remund_pal.gamma, strokeWidth: 2, strokeDasharray: "5,4" }),
+    // a faint guide line from each label to its estimate
+    Plot.ruleY(remund_slopeMarks, { y: "label", stroke: remund_pal.hair, strokeWidth: 1 }),
+    // the estimate dots
+    Plot.dot(remund_slopeMarks, {
+      x: "value", y: "label", fill: "color", r: 7, stroke: "white", strokeWidth: 1.5
+    }),
+    // numeric value next to each dot
+    Plot.text(remund_slopeMarks, {
+      x: "value", y: "label",
+      text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(3)}`,
+      dy: -13, fill: d => d.color, fontSize: 11, fontWeight: 700, textAnchor: "middle"
+    }),
+    // label the true-β rule at the top frame
+    Plot.text([{ x: remund_trueBeta }], {
+      x: "x", frameAnchor: "top",
+      text: () => "true within β",
+      fill: remund_pal.gamma, fontSize: 10.5, fontWeight: 700, dy: -6, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Within vs between scatter: the geometry behind the equivalence. ──
+// Left geometry shown as one panel: grey light dots are raw (x_it, y_it); the
+// red line is the WITHIN fit (pooled within-region deviations, shifted to the
+// grand mean for display); the ochre line through the region means is the
+// BETWEEN fit. Plain RE is a weighted blend of these two slopes.
+{
+  const xg = d3.mean(remund_panel, d => d.x);
+  const yg = d3.mean(remund_panel, d => d.y);
+  const gm = Array.from(remund_groupMeans.values());
+
+  // within line: slope = FE.beta through (xg, yg)
+  const xlo = d3.min(remund_panel, d => d.x), xhi = d3.max(remund_panel, d => d.x);
+  const withinLine = [
+    { x: xlo, y: yg + remund_FE.beta * (xlo - xg) },
+    { x: xhi, y: yg + remund_FE.beta * (xhi - xg) }
+  ];
+  const betweenLine = [
+    { x: xlo, y: yg + remund_Between.delta * (xlo - xg) },
+    { x: xhi, y: yg + remund_Between.delta * (xhi - xg) }
+  ];
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 320,
+    marginLeft: 55,
+    marginRight: 18,
+    marginBottom: 45,
+    marginTop: 26,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Region spending xᵢₜ (100 SEK/resident) →", grid: true },
+    y: { label: "↑ HbA1c yᵢₜ (%)", grid: true },
+    marks: [
+      // raw observations, faint
+      Plot.dot(remund_panel, { x: "x", y: "y", r: 2.4, fill: remund_pal.muted, fillOpacity: 0.32 }),
+      // region means
+      Plot.dot(gm, { x: "xbar", y: "ybar", r: 4.5, fill: remund_pal.gamma, stroke: "white", strokeWidth: 1 }),
+      // between line (through region means)
+      Plot.line(betweenLine, { x: "x", y: "y", stroke: remund_pal.gamma, strokeWidth: 2.5, strokeDasharray: "6,4" }),
+      // within line (FE slope)
+      Plot.line(withinLine, { x: "x", y: "y", stroke: remund_pal.within, strokeWidth: 2.5 }),
+      // labels
+      Plot.text([withinLine[1]], {
+        x: "x", y: "y", text: () => "within (FE) slope",
+        dx: -6, dy: -8, textAnchor: "end", fill: remund_pal.within, fontSize: 11, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([betweenLine[1]], {
+        x: "x", y: "y", text: () => "between (δ) slope",
+        dx: -6, dy: 12, textAnchor: "end", fill: remund_pal.gamma, fontSize: 11, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── γ-test gauge: a regression-based Hausman. ──
+// |t| on γ against the two-sided 5% normal critical value 1.96. Rejecting γ = 0
+// is equivalent to the Hausman rejection: it says the within and between slopes
+// differ, so plain RE is inconsistent and you should use the within (CRE/FE) slope.
+{
+  const t = remund_Mundlak.tGamma;
+  const at = Math.abs(t);
+  const crit = 1.96;
+  const reject = at > crit;
+  const barMax = Math.max(crit * 2.2, at * 1.15);
+  const accent = reject ? remund_pal.within : remund_pal.good;
+
+  const gauge = Plot.plot({
+    width: Math.min(680, width),
+    height: 110,
+    marginLeft: 55,
+    marginRight: 16,
+    marginTop: 26,
+    marginBottom: 45,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px" },
+    x: { label: "|t| on Mundlak γ  →", domain: [0, barMax], grid: true },
+    y: { axis: null, domain: ["t"] },
+    marks: [
+      Plot.barX([{ y: "t", x: at }], {
+        x: "x", y: "y", fill: accent, fillOpacity: 0.85, insetTop: 14, insetBottom: 14
+      }),
+      Plot.ruleX([crit], { stroke: remund_pal.ink, strokeWidth: 2, strokeDasharray: "4,3" }),
+      Plot.text([{ x: crit }], {
+        x: "x", y: () => "t", frameAnchor: "top",
+        text: () => "5% crit = 1.96",
+        fill: remund_pal.ink, fontSize: 10.5, fontWeight: 700, dy: -4, textAnchor: "middle"
+      }),
+      Plot.text([{ x: at }], {
+        x: "x", y: () => "t",
+        text: () => `|t| = ${at.toFixed(2)}`,
+        fill: "#ffffff", fontSize: 12, fontWeight: 700,
+        textAnchor: at > barMax * 0.2 ? "end" : "start",
+        dx: at > barMax * 0.2 ? -6 : 6
+      })
+    ]
+  });
+
+  let verdict, vColor, vBg;
+  if (reject) {
+    verdict = `Reject γ = 0 (|t| = ${at.toFixed(2)} > 1.96). The between slope differs from the within slope, so plain RE is inconsistent. Report the Mundlak within-slope β̂ = ${remund_Mundlak.beta.toFixed(3)} (it equals FE). γ̂ = ${remund_Mundlak.gamma >= 0 ? "+" : ""}${remund_Mundlak.gamma.toFixed(3)} is the between-confounding plain RE folded into its slope.`;
+    vColor = remund_pal.within; vBg = "rgba(153,0,0,0.06)";
+  } else {
+    verdict = `Fail to reject γ = 0 (|t| = ${at.toFixed(2)} ≤ 1.96). No evidence the within and between slopes differ — plain RE is defensible here and buys you efficiency (and time-invariant regressors). The Mundlak within-slope and plain RE agree within noise.`;
+    vColor = remund_pal.good; vBg = "rgba(46,111,64,0.07)";
+  }
+
+  return html`<div>
+    ${gauge}
+    <div style="margin-top:0.5rem; padding:0.6rem 0.9rem; border-radius:0.4rem;
+                border-left:3px solid ${vColor}; background:${vBg};
+                font-family:'Inter',system-ui,sans-serif; font-size:0.86rem; line-height:1.5; color:#1c1c1a;">
+      ${verdict}
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read This Visualization
+
+Work through the steps in order; each isolates one piece of the Mundlak logic.
+
+**Step 1: Start with no confounding.** Drag **Corr(αᵢ, spending)** to $0$ and leave the **extra between-only effect** at $0$. On the slope number-line, all five markers --- True $\beta$, FE, Mundlak within, Plain RE, and Between $\delta$ --- stack up on the dashed ochre **true within β** line near $-0.30$. With nothing to confound it, every estimator agrees, and the $\gamma$-gauge sits below $1.96$ in green: plain RE is fine here, and it is the more efficient choice.
+
+**Step 2: Turn on the confounding.** Slide the correlation toward $+0.9$. Watch the markers separate. The **Plain RE** dot (slate) drifts *up*, toward zero --- it is being pulled toward the contaminated **Between δ** dot (ochre), which now sits far from the truth. But the **FE** and **Mundlak within** dots (both red) stay glued to the dashed true-β line. This is the whole page in one motion: plain RE bends, the Mundlak within-slope holds.
+
+**Step 3: Read $\gamma$ as the contamination.** Look at the fourth readout card, **Mundlak γ̂**. As you increase the correlation, $\hat\gamma$ grows away from zero --- it is exactly the gap $\hat\delta - \hat\beta$ between the ochre Between dot and the red within dot on the number-line. That gap is the between-confounding that plain RE silently averages into its single slope. CRE does not average it in; it reports it separately as $\gamma$.
+
+**Step 4: Watch the regression-based Hausman fire.** As $\gamma$ grows, the **|t| on Mundlak γ** bar climbs and crosses its dashed $1.96$ threshold; the bar turns red and the verdict flips to "Reject γ = 0 --- report the Mundlak within-slope." This $t$-test of a single coefficient is doing the same job as the Hausman test from the previous page --- detecting that within and between disagree --- but as an ordinary regression output, with no risk of a negative variance.
+
+**Step 5: See the geometry.** In the scatter, the faint grey dots are raw region-year observations; the ochre dots are the 21 region averages $(\bar{x}_i, \bar{y}_i)$. The dashed ochre line is the **between** fit through those averages; the solid red line is the **within** (FE) fit. When confounding is on, the two lines have visibly different slopes --- and plain RE is a weighted blend of them. Mundlak unbundles the blend: the red within-slope is your $\hat\beta$, the ochre between-slope is your $\hat\delta$, and their difference is $\hat\gamma$.
+
+**Step 6: Separate confounding from a real between-effect.** Set the correlation back to $0$ and push the **extra between-only effect** slider. Now the Between $\delta$ dot moves away from the within dot for a *legitimate* reason --- spending genuinely has a different long-run cross-regional association than its year-to-year effect --- and $\gamma$ becomes non-zero even with no $\alpha$-confounding. The lesson: $\gamma \neq 0$ flags that within $\neq$ between *for whatever reason*; the Mundlak within-slope $\hat\beta$ is the clean causal within effect regardless, which is exactly why it equals FE.
+
+## The $\gamma$-Test: A Regression-Based Hausman
+
+The coefficient $\gamma$ is not just a nuisance we estimate to clean up the slope --- it is itself a **specification test**. Recall from the [previous page](fe-vs-re.qmd) that the Hausman test asks whether $\hat\beta_{\text{FE}}$ and $\hat\beta_{\text{RE}}$ differ by more than chance, and that a rejection means plain RE's orthogonality assumption is violated. Mundlak's $\gamma$ delivers exactly that test as an ordinary regression $t$-test (or, with several regressors, an $F$/Wald test).
+
+::: {.glass-card .glass-card--definition}
+The **Mundlak test for FE versus RE** is a test of
+
+$$
+H_0: \gamma = 0 \quad\text{(equivalently } \delta = \beta\text{, within} = \text{between).}
+$$
+
+Reading $H_0$ aloud: "the unit mean $\bar{x}_i$ adds nothing to the regression once $x_{it}$ is in it" --- i.e. the part of the unit effect that tracks average spending has zero coefficient. If $\gamma = 0$, then $\alpha_i = a_i$ is orthogonal to the regressor and plain RE is consistent and efficient. If we **reject** $\gamma = 0$, the within and between effects differ, plain RE is inconsistent, and we should use the within (CRE/FE) slope.
+:::
+
+This is asymptotically equivalent to the classic Hausman test, but it has three practical advantages that make it the modern default (Wooldridge):
+
+1. **It can never produce a negative variance.** The "uninformative Hausman" pathology --- where $\widehat{\operatorname{Var}}(\hat\beta_{\text{FE}}) - \widehat{\operatorname{Var}}(\hat\beta_{\text{RE}})$ came out negative in small samples --- simply cannot occur, because $\gamma$ is a coefficient in a single regression with an ordinary, always-positive standard error.
+
+2. **It is trivially cluster-robust.** To handle heteroskedasticity or within-region serial correlation, just compute cluster-robust standard errors for $\gamma$ in the augmented regression. The classic Hausman formula, which presumes spherical errors, has no such easy fix.
+
+3. **It generalizes to many regressors at once.** With $k$ time-varying regressors, you add all $k$ means and run a joint Wald test that all their coefficients are zero --- a clean $\chi^2_k$, computed by your regression package.
+
+::: {.glass-card .glass-card--warning}
+**A rejection is a diagnosis, not a cure-all.** Rejecting $\gamma = 0$ tells you within $\neq$ between, which --- *within the assumed model* --- means plain RE is inconsistent and you should trust the within slope. It does **not** certify that the within slope is the true causal effect: FE/CRE still require strict exogeneity of the idiosyncratic error $e_{it}$ (no feedback, no time-varying confounding). And a *failure* to reject is weak evidence in short panels with little within variation, exactly as for the classic Hausman test. The $\gamma$-test fixes the *mechanics* of Hausman, not the *epistemics* of causal inference.
+:::
+
+## Keeping Time-Invariant Regressors: The Real Payoff
+
+So far the Mundlak device looks like a more convenient route to the FE slope --- which it is. But its decisive advantage over plain FE is that it can *also* estimate the effect of a **time-invariant** regressor, which FE cannot touch at all (the within transformation annihilates anything constant over time, as Exercise 3 on the previous page showed).
+
+Suppose alongside time-varying spending $x_{it}$ we want the effect of a fixed regional indicator $w_i$ --- say, whether the region hosts a *universitetssjukhus* (university teaching hospital), which plausibly affects baseline diabetes care quality. The CRE model carries it directly:
+
+$$
+y_{it} = \mu + \beta\,(x_{it} - \bar{x}_i) + \delta\,\bar{x}_i + \lambda\, w_i + a_i + e_{it}.
+$$
+
+**Read this as**: "We estimate the *within* effect of year-to-year spending changes ($\beta$), the *between* association of average spending ($\delta$), and the effect of the time-invariant teaching-hospital indicator ($\lambda$) --- all in one regression." FE could never give us $\lambda$; plain RE could, but only under the orthogonality assumption that we have just seen is usually false for the time-varying regressors. CRE threads the needle: it gets the FE-consistent within slope $\beta$ *and* an estimate of the time-invariant $\lambda$, having explicitly absorbed the correlation between $\alpha_i$ and $x_{it}$ into the $\bar{x}_i$ term.
+
+The honest caveat: $\hat\lambda$ is consistent only if $w_i$ is uncorrelated with the *remaining* unit effect $a_i$ --- the part not explained by $\bar{x}_i$. Mundlak buys you protection against confounding that travels with the time-varying regressors' means, not against arbitrary correlation between $w_i$ and unobservables. It is a genuine improvement on naive RE, not a free lunch. This is exactly the bridge the previous page promised: a way to estimate a coastal or teaching-hospital effect without pretending $\alpha_i$ is orthogonal to your policy variable.
+
+<details>
+<summary>Math Details: Why the Mundlak Within-Coefficient Equals the Within Estimator</summary>
+<div class="details-content">
+
+### Setup: the within--between orthogonal decomposition
+
+For a balanced panel ($T$ periods per unit), define the unit mean $\bar{x}_i = \frac1T \sum_t x_{it}$ and the within deviation $\ddot{x}_{it} = x_{it} - \bar{x}_i$. The key algebraic fact is that, *within each unit*, the deviations sum to zero:
+
+$$
+\sum_{t=1}^{T} \ddot{x}_{it} = \sum_{t=1}^{T} (x_{it} - \bar{x}_i) = T\bar{x}_i - T\bar{x}_i = 0.
+$$
+
+Consequently the deviation regressor and the mean regressor are **orthogonal** in the pooled sample. Their sample cross-product is
+
+$$
+\sum_{i}\sum_{t} \ddot{x}_{it}\,\bar{x}_i
+= \sum_i \bar{x}_i \underbrace{\sum_t \ddot{x}_{it}}_{=\,0}
+= 0.
+$$
+
+The deviation column is also orthogonal to the constant, since $\sum_i\sum_t \ddot{x}_{it} = \sum_i \big(\sum_t \ddot x_{it}\big) = 0$.
+
+### The Mundlak regression in orthogonalized form
+
+Write the CRE regression with the regressor split into its two orthogonal parts:
+
+$$
+y_{it} = \mu + \beta\,\ddot{x}_{it} + \delta\,\bar{x}_i + (a_i + e_{it}).
+$$
+
+Because the three regressors $\{1,\ \ddot{x}_{it},\ \bar{x}_i\}$ are mutually orthogonal in the columns that matter --- specifically $\ddot{x}_{it} \perp \bar{x}_i$ and $\ddot{x}_{it} \perp 1$ --- the OLS normal equations **block-diagonalize**. By the Frisch--Waugh--Lovell theorem (Module 4), the OLS estimate of $\beta$ is obtained by regressing $y_{it}$ on $\ddot{x}_{it}$ *alone*, after partialling out the other regressors --- but partialling out $\bar{x}_i$ and the constant from $\ddot{x}_{it}$ changes nothing, because $\ddot{x}_{it}$ is already orthogonal to both. Hence
+
+$$
+\hat\beta_{\text{Mundlak}}
+= \frac{\sum_i \sum_t \ddot{x}_{it}\, y_{it}}{\sum_i \sum_t \ddot{x}_{it}^{\,2}}
+= \frac{\sum_i \sum_t \ddot{x}_{it}\, \ddot{y}_{it}}{\sum_i \sum_t \ddot{x}_{it}^{\,2}}.
+$$
+
+The last step uses $\sum_t \ddot{x}_{it}\, y_{it} = \sum_t \ddot{x}_{it}\,(\ddot{y}_{it} + \bar{y}_i) = \sum_t \ddot{x}_{it}\,\ddot{y}_{it}$, since $\bar{y}_i \sum_t \ddot{x}_{it} = 0$. But this final expression --- the covariance of the demeaned $x$ with the demeaned $y$, over the sum of squared demeaned $x$ --- is *exactly* the fixed-effects (within) estimator:
+
+$$
+\boxed{\;\hat\beta_{\text{Mundlak}} = \hat\beta_{\text{FE}} = \frac{\sum_i \sum_t (x_{it}-\bar{x}_i)(y_{it}-\bar{y}_i)}{\sum_i \sum_t (x_{it}-\bar{x}_i)^2}.\;}
+$$
+
+The within coefficient in the Mundlak regression *is* the within estimator, numerically, in any sample --- not just asymptotically. This is why adding the group means to an RE model "buys back" FE consistency.
+
+### The between coefficient and γ
+
+A parallel argument (regress on $\bar{x}_i$ after partialling out $\ddot x_{it}$, which again does nothing) gives the coefficient on the mean as the **between** estimator,
+
+$$
+\hat\delta = \hat\beta_{\text{Between}} = \frac{\sum_i (\bar{x}_i - \bar{\bar x})(\bar{y}_i - \bar{\bar y})}{\sum_i (\bar{x}_i - \bar{\bar x})^2},
+$$
+
+(up to the small-sample handling of the constant), so that Mundlak's
+
+$$
+\hat\gamma = \hat\delta - \hat\beta = \hat\beta_{\text{Between}} - \hat\beta_{\text{Within}}.
+$$
+
+### Connecting back to plain RE
+
+Plain RE estimates a single slope that is the GLS-optimal convex combination of within and between:
+
+$$
+\hat\beta_{\text{RE}} = w\,\hat\beta_{\text{Within}} + (1 - w)\,\hat\beta_{\text{Between}}, \qquad w \in (0,1),
+$$
+
+with weight $w$ increasing in $\theta$ (longer panels, larger $\sigma_\alpha^2$, push $w \to 1$ and RE toward FE). When $\beta_{\text{Within}} = \beta_{\text{Between}}$ (i.e. $\gamma = 0$) the blend equals both, and plain RE is consistent. When they differ, the blend is a biased compromise --- and Mundlak's contribution is to *refuse the compromise*, reporting the within and between pieces separately. Testing $\gamma = 0$ is therefore exactly testing whether the RE blend is innocuous, which is exactly the Hausman question.
+
+</div>
+</details>
+
+## Code: The Mundlak / Hybrid Specification
+
+The code builds the same correlated panel as the previous page (so the unit effect $\alpha_i$ is deliberately tied to spending) and fits three things: plain RE (biased), the Mundlak/CRE regression (within-slope equals FE), and the $\gamma$-test. The within coefficient should land near the true $\beta = -0.30$, plain RE should be pulled toward zero, and the coefficient on the group mean (Mundlak's $\gamma$) should be significantly nonzero.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(plm)        # panel estimators
+library(dplyr)
+library(lmtest)     # coeftest for robust SEs
+library(sandwich)
+
+set.seed(2026)
+
+# --- Simulate 21 regioner over 6 years, with Cov(alpha_i, spending) > 0 ---
+N <- 21; T <- 6
+true_beta <- -0.30                       # true WITHIN effect (+100 SEK/cap on HbA1c)
+
+regions <- tibble(
+  region = 1:N,
+  z      = rnorm(N)                       # latent driving BOTH alpha and spending
+) |>
+  mutate(
+    alpha     = 0.55 * z,                 # fixed effect correlated with z
+    spend_bar = 5.0 + 1.4 * z             # region-average spending (100 SEK/cap)
+  )
+
+panel <- expand.grid(region = 1:N, year = 1:T) |>
+  left_join(regions, by = "region") |>
+  group_by(region) |>
+  mutate(
+    spend = spend_bar + rnorm(n(), 0, 1.0),                  # within variation
+    hba1c = 7.4 + alpha + true_beta * (spend - spend_bar) + rnorm(n(), 0, 0.35)
+  ) |>
+  ungroup() |>
+  # --- Mundlak ingredients: the unit mean and the within deviation ---
+  group_by(region) |>
+  mutate(spend_mean = mean(spend),
+         spend_dev  = spend - spend_mean) |>
+  ungroup()
+
+pdat <- pdata.frame(panel, index = c("region", "year"))
+
+# --- Plain random effects (biased when alpha correlates with spend) ---
+re_plain <- plm(hba1c ~ spend, data = pdat, model = "random")
+
+# --- Mundlak / CRE: random effects + the GROUP MEAN of the regressor ---
+# Coefficient on `spend` is the within (FE) slope; on `spend_mean` is gamma.
+re_mundlak <- plm(hba1c ~ spend + spend_mean, data = pdat, model = "random")
+
+# --- The within (FE) benchmark for comparison ---
+fe <- plm(hba1c ~ spend, data = pdat, model = "within")
+
+cat("True within beta :", true_beta, "\n")
+cat("Plain RE   beta  :", round(coef(re_plain)["spend"], 3), "  (biased toward 0)\n")
+cat("FE / within beta :", round(coef(fe)["spend"], 3), "\n")
+cat("Mundlak within   :", round(coef(re_mundlak)["spend"], 3),
+    " (== FE)\n")
+cat("Mundlak gamma    :", round(coef(re_mundlak)["spend_mean"], 3),
+    " (between - within confounding)\n")
+
+# --- gamma-test = regression-based Hausman, with CLUSTER-ROBUST SEs ---
+# Reject gamma = 0  <=>  prefer the within (CRE/FE) slope over plain RE.
+coeftest(re_mundlak, vcov = vcovHC(re_mundlak, type = "HC1", cluster = "group"))
+
+# Equivalently, the hybrid form with deviation + mean makes the split explicit:
+# coef on spend_dev is the within slope, coef on spend_mean is the between slope.
+re_hybrid <- plm(hba1c ~ spend_dev + spend_mean, data = pdat, model = "random")
+print(coef(re_hybrid))
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from linearmodels.panel import RandomEffects, PanelOLS
+
+rng = np.random.default_rng(2026)
+
+# --- Simulate 21 regioner over 6 years, with Cov(alpha_i, spending) > 0 ---
+N, T, true_beta = 21, 6, -0.30            # true WITHIN effect
+z         = rng.normal(0, 1, N)           # latent driving alpha AND spending
+alpha     = 0.55 * z                      # fixed effect correlated with z
+spend_bar = 5.0 + 1.4 * z                 # region-average spending (100 SEK/cap)
+
+rows = []
+for i in range(N):
+    for t in range(1, T + 1):
+        spend = spend_bar[i] + rng.normal(0, 1.0)                  # within variation
+        hba1c = 7.4 + alpha[i] + true_beta * (spend - spend_bar[i]) \
+                + rng.normal(0, 0.35)
+        rows.append({"region": i + 1, "year": t, "spend": spend, "hba1c": hba1c})
+panel = pd.DataFrame(rows)
+
+# --- Mundlak ingredients: unit mean of the regressor and the within deviation ---
+panel["spend_mean"] = panel.groupby("region")["spend"].transform("mean")
+panel["spend_dev"]  = panel["spend"] - panel["spend_mean"]
+panel = panel.set_index(["region", "year"])
+
+# --- Plain random effects (biased when alpha correlates with spend) ---
+re_plain = RandomEffects.from_formula("hba1c ~ 1 + spend", panel).fit()
+
+# --- Mundlak / CRE: random effects + the GROUP MEAN of the regressor ---
+re_mundlak = RandomEffects.from_formula(
+    "hba1c ~ 1 + spend + spend_mean", panel).fit()
+
+# --- FE benchmark ---
+fe = PanelOLS.from_formula("hba1c ~ spend + EntityEffects", panel).fit()
+
+print(f"True within beta : {true_beta:.3f}")
+print(f"Plain RE   beta  : {re_plain.params['spend']:.3f}  (biased toward 0)")
+print(f"FE / within beta : {fe.params['spend']:.3f}")
+print(f"Mundlak within   : {re_mundlak.params['spend']:.3f}  (== FE)")
+print(f"Mundlak gamma    : {re_mundlak.params['spend_mean']:.3f}"
+      "  (between - within confounding)")
+
+# --- gamma-test = regression-based Hausman (single coefficient) ---
+g  = re_mundlak.params["spend_mean"]
+se = re_mundlak.std_errors["spend_mean"]
+t  = g / se
+print(f"\ngamma t-stat     : {t:.2f}   (|t| > 1.96 => reject, prefer FE/CRE)")
+
+# Cluster-robust version: refit with clustered covariance for an honest gamma SE.
+re_clust = RandomEffects.from_formula(
+    "hba1c ~ 1 + spend + spend_mean", panel).fit(
+    cov_type="clustered", cluster_entity=True)
+print("Cluster-robust gamma:", round(re_clust.params["spend_mean"], 3),
+      " t =", round(re_clust.tstats["spend_mean"], 2))
+```
+
+:::
+
+Both routes tell the same story: plain RE is pulled toward zero by the correlated $\alpha_i$, the coefficient on `spend` in the Mundlak regression reproduces the FE estimate near $-0.30$, and the coefficient on `spend_mean` --- Mundlak's $\gamma$ --- is large and significant, flagging that the orthogonality assumption fails. The $\gamma$-test is the regression-based Hausman, computed without ever risking a negative variance.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A study of 21 regioner over several years estimates the effect of district-nurse staffing (a time-varying regressor) on diabetes-patient HbA1c. The Mundlak/CRE regression returns: coefficient on the *demeaned* staffing variable $\hat\beta = -0.42$, and coefficient on the *region-mean* staffing variable $\hat\delta = -0.10$.
+
+(a) What is Mundlak's $\hat\gamma$, and what does its sign tell you? (b) What would plain fixed effects have reported for the staffing effect? (c) Roughly where would the plain RE estimate fall, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Mundlak's coefficient is the gap between the between and within slopes: $\hat\gamma = \hat\delta - \hat\beta = -0.10 - (-0.42) = +0.32$. A nonzero $\hat\gamma$ says the between (cross-regional) association of staffing with HbA1c differs from the within (over-time) effect --- so the unit effect $\alpha_i$ is correlated with staffing and plain RE is inconsistent. The *positive* sign means the between slope is *less negative* (closer to zero) than the within slope: regions that staff more heavily on average do not enjoy proportionally lower HbA1c cross-sectionally, presumably because high-staffing regions also have sicker or older populations ($\alpha_i$) that push HbA1c up. That confounding is exactly the $+0.32$ captured by $\gamma$.
+
+**(b)** Fixed effects would report the *within* slope, which equals the Mundlak demeaned coefficient exactly: $\hat\beta_{\text{FE}} = -0.42$. This is the equivalence proved in the Math Details.
+
+**(c)** Plain RE reports a precision-weighted blend $w\hat\beta_{\text{Within}} + (1-w)\hat\beta_{\text{Between}}$ with $w \in (0,1)$, so it lands *between* $-0.42$ and $-0.10$ --- biased toward zero relative to the true within effect. The exact value depends on $\theta$ (longer panels and larger $\sigma_\alpha^2$ push it closer to $-0.42$), but it will understate the staffing benefit, which is precisely the bias the Mundlak device removes.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Show that adding the unit mean $\bar{x}_i$ to a random-effects regression cannot change the *within* coefficient on $x_{it}$, by appealing to the orthogonality of the within deviation and the unit mean. (You may quote the Frisch--Waugh--Lovell theorem.)
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Decompose the regressor as $x_{it} = \bar{x}_i + \ddot{x}_{it}$ where $\ddot{x}_{it} = x_{it} - \bar{x}_i$ is the within deviation. Within each unit the deviations sum to zero, $\sum_t \ddot{x}_{it} = 0$, so in the pooled sample the deviation column is orthogonal to the unit-mean column:
+
+$$
+\sum_i \sum_t \ddot{x}_{it}\,\bar{x}_i = \sum_i \bar{x}_i \sum_t \ddot{x}_{it} = \sum_i \bar{x}_i \cdot 0 = 0,
+$$
+
+and likewise orthogonal to the constant. By Frisch--Waugh--Lovell, the OLS coefficient on $\ddot{x}_{it}$ equals the coefficient from regressing $y$ on $\ddot{x}_{it}$ *after partialling out the other regressors* (the constant and $\bar{x}_i$). But partialling out variables that are already orthogonal to $\ddot{x}_{it}$ leaves $\ddot{x}_{it}$ unchanged --- the residual of $\ddot{x}_{it}$ on $\{1, \bar{x}_i\}$ is just $\ddot{x}_{it}$ itself. Therefore the coefficient on the within deviation is computed from within variation alone:
+
+$$
+\hat\beta = \frac{\sum_i\sum_t \ddot{x}_{it}\,\ddot{y}_{it}}{\sum_i\sum_t \ddot{x}_{it}^{\,2}} = \hat\beta_{\text{FE}},
+$$
+
+regardless of whether $\bar{x}_i$ is in the model. Adding $\bar{x}_i$ only soaks up the between variation onto its own coefficient $\delta$; it cannot touch the within slope. (Writing the regressor as raw $x_{it}$ instead of $\ddot{x}_{it}$ gives the *same* within coefficient on $x_{it}$, because the raw and deviation specifications are related by an invertible relabelling of the mean's coefficient, $\delta_{\text{raw}} = \beta + \gamma$.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A health economist fits a Mundlak/CRE model and reports the coefficient on the group mean $\bar{x}_i$ as $\hat\gamma = -0.05$ with a cluster-robust standard error of $0.21$. She concludes: "$\gamma$ is not significant, so I will report the plain random-effects estimate, which is more efficient and lets me include the time-invariant teaching-hospital indicator." (a) Is the test conclusion correct as stated? (b) Is her overall reasoning sound? State one caveat she should add.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The test statistic is $t = \hat\gamma / \operatorname{SE} = -0.05 / 0.21 \approx -0.24$, with $|t| = 0.24 < 1.96$. So she correctly *fails to reject* $\gamma = 0$ at the 5% level: there is no statistical evidence that the within and between slopes differ, hence no evidence against plain RE's orthogonality assumption for the time-varying regressor. The arithmetic and the rejection decision are correct.
+
+**(b)** Her reasoning is *defensible but overstated*. Failing to reject is **weak evidence**, not proof, that orthogonality holds --- especially in a short panel or one with little within variation, where the $\gamma$-test has low power and would miss a real violation (a Type II error, exactly as for the classic Hausman test). A cleaner, lower-risk move is to simply *keep the Mundlak means in the model*: CRE nests plain RE, costs only one degree of freedom per regressor, and protects her against confounding she could not detect. The caveat she must add: even with $\gamma = 0$, her estimate of the time-invariant teaching-hospital coefficient $\lambda$ is consistent *only* if that indicator is uncorrelated with the **remaining** unit effect $a_i$ --- Mundlak guards against confounding that travels with the time-varying regressors' means, not against arbitrary correlation between $w_i$ and unobservables.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the **extra between-only effect** slider to a clearly nonzero value (say $+0.4$) while keeping **Corr(αᵢ, spending)** at $0$. (a) What happens to the Between $\delta$ dot, the Mundlak within dot, the Plain RE dot, and $\hat\gamma$? (b) Explain why the $\gamma$-test fires even though there is *no* $\alpha$-confounding, and what this teaches about what the Mundlak test actually detects.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With the extra between-only effect at $+0.4$ and the correlation at $0$: the **Between δ** dot moves away from the true within $\beta$ (the cross-regional association of average spending with HbA1c now genuinely differs from the year-to-year effect), the **Mundlak within** dot stays locked on $-0.30$ (it always equals FE), the **Plain RE** dot drifts off the truth toward $\delta$ (its blend is again contaminated), and $\hat\gamma = \hat\delta - \hat\beta$ becomes clearly positive --- around $+0.4$, the size of the between-only effect you added.
+
+**(b)** The $\gamma$-test fires because it detects **within ≠ between**, *for whatever reason* they differ --- not specifically $\operatorname{Cov}(\alpha_i, x) \neq 0$. Here the difference comes from a real structural between-effect rather than from $\alpha$-confounding, yet plain RE is *still* inconsistent for the within effect $\beta$, because it averages a within and a between slope that genuinely differ. The lesson: the Mundlak test answers exactly the question "does plain RE's single-slope restriction hold?", and a rejection always means "use the within slope," because the within slope $\hat\beta$ is the clean over-time effect in every case --- which is why it coincides with FE regardless of *why* the between channel differs.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The Mundlak device models the correlation plain RE assumes away: write $\alpha_i = \gamma\,\bar{x}_i + a_i$ and simply add the unit means $\bar{x}_i$ as regressors, restoring RE's orthogonality by construction.
+- In the augmented regression the coefficient on the time-varying (demeaned) regressor equals the fixed-effects within estimator *exactly* --- not just asymptotically --- because the within deviation is orthogonal to the unit mean.
+- Plain RE reports a precision-weighted blend of the within and between slopes; CRE unbundles them, handing you the clean within effect as $\hat\beta$ and the between-confounding as $\hat\gamma = \hat\delta - \hat\beta$.
+- Testing $\gamma = 0$ is a regression-based, cluster-robust alternative to the Hausman test that can never return a negative variance and generalizes to many regressors via a joint Wald test.
+- CRE keeps RE's advantages --- efficiency and the ability to estimate time-invariant regressors --- while neutralizing the bias from a correlated $\alpha_i$, making it the practical bridge between fixed and random effects.
+:::
+
+## What Comes Next
+
+The Mundlak device dissolved the FE-versus-RE dilemma by letting the unit effect depend on the data we observe --- a single, linear relaxation of the random-effects orthogonality assumption. But it also opened a larger door. Once we are willing to *model* the unit effect rather than difference it away or assume it inert, we can ask far richer questions: What if effects vary randomly not just in their level but in their *slopes*? What if units are nested --- patients within *vårdcentraler* within regioner --- with variance components at every layer? What if we want to *partially pool* information across units, borrowing strength from the whole panel to stabilize each unit's estimate? These are the questions of **multilevel and hierarchical modeling**, where the random-effects idea is generalized into a full framework for structured, nested data. The next module opens with [Variance Components and the ICC](../15-multilevel/variance-components-icc.qmd), which asks how much of the variation lives at each level --- and the Mundlak insight, that you can let the random effect correlate with covariates rather than pretend it does not, travels with us as the contextual-effects specification at the heart of applied multilevel modeling.

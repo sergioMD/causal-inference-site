@@ -1,0 +1,676 @@
+---
+title: "Trees, Forests, and Boosting"
+subtitle: "Flexible nonlinear prediction from data"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain how a regression tree carves a feature space into rectangles by *recursive binary splitting*, and how each split is chosen to maximize impurity reduction
+- Diagnose the bias–variance tension that makes a single deep tree unstable and prone to overfitting, and describe how *pruning* tames it
+- Contrast *bagging* and the *random forest*, and explain why averaging many decorrelated trees reduces variance without inflating bias
+- Read an *out-of-bag* error curve and a *variable-importance* ranking, and describe how *gradient boosting* builds accuracy by sequentially fitting residuals
+- Position trees and ensembles on the flexibility–interpretability frontier and explain why they are the prediction workhorses feeding modern causal machine learning
+:::
+
+## The Question Behind Every Prediction
+
+A *vårdcentral* (primary care center) in Region Västerbotten wants to flag Type 2 diabetes patients at risk of poor glycemic control over the coming year --- an HbA1c above the clinical alarm threshold of 70 mmol/mol. The clinic has two cheap, routinely recorded features for each patient: **age** (years) and a **deprivation index** for the patient's neighborhood (a standardized socioeconomic score, higher = more deprived). The *verksamhetschef* (clinic manager) wants a rule that, given those two numbers, predicts next year's risk.
+
+A linear model --- `risk = β₀ + β₁·age + β₂·deprivation` --- imposes a strong shape: risk must move in straight, additive steps. But the truth is rarely that tidy. Perhaps deprivation barely matters for the young, yet dominates for the old; perhaps risk jumps sharply past age 65 but is flat before. These are *interactions* and *nonlinearities*, and writing them down by hand is guesswork.
+
+Tree-based methods refuse to guess. They let the data carve the feature space into regions and assign each region its own prediction. A single tree is transparent but brittle. Average hundreds of *decorrelated* trees --- a **random forest** --- and the brittleness washes out. Grow trees *sequentially*, each correcting the last --- **gradient boosting** --- and you get some of the most accurate off-the-shelf predictors in existence. This page builds all three, and shows why they are the prediction engines underneath the [double machine learning](double-ml.qmd) of the next page.
+
+## A Tree Is a Partition
+
+Start with the simplest object: a single **regression tree** (the CART algorithm of Breiman, Friedman, Olshen, and Stone, 1984). It asks a sequence of yes/no questions about the features and, at the end, reads off a prediction.
+
+::: {.glass-card .glass-card--definition}
+A **regression tree** partitions the feature space into $M$ disjoint rectangles $R_1, \dots, R_M$ and predicts a single constant in each:
+
+$$
+\hat f(x) \;=\; \sum_{m=1}^{M} c_m \,\mathbf{1}\!\left(x \in R_m\right),
+\qquad
+c_m \;=\; \frac{1}{|R_m|}\sum_{i:\,x_i \in R_m} y_i .
+$$
+
+**Read this as**: "the prediction at a feature vector $x$ is the sum, over all $M$ regions, of the region's constant $c_m$ times an indicator that turns on only when $x$ falls in region $R_m$." Because the regions are disjoint, exactly one indicator fires, so $\hat f(x)$ returns that region's constant. The optimal constant $c_m$ is just the **average of the training outcomes** that landed in $R_m$ --- the value minimizing squared error within the rectangle.
+:::
+
+The prediction surface is therefore *piecewise constant*: flat plateaus separated by sharp cliffs at the split boundaries. This is the tree's blessing and its curse. The blessing is that it can approximate any interaction or nonlinearity by adding more cliffs. The curse is that, with enough cliffs, it can memorize noise.
+
+### How a split is chosen
+
+The regions are not handed to us; the tree *grows* them. At each step it considers every feature $j$ and every possible threshold $s$, splitting the current region into $\{x : x_j \le s\}$ and $\{x : x_j > s\}$. Among all $(j, s)$ pairs it picks the one that reduces a measure of node *impurity* the most.
+
+For **regression**, impurity is the within-node sum of squared deviations from the node mean; a split is scored by how much total squared error it removes. For **classification**, the standard impurity is the **Gini index**.
+
+::: {.glass-card .glass-card--definition}
+For a node containing classes with proportions $p_1, \dots, p_K$, the **Gini impurity** is
+
+$$
+G \;=\; \sum_{k=1}^{K} p_k\,(1 - p_k) \;=\; 1 - \sum_{k=1}^{K} p_k^{2}.
+$$
+
+**Read this as**: "Gini equals the sum over classes of each class proportion times one-minus-that-proportion." It is the probability that two items drawn at random from the node have *different* labels. A pure node (all one class, some $p_k = 1$) gives $G = 0$; a node split 50/50 between two classes gives $G = 0.5$ --- maximal disorder. A split is chosen to minimize the *weighted* child Gini, i.e. to maximize impurity reduction.
+:::
+
+This is a **greedy** procedure: each split is locally optimal, chosen without regard to splits further down. It is fast and, crucially, the reason trees are unstable --- a small change in the data can flip an early split and rearrange the entire tree below it.
+
+::: {.glass-card .glass-card--insight}
+**One algorithm, two impurities, same idea.** Regression trees minimize within-node *variance* (squared error); classification trees minimize within-node *Gini* (or entropy). In both cases a split earns its keep by making the children *purer* than the parent --- more homogeneous in outcome. Everything else about CART is bookkeeping around that single criterion.
+:::
+
+## See It: Growing a Tree by Depth
+
+The interactive below is the heart of the page. It shows the two-feature risk-prediction problem from Region Västerbotten: **age** on the horizontal axis, **deprivation index** on the vertical. Each dot is a patient, colored by next-year HbA1c (slate = well-controlled, red = high-risk). A single slider grows a regression tree to a chosen **depth**, and the background shading shows the resulting piecewise-constant prediction surface --- the partition into rectangles, each shaded by its predicted risk. Toggle the forest to replace the blocky single tree with the smoother average of many trees.
+
+::: {.interactive-container}
+
+#### A regression tree carving the age × deprivation risk surface
+
+```{ojs}
+//| echo: false
+html`<p style="
+    font-family: Inter, sans-serif; font-size: 0.85rem;
+    color: ${mltree_pal.axis}; background: ${mltree_pal.fill};
+    border-left: 3px solid ${mltree_pal.focal};
+    padding: 0.5rem 0.75rem; border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave depth at 1 to see a single split, then drag
+  <em>Tree depth</em> up and watch the surface fracture into more rectangles.
+  Flip <em>Show random forest</em> to replace the blocky tree with a smooth
+  average. The guided tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof mltree_depth = Inputs.range([0, 8], {
+  value: 2, step: 1,
+  label: "Tree depth (number of question levels)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mltree_showForest = Inputs.toggle({
+  label: "Show random forest (average of many trees)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mltree_nTrees = Inputs.range([5, 200], {
+  value: 60, step: 5,
+  label: "Forest size (trees averaged, when forest is on)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+mltree_pal = ({
+  focal:  "#990000",   // focal / high-risk series (Uppsala red)
+  slate:  "#3d5a6c",   // comparison / low-risk series
+  good:   "#2e6f40",   // on-target / good (green)
+  ochre:  "#9c7a33",   // highlight / true-value (ochre)
+  ink:    "#1c1c1a",   // neutral ink, reference lines
+  axis:   "#79766e",   // axis text
+  hair:   "#e6e3db",   // gridlines / hairlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1",   // subtle tile fill
+  bad:    "#b3000b"    // alarm / overfit warning
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Deterministic synthetic cohort: 220 patients on [age 35..85] × [deprivation
+// -2..2]. True risk surface has a nonlinearity in age and an interaction:
+// deprivation bites harder for older patients. Outcome y is HbA1c (mmol/mol).
+// A fixed LCG seed keeps the picture identical across renders (no live RNG).
+mltree_data = {
+  const rng = (() => { let s = 20240617; return () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff; })();
+  const n = 220, pts = [];
+  for (let i = 0; i < n; i++) {
+    const age = 35 + 50 * rng();
+    const dep = -2 + 4 * rng();
+    // True mean HbA1c: baseline + age effect (steepens past 60) + interaction.
+    const ageEff = age < 60 ? 0.10 * (age - 35) : 2.5 + 0.55 * (age - 60);
+    const interact = 3.0 * dep * Math.max(0, (age - 50) / 35);
+    const mean = 46 + ageEff + 2.2 * dep + interact;
+    const noise = (rng() - 0.5) * 14;          // idiosyncratic spread
+    pts.push({ age, dep, y: Math.max(38, mean + noise) });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Minimal CART regression-tree learner (squared-error splits) on the two
+// features age & dep. Returns a nested node object. maxDepth caps growth;
+// minNode prevents splitting tiny leaves. Pure JS, deterministic.
+mltree_buildTree = function (rows, maxDepth, minNode = 5) {
+  const mean = a => a.reduce((s, r) => s + r.y, 0) / a.length;
+  const sse = a => { const m = mean(a); return a.reduce((s, r) => s + (r.y - m) ** 2, 0); };
+  function grow(rows, depth) {
+    const node = { value: rows.length ? mean(rows) : 0, n: rows.length };
+    if (depth >= maxDepth || rows.length < 2 * minNode) return node;
+    let best = null;
+    for (const feat of ["age", "dep"]) {
+      const vals = Array.from(new Set(rows.map(r => r[feat]))).sort((a, b) => a - b);
+      for (let k = 1; k < vals.length; k++) {
+        const thr = (vals[k - 1] + vals[k]) / 2;
+        const L = rows.filter(r => r[feat] <= thr), R = rows.filter(r => r[feat] > thr);
+        if (L.length < minNode || R.length < minNode) continue;
+        const score = sse(L) + sse(R);                 // weighted child impurity
+        if (!best || score < best.score) best = { feat, thr, L, R, score };
+      }
+    }
+    if (!best) return node;
+    node.feat = best.feat; node.thr = best.thr;
+    node.left = grow(best.L, depth + 1);
+    node.right = grow(best.R, depth + 1);
+    return node;
+  }
+  return grow(rows, 0);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mltree_predict = function (node, x) {
+  while (node.feat !== undefined)
+    node = (x[node.feat] <= node.thr) ? node.left : node.right;
+  return node.value;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The single tree at the chosen depth.
+mltree_single = mltree_buildTree(mltree_data, mltree_depth)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A bagged forest: each tree fits a bootstrap resample, drawn with a fixed
+// per-tree seed so the picture is reproducible. Trees grow to a fixed
+// moderate depth (6) — bagging controls variance, so individual trees can be
+// deep. We predict by averaging across the ensemble.
+mltree_forest = {
+  const B = mltree_nTrees, N = mltree_data.length, trees = [];
+  for (let b = 0; b < B; b++) {
+    let s = 7919 * (b + 1) + 13;
+    const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const sample = [];
+    for (let i = 0; i < N; i++) sample.push(mltree_data[Math.floor(rnd() * N)]);
+    trees.push(mltree_buildTree(sample, 6));
+  }
+  return trees;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+mltree_forestPredict = (x) =>
+  mltree_forest.reduce((s, t) => s + mltree_predict(t, x), 0) / mltree_forest.length
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Build the prediction-surface raster on a grid over the feature space.
+mltree_grid = {
+  const cols = 46, rows = 30, cells = [];
+  const ageLo = 35, ageHi = 85, depLo = -2, depHi = 2;
+  for (let ci = 0; ci < cols; ci++) {
+    for (let ri = 0; ri < rows; ri++) {
+      const age = ageLo + (ageHi - ageLo) * (ci + 0.5) / cols;
+      const dep = depLo + (depHi - depLo) * (ri + 0.5) / rows;
+      const pred = mltree_showForest
+        ? mltree_forestPredict({ age, dep })
+        : mltree_predict(mltree_single, { age, dep });
+      cells.push({ age, dep, pred });
+    }
+  }
+  return cells;
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 420,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginRight: 16,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: mltree_pal.axis
+  },
+  x: { label: "Age (years) →", domain: [35, 85] },
+  y: { label: "↑ Deprivation index (higher = more deprived)", domain: [-2, 2] },
+  color: {
+    type: "linear",
+    domain: [46, 78],
+    range: [mltree_pal.slate, mltree_pal.focal],
+    label: "Predicted HbA1c (mmol/mol)",
+    legend: true
+  },
+  marks: [
+    // Piecewise-constant prediction surface as a raster of shaded cells.
+    Plot.rect(mltree_grid, {
+      x1: d => d.age - 0.55, x2: d => d.age + 0.55,
+      y1: d => d.dep - 0.072, y2: d => d.dep + 0.072,
+      fill: "pred", fillOpacity: 0.85
+    }),
+    // The patients, outlined so they read on top of the surface.
+    Plot.dot(mltree_data, {
+      x: "age", y: "dep", fill: "y", r: 3.4,
+      stroke: "white", strokeWidth: 0.6
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout: leaves, train fit, and an honest overfit flag.
+{
+  const countLeaves = n => n.feat === undefined ? 1 : countLeaves(n.left) + countLeaves(n.right);
+  const trainRMSE = (predFn) => {
+    const e = mltree_data.map(d => (d.y - predFn(d)) ** 2);
+    return Math.sqrt(e.reduce((s, v) => s + v, 0) / e.length);
+  };
+  const predFn = mltree_showForest
+    ? (d) => mltree_forestPredict(d)
+    : (d) => mltree_predict(mltree_single, d);
+  const leaves = mltree_showForest ? null : countLeaves(mltree_single);
+  const rmse = trainRMSE(predFn);
+  // Heuristic overfit cue for the single tree: many leaves relative to n.
+  const overfit = !mltree_showForest && mltree_depth >= 6;
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${mltree_pal.fill}; border:1px solid ${mltree_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${mltree_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Model", mltree_showForest ? `Forest (${mltree_nTrees})` : `Tree depth ${mltree_depth}`, mltree_pal.ink)}
+    ${tile("Leaves / rectangles", mltree_showForest ? "smoothed" : leaves, mltree_pal.ink)}
+    ${tile("Train RMSE (mmol/mol)", rmse.toFixed(2), mltree_pal.slate)}
+    ${tile("Status", mltree_showForest ? "averaged — low variance" : (overfit ? "deep — overfit risk" : "interpretable"),
+        mltree_showForest ? mltree_pal.good : (overfit ? mltree_pal.bad : mltree_pal.good))}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Partition Surface
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the dots.** Every dot is a patient at their (age, deprivation) coordinates, colored by next-year HbA1c --- slate for well-controlled, red for high-risk. Notice the pattern in the raw data: risk rises toward the right (older) and the top (more deprived), and the two reinforce each other in the top-right corner. That corner interaction is exactly what a linear model would miss.
+
+**Step 2: Make the first cut.** Set **Tree depth** to 1. The background splits into two slabs along the single best threshold the tree found --- almost always an age cut, because age explains the most variance first. Each slab is shaded by its constant prediction (the mean HbA1c of the patients inside). This is the greedy first split in action.
+
+**Step 3: Grow the tree.** Drag depth to 2, then 3. Each new level subdivides existing rectangles, and the surface starts to bend around the high-risk corner. "Leaves / rectangles" climbs and "Train RMSE" falls --- the tree is fitting the data ever more closely. Around depth 2–4 the partition captures the real age × deprivation interaction without chasing noise.
+
+**Step 4: Watch it overfit.** Push depth to 7 or 8. The rectangles shatter into tiny slivers, each holding only a handful of patients (the learner refuses leaves smaller than five, so the slivers stop just short of memorizing a lone point). "Train RMSE" keeps dropping and "Status" flips to a red *overfit risk* warning. The model now chases idiosyncratic noise: a brand-new patient dropped into one of these slivers would inherit a prediction read off five near-neighbors of pure chance. Low training error, poor generalization --- the classic high-variance failure of a deep tree.
+
+**Step 5: Let the forest smooth it.** Flip **Show random forest** on. The blocky cliffs dissolve into a smooth gradient that tracks the true corner interaction. Raise **Forest size** and the surface settles further. Each tree is individually overfit (depth 6 on a bootstrap sample), yet *averaging* them cancels the idiosyncratic noise and keeps the signal. "Status" turns green: same flexibility, far lower variance. That is the entire promise of the random forest, made visible.
+
+## Interpretability vs. Instability, and Pruning
+
+A shallow tree is the most interpretable model in machine learning: you can read it aloud as a flowchart. "Is the patient older than 64? If yes, is the deprivation index above 0.8? If yes, predict high risk." A clinician trusts that. But the same greedy growth that makes trees readable makes a *deep* tree two things at once: **unstable** (resample the data and the splits jump around) and **overfit** (it carves the training noise into the partition).
+
+The standard remedy is **pruning**: grow a large tree, then snip back the branches that buy too little accuracy for their complexity. This is **cost-complexity pruning**, which trades training fit against a penalty on the number of leaves.
+
+::: {.glass-card .glass-card--definition}
+**Cost-complexity pruning** chooses the subtree $T \subseteq T_{\max}$ minimizing
+
+$$
+C_\alpha(T) \;=\; \underbrace{\sum_{m=1}^{|T|} \sum_{i:\,x_i \in R_m} (y_i - c_m)^2}_{\text{training error}}
+\;+\; \alpha\,|T|,
+$$
+
+where $|T|$ is the number of leaves and $\alpha \ge 0$ is a complexity penalty.
+
+**Read this as**: "total within-leaf squared error, plus a tax $\alpha$ on each leaf the tree keeps." When $\alpha = 0$ the full tree wins; as $\alpha$ grows, leaves that do not earn their tax are pruned away, until at large $\alpha$ only the root stump remains. The right $\alpha$ is chosen by cross-validation --- the same logic as the penalty in [LASSO and ridge](regularization.qmd).
+:::
+
+::: {.glass-card .glass-card--warning}
+**A single tree is a high-variance estimator.** Even pruned, one tree can swing dramatically if you perturb the training sample, because an early split decided greedily reshuffles everything beneath it. Never report a lone deep tree as a stable predictor. The fix is not a *better* tree --- it is *many* trees, averaged. That is the next section.
+:::
+
+## Bagging and the Random Forest
+
+If one tree is high-variance and roughly unbiased, the cure is to average many. **Bagging** (bootstrap aggregating, Breiman 1996) fits one tree to each of $B$ bootstrap resamples of the data and averages their predictions. Averaging unbiased estimators leaves the bias unchanged but shrinks the variance --- provided the trees are not too correlated.
+
+That proviso is the whole game, and the **random forest** (Breiman 2001) sharpens it with one extra trick: at each split, the tree may only consider a *random subset* of the features (typically $\sqrt{p}$ of the $p$ predictors). This **decorrelates** the trees. If one feature were dominant, every bagged tree would split on it first and the trees would move together --- limiting the variance reduction. Forcing variety at each split breaks that lockstep.
+
+::: {.glass-card .glass-card--insight}
+**Why averaging works: the variance-reduction identity.** For $B$ identically distributed trees each with variance $\sigma^2$ and pairwise correlation $\rho$, the variance of their average is
+
+$$
+\operatorname{Var}\!\left(\bar f\right) \;=\; \rho\,\sigma^2 \;+\; \frac{1-\rho}{B}\,\sigma^2 .
+$$
+
+**Read this as**: "the variance of the averaged forest equals the correlation times the single-tree variance, plus a term that vanishes as the forest grows." As $B \to \infty$ the second term dies, leaving the floor $\rho\sigma^2$. So *more trees never hurt*, but the payoff is capped by $\rho$ --- which is exactly why the random forest works to make $\rho$ small. The derivation is in the Math Details.
+:::
+
+Two features come almost for free with a forest.
+
+::: {.glass-card .glass-card--definition}
+- **Out-of-bag (OOB) error.** Each bootstrap sample omits about $1/e \approx 37\%$ of the data. For every observation, average the predictions of only the trees that did *not* see it; comparing those to the truth gives an OOB error estimate --- a built-in, cross-validation-free measure of generalization.
+
+- **Variable importance.** Rank a feature by how much total impurity its splits removed across all trees (Gini/SSE importance), or by how much OOB accuracy degrades when its values are randomly permuted (permutation importance). This is how a forest tells you *which* features drive the prediction.
+:::
+
+::: {.glass-card .glass-card--assumption}
+**What a forest assumes (and does not).** A random forest needs only that the training data be representative of the prediction target --- it makes *no* linearity, additivity, or distributional assumptions. But it is built for **prediction**, not causal interpretation: high variable importance means a feature *predicts* the outcome, not that it *causes* it. Treating importance as a causal effect is the most common abuse of forests in applied work --- and the reason the [next page](double-ml.qmd) is needed.
+:::
+
+## Gradient Boosting
+
+Bagging builds trees *in parallel* and averages them. **Boosting** builds them *in sequence*, each new tree fitting the errors the ensemble has made so far. Gradient boosting (Friedman 2001) formalizes this: it performs gradient descent in function space, adding one small tree at a time to step down the loss.
+
+::: {.glass-card .glass-card--definition}
+**Gradient boosting** builds an additive model $\hat f = \sum_{b} \nu\, h_b$ stagewise. Starting from a constant $\hat f_0$, at each stage $b$ it fits a small tree $h_b$ to the negative gradient of the loss (for squared error, the current **residuals** $r_i = y_i - \hat f_{b-1}(x_i)$) and updates
+
+$$
+\hat f_b(x) \;=\; \hat f_{b-1}(x) \;+\; \nu\, h_b(x),
+\qquad 0 < \nu \le 1 .
+$$
+
+**Read this as**: "the new model equals the old model plus a shrunken step $\nu$ times a tree fitted to what the old model got wrong." The **learning rate** $\nu$ (often 0.01–0.1) keeps each correction small, so the ensemble approaches the signal cautiously rather than lurching onto noise.
+:::
+
+Boosting trades the forest's robustness for raw accuracy. Because it fits residuals greedily, it can overfit if pushed too far --- so it is regularized on three fronts: a **small learning rate** $\nu$, **shallow base trees** (depth 1–6, "stumps" capture only low-order interactions), and **early stopping** when a validation score stops improving. Subsampling rows and columns per tree (as in XGBoost and LightGBM) adds a bagging-like decorrelation on top. Tuned well, gradient-boosted trees are the dominant method on tabular data --- and, like the forest, a workhorse nuisance-function estimator for causal ML.
+
+::: {.glass-card .glass-card--insight}
+**Forest vs. boosting in one line.** A forest reduces **variance** by *averaging* many deep, decorrelated trees that each overfit a little. Boosting reduces **bias** by *adding* many shallow trees that each underfit a lot, slowly composing them into a sharp predictor. Both turn the weak, unstable single tree into a state-of-the-art predictor --- from opposite directions.
+:::
+
+<details>
+<summary>Math Details: The CART split criterion and the bagging variance-reduction argument</summary>
+<div class="details-content">
+
+### 1. The optimal leaf value and the squared-error split criterion
+
+Within a region $R_m$, the tree predicts a single constant $c_m$. For squared-error loss the best constant minimizes
+
+$$
+\sum_{i:\,x_i \in R_m} (y_i - c_m)^2 .
+$$
+
+Differentiating with respect to $c_m$ and setting the derivative to zero,
+
+$$
+-2\sum_{i:\,x_i \in R_m}(y_i - c_m) = 0
+\;\Longrightarrow\;
+\hat c_m = \frac{1}{|R_m|}\sum_{i:\,x_i \in R_m} y_i ,
+$$
+
+the **region mean**. Now consider splitting a parent node into children $R_L(j,s) = \{x: x_j \le s\}$ and $R_R(j,s) = \{x: x_j > s\}$. CART chooses the feature $j$ and threshold $s$ that minimize the combined child error:
+
+$$
+(j^\star, s^\star) = \arg\min_{j,\,s}
+\Bigg[
+\min_{c_L}\!\!\sum_{i \in R_L}\!(y_i - c_L)^2
+\;+\;
+\min_{c_R}\!\!\sum_{i \in R_R}\!(y_i - c_R)^2
+\Bigg].
+$$
+
+Because each inner minimum is achieved at the child mean, the bracket equals the children's pooled within-node variance times their sizes. Minimizing it is identical to **maximizing the impurity reduction** $\Delta = \text{SSE}_{\text{parent}} - (\text{SSE}_L + \text{SSE}_R) \ge 0$. The search is exhausted over the finite set of midpoints between sorted unique values of each feature, so it is $O(p\,n\log n)$ per node. For classification, replace SSE with the weighted Gini $\frac{n_L}{n}G_L + \frac{n_R}{n}G_R$; everything else is unchanged.
+
+### 2. Why averaging decorrelated trees reduces variance
+
+Let $\hat f_1, \dots, \hat f_B$ be the predictions of $B$ trees at a fixed point $x$, each (by the identical-distribution of bootstrap samples) with the same variance $\sigma^2 = \operatorname{Var}(\hat f_b)$ and the same pairwise correlation $\rho = \operatorname{Corr}(\hat f_b, \hat f_{b'})$ for $b \ne b'$. The forest prediction is the average $\bar f = \frac1B\sum_b \hat f_b$. Using $\operatorname{Var}(\sum a_b X_b) = \sum_b a_b^2 \operatorname{Var}(X_b) + \sum_{b \ne b'} a_b a_{b'}\operatorname{Cov}(X_b, X_{b'})$ with $a_b = 1/B$ and $\operatorname{Cov} = \rho\sigma^2$:
+
+$$
+\operatorname{Var}(\bar f)
+= \frac{1}{B^2}\Big[ B\,\sigma^2 + B(B-1)\,\rho\sigma^2 \Big]
+= \frac{\sigma^2}{B} + \frac{B-1}{B}\,\rho\sigma^2 .
+$$
+
+Rearranging gives the identity quoted above,
+
+$$
+\operatorname{Var}(\bar f) = \rho\sigma^2 + \frac{1-\rho}{B}\,\sigma^2 .
+$$
+
+Two readings follow. **First**, as $B \to \infty$ the second term vanishes and $\operatorname{Var}(\bar f) \to \rho\sigma^2$: more trees only help (never hurt), but the gain saturates at a floor set by the correlation. **Second**, the floor itself shrinks as $\rho \to 0$. Bagging alone cannot drive $\rho$ to zero --- a dominant feature makes every tree split on it first, so $\rho$ stays high. The random forest's per-split feature subsampling is precisely the device that lowers $\rho$, pushing the variance floor down. Crucially, averaging leaves the **bias** untouched ($\operatorname{E}[\bar f] = \operatorname{E}[\hat f_b]$, since all trees are identically distributed), so the forest buys a variance reduction at no bias cost --- the textbook free lunch.
+
+</div>
+</details>
+
+## Code: Trees, Forests, and Boosting in Practice
+
+Both panels fit the same three models to the Region Västerbotten risk data: a single pruned tree (interpretable), a random forest (with OOB error and variable importance), and a gradient-boosting machine (high accuracy). Idiomatic packages: R uses `rpart` and `ranger`; Python uses scikit-learn.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("rpart", "rpart.plot", "ranger", "gbm"))
+library(rpart)
+library(ranger)
+
+set.seed(2024)
+n   <- 220
+age <- runif(n, 35, 85)
+dep <- runif(n, -2, 2)
+age_eff <- ifelse(age < 60, 0.10 * (age - 35), 2.5 + 0.55 * (age - 60))
+hba1c   <- 46 + age_eff + 2.2 * dep +
+           3.0 * dep * pmax(0, (age - 50) / 35) + rnorm(n, 0, 7)
+df <- data.frame(hba1c, age, dep)
+
+## ---- 1. A single regression tree, then prune by cost-complexity ----
+tree <- rpart(hba1c ~ age + dep, data = df,
+              method = "anova", control = rpart.control(cp = 0.001))
+
+# Pick the cp that minimizes cross-validated error, then prune.
+cp_best <- tree$cptable[which.min(tree$cptable[, "xerror"]), "CP"]
+tree_pruned <- prune(tree, cp = cp_best)
+# rpart.plot::rpart.plot(tree_pruned)   # read it as a flowchart
+
+## ---- 2. Random forest with OOB error + permutation importance ----
+rf <- ranger(hba1c ~ age + dep, data = df,
+             num.trees   = 500,
+             mtry        = 1,            # sqrt(2) -> 1 feature per split
+             importance  = "permutation",
+             oob.error   = TRUE)
+
+cat("OOB RMSE:", round(sqrt(rf$prediction.error), 2), "\n")
+print(sort(rf$variable.importance, decreasing = TRUE))   # which feature drives risk
+
+## ---- 3. Gradient boosting (shrinkage + shallow trees + CV early stop) ----
+library(gbm)
+boost <- gbm(hba1c ~ age + dep, data = df,
+             distribution      = "gaussian",
+             n.trees           = 2000,
+             interaction.depth = 3,      # shallow base learners
+             shrinkage         = 0.02,   # small learning rate nu
+             cv.folds          = 5)
+
+best_iter <- gbm.perf(boost, method = "cv", plot.it = FALSE)  # early stopping
+cat("Optimal boosting iterations:", best_iter, "\n")
+summary(boost, plotit = FALSE)          # relative influence per feature
+```
+
+### Python
+
+```python
+# pip install scikit-learn numpy
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.model_selection import cross_val_score
+
+rng = np.random.default_rng(2024)
+n = 220
+age = rng.uniform(35, 85, n)
+dep = rng.uniform(-2, 2, n)
+age_eff = np.where(age < 60, 0.10 * (age - 35), 2.5 + 0.55 * (age - 60))
+hba1c = (46 + age_eff + 2.2 * dep
+         + 3.0 * dep * np.maximum(0, (age - 50) / 35)
+         + rng.normal(0, 7, n))
+X = np.column_stack([age, dep]); y = hba1c
+
+# ---- 1. A single tree; tune depth by cross-validation (a proxy for pruning) ----
+for d in [2, 4, 8]:
+    cv = -cross_val_score(DecisionTreeRegressor(max_depth=d, random_state=0),
+                          X, y, scoring="neg_root_mean_squared_error", cv=5)
+    print(f"depth {d}: CV RMSE = {cv.mean():.2f}")   # mid depth wins; deep overfits
+
+# ---- 2. Random forest: OOB error + feature importance ----
+rf = RandomForestRegressor(n_estimators=500, max_features=1,
+                           oob_score=True, random_state=0, n_jobs=-1)
+rf.fit(X, y)
+oob_rmse = np.sqrt(np.mean((y - rf.oob_prediction_) ** 2))
+print(f"OOB RMSE: {oob_rmse:.2f}")
+print("Importance (age, dep):", np.round(rf.feature_importances_, 3))
+
+# ---- 3. Gradient boosting: small learning rate + shallow trees ----
+gb = GradientBoostingRegressor(n_estimators=2000, learning_rate=0.02,
+                               max_depth=3, subsample=0.8,
+                               validation_fraction=0.2, n_iter_no_change=30,
+                               random_state=0)
+gb.fit(X, y)
+print(f"Boosting stopped at {gb.n_estimators_} trees")  # early stopping
+print("Importance (age, dep):", np.round(gb.feature_importances_, 3))
+```
+
+:::
+
+In both languages the single tree is the most readable but the least accurate; the forest's OOB RMSE confirms it generalizes without a separate test set; and boosting, tuned with a small learning rate and early stopping, typically posts the lowest cross-validated error. All three rank **age** above **deprivation** in importance --- consistent with the partition surface, where the first split was an age cut.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A classification tree node in a *sjukfrånvaro* (sick-leave) risk model contains 100 employees: 80 who returned to work within 90 days and 20 who did not. A candidate split sends all 60 "younger than 45" employees one way (54 returned, 6 did not) and the 40 "45 or older" the other way (26 returned, 14 did not).
+
+(a) Compute the parent node's Gini impurity. (b) Compute each child's Gini and the weighted child Gini. (c) State the impurity reduction and say whether the split helps.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Parent.** Proportions $p_{\text{ret}} = 80/100 = 0.8$, $p_{\text{not}} = 0.2$.
+$$
+G_{\text{parent}} = 1 - (0.8^2 + 0.2^2) = 1 - (0.64 + 0.04) = 0.32.
+$$
+
+**(b) Children.** Left ($n=60$): $54/60 = 0.9$ returned, $0.1$ not.
+$$
+G_L = 1 - (0.9^2 + 0.1^2) = 1 - (0.81 + 0.01) = 0.18.
+$$
+Right ($n=40$): $26/40 = 0.65$ returned, $0.35$ not.
+$$
+G_R = 1 - (0.65^2 + 0.35^2) = 1 - (0.4225 + 0.1225) = 0.455.
+$$
+Weighted child Gini:
+$$
+\tfrac{60}{100}(0.18) + \tfrac{40}{100}(0.455) = 0.108 + 0.182 = 0.290.
+$$
+
+**(c) Reduction.** $\Delta = 0.32 - 0.290 = 0.030 > 0$. The split lowers impurity, so it helps --- though only modestly. CART would compare this $\Delta$ against every other candidate split and keep the largest.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the interactive, grow the tree to depth 8 and note the "Train RMSE" and the *overfit risk* warning; then switch on the random forest. Explain, using the variance-reduction identity, why the forest's prediction surface is smooth even though every tree inside it was grown deep (and thus individually overfit).
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+A single depth-8 tree achieves a low *training* RMSE precisely by carving the noise into tiny rectangles --- it has low bias but very high variance, so its surface is jagged and a resample would rearrange it. The forest grows $B$ such deep trees, each on a different bootstrap sample and with feature subsampling at each split, then **averages** them. By the identity
+$$
+\operatorname{Var}(\bar f) = \rho\sigma^2 + \tfrac{1-\rho}{B}\sigma^2,
+$$
+averaging $B$ identically-distributed trees leaves the bias unchanged (each tree is roughly unbiased) but drives the variance toward the floor $\rho\sigma^2$. The bootstrap and feature subsampling keep the pairwise correlation $\rho$ low, so that floor is small. The idiosyncratic noise each tree fit is *uncorrelated* across trees and cancels in the average; the shared signal survives. The visible result is a smooth surface that tracks the true age × deprivation interaction --- the same flexibility as a deep tree, with a fraction of the variance.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague reports that a random forest predicting regional monthly *väntetider* (primary-care waiting times) gives "unemployment rate" the highest variable importance, and concludes that *cutting unemployment would reduce waiting times*. (a) What does high variable importance actually establish? (b) Why is the causal conclusion unwarranted? (c) Which method from the next page is designed to fix this?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** High variable importance establishes only that the unemployment rate is *predictively useful* --- splits on it removed a lot of impurity (or permuting it badly hurt OOB accuracy). It is a statement about association in the joint distribution, not about a causal mechanism.
+
+**(b)** The forest is a black-box predictor with no model of confounding. Unemployment may be correlated with waiting times through common causes --- regional budgets, population age structure, staffing shortages --- so its importance can reflect those backdoor paths rather than a direct effect. There is also no guarantee importance is comparable across correlated features, and importance carries no sign or magnitude of a causal effect. Intervening on unemployment need not move waiting times at all.
+
+**(c)** **Double/debiased machine learning** ([next page](double-ml.qmd)). It uses flexible learners like forests and boosting only as *nuisance-function* estimators (predicting the outcome and the treatment from controls), then orthogonalizes and cross-fits to recover a valid causal effect of the treatment of interest --- combining the forest's flexibility with the rigor of causal identification.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+You are tuning a gradient-boosting model for HbA1c risk. Holding the number of trees fixed at 2000, you halve the learning rate from $\nu = 0.04$ to $\nu = 0.02$ and the validation error rises. (a) Explain the role of $\nu$. (b) Why might cutting $\nu$ *without* changing the number of trees hurt? (c) Name two other levers that regularize boosting.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The learning rate $\nu$ scales how big a step each new tree takes: $\hat f_b = \hat f_{b-1} + \nu\, h_b$. A small $\nu$ makes each correction cautious, so the ensemble approaches the signal slowly and is less likely to lurch onto noise. Small $\nu$ generally improves final accuracy --- *if* given enough trees.
+
+**(b)** $\nu$ and the number of trees trade off: total progress is roughly $\nu \times (\text{number of trees})$. Halving $\nu$ but keeping 2000 trees fixed means the model now travels only half as far down the loss, so it **underfits** --- it stops short of the signal. The fix is to roughly double the number of trees (or use early stopping on a validation set, which adds trees until improvement stalls).
+
+**(c)** Any two of: **shallow base trees** (small `interaction.depth` / `max_depth`, often stumps); **early stopping** when a validation/CV score stops improving; **row subsampling** (stochastic gradient boosting) and/or **column subsampling** per tree; and L1/L2 leaf-weight penalties (as in XGBoost).
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A regression tree partitions the feature space into rectangles and predicts the within-rectangle mean; splits are chosen greedily to maximize impurity reduction (squared error for regression, Gini for classification).
+- A single deep tree is interpretable but unstable and overfits; cost-complexity pruning trades training fit against a per-leaf penalty to regain generalization.
+- A random forest averages many deep, *decorrelated* trees (bootstrap samples + per-split feature subsampling); by $\operatorname{Var}(\bar f) = \rho\sigma^2 + \frac{1-\rho}{B}\sigma^2$, averaging cuts variance toward a floor set by $\rho$ at no bias cost, and supplies OOB error and variable importance for free.
+- Gradient boosting builds shallow trees sequentially on residuals with a small learning rate and early stopping --- reducing bias to reach top tabular accuracy.
+- These methods are *prediction* engines: variable importance shows what predicts, not what causes --- the gap that motivates double machine learning.
+:::
+
+## What Comes Next
+
+Trees, forests, and boosting give us flexible, assumption-light predictors that bend to whatever shape the data take. But every safeguard on this page --- OOB error, the variance-reduction identity, the warnings about variable importance --- pointed at the same boundary: these are *prediction* machines, and prediction is not causation. A forest can tell you that deprivation predicts high HbA1c; it cannot tell you what would happen if you *intervened* to lower deprivation. The next page, [Double and Debiased Machine Learning](double-ml.qmd), closes the gap. It keeps exactly these learners --- forests and boosting as nuisance-function estimators --- but wraps them in Neyman-orthogonalization and cross-fitting, so the flexibility you just gained delivers a *valid causal effect* rather than a black-box prediction.

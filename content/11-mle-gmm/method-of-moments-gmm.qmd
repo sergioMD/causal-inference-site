@@ -1,0 +1,616 @@
+---
+title: "Method of Moments and GMM"
+subtitle: "Estimation from moment conditions"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Apply the classical method of moments by equating sample moments to their population counterparts and solving for the parameter
+- Write a population moment condition $E[g(w,\theta)] = 0$ and recognise the sample moment vector $\bar g_n(\theta)$ whose root (or near-root) defines the GMM estimator
+- Form the GMM criterion as a weighting-matrix quadratic form in the sample moments, and distinguish the just-identified case (which sets the moments to zero) from the over-identified case (which can only shrink them)
+- Explain why the efficient weighting matrix is the inverse of the moment variance, and compute Hansen's $J$-statistic to test the over-identifying restrictions
+- Recognise OLS and 2SLS/IV as special cases of GMM by reading off their moment conditions
+:::
+
+## When the Model Speaks in Averages
+
+Sweden's *vårdcentraler* (primary care centers), run by the country's 21 *regioner* (regions), are awash in administrative data: every HbA1c reading, every blood-pressure measurement, every recorded waiting time for a *läkare* (physician) appointment. Often we do not have a fully specified probability model for these numbers --- we are not willing to claim that HbA1c is exactly Gaussian, or that waiting times are exactly exponential. What we *are* willing to claim is something weaker and more robust: a handful of statements about **averages**.
+
+For example: "the *average* HbA1c reduction delivered by the *Diabetessamordning* (diabetes coordination program) is $\mu$." Or: "the instrument --- distance to the nearest staffed vårdcentral --- is *uncorrelated* with the unobserved health shock." Each of these is a statement that some expectation equals a known value (often zero). The previous page, [Properties and Asymptotics of MLE](properties-asymptotics.qmd), built estimators from a *full likelihood*. This page builds estimators from these much weaker **moment conditions** alone --- which is exactly why the resulting machinery, the Generalized Method of Moments, has become the unifying language of modern econometrics. OLS, IV, 2SLS, and many panel estimators are all GMM in disguise.
+
+The logic is disarmingly simple, and it is two centuries old.
+
+## Classical Method of Moments
+
+Karl Pearson's **method of moments** (1894) rests on a single idea: a population moment is an expectation, an expectation is estimated by its sample average, so *set the sample average equal to the population formula and solve*.
+
+Suppose each patient's annual HbA1c reading $w_i$ is drawn from some distribution with mean $\mu$ and variance $\sigma^2$. The first two population moments are
+
+$$
+E[w] = \mu, \qquad E[w^2] = \mu^2 + \sigma^2.
+$$
+
+**Read the second one aloud**: "the expected value of the squared reading equals the squared mean plus the variance" --- this is just the rearrangement of $\operatorname{Var}(w) = E[w^2] - (E[w])^2$. We have two unknowns ($\mu$, $\sigma^2$) and two moment equations. The method of moments replaces each population moment by the matching sample average,
+
+$$
+\frac{1}{n}\sum_{i=1}^n w_i = \hat\mu, \qquad \frac{1}{n}\sum_{i=1}^n w_i^2 = \hat\mu^2 + \hat\sigma^2,
+$$
+
+and solves. The first equation gives $\hat\mu = \bar w$; substituting into the second gives $\hat\sigma^2 = \tfrac1n\sum_i w_i^2 - \bar w^2$, the (biased) sample variance. No likelihood, no distributional assumption beyond "these two moments exist" --- just an analogy between population and sample.
+
+::: {.glass-card .glass-card--definition}
+The **classical method of moments** estimator solves the system that equates the first $k$ sample moments to the first $k$ population moments, expressed as functions of the parameter vector $\theta = (\theta_1, \dots, \theta_k)$:
+
+$$
+\frac{1}{n}\sum_{i=1}^n w_i^{\,j} \;=\; E_\theta\!\left[w^{\,j}\right], \qquad j = 1, 2, \dots, k.
+$$
+
+With $k$ equations and $k$ unknowns the system is **just-identified**: generically there is one solution, and it sets every sample-versus-population discrepancy to zero exactly.
+:::
+
+This works whenever the number of moment equations equals the number of parameters. But the deep questions of econometrics --- instruments, panel orthogonality conditions --- routinely hand us *more* moment equations than parameters. We cannot set all of them to zero at once. We need a principled way to use them all anyway. That is GMM.
+
+## From Moments to Moment Conditions
+
+Lars Peter Hansen's 1982 paper (the work cited in his 2013 Nobel) generalised the method of moments to the case where the moments are arbitrary functions of the data and parameters, and where there may be more of them than parameters.
+
+Fix notation. Let $w_i$ collect all the data for observation $i$ (outcomes, regressors, instruments). Let $\theta$ be a $p$-vector of parameters. A **moment function** is a vector-valued function $g(w_i, \theta)$ of length $m$, chosen so that, *at the true parameter $\theta_0$*, its expectation is exactly zero:
+
+$$
+E\!\left[g(w_i, \theta_0)\right] = 0.
+$$
+
+::: {.glass-card .glass-card--definition}
+The $m$ equations $E[g(w_i,\theta_0)] = 0$ are the **population moment conditions** (also called orthogonality conditions). They encode everything the model assumes. The **sample moment vector** is their empirical analogue,
+
+$$
+\bar g_n(\theta) \;=\; \frac{1}{n}\sum_{i=1}^n g(w_i, \theta),
+$$
+
+an $m$-vector that, by the law of large numbers, converges to $E[g(w_i,\theta)]$ for every fixed $\theta$. The GMM idea is to choose $\hat\theta$ so that $\bar g_n(\hat\theta)$ is *as close to the zero vector as possible*.
+:::
+
+Three regimes follow immediately from comparing the count of moments $m$ to the count of parameters $p$:
+
+- **Under-identified ($m < p$):** fewer equations than unknowns. The parameter is not pinned down --- nothing can save you. Find more moments.
+- **Just-identified ($m = p$):** exactly as many equations as unknowns. We can generally solve $\bar g_n(\hat\theta) = 0$ exactly. Classical method of moments lives here.
+- **Over-identified ($m > p$):** more equations than unknowns. We *cannot* zero out all $m$ sample moments with only $p$ free parameters. We must compromise --- and how we compromise is the whole subject of GMM.
+
+A Swedish example makes the over-identified case vivid. Suppose we want one number: the average HbA1c benefit $\theta$ of a fall-prevention-style diabetes program. We have **two** noisy administrative readouts of that benefit --- say, a register-based estimate from *Socialstyrelsen* and a survey-based estimate from the regions' own audits. Each gives a moment condition "this readout, minus $\theta$, has mean zero." Two moments, one parameter: over-identified. We cannot make both residuals exactly zero with a single $\theta$. GMM tells us how to weight the two disagreeing signals.
+
+## The GMM Criterion
+
+Since we cannot set $\bar g_n(\theta)$ to zero in the over-identified case, we instead minimise a *scalar measure of its size*. The natural measure is a weighted quadratic form.
+
+::: {.glass-card .glass-card--definition}
+Given an $m \times m$ symmetric positive-definite **weighting matrix** $W$, the GMM estimator is
+
+$$
+\hat\theta_{\text{GMM}} \;=\; \arg\min_{\theta} \; Q_n(\theta), \qquad
+Q_n(\theta) \;=\; \bar g_n(\theta)^{\!\top}\, W \, \bar g_n(\theta).
+$$
+
+**Read the criterion aloud**: "$Q_n$ of theta equals the sample moment vector transposed, times the weighting matrix, times the sample moment vector." It is a generalised squared length of $\bar g_n(\theta)$. When all moments are exactly zero, $Q_n = 0$; the further any moment strays from zero, the larger $Q_n$, with $W$ deciding how heavily each moment (and each pairing of moments) is penalised.
+:::
+
+A few facts make this concrete:
+
+1. **Just-identified case ($m = p$).** Here we can drive $\bar g_n(\hat\theta)$ to the zero vector, so $Q_n(\hat\theta) = 0$ regardless of $W$. **The weighting matrix is irrelevant** when there is nothing to compromise. Method of moments and GMM coincide.
+
+2. **Over-identified case ($m > p$).** Now $\bar g_n(\hat\theta) \neq 0$ in general --- the best we can do is make the *weighted combination* small. Different $W$'s give different estimates, because they trade off the moments differently. This is where choosing $W$ well matters, and the next section shows there is a single best choice.
+
+3. **Diagonal $W$ is just weighted least squares on the moments.** If $W = \operatorname{diag}(w_1, \dots, w_m)$, then $Q_n = \sum_j w_j\, \bar g_{n,j}(\theta)^2$: each squared moment residual gets its own weight. Larger $w_j$ means "trust moment $j$ more --- pull $\theta$ toward satisfying it."
+
+## See It: Two Disagreeing Moments, One Parameter
+
+The interactive below is the over-identified Swedish scenario in its barest form. One parameter $\theta$ (the program's true average HbA1c reduction, in percentage points) must satisfy **two** noisy moment conditions:
+
+$$
+g_1(\theta) = \bar a - \theta, \qquad g_2(\theta) = \bar b - \theta,
+$$
+
+where $\bar a$ is the register-based readout and $\bar b$ is the survey-based readout. Each is a straight line in $\theta$, crossing zero at its own target. No single $\theta$ can zero out both lines at once (unless $\bar a = \bar b$). Drag $\theta$ and watch the weighted objective $Q_n(\theta) = w_1 g_1(\theta)^2 + w_2 g_2(\theta)^2$ trace out a parabola whose minimum is the GMM estimate. The weighting toggle lets you switch between *equal* weights and the *efficient* weights (more weight on the lower-variance, more-reliable register readout).
+
+::: {.interactive-container}
+
+#### Over-identified GMM: weighting two moment conditions
+
+```{ojs}
+//| echo: false
+
+viewof mlegmm_theta = Inputs.range([-1.4, 0.2], {
+  value: -0.6,
+  step: 0.01,
+  label: "θ — assumed average HbA1c reduction (pp)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlegmm_weighting = Inputs.radio(
+  ["Equal weights", "Efficient weights (inverse variance)"],
+  { label: "Weighting matrix W", value: "Efficient weights (inverse variance)" }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The two fixed moment targets (the over-identified scenario). ──
+// a-bar: register-based readout of the program's average HbA1c reduction.
+// b-bar: survey-based readout. They DISAGREE, so no single θ zeroes both.
+// The register source is more precise (smaller variance) than the survey.
+mlegmm_aBar = -0.72        // register readout (pp). Lower = bigger benefit.
+mlegmm_bBar = -0.44        // survey readout (pp).
+mlegmm_varA = 0.020        // variance of register moment (small = reliable)
+mlegmm_varB = 0.075        // variance of survey moment (larger = noisier)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Efficient weights are inverse variances (diagonal optimal W here, because
+// the two readouts are independent). Equal weights ignore precision.
+mlegmm_weights = {
+  if (mlegmm_weighting === "Equal weights") return { w1: 1, w2: 1 };
+  return { w1: 1 / mlegmm_varA, w2: 1 / mlegmm_varB };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Sample moments at the current θ (each is a straight line in θ).
+mlegmm_g1 = mlegmm_aBar - mlegmm_theta
+mlegmm_g2 = mlegmm_bBar - mlegmm_theta
+
+// GMM objective at the current θ.
+mlegmm_Q = mlegmm_weights.w1 * mlegmm_g1 ** 2 + mlegmm_weights.w2 * mlegmm_g2 ** 2
+
+// Closed-form minimiser of w1 (a-θ)^2 + w2 (b-θ)^2 is the weighted mean.
+mlegmm_thetaHat = (mlegmm_weights.w1 * mlegmm_aBar + mlegmm_weights.w2 * mlegmm_bBar)
+                / (mlegmm_weights.w1 + mlegmm_weights.w2)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Sample the two moment lines and the objective curve over the θ domain.
+mlegmm_grid = d3.range(-1.4, 0.2001, 0.01)
+
+mlegmm_momentData = mlegmm_grid.flatMap(t => [
+  { theta: t, value: mlegmm_aBar - t, moment: "g₁: register" },
+  { theta: t, value: mlegmm_bBar - t, moment: "g₂: survey" }
+])
+
+mlegmm_objData = mlegmm_grid.map(t => ({
+  theta: t,
+  Q: mlegmm_weights.w1 * (mlegmm_aBar - t) ** 2
+   + mlegmm_weights.w2 * (mlegmm_bBar - t) ** 2
+}))
+```
+
+```{ojs}
+//| echo: false
+
+// ── Top panel: the two moment conditions as lines in θ. ──
+// Each crosses zero at its own target; the vertical bars at the current θ
+// are the residuals g₁(θ) and g₂(θ) that GMM is trying to shrink.
+Plot.plot({
+  height: 250,
+  marginLeft: 58,
+  marginBottom: 46,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px" },
+  x: { label: "θ — assumed average HbA1c reduction (pp)", domain: [-1.4, 0.2], grid: true },
+  y: { label: "moment value g(θ)", domain: [-1.1, 1.1], grid: true },
+  color: {
+    domain: ["g₁: register", "g₂: survey"],
+    range: ["#990000", "#3d5a6c"],
+    legend: true
+  },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a", strokeWidth: 1 }),
+    Plot.line(mlegmm_momentData, { x: "theta", y: "value", stroke: "moment", strokeWidth: 2.5 }),
+
+    // Residual bars at the current θ.
+    Plot.ruleX([mlegmm_theta], {
+      y1: 0, y2: mlegmm_g1, stroke: "#990000", strokeWidth: 6, strokeOpacity: 0.30
+    }),
+    Plot.ruleX([mlegmm_theta + 0.012], {
+      y1: 0, y2: mlegmm_g2, stroke: "#3d5a6c", strokeWidth: 6, strokeOpacity: 0.30
+    }),
+
+    // Current-θ marker.
+    Plot.ruleX([mlegmm_theta], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "3,3" }),
+    Plot.dot([{ x: mlegmm_theta, y: mlegmm_g1 }], { x: "x", y: "y", fill: "#990000", r: 4.5 }),
+    Plot.dot([{ x: mlegmm_theta, y: mlegmm_g2 }], { x: "x", y: "y", fill: "#3d5a6c", r: 4.5 }),
+
+    // Where each moment is satisfied (crosses zero).
+    Plot.dot([{ x: mlegmm_aBar, y: 0 }], { x: "x", y: "y", stroke: "#990000", fill: "white", r: 4 }),
+    Plot.dot([{ x: mlegmm_bBar, y: 0 }], { x: "x", y: "y", stroke: "#3d5a6c", fill: "white", r: 4 })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Bottom panel: the GMM objective Q(θ), a parabola whose minimum is θ̂. ──
+Plot.plot({
+  height: 250,
+  marginLeft: 58,
+  marginBottom: 46,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px" },
+  x: { label: "θ — assumed average HbA1c reduction (pp)", domain: [-1.4, 0.2], grid: true },
+  y: { label: "GMM objective  Q(θ)", domain: [0, d3.max(mlegmm_objData, d => d.Q) * 1.08], grid: true },
+  marks: [
+    Plot.areaY(mlegmm_objData, { x: "theta", y: "Q", fill: "#990000", fillOpacity: 0.06 }),
+    Plot.line(mlegmm_objData, { x: "theta", y: "Q", stroke: "#990000", strokeWidth: 2.5 }),
+
+    // Current θ and its Q value.
+    Plot.ruleX([mlegmm_theta], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "3,3" }),
+    Plot.dot([{ x: mlegmm_theta, y: mlegmm_Q }], { x: "x", y: "y", fill: "#9c7a33", r: 5 }),
+
+    // The efficient/equal minimiser θ̂.
+    Plot.ruleX([mlegmm_thetaHat], { stroke: "#2e6f40", strokeWidth: 2 }),
+    Plot.dot([{ x: mlegmm_thetaHat, y: 0 }], { x: "x", y: "y", fill: "#2e6f40", r: 5 }),
+    Plot.text([{ x: mlegmm_thetaHat, y: 0 }], {
+      x: "x", y: "y",
+      text: [`θ̂ = ${mlegmm_thetaHat.toFixed(3)}`],
+      dy: -10, fill: "#2e6f40", fontWeight: 700, fontSize: 12, textAnchor: "middle"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout panel: current residuals, weights, objective, and θ̂.
+{
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  const onTarget = Math.abs(mlegmm_theta - mlegmm_thetaHat) < 0.006;
+  const tile = (name, value, color, bg) => html`<div style="
+      flex: 1 1 0; min-width: 7rem; text-align: center;
+      padding: 0.5rem 0.4rem; border-radius: 0.4rem; background: ${bg};
+      border: 1px solid #e6e3db;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:#79766e;">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("g₁ (register)", fmt(mlegmm_g1), "#990000", "rgba(153,0,0,0.04)")}
+    ${tile("g₂ (survey)",   fmt(mlegmm_g2), "#3d5a6c", "#f6f5f1")}
+    ${tile("Objective Q(θ)", mlegmm_Q.toFixed(3), "#9c7a33", "#f6f5f1")}
+    ${tile("θ̂ (minimiser)", mlegmm_thetaHat.toFixed(3),
+        onTarget ? "#2e6f40" : "#1c1c1a",
+        onTarget ? "rgba(46,111,64,0.08)" : "#ffffff")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Two-Panel Plot
+
+Work through these steps in order; each isolates one idea about GMM.
+
+**Step 1: Read the two moment lines (top panel).** The red line is $g_1(\theta) = \bar a - \theta$, the register-based moment; the slate line is $g_2(\theta) = \bar b - \theta$, the survey-based moment. Each is a downward-sloping straight line that crosses zero (the hollow dot on the horizontal axis) at *its own* target --- the register at $\theta = -0.72$, the survey at $\theta = -0.44$. Because the two targets differ, **no vertical line can hit both zeros at once**. That is exactly what "over-identified" means: two equations, one unknown, and they disagree.
+
+**Step 2: See the residuals you are trying to shrink.** The ochre dashed line marks your current $\theta$. The two faint vertical bars at that $\theta$ are the residuals $g_1(\theta)$ and $g_2(\theta)$ --- how far each moment is from being satisfied. GMM cannot make both bars vanish; it can only make a *weighted combination of their squares* as small as possible.
+
+**Step 3: Watch the objective (bottom panel).** The red curve is $Q_n(\theta) = w_1 g_1(\theta)^2 + w_2 g_2(\theta)^2$ --- a parabola, because it is a sum of squared lines. The ochre dot rides the curve at your current $\theta$. The green vertical line and the $\hat\theta$ label mark the *minimum*: the GMM estimate. Drag the $\theta$ slider until the ochre dot slides down into the green minimum --- the readout's $\hat\theta$ tile turns green when you are there.
+
+**Step 4: Toggle the weighting matrix.** Flip the control back and forth between **Equal weights** and **Efficient weights (inverse variance)** (it starts on efficient). Going from equal to efficient, two things happen at once. First, the objective parabola changes shape. Second --- the payoff --- the green minimiser $\hat\theta$ *slides toward the register target* ($-0.72$). Under equal weights, $\hat\theta$ is the plain average of the two readouts, $(-0.72 - 0.44)/2 = -0.58$. Under efficient weights, the more precise register readout (variance $0.020$) gets about $0.075/0.020 \approx 3.75$ times the weight of the noisy survey (variance $0.075$), pulling $\hat\theta$ to about $-0.66$ (precisely $-0.661$, as the readout tile shows). GMM listens harder to the moment it trusts more.
+
+**Step 5: Connect to the formula.** With diagonal $W$, the minimiser is the inverse-variance-weighted mean, $\hat\theta = (w_1\bar a + w_2\bar b)/(w_1 + w_2)$. This is *precisely* the efficient way to combine two noisy unbiased estimates --- the same logic behind meta-analysis and the Kalman filter. The next section shows why "inverse variance" is optimal in general.
+
+## The Efficient Weighting Matrix
+
+In the over-identified case the choice of $W$ changes the estimate *and* its precision. Hansen's central result identifies the single best choice.
+
+::: {.glass-card .glass-card--insight}
+**The efficient GMM weighting matrix is the inverse of the variance of the moments.** Let
+
+$$
+S \;=\; \operatorname{Var}\!\big(g(w_i,\theta_0)\big) \;=\; E\!\big[g(w_i,\theta_0)\,g(w_i,\theta_0)^{\!\top}\big]
+$$
+
+be the $m \times m$ covariance matrix of the moment functions at the truth. Setting $W = S^{-1}$ minimises the asymptotic variance of $\hat\theta_{\text{GMM}}$ among all valid weighting matrices. Intuitively: **down-weight noisy moments, up-weight precise ones, and account for the correlations between them.** A moment with large variance carries little information and should not be allowed to drag the estimate around.
+:::
+
+There is a chicken-and-egg problem: $S$ depends on $\theta_0$, which we do not know. The standard fix is **two-step (feasible) efficient GMM**:
+
+1. **Step 1.** Estimate $\hat\theta^{(1)}$ with any sensible weighting matrix --- usually $W = I$ (the identity), which just minimises the unweighted sum of squared moments. This $\hat\theta^{(1)}$ is consistent but not efficient.
+2. **Step 2.** Use $\hat\theta^{(1)}$ to estimate $\hat S = \tfrac1n \sum_i g(w_i, \hat\theta^{(1)}) g(w_i, \hat\theta^{(1)})^{\top}$, then re-minimise with $W = \hat S^{-1}$ to get the efficient $\hat\theta^{(2)}$.
+
+Iterating to convergence gives *iterated* GMM; using a clever one-step adjustment gives *continuously updated* GMM (CUE). All three are asymptotically equivalent and efficient.
+
+## OLS and 2SLS Are GMM
+
+The reason GMM is the lingua franca of econometrics is that the estimators you already know are special cases. Reading off their moment conditions is the quickest way to internalise the framework.
+
+::: {.glass-card .glass-card--definition}
+**OLS as GMM.** The linear model $y_i = x_i^{\top}\beta + u_i$ assumes the regressors are orthogonal to the error: $E[x_i u_i] = 0$. Substituting $u_i = y_i - x_i^{\top}\beta$ gives the moment condition
+
+$$
+E\!\big[\,x_i\,(y_i - x_i^{\top}\beta)\,\big] = 0.
+$$
+
+There are $p$ moments (one per regressor) and $p$ parameters --- **just-identified**. Setting the sample analogue $\tfrac1n\sum_i x_i(y_i - x_i^{\top}\hat\beta) = 0$ to zero and solving reproduces the normal equations and hence $\hat\beta_{\text{OLS}} = (X^{\top}X)^{-1}X^{\top}y$ exactly. The weighting matrix is irrelevant.
+:::
+
+::: {.glass-card .glass-card--definition}
+**IV / 2SLS as GMM.** When a regressor is endogenous ($E[x_i u_i] \neq 0$) but we have an $m$-vector of instruments $z_i$ with $E[z_i u_i] = 0$, the moment condition uses the instruments instead of the regressors:
+
+$$
+E\!\big[\,z_i\,(y_i - x_i^{\top}\beta)\,\big] = 0.
+$$
+
+- If $m = p$ (as many instruments as endogenous-plus-exogenous regressors), the system is **just-identified**: GMM = simple IV, and $W$ does not matter.
+- If $m > p$ (more instruments than parameters), the system is **over-identified**: we cannot zero out all $m$ moments. Minimising $Q_n(\beta) = \bar g_n(\beta)^{\top} W \bar g_n(\beta)$ with $W = (Z^{\top}Z)^{-1}$ reproduces **two-stage least squares** exactly; using the efficient $W = \hat S^{-1}$ gives efficient GMM, which beats 2SLS when the errors are heteroskedastic.
+:::
+
+This is the link back to the [Two-Stage Least Squares](../07-iv/two-stage-least-squares.qmd) page: 2SLS is GMM with a particular, *not generally efficient*, weighting matrix. The over-identified diabetes example above --- two noisy readouts (register and survey) of one HbA1c-benefit parameter --- is structurally identical to an over-identified IV problem with two instruments for a single endogenous coefficient: in both cases two moment conditions chase one parameter, and the efficient weighting matrix decides how to reconcile them.
+
+## Hansen's J-Test of Over-identifying Restrictions
+
+The over-identified case hands us a free diagnostic. If we have $m > p$ moments and the model is correct, then *all* $m$ population moments are genuinely zero, and the efficient GMM estimate should make all $m$ sample moments *jointly* small. If instead the minimised objective is *large* --- if even after the best compromise the moments stubbornly refuse to be near zero --- that is evidence the model (or some instruments) is misspecified.
+
+::: {.glass-card .glass-card--insight}
+**Hansen's $J$-statistic** is the minimised efficient-GMM objective, scaled by the sample size:
+
+$$
+J \;=\; n \cdot \bar g_n(\hat\theta)^{\!\top}\, \hat S^{-1}\, \bar g_n(\hat\theta) \;=\; n \cdot Q_n(\hat\theta).
+$$
+
+Under the null that all moment conditions are valid, $J \xrightarrow{d} \chi^2_{m-p}$ --- a chi-square distribution with **degrees of freedom equal to the number of over-identifying restrictions** ($m - p$, the count of "extra" moments beyond what is needed to identify $\theta$). A large $J$ (small $p$-value) rejects the joint validity of the moment conditions.
+:::
+
+Two cautions deserve emphasis:
+
+- **A just-identified model has $m - p = 0$ degrees of freedom**, $J \equiv 0$, and nothing to test. The $J$-test only exists when you have spare moments.
+- **The $J$-test is a *joint* test.** A rejection tells you that *something* is wrong --- one or more instruments may be invalid, or the functional form may be misspecified --- but it does not tell you *which* moment is the culprit. A non-rejection is reassuring but not proof: low power, or two bad instruments whose biases cancel, can let a flawed model pass.
+
+In the Swedish over-identified scenario, a significant $J$ would say: "the register and survey readouts of the program's HbA1c benefit disagree by more than their sampling noise can explain --- they are not both measuring the same $\theta$." That is a substantive red flag, not a nuisance.
+
+<details>
+<summary>Math Details: Efficient Weighting and the Asymptotic Distribution of the J-Statistic</summary>
+<div class="details-content">
+
+### Asymptotic variance of the GMM estimator
+
+Let $G = E\!\big[\partial g(w_i,\theta_0)/\partial\theta^{\top}\big]$ be the $m \times p$ **Jacobian** (expected gradient) of the moment function, and $S = \operatorname{Var}(g(w_i,\theta_0))$ its $m\times m$ covariance. A first-order Taylor expansion of the first-order condition $G^{\top} W \bar g_n(\hat\theta) = 0$ around $\theta_0$ gives the sandwich form
+
+$$
+\sqrt{n}\,(\hat\theta_{\text{GMM}} - \theta_0) \xrightarrow{d} \mathcal N\!\big(0,\; V(W)\big),
+\qquad
+V(W) = (G^{\top} W G)^{-1}\, G^{\top} W S W G\, (G^{\top} W G)^{-1}.
+$$
+
+### Why $W = S^{-1}$ is efficient
+
+Substituting $W = S^{-1}$ collapses the sandwich:
+
+$$
+V(S^{-1}) = (G^{\top} S^{-1} G)^{-1} G^{\top} S^{-1} S\, S^{-1} G (G^{\top} S^{-1} G)^{-1}
+          = (G^{\top} S^{-1} G)^{-1}.
+$$
+
+One can show $V(W) - V(S^{-1})$ is positive semi-definite for **every** valid $W$ (the argument is the matrix analogue of the Gauss–Markov theorem, or equivalently the Cauchy–Schwarz inequality applied to the moment space). So no weighting matrix delivers a smaller asymptotic variance than $S^{-1}$. This is exactly why the interactive's "efficient weights" tile uses inverse variances: with independent moments, $S$ is diagonal and $S^{-1} = \operatorname{diag}(1/\operatorname{Var} g_1, \dots)$.
+
+### The $J$-statistic's chi-square limit
+
+At the efficient estimate, define the standardised moment vector $\sqrt{n}\,\hat S^{-1/2}\bar g_n(\hat\theta)$. Asymptotically $\sqrt n\,\bar g_n(\theta_0) \xrightarrow{d} \mathcal N(0, S)$, so $\sqrt n\,S^{-1/2}\bar g_n(\theta_0) \xrightarrow{d} \mathcal N(0, I_m)$ --- a vector of $m$ independent standard normals. Estimating the $p$ parameters projects this vector onto the $(m-p)$-dimensional space orthogonal to the columns of $S^{-1/2}G$. The squared length of a standard normal vector confined to a $(m-p)$-dimensional subspace is $\chi^2_{m-p}$. Hence
+
+$$
+J = n\,\bar g_n(\hat\theta)^{\top}\hat S^{-1}\bar g_n(\hat\theta) \xrightarrow{d} \chi^2_{m-p}.
+$$
+
+The loss of $p$ degrees of freedom is the price of using the data to estimate $\theta$ before testing the moments --- the same bookkeeping as residual degrees of freedom in OLS.
+
+</div>
+</details>
+
+## Computing GMM
+
+Both implementations encode the over-identified diabetes scenario: one parameter $\theta$ (the average HbA1c reduction) and two noisy moment conditions, estimated by efficient two-step GMM. Each then runs the $J$-test.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(gmm)
+
+# --- Two noisy readouts of the SAME program effect θ on HbA1c (pp). ---
+# Register readout centred on -0.72, survey readout on -0.44 (they disagree).
+# Register is more precise (sd 0.14) than the survey (sd 0.27).
+set.seed(2019)
+n <- 600
+register <- rnorm(n, mean = -0.72, sd = 0.14)
+survey   <- rnorm(n, mean = -0.44, sd = 0.27)
+dat <- cbind(register, survey)
+
+# Moment function: each readout minus the single parameter θ has mean zero.
+#   g1 = register - θ ,  g2 = survey - θ   (2 moments, 1 parameter => over-id)
+g <- function(theta, x) {
+  cbind(x[, "register"] - theta,
+        x[, "survey"]   - theta)
+}
+
+# Two-step efficient GMM (identity W in step 1, S^{-1} in step 2).
+fit <- gmm(g, x = dat, t0 = c(theta = -0.5), wmatrix = "optimal")
+
+summary(fit)                 # efficient θ̂, SE, and the J-test
+cat("\nθ̂ (efficient GMM):", round(coef(fit), 3), "\n")
+
+# Hansen's J-test of the over-identifying restriction (df = m - p = 1).
+J <- specTest(fit)
+print(J)
+
+# Sanity check: with diagonal optimal W the estimate is the inverse-variance
+# weighted mean of the two readouts.
+w1 <- 1 / var(register); w2 <- 1 / var(survey)
+cat("Inverse-variance weighted mean:",
+    round((w1 * mean(register) + w2 * mean(survey)) / (w1 + w2), 3), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+from statsmodels.sandbox.regression.gmm import GMM
+from scipy import stats
+
+# --- Two noisy readouts of the SAME program effect θ on HbA1c (pp). ---
+rng = np.random.default_rng(2019)
+n = 600
+register = rng.normal(-0.72, 0.14, n)   # precise register readout
+survey   = rng.normal(-0.44, 0.27, n)   # noisier survey readout
+data = np.column_stack([register, survey])
+
+class TwoMomentGMM(GMM):
+    # 2 moment conditions, 1 parameter => over-identified (1 restriction).
+    def momcond(self, params):
+        theta = params[0]
+        g1 = self.exog[:, 0] - theta     # register - θ
+        g2 = self.exog[:, 1] - theta     # survey   - θ
+        return np.column_stack([g1, g2])
+
+model = TwoMomentGMM(endog=np.zeros(n), exog=data, instrument=data,
+                     k_moms=2, k_params=1)
+res = model.fit(start_params=[-0.5], maxiter=2, optim_method='bfgs')  # 2-step efficient
+
+print(res.summary())
+theta_hat = res.params[0]
+print(f"\nθ̂ (efficient GMM): {theta_hat:.3f}")
+
+# Hansen's J-test: J = n * Q(θ̂) ~ chi2(m - p) = chi2(1).
+J = res.jval                     # minimised efficient objective * n
+p_value = stats.chi2.sf(J, df=2 - 1)
+print(f"Hansen J = {J:.3f},  p-value = {p_value:.3f}  (df = 1)")
+
+# Sanity check: inverse-variance weighted mean of the two readouts.
+w1, w2 = 1 / register.var(ddof=1), 1 / survey.var(ddof=1)
+print("Inverse-variance weighted mean:",
+      round((w1 * register.mean() + w2 * survey.mean()) / (w1 + w2), 3))
+```
+
+:::
+
+Because the two readouts genuinely disagree by more than sampling noise (they were simulated with means $-0.72$ and $-0.44$), the $J$-test here will *reject*: the data are telling you the two sources are not measuring the same $\theta$. Set both means equal and the $J$-test will stop rejecting --- a hands-on demonstration of what the test detects.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region records waiting times (in days) for a *distriktssköterska* (district nurse) appointment. You assume waiting times follow an exponential distribution with rate $\lambda$, for which $E[w] = 1/\lambda$. In a sample of 400 patients the mean waiting time is $\bar w = 8$ days. (a) Use the classical method of moments to estimate $\lambda$. (b) The exponential also satisfies $\operatorname{Var}(w) = 1/\lambda^2$. If the sample variance is $61$ days$^2$, is the single-parameter exponential model adequate, or do the two moment-based estimates of $\lambda$ disagree?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Equate the first sample moment to the population mean: $\bar w = 1/\lambda$, so $\hat\lambda = 1/\bar w = 1/8 = 0.125$ per day.
+
+**(b)** The second moment gives a *separate* estimate. From $\operatorname{Var}(w) = 1/\lambda^2$ we get $\hat\lambda = 1/\sqrt{61} = 1/7.81 \approx 0.128$ per day. The mean-based estimate is $0.125$ and the variance-based estimate is $0.128$ --- very close. The exponential imposes mean $=$ standard deviation ($1/\lambda$ for both): here $\bar w = 8$ and $\sqrt{61} = 7.81$, almost equal, so the model is adequate. Had the variance been, say, $400$ (sd $= 20 \gg 8$), the two estimates would clash --- the over-dispersion would reject the exponential. This is the method-of-moments precursor to the over-identification idea: a one-parameter model with two moments is over-identified, and disagreement between the moment-based estimates is informal evidence of misspecification.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the interactive's notation, $g_1(\theta) = \bar a - \theta$ and $g_2(\theta) = \bar b - \theta$, with weights $w_1$ and $w_2$. (a) Minimise $Q(\theta) = w_1 g_1(\theta)^2 + w_2 g_2(\theta)^2$ analytically to find $\hat\theta$. (b) Plug in the interactive's numbers ($\bar a = -0.72$, $\bar b = -0.44$) under equal weights and under efficient weights ($w_1 = 1/0.020$, $w_2 = 1/0.075$). Confirm the efficient estimate is pulled toward the register readout.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Differentiate and set to zero:
+
+$$
+\frac{dQ}{d\theta} = -2 w_1 (\bar a - \theta) - 2 w_2 (\bar b - \theta) = 0
+\;\Longrightarrow\;
+\hat\theta = \frac{w_1 \bar a + w_2 \bar b}{w_1 + w_2}.
+$$
+
+The GMM estimate is the **weighted mean** of the two targets --- the inverse-variance weighted mean when $w_j = 1/\operatorname{Var}(g_j)$.
+
+**(b)** *Equal weights* ($w_1 = w_2 = 1$): $\hat\theta = (-0.72 - 0.44)/2 = -0.58$.
+
+*Efficient weights* ($w_1 = 1/0.020 = 50$, $w_2 = 1/0.075 = 13.33$):
+
+$$
+\hat\theta = \frac{50(-0.72) + 13.33(-0.44)}{50 + 13.33} = \frac{-36.0 - 5.87}{63.33} = \frac{-41.87}{63.33} \approx -0.661.
+$$
+
+The efficient estimate $-0.661$ sits much closer to the precise register readout $-0.72$ than the equal-weight estimate $-0.58$ does. Down-weighting the noisy survey is exactly the efficiency gain Hansen's theorem promises. $\checkmark$
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A health economist estimates the effect of nurse contact hours on HbA1c using **three** instruments (distance to the nearest vårdcentral, a same-week appointment-availability index, and a regional staffing ratio) for **one** endogenous regressor. (a) How many over-identifying restrictions are there? (b) State the moment conditions and the degrees of freedom of the Hansen $J$-test. (c) The $J$-test rejects at the 1% level. List two distinct things that could be wrong, and explain why the test cannot tell you which.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $m = 3$ instruments (moments) and $p = 1$ structural parameter on the endogenous regressor (ignoring the intercept for clarity, or counting it symmetrically on both sides), the number of over-identifying restrictions is $m - p$. With one endogenous coefficient and three instruments there are $3 - 1 = 2$ over-identifying restrictions.
+
+**(b)** The moment conditions are $E[z_{ij}(y_i - x_i^{\top}\beta)] = 0$ for each instrument $j = 1, 2, 3$ --- each instrument must be orthogonal to the structural error. The $J$-statistic is asymptotically $\chi^2_{2}$ (degrees of freedom $= m - p = 2$).
+
+**(c)** Two possibilities: (i) one or more instruments are *invalid* --- e.g., the regional staffing ratio affects HbA1c directly (through overall care quality), violating the exclusion restriction; (ii) the *structural model is misspecified* --- e.g., the true effect of nursing on HbA1c is nonlinear, so the linear moment conditions cannot all hold simultaneously. The $J$-test is a **joint** test of all the moment conditions together: it aggregates all $m$ standardised moments into a single number and asks whether that number is too big. A rejection says "the moments are jointly incompatible" but cannot attribute the blame to a specific instrument or to functional form, because every culprit inflates the same statistic.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Show that in the just-identified case ($m = p$) the GMM estimate does not depend on the weighting matrix $W$, and that the Hansen $J$-statistic is identically zero. Why does this mean OLS (viewed as GMM) offers no over-identification test?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+When $m = p$, the sample moment vector $\bar g_n(\theta)$ has the same number of components as $\theta$ has free parameters. Generically the system of equations $\bar g_n(\theta) = 0$ has a solution $\hat\theta$ that sets *every* sample moment to exactly zero. At that $\hat\theta$:
+
+- The objective is $Q_n(\hat\theta) = \bar g_n(\hat\theta)^{\top} W \bar g_n(\hat\theta) = 0^{\top} W\, 0 = 0$ for **any** positive-definite $W$. Since $Q_n \ge 0$ always and equals $0$ here, $\hat\theta$ minimises $Q_n$ regardless of $W$. So the weighting matrix is irrelevant --- changing $W$ cannot change the minimiser when the minimum value is already zero.
+
+- The $J$-statistic is $J = n\,Q_n(\hat\theta) = n \cdot 0 = 0$ identically. There is nothing to test.
+
+This is precisely OLS's situation: the moment condition $E[x_i(y_i - x_i^{\top}\beta)] = 0$ supplies exactly $p$ moments for $p$ coefficients (just-identified), so the sample moments are zeroed out exactly and $J \equiv 0$. With $m - p = 0$ over-identifying restrictions, the $\chi^2_0$ "distribution" is degenerate --- there is no spare moment whose validity could be checked against the data. You can only test over-identifying restrictions when you have moments to spare.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The classical method of moments equates sample moments to population moments and solves; GMM generalises this to moment conditions $E[g(w,\theta)] = 0$ with possibly more moments than parameters.
+- GMM minimises the quadratic form $Q_n(\theta) = \bar g_n(\theta)^{\top} W \bar g_n(\theta)$; in the just-identified case the moments are zeroed exactly and $W$ is irrelevant, while in the over-identified case $W$ governs how disagreeing moments are traded off.
+- The efficient weighting matrix is $W = S^{-1}$, the inverse of the moment covariance --- down-weight noisy moments, up-weight precise ones --- delivering the smallest asymptotic variance $(G^{\top}S^{-1}G)^{-1}$.
+- OLS and 2SLS/IV are GMM with specific moment conditions ($E[x u] = 0$ and $E[z u] = 0$); 2SLS uses a non-efficient weighting matrix that efficient GMM improves on under heteroskedasticity.
+- Hansen's $J = n\,Q_n(\hat\theta) \xrightarrow{d} \chi^2_{m-p}$ tests the joint validity of the over-identifying restrictions; it exists only when $m > p$ and cannot say *which* moment is at fault.
+:::
+
+## What Comes Next
+
+We now have two complete estimation philosophies side by side: maximum likelihood, which extracts everything from a fully specified distribution, and GMM, which asks only for a set of moment conditions. Both deliver estimators that are consistent and asymptotically normal --- which raises the practical question that animates every empirical paper: **how do we test hypotheses about the parameters we have estimated?** The next page, [The Classical Trinity: LR, Wald, and LM Tests](likelihood-inference.qmd), develops the three canonical test statistics --- the likelihood ratio, the Wald test, and the Lagrange multiplier (score) test --- shows that they are asymptotically equivalent yet probe the likelihood surface from three different vantage points, and connects the LM/score test directly to the moment-based thinking of this page.

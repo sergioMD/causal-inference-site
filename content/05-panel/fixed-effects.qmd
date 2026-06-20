@@ -1,0 +1,1003 @@
+---
+title: "Fixed Effects"
+subtitle: "Within-unit estimation and the demean operator"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- write the unobserved-effects model $y_{it} = \alpha_i + \beta x_{it} + e_{it}$ and explain why fixed effects, unlike random effects, permits $\operatorname{Cov}(\alpha_i, x_{it}) \neq 0$
+- derive the pooled-OLS bias as omitted-variable bias in $\alpha_i$ and explain why more data cannot fix it
+- apply the demean (within) operator to obtain the fixed-effects estimator and show that $\alpha_i$ differences out
+- explain why the within estimator and the least-squares dummy variable (LSDV) estimator give identical $\hat\beta$ via the Frisch--Waugh--Lovell theorem
+- distinguish what fixed effects can remove (time-invariant confounders) from what it cannot (time-varying confounding, reverse causality, time-invariant regressors), and extend to two-way fixed effects
+:::
+
+## The Confounder You Cannot Measure
+
+Sweden's 21 *regioner* (regions) each run their own network of *vårdcentraler* (primary care centers), and they differ from one another in ways that are stubbornly hard to quantify. Region Stockholm has dense urban clinics, a young commuting population, and deep tax revenues. Region Norrbotten covers a vast, sparsely populated north with long ambulance distances and an older population. Region Gotland is an island. These differences are real, they are persistent, and they shape health outcomes --- but most of them never appear as a clean column in any dataset.
+
+Now suppose a researcher wants to know whether hiring more *distriktssköterskor* (district nurses) per capita reduces the average number of days patients wait for a primary care appointment. We observe each of the 21 regions for several years: nurse staffing density on the right, waiting times on the left. The naive instinct is to pool all the region-year observations and run one big regression. But there is a trap. Regions that staff generously may also be the wealthy, well-organized regions that would have had short waiting times *anyway*, for reasons --- administrative culture, capital stock, population health --- we cannot measure. The staffing coefficient would then absorb all of that hidden regional advantage and overstate the true effect.
+
+This page is about a remarkably clean solution to that problem. When the same units are observed repeatedly, we can let each unit be its own control. We never have to measure "administrative culture" or "capital stock" at all. We only have to assume that, whatever those things are, they stay roughly *constant within a region* over our study window. That single structural assumption --- time-invariant unobserved heterogeneity --- is what the **fixed effects** estimator exploits.
+
+This is the omitted-variable-bias logic from [Module 4](../04-regression/omitted-variable-bias.qmd), turned into an opportunity. There, the omitted variable was a measured-but-excluded covariate. Here, the omitted variable is an entire bundle of *unmeasurable* regional traits --- and panel data let us sweep all of it away at once.
+
+
+## The Unobserved-Effects Model
+
+Let $y_{it}$ be the outcome (mean waiting time, in days) for region $i$ in year $t$, and let $x_{it}$ be the regressor of interest (district nurses per 10,000 residents). The **unobserved-effects model** is:
+
+$$
+y_{it} = \alpha_i + \beta\, x_{it} + e_{it}
+$$
+
+::: {.glass-card .glass-card--definition}
+In the model $y_{it} = \alpha_i + \beta x_{it} + e_{it}$:
+
+- $\alpha_i$ is the **unit fixed effect** --- a region-specific intercept that is *constant over time*. It captures everything about region $i$ that does not change across our years: geography, baseline population health, administrative tradition, capital stock. It is the **unobserved heterogeneity**.
+- $\beta$ is the **structural parameter** we want: the effect of one more nurse per 10,000 residents on waiting time, holding the region fixed.
+- $e_{it}$ is the **idiosyncratic error** --- the part of region $i$'s waiting time in year $t$ that is not explained by its fixed traits or by staffing. We assume $E[e_{it} \mid x_{i1}, \dots, x_{iT}, \alpha_i] = 0$ (**strict exogeneity** of the idiosyncratic shock --- the shock in *any* year is unrelated to staffing in *every* year, past and future, not just the current one). This is stronger than ordinary exogeneity: it rules out feedback in which this year's shock changes next year's staffing, which is exactly why reverse causality (limitation 3 below) breaks fixed effects.
+
+**Read this as**: "Region $i$'s waiting time in year $t$ equals a region-specific baseline $\alpha_i$, plus $\beta$ times its nurse density, plus an idiosyncratic shock." The whole game is that $\alpha_i$ carries no $t$ subscript --- it is the same in 2015 as in 2022.
+:::
+
+The crucial subtlety is the relationship between $\alpha_i$ and $x_{it}$. The fixed-effects model makes **no assumption** that they are uncorrelated. We explicitly allow
+
+$$
+\operatorname{Cov}(\alpha_i,\, x_{it}) \neq 0,
+$$
+
+which is exactly the realistic case: rich, well-run regions (high $\alpha_i$ in the sense of better baseline systems) also tend to hire more nurses (high $x_{it}$). This is what distinguishes fixed effects from its more restrictive cousin, the **random effects** estimator, which assumes $\operatorname{Cov}(\alpha_i, x_{it}) = 0$. Because fixed effects permits arbitrary correlation between the unobserved trait and the regressor, it is the workhorse of credible panel analysis.
+
+
+## Why Pooled OLS Is Biased
+
+Suppose we ignore the panel structure entirely and absorb $\alpha_i$ into a single composite error. Define the **composite error** $v_{it} = \alpha_i + e_{it}$ and run pooled OLS of $y_{it}$ on $x_{it}$:
+
+$$
+y_{it} = \beta\, x_{it} + \underbrace{(\alpha_i + e_{it})}_{v_{it}}.
+$$
+
+For pooled OLS to be consistent, the regressor must be uncorrelated with the *whole* composite error. But $x_{it}$ is correlated with $\alpha_i$ by assumption, so $\operatorname{Cov}(x_{it}, v_{it}) \neq 0$. This is **textbook omitted-variable bias**, with the omitted variable being the unit effect $\alpha_i$ itself:
+
+$$
+\operatorname{plim}\ \hat\beta_{\text{pooled}} = \beta + \frac{\operatorname{Cov}(x_{it},\, \alpha_i)}{\operatorname{Var}(x_{it})}.
+$$
+
+Here $\operatorname{plim}$ is the **probability limit** --- the single value the estimate settles on as the sample grows without bound (the large-sample analogue of an average). **Read this as**: "Pooled OLS converges not to $\beta$ but to $\beta$ plus a bias term equal to the covariance of the regressor with the unit effect, divided by the variance of the regressor." If generous-staffing regions tend to be the high-baseline-quality regions, the bias term has a definite sign, and pooled OLS reports a contaminated number. The bias does **not** shrink as we add more region-years --- it is a bias of inconsistency, not of small samples.
+
+::: {.glass-card .glass-card--warning}
+Adding more data does **not** rescue pooled OLS here. Throwing in another decade of region-years drives the estimate ever more precisely toward the *wrong* number $\beta + \operatorname{Cov}(x,\alpha)/\operatorname{Var}(x)$. Precision is not accuracy. The problem is structural --- the omitted $\alpha_i$ --- and it requires a structural fix, not a bigger sample.
+:::
+
+
+## The Within Transformation: Let Each Region Be Its Own Control
+
+Here is the central idea, and it is beautiful. The thing that contaminates pooled OLS --- the time-invariant $\alpha_i$ --- can be eliminated by a simple algebraic trick, precisely *because* it does not vary over time.
+
+For each region $i$, average the model over its $T$ time periods. Let an overbar denote a within-unit time average, $\bar{z}_i = \frac{1}{T}\sum_{t=1}^{T} z_{it}$. Averaging $y_{it} = \alpha_i + \beta x_{it} + e_{it}$ over $t$ gives:
+
+$$
+\bar{y}_i = \alpha_i + \beta\, \bar{x}_i + \bar{e}_i.
+$$
+
+Note that the time-average of the constant $\alpha_i$ is just $\alpha_i$ again --- a constant averaged over time does not move. Now **subtract** this unit-mean equation from the original equation, term by term:
+
+$$
+\underbrace{(y_{it} - \bar{y}_i)}_{\tilde{y}_{it}}
+= \underbrace{(\alpha_i - \alpha_i)}_{=\;0}
++ \beta\,\underbrace{(x_{it} - \bar{x}_i)}_{\tilde{x}_{it}}
++ \underbrace{(e_{it} - \bar{e}_i)}_{\tilde{e}_{it}}.
+$$
+
+The unit effect $\alpha_i$ **differences away completely**. This is the magic. We are left with a regression in *deviations from unit means*:
+
+$$
+\tilde{y}_{it} = \beta\, \tilde{x}_{it} + \tilde{e}_{it}.
+$$
+
+::: {.glass-card .glass-card--definition}
+The **demean (within) operator** $M$ subtracts each unit's own time-average from every observation:
+
+$$
+\tilde{z}_{it} = z_{it} - \bar{z}_i, \qquad \bar{z}_i = \frac{1}{T}\sum_{s=1}^{T} z_{is}.
+$$
+
+The **within (fixed-effects) estimator** is OLS applied to the demeaned data:
+
+$$
+\hat\beta_{\text{FE}} = \frac{\sum_{i}\sum_{t} \tilde{x}_{it}\, \tilde{y}_{it}}{\sum_{i}\sum_{t} \tilde{x}_{it}^{2}}
+= \frac{\sum_{i}\sum_{t} (x_{it}-\bar{x}_i)(y_{it}-\bar{y}_i)}{\sum_{i}\sum_{t} (x_{it}-\bar{x}_i)^{2}}.
+$$
+
+**Read this as**: "The fixed-effects slope is the ordinary least-squares slope you get after wiping out each region's average level --- it uses only the *within-region, over-time* co-movement of staffing and waiting times." Because $\alpha_i$ is gone, its correlation with $x_{it}$ can no longer bias anything.
+:::
+
+The interpretation is the heart of the method. $\hat\beta_{\text{FE}}$ asks: **when a single region staffs up relative to its own usual level, does its waiting time fall relative to its own usual level?** It compares Stockholm-2022 to Stockholm-2016, not Stockholm to Norrbotten. Every fixed, between-region difference --- the very stuff we could not measure --- is held constant by construction, because we only ever look at movements around each region's own mean.
+
+::: {.glass-card .glass-card--insight}
+Fixed effects converts an *across-units* comparison (which is confounded by everything that makes units differ) into a *within-unit-over-time* comparison (which automatically holds constant everything about a unit that does not change). You did not have to name the confounders, measure them, or even know they exist. You only had to assume they are time-invariant.
+:::
+
+Before the multi-region simulation, it helps to watch demeaning act on a *single* region. The algebra "subtract the unit mean" is just a **recentering**: take one region's cloud of points, find its average $(\bar{x}_i, \bar{y}_i)$, and slide the whole cloud so that average sits on the origin. The shape of the cloud --- its within-region slope --- is untouched; only its *position* (which is what $\alpha_i$ controls) changes.
+
+```{ojs}
+//| echo: false
+
+// Static "before / after demeaning" schematic for ONE region. Purely a figure:
+// a fixed cloud, its mean marked, and the same cloud recentered on the origin.
+p2_demeanDemo = {
+  const xs = [5.4, 6.1, 6.8, 7.6, 8.2, 8.9];
+  const ys = [29.5, 27.8, 27.0, 24.9, 24.1, 22.7];
+  const xbar = d3.mean(xs), ybar = d3.mean(ys);
+  const raw = xs.map((x, i) => ({ x, y: ys[i], xt: x - xbar, yt: ys[i] - ybar }));
+  return { raw, xbar, ybar };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.75rem; align-items: start;">
+  <div>${p2_rawPanel}</div>
+  <div>${p2_dmPanel}</div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+p2_rawPanel = Plot.plot({
+  width: Math.min(330, width),
+  height: 250,
+  marginLeft: 60,
+  marginBottom: 45,
+  marginTop: 30,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: { label: "Staffing →", nice: true },
+  y: { label: "Wait (days) →", nice: true },
+  marks: [
+    Plot.dot(p2_demeanDemo.raw, { x: "x", y: "y", fill: "#3d5a6c", r: 4.5, fillOpacity: 0.85 }),
+    // mark the region mean
+    Plot.dot([{ x: p2_demeanDemo.xbar, y: p2_demeanDemo.ybar }], {
+      x: "x", y: "y", fill: "#990000", r: 6, symbol: "diamond"
+    }),
+    Plot.ruleX([p2_demeanDemo.xbar], { stroke: "#990000", strokeDasharray: "3,3", strokeOpacity: 0.6 }),
+    Plot.ruleY([p2_demeanDemo.ybar], { stroke: "#990000", strokeDasharray: "3,3", strokeOpacity: 0.6 }),
+    Plot.text(["region mean (x̄ᵢ, ȳᵢ)"], {
+      frameAnchor: "top-left", dx: 8, dy: 6, fill: "#990000", fontWeight: 700,
+      textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.frame({ stroke: "#e6e3db" })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+p2_dmPanel = Plot.plot({
+  width: Math.min(330, width),
+  height: 250,
+  marginLeft: 60,
+  marginBottom: 45,
+  marginTop: 30,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: { label: "Staffing − x̄ᵢ →", nice: true, domain: [-2.4, 2.4] },
+  y: { label: "Wait − ȳᵢ →", nice: true, domain: [-4.2, 4.2] },
+  marks: [
+    Plot.ruleX([0], { stroke: "#79766e" }),
+    Plot.ruleY([0], { stroke: "#79766e" }),
+    Plot.dot(p2_demeanDemo.raw, { x: "xt", y: "yt", fill: "#3d5a6c", r: 4.5, fillOpacity: 0.85 }),
+    Plot.dot([{ x: 0, y: 0 }], { x: "x", y: "y", fill: "#990000", r: 6, symbol: "diamond" }),
+    Plot.text(["cloud now centered on (0, 0)"], {
+      frameAnchor: "top-left", dx: 8, dy: 6, fill: "#3d5a6c", fontWeight: 700,
+      textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.frame({ stroke: "#e6e3db" })
+  ]
+})
+```
+
+::: {.aside}
+**Left:** one region's six years, with its mean $(\bar{x}_i, \bar{y}_i)$ marked as a red diamond. **Right:** the same six points after subtracting that mean --- the cloud is recentered on the origin, but the downward tilt (the within-region effect of staffing on waiting time) is identical. Demeaning moves the cloud; it does not bend it. In the multi-region tool below, *every* region's cloud gets slid to this same origin, which is why $\alpha_i$ can no longer separate them.
+:::
+
+
+## See It: Confounding, Pooled OLS, and the Within Estimator
+
+The interactive below simulates panel data for several Swedish regions observed over multiple years. Each region has its own true baseline waiting time $\alpha_i$ (its cloud of points sits at its own height). The slider controls how strongly a region's baseline $\alpha_i$ is correlated with its average nurse staffing --- that is, the strength of the confounding. The true within-region slope $\beta$ is *fixed* throughout; only the confounding changes.
+
+::: {.interactive-container}
+
+#### Pooled OLS drifts; fixed effects stays on target
+
+::: {.callout-note appearance="minimal"}
+**Start here:** drag **Confounding** from 0 up to +0.9 and watch the red pooled line rotate while the per-region slopes hold. Then flip **View** to *After demeaning*. Full walkthrough below the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof fe_corr = Inputs.range([-0.95, 0.95], {
+  value: 0.7,
+  step: 0.05,
+  label: "Confounding: Corr(α, staffing)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof fe_nRegions = Inputs.range([3, 8], {
+  value: 5,
+  step: 1,
+  label: "Number of regions"
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.78rem; color: #79766e; margin: -0.3rem 0 0.4rem; font-family: 'Inter', sans-serif;">More regions = more clouds; watch the pooled line get more decisively fooled as between-region spread grows.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof fe_view = Inputs.radio(["Raw data", "After demeaning"], {
+  value: "Raw data",
+  label: "View"
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-size: 0.78rem; color: #79766e; margin: -0.3rem 0 0.4rem; font-family: 'Inter', sans-serif;">The pooled vs per-region lines appear only in <em>Raw data</em>; <em>After demeaning</em> collapses every cloud to the origin and shows the single fixed-effects fit.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof fe_reseed = Inputs.button("New random draw", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// True parameters held fixed throughout the simulation
+fe_trueBeta = -2.4          // one more nurse / 10k lowers waiting time by 2.4 days
+fe_T = 6                    // years per region
+fe_alphaSpread = 16         // spread of regional baselines (days) — large enough that strong confounding can flip the pooled slope positive
+fe_xSpread = 2.2            // within-region spread of staffing
+fe_noiseSD = 1.6            // idiosyncratic noise (days)
+fe_xBaseMean = 7.0          // average nurse density (per 10k)
+fe_yBaseMean = 22           // anchor for waiting-time intercept (days)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Simulate the panel. Reactive on the slider, region count, and reseed button.
+fe_panel = {
+  fe_reseed; // take a dependency so the button forces a fresh draw
+  const rng = d3.randomNormal.source(Math.random)(0, 1);
+  const rho = fe_corr;
+  const nR = fe_nRegions;
+  const rows = [];
+
+  // One latent normal per region drives BOTH its baseline alpha and its
+  // average staffing level, producing Corr(alpha, xbar) ≈ rho.
+  for (let i = 0; i < nR; i++) {
+    const z = rng();                       // shared latent for region i
+    const indepA = rng();                  // independent component for alpha
+    // alpha_i correlated with the latent z with correlation |rho|
+    const alphaStd = rho * z + Math.sqrt(1 - rho * rho) * indepA;
+    const alpha_i = fe_yBaseMean + fe_alphaSpread * alphaStd * 0.5;
+    // region's average staffing also driven by the latent z
+    const xbar_i = fe_xBaseMean + 2.0 * z;
+
+    for (let t = 0; t < fe_T; t++) {
+      // within-region year-to-year staffing variation around xbar_i
+      const x = xbar_i + fe_xSpread * rng() * 0.6;
+      const e = fe_noiseSD * rng();
+      // structural model: same beta for every region
+      const y = alpha_i + fe_trueBeta * (x - fe_xBaseMean) + e;
+      rows.push({ region: i, t, x, y, alpha: alpha_i });
+    }
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Within-region means
+fe_means = {
+  const g = d3.group(fe_panel, d => d.region);
+  const m = new Map();
+  for (const [r, rows] of g) {
+    m.set(r, { xbar: d3.mean(rows, d => d.x), ybar: d3.mean(rows, d => d.y) });
+  }
+  return m;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Demeaned (within-transformed) data
+fe_demeaned = fe_panel.map(d => {
+  const mr = fe_means.get(d.region);
+  return { ...d, xt: d.x - mr.xbar, yt: d.y - mr.ybar };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// OLS slope helper
+fe_olsSlope = function(pts, xkey, ykey) {
+  const xb = d3.mean(pts, d => d[xkey]);
+  const yb = d3.mean(pts, d => d[ykey]);
+  let num = 0, den = 0;
+  for (const p of pts) {
+    num += (p[xkey] - xb) * (p[ykey] - yb);
+    den += (p[xkey] - xb) ** 2;
+  }
+  return den === 0 ? NaN : num / den;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The two estimates
+fe_betaPooled = fe_olsSlope(fe_panel, "x", "y")
+fe_betaWithin = fe_olsSlope(fe_demeaned, "xt", "yt")
+```
+
+```{ojs}
+//| echo: false
+
+// Half-up rounder so displayed values match the prose (single source of truth)
+fe_round2 = x => (Math.sign(x) * Math.round(Math.abs(x) * 100 + 1e-9) / 100).toFixed(2)
+```
+
+```{ojs}
+//| echo: false
+
+// Estimate readout cards
+html`
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-bottom: 0.85rem; font-family: 'Inter', sans-serif; font-size: 0.82rem;">
+  <div style="min-height: 3.4rem; padding: 0.55rem 0.8rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em;">True β</div>
+    <div style="font-size: 1.15rem; font-weight: 700; color: #9c7a33;">${fe_round2(fe_trueBeta)}</div>
+  </div>
+  <div style="min-height: 3.4rem; padding: 0.55rem 0.8rem; border-radius: 0.5rem; background: rgba(153,0,0,0.06); border: 1px solid rgba(153,0,0,0.18);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em;">Pooled OLS β̂</div>
+    <div style="font-size: 1.15rem; font-weight: 700; color: #990000;">${fe_round2(fe_betaPooled)}</div>
+  </div>
+  <div style="min-height: 3.4rem; padding: 0.55rem 0.8rem; border-radius: 0.5rem; background: rgba(61,90,108,0.06); border: 1px solid rgba(61,90,108,0.18);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em;">Fixed-effects β̂</div>
+    <div style="font-size: 1.15rem; font-weight: 700; color: #3d5a6c;">${fe_round2(fe_betaWithin)}</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Color scale shared across regions (Uppsala-academic; no entry collides with
+// the pooled-OLS red #990000, which is reserved for the pooled line/card)
+fe_palette = ["#3d5a6c", "#9c7a33", "#2e6f40", "#79766e", "#5a7d92", "#b08a3e", "#4a8a5e", "#56524a"]
+```
+
+```{ojs}
+//| echo: false
+
+fe_view === "Raw data" ? Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 64,
+  marginRight: 18,
+  marginTop: 36,
+  marginBottom: 45,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: { label: "Nurses per 10,000 residents →", nice: true },
+  y: { label: "Mean waiting time (days) →", nice: true },
+  color: { type: "ordinal", range: fe_palette },
+  marks: [
+    // pooled OLS line (biased): fit across ALL points ignoring region
+    Plot.linearRegressionY(fe_panel, {
+      x: "x", y: "y",
+      stroke: "#990000", strokeWidth: 3, ci: 0
+    }),
+    // per-region within fits (these share the true slope on average)
+    Plot.linearRegressionY(fe_panel, {
+      x: "x", y: "y", z: "region",
+      stroke: "region", strokeWidth: 1.4, strokeOpacity: 0.55, ci: 0
+    }),
+    Plot.dot(fe_panel, {
+      x: "x", y: "y", fill: "region", r: 4.5, fillOpacity: 0.85,
+      title: d => `Region ${d.region + 1}, year ${d.t + 1}\nstaffing ${d.x.toFixed(1)}, wait ${d.y.toFixed(1)} days`
+    }),
+    // on-chart legend: pooled (thick red) vs per-region within fits (thin)
+    Plot.text(["━ Pooled OLS"], {
+      frameAnchor: "top-left", dx: 8, dy: 6, fill: "#990000",
+      fontWeight: 700, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text(["━ Per-region (within) fits"], {
+      frameAnchor: "top-left", dx: 8, dy: 22, fill: "#79766e",
+      textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.frame({ stroke: "#e6e3db" })
+  ]
+}) : Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 64,
+  marginRight: 18,
+  marginTop: 36,
+  marginBottom: 45,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: { label: "Staffing − region mean →", nice: true },
+  y: { label: "Wait − region mean (days) →", nice: true },
+  color: { type: "ordinal", range: fe_palette },
+  marks: [
+    Plot.ruleX([0], { stroke: "#79766e" }),
+    Plot.ruleY([0], { stroke: "#79766e" }),
+    // single within fit on the pooled cloud of demeaned points = FE estimate
+    Plot.linearRegressionY(fe_demeaned, {
+      x: "xt", y: "yt",
+      stroke: "#3d5a6c", strokeWidth: 3, ci: 0
+    }),
+    Plot.dot(fe_demeaned, {
+      x: "xt", y: "yt", fill: "region", r: 4.5, fillOpacity: 0.85,
+      title: d => `Region ${d.region + 1}, year ${d.t + 1}\nΔstaffing ${d.xt.toFixed(2)}, Δwait ${d.yt.toFixed(2)} days`
+    }),
+    Plot.text(["━ Fixed-effects (within) fit"], {
+      frameAnchor: "top-left", dx: 8, dy: 6, fill: "#3d5a6c",
+      fontWeight: 700, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.frame({ stroke: "#e6e3db" })
+  ]
+})
+```
+
+:::
+
+### How to Read This Visualization
+
+**Step 1: Start with no confounding.** Drag the **Confounding** slider to $0$. In the *Raw data* view, each colored cloud is one region's six years of observations (hover any point for its region number). The thin colored lines are each region's own within-region fit; the thick red line is pooled OLS run across all points at once. With zero confounding, the regional clouds are scattered at random heights, and the red pooled line lies close to the true downward slope. Compare the three cards: pooled OLS β̂ and fixed-effects β̂ are both near the true $-2.4$.
+
+**Step 2: Turn the confounding up.** Now drag the slider toward $+0.9$. Watch the clouds rearrange: regions with high baseline waiting times (high clouds) are pulled toward high staffing (right side), and low-baseline regions slide left. The thick red pooled line **rotates** --- it flattens, and at strong confounding can even tilt the *wrong way* (upward), because it is now tracing the between-region pattern (high-baseline regions hire more) instead of the causal within-region effect. The red card drifts away from $-2.4$ and may turn positive --- the same sign flip you will compute by hand in Exercise 1.
+
+**Step 3: Confirm the within slopes never moved.** Look at the thin colored per-region lines throughout Step 2. Each region's *own* slope stays downward and parallel --- the true effect of $-2.4$ is baked into every region. Only the *arrangement* of the clouds changed, not the slope inside any cloud. The pooled line is fooled by the arrangement; the within slopes are not.
+
+**Step 4: Switch to "After demeaning."** Flip the **View** toggle. Every region's cloud is now recentered on the origin --- we subtracted each region's own $(\bar{x}_i, \bar{y}_i)$. The vertical separation that encoded $\alpha_i$ is *gone*; all the clouds collapse into one common scatter. The slate line is OLS on this pooled-and-demeaned cloud --- the fixed-effects estimate. Notice it sits on the true $-2.4$ **regardless of where you left the confounding slider**. That is the whole point: demeaning erased $\alpha_i$, so its correlation with staffing can no longer bias the slope.
+
+**Step 5: Stress-test it.** Click **New random draw** a few times and slide the confounding back and forth. The red (pooled) card jumps around with the confounding; the slate (fixed-effects) card stays anchored near $-2.4$ every time. Pooled OLS is *inconsistent under confounding*; fixed effects is *consistent*.
+
+
+## Equivalence to Least-Squares Dummy Variables (LSDV)
+
+Demeaning looks like a clever shortcut. But there is a second, completely mechanical way to remove $\alpha_i$: just **estimate it**. Include a separate dummy variable for each region and run one big OLS:
+
+$$
+y_{it} = \sum_{j=1}^{N} \alpha_j\, D_{ij} + \beta\, x_{it} + e_{it},
+$$
+
+where $D_{ij} = 1$ if observation belongs to region $j$ and $0$ otherwise. This is the **Least-Squares Dummy Variables (LSDV)** estimator. The dummies soak up each region's baseline level directly.
+
+::: {.glass-card .glass-card--insight}
+**LSDV and the within estimator give numerically identical $\hat\beta$.** Including a full set of unit dummies and demeaning the data are two routes to exactly the same slope coefficient. This is not a coincidence --- it is the **Frisch--Waugh--Lovell (FWL) theorem**.
+:::
+
+Recall FWL from [Module 4](../04-regression/frisch-waugh-lovell.qmd): the coefficient on $x$ in a multiple regression equals the coefficient from a simple regression of *residualized* $y$ on *residualized* $x$, where "residualized" means we have partialled out the other regressors. In LSDV, the "other regressors" are the unit dummies. Regressing any variable on a full set of unit dummies and taking residuals is **exactly** subtracting each unit's mean --- because the OLS fit of a variable on group indicators *is* the group means. So:
+
+$$
+\text{partial out unit dummies} \;\;\Longleftrightarrow\;\; \text{subtract unit means} \;\;\Longleftrightarrow\;\; \text{demean}.
+$$
+
+The single least-obvious link in that chain is the first arrow: *why* is "regress on unit dummies and keep the residuals" the same as "subtract the unit mean"? The micro-example below makes it concrete. Regress a variable $y$ on nothing but a region indicator. OLS has no choice: with only a group dummy to work with, the best-fitting prediction for every observation in a group is simply that group's average. So the **fitted value equals the group mean**, and the **residual equals $y$ minus the group mean** --- which is exactly the demeaned variable $\tilde{y}_{it}$.
+
+| Region | Year | $y_{it}$ | Fitted $\hat{y}=\bar{y}_i$ | Residual $y_{it}-\bar{y}_i=\tilde{y}_{it}$ |
+|:------:|:----:|:------:|:------------------:|:-------------------------------:|
+| A | 1 | 30 | 28 | $+2$ |
+| A | 2 | 26 | 28 | $-2$ |
+| B | 1 | 18 | 16 | $+2$ |
+| B | 2 | 14 | 16 | $-2$ |
+
+: Regressing $y$ on a region dummy returns each region's mean as the fitted value ($\bar{y}_A=28$, $\bar{y}_B=16$); the residual column is therefore identical to the demeaned outcome. Do the same to $x$, regress residual-$y$ on residual-$x$, and you have reproduced the within estimator --- this is FWL in one table. {.science-table}
+
+FWL guarantees the $\hat\beta$ is identical either way. The practical lesson: with $N$ large (thousands of vårdcentraler, say), you would never literally invert a matrix with thousands of dummy columns; software like `fixest` uses the demeaning route, which is computationally trivial. But conceptually, fixed effects = controlling for a dummy per unit.
+
+There is one caveat about the *standard errors*: LSDV correctly counts the $N$ estimated intercepts as parameters, costing $N$ degrees of freedom. A naive demeaning routine that forgets this will report degrees of freedom that are too large and standard errors that are too small. Good panel software corrects for this automatically.
+
+
+## What Fixed Effects Can and Cannot Do
+
+Fixed effects is powerful but not magic. Be precise about its reach.
+
+::: {.glass-card .glass-card--assumption}
+**Fixed effects removes ALL time-invariant confounders --- observed or unobserved.** Geography, founding-era capital stock, regional administrative culture, fixed population composition: anything constant within a unit over the study window is differenced away, *even things you never measured and cannot name*. This is its signature strength.
+:::
+
+But this strength has three sharp limits.
+
+**1. It cannot identify the effect of time-invariant regressors.** If you want to estimate the effect of a variable that never changes within a unit --- say, whether a region is coastal, or its land area --- fixed effects is useless for it. Such a variable is collinear with $\alpha_i$; demeaning sends it to a column of zeros ($z_{it} - \bar{z}_i = 0$ when $z_{it}$ is constant). The very operation that saves you from time-invariant *confounders* also blinds you to time-invariant *causes*. You cannot have it both ways: $\alpha_i$ absorbs all of them.
+
+The mechanics are worth seeing literally. Take "coastal," a region trait that is the same in every year. Its within-region mean equals its constant value, so every demeaned entry is zero --- a column of zeros carries no information, and a coefficient on it cannot be estimated:
+
+| Region | Year | Coastal $z_{it}$ | Region mean $\bar{z}_i$ | Demeaned $\tilde{z}_{it}=z_{it}-\bar{z}_i$ |
+|:------:|:----:|:----------------:|:-----------------------:|:------------------------------------------:|
+| Gotland | 1 | 1 | 1 | $0$ |
+| Gotland | 2 | 1 | 1 | $0$ |
+| Värmland | 1 | 0 | 0 | $0$ |
+| Värmland | 2 | 0 | 0 | $0$ |
+
+: A constant-within-unit regressor demeans to all zeros, so fixed effects cannot estimate its effect. Contrast staffing, which *varies* within a region year to year and so survives demeaning with nonzero entries --- that surviving variation is what identifies $\hat\beta$. {.science-table}
+
+**2. It does NOT solve time-varying confounding.** Fixed effects holds constant everything that is fixed within a unit. It does *nothing* about a confounder that *changes over time* and is correlated with $x_{it}$. If, in the same years a region hired nurses, it also rolled out a digital triage system that independently cut waiting times, the staffing coefficient still absorbs that. Within-transformation cannot difference out a moving target. This is why later pages turn to difference-in-differences and event studies, which add a parallel-trends logic on top.
+
+**3. It does NOT solve reverse causality.** If long waiting times *cause* regions to hire more nurses (a feedback loop), then $x_{it}$ responds to past $y$, strict exogeneity fails, and fixed effects is biased like any other regression. Demeaning addresses confounding from fixed traits, not simultaneity.
+
+::: {.glass-card .glass-card--warning}
+A common misconception is that "controlling for fixed effects" makes an analysis causal. It does not. Fixed effects is a tool for one specific threat --- time-invariant unobserved heterogeneity. Time-varying confounding, reverse causality, and measurement error all survive the within transformation. Always state which threat your fixed effects is and is not addressing.
+:::
+
+
+## Two-Way Fixed Effects
+
+So far $\alpha_i$ absorbs unit-specific, time-invariant factors. But there are also **time-specific, unit-invariant** shocks: a nationwide pay agreement for nurses, a pandemic year, a change in national reimbursement rules. These hit all 21 regions in the same year and would confound a within-region comparison if staffing trends happen to line up with them.
+
+The fix is symmetric: add a **time fixed effect** $\lambda_t$, common to all units in year $t$:
+
+$$
+y_{it} = \alpha_i + \lambda_t + \beta\, x_{it} + e_{it}.
+$$
+
+**Read this as**: "Region $i$'s waiting time in year $t$ equals a region baseline, plus a national year effect, plus the staffing effect, plus noise." This is the **two-way fixed effects (TWFE)** model. Now $\hat\beta$ is identified from variation that is *both* within-region (deviations from each region's mean) *and* within-year (deviations from each year's national mean). It nets out any shock that is common across regions in a given year and any trait fixed within a region.
+
+The picture to keep in mind is a grid: regions are rows, years are columns. The unit effect $\alpha_i$ is one number per **row**; the time effect $\lambda_t$ is one number per **column**. Two-way demeaning sweeps both out --- subtract each row's mean and each column's mean --- and $\hat\beta$ is read off whatever variation is left in the *interior* cells once row and column levels are gone.
+
+```{ojs}
+//| echo: false
+
+// Static N×T grid diagram: rows = regions (swept by α_i), columns = years
+// (swept by λ_t). Pure d3.create SVG, returns the node.
+p2_twfeGrid = {
+  const rows = ["Region 1", "Region 2", "Region 3"];
+  const cols = ["Year 1", "Year 2", "Year 3", "Year 4"];
+  const W = Math.min(540, width);
+  const H = 250;
+  const left = 86, top = 54, gap = 6;
+  const cellW = (W - left - 96) / cols.length;
+  const cellH = (H - top - 44) / rows.length;
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // interior cells (the y_it observations)
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < cols.length; c++) {
+      const x = left + c * cellW, y = top + r * cellH;
+      svg.append("rect")
+        .attr("x", x + gap / 2).attr("y", y + gap / 2)
+        .attr("width", cellW - gap).attr("height", cellH - gap)
+        .attr("rx", 4).attr("fill", "#f6f5f1").attr("stroke", "#e6e3db");
+      svg.append("text")
+        .attr("x", x + cellW / 2).attr("y", y + cellH / 2)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 12).attr("fill", "#79766e")
+        .text(`y${r + 1}${c + 1}`);
+    }
+  }
+
+  // row-mean band on the left (α_i) — slate
+  for (let r = 0; r < rows.length; r++) {
+    const y = top + r * cellH;
+    svg.append("rect")
+      .attr("x", 6).attr("y", y + gap / 2)
+      .attr("width", left - 14).attr("height", cellH - gap)
+      .attr("rx", 4).attr("fill", "rgba(61,90,108,0.12)").attr("stroke", "#3d5a6c");
+    svg.append("text")
+      .attr("x", 6 + (left - 14) / 2).attr("y", y + cellH / 2)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#3d5a6c")
+      .text(`α${r + 1}`);
+  }
+
+  // column-mean band on top (λ_t) — ochre
+  for (let c = 0; c < cols.length; c++) {
+    const x = left + c * cellW;
+    svg.append("rect")
+      .attr("x", x + gap / 2).attr("y", 8)
+      .attr("width", cellW - gap).attr("height", top - 18)
+      .attr("rx", 4).attr("fill", "rgba(156,122,51,0.14)").attr("stroke", "#9c7a33");
+    svg.append("text")
+      .attr("x", x + cellW / 2).attr("y", 8 + (top - 18) / 2)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#9c7a33")
+      .text(`λ${c + 1}`);
+  }
+
+  // legend on the right
+  const lx = W - 84;
+  const legend = [
+    ["#3d5a6c", "rgba(61,90,108,0.12)", "αᵢ row"],
+    ["#9c7a33", "rgba(156,122,51,0.14)", "λₜ col"]
+  ];
+  legend.forEach(([stroke, fill, lab], i) => {
+    const ly = top + i * 24;
+    svg.append("rect").attr("x", lx).attr("y", ly).attr("width", 14).attr("height", 14)
+      .attr("rx", 3).attr("fill", fill).attr("stroke", stroke);
+    svg.append("text").attr("x", lx + 20).attr("y", ly + 7)
+      .attr("dominant-baseline", "central").attr("font-size", 11).attr("fill", "#44443f")
+      .text(lab);
+  });
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+The interior cells are the observed region-year outcomes $y_{it}$. The slate band on the left is the region effect $\alpha_i$ (one per **row**); the ochre band on top is the year effect $\lambda_t$ (one per **column**). TWFE subtracts the row levels and the column levels, leaving $\hat\beta$ to be identified from the residual variation inside the grid --- the staffing movements that survive after both a region's baseline and a year's national shock are removed.
+:::
+
+Estimation generalizes the demean operator to **two-way demeaning** (the algorithm subtracts unit means and time means iteratively until convergence; this is what `fixest` does under the hood with `| unit + year`). Two-way fixed effects is the standard specification for region-year panels, and it is the engine behind the canonical difference-in-differences design.
+
+::: {.glass-card .glass-card--assumption}
+**The incidental-parameters problem (conceptual).** When the number of fixed effects grows with the sample --- for instance, with very short panels where $T$ is small but $N$ is large --- the estimated $\alpha_i$ are each based on only a handful of observations and are individually noisy. For *linear* fixed effects, $\hat\beta$ remains consistent as $N \to \infty$ with $T$ fixed, because the slope is identified by pooling within-unit variation across all units. But in *nonlinear* models (fixed-effects logit, probit, Poisson), the noisy $\hat\alpha_i$ contaminate $\hat\beta$ itself, and it can be inconsistent for fixed $T$ --- this is the **incidental-parameters problem** (Neyman & Scott, 1948). The lesson: linear FE is forgiving of short panels; nonlinear FE is not, and needs special estimators.
+:::
+
+
+<details>
+<summary>Math Details: Deriving the Within Estimator and Showing αᵢ Differences Out</summary>
+<div class="details-content">
+
+### Step 1: The model and the within average
+
+Start from the unobserved-effects model for unit $i$ in period $t$:
+
+$$
+y_{it} = \alpha_i + \beta\, x_{it} + e_{it}, \qquad t = 1, \dots, T.
+$$
+
+Average over the $T$ periods for unit $i$. Define $\bar{y}_i = \frac{1}{T}\sum_t y_{it}$, and similarly $\bar{x}_i$, $\bar{e}_i$:
+
+$$
+\bar{y}_i = \frac{1}{T}\sum_{t=1}^{T}\big(\alpha_i + \beta x_{it} + e_{it}\big)
+= \alpha_i + \beta\, \bar{x}_i + \bar{e}_i.
+$$
+
+The key fact: $\frac{1}{T}\sum_t \alpha_i = \alpha_i$, because $\alpha_i$ does not depend on $t$. The unit effect survives averaging unchanged.
+
+### Step 2: Subtract --- the within transformation
+
+Subtract the unit-mean equation from the original:
+
+$$
+y_{it} - \bar{y}_i = (\alpha_i - \alpha_i) + \beta(x_{it} - \bar{x}_i) + (e_{it} - \bar{e}_i).
+$$
+
+The $\alpha_i$ terms cancel exactly. Writing $\tilde{z}_{it} = z_{it} - \bar{z}_i$:
+
+$$
+\tilde{y}_{it} = \beta\, \tilde{x}_{it} + \tilde{e}_{it}.
+$$
+
+The transformed model contains **no unit effect** and therefore no term that can be correlated with $\tilde{x}_{it}$ through $\alpha_i$. This is why $\operatorname{Cov}(\alpha_i, x_{it}) \neq 0$ no longer matters.
+
+### Step 3: OLS on the demeaned data
+
+Apply OLS to $\tilde{y}_{it} = \beta \tilde{x}_{it} + \tilde{e}_{it}$ (no intercept needed; the demeaned variables already have mean zero):
+
+$$
+\hat\beta_{\text{FE}}
+= \frac{\sum_{i=1}^{N}\sum_{t=1}^{T} \tilde{x}_{it}\,\tilde{y}_{it}}
+       {\sum_{i=1}^{N}\sum_{t=1}^{T} \tilde{x}_{it}^{2}}.
+$$
+
+### Step 4: Consistency
+
+Substitute the true transformed model $\tilde{y}_{it} = \beta\tilde{x}_{it} + \tilde{e}_{it}$ into the estimator:
+
+$$
+\hat\beta_{\text{FE}} = \beta + \frac{\sum_i\sum_t \tilde{x}_{it}\,\tilde{e}_{it}}{\sum_i\sum_t \tilde{x}_{it}^{2}}.
+$$
+
+Under strict exogeneity, $E[e_{it} \mid x_{i1},\dots,x_{iT}, \alpha_i] = 0$, which implies $E[\tilde{x}_{it}\,\tilde{e}_{it}] = 0$ (the demeaned regressor is a function of the full $x$ history, all of which the error is mean-independent of). By the law of large numbers the second term converges to zero, so $\hat\beta_{\text{FE}} \xrightarrow{p} \beta$. Fixed effects is consistent **even when** $\alpha_i$ is correlated with $x_{it}$, because $\alpha_i$ never enters the demeaned estimating equation.
+
+Contrast with pooled OLS, where $\alpha_i$ *does* enter the error: there the analogous term is $\operatorname{Cov}(x_{it}, \alpha_i)/\operatorname{Var}(x_{it})$, which is nonzero under confounding. That single difference is the whole value of panel data.
+
+### Step 5: Why time-invariant regressors drop out
+
+Suppose $w_i$ is constant over time within unit $i$ (e.g., land area). Then $\bar{w}_i = w_i$, so $\tilde{w}_{it} = w_i - w_i = 0$ for every $t$. A column of zeros carries no information and cannot be estimated --- its coefficient is not identified under fixed effects. Geometrically, $w_i$ lies in the span of the unit dummies, so partialling out the dummies annihilates it (FWL again).
+
+</div>
+</details>
+
+
+## Code Implementations
+
+The code below builds a small region-year panel, then shows three things that must agree: `fixest::feols` with unit fixed effects, plain `lm` with `factor(region)` dummies (LSDV), and **manual demeaning**. All three return the same $\hat\beta$.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(fixest)
+library(dplyr)
+
+set.seed(2024)
+
+# --- Simulate a region-year panel (21 regions x 6 years) ---
+N <- 21; T <- 6
+true_beta <- -2.4
+
+regions <- tibble(
+  region    = 1:N,
+  alpha     = rnorm(N, mean = 22, sd = 4.5),  # baseline waiting time (days)
+  staff_bar = 7 + 0.9 * scale(rnorm(N))[, 1]  # region avg staffing
+)
+# Make staffing correlate with the baseline -> confounding for pooled OLS
+regions$staff_bar <- regions$staff_bar + 0.45 * (regions$alpha - mean(regions$alpha))
+
+panel <- expand.grid(region = 1:N, year = 1:T) |>
+  left_join(regions, by = "region") |>
+  mutate(
+    staff = staff_bar + rnorm(n(), 0, 1.0),                 # within variation
+    wait  = alpha + true_beta * (staff - 7) + rnorm(n(), 0, 1.6)
+  )
+
+# --- 1. Pooled OLS (biased: ignores alpha_i) ---
+pooled <- feols(wait ~ staff, data = panel)
+
+# --- 2. Fixed effects via feols (within / demeaning under the hood) ---
+fe <- feols(wait ~ staff | region, data = panel)
+
+# --- 3. LSDV: a dummy per region (numerically identical beta) ---
+lsdv <- lm(wait ~ staff + factor(region), data = panel)
+
+# --- 4. Manual demeaning: subtract each region's mean, then OLS ---
+panel_dm <- panel |>
+  group_by(region) |>
+  mutate(staff_dm = staff - mean(staff),
+         wait_dm  = wait  - mean(wait)) |>
+  ungroup()
+manual <- lm(wait_dm ~ staff_dm - 1, data = panel_dm)
+
+cat("True beta            :", true_beta, "\n")
+cat("Pooled OLS beta      :", round(coef(pooled)["staff"], 3), "\n")
+cat("feols FE beta        :", round(coef(fe)["staff"], 3), "\n")
+cat("LSDV beta            :", round(coef(lsdv)["staff"], 3), "\n")
+cat("Manual demeaning beta:", round(coef(manual)["staff_dm"], 3), "\n")
+# feols, LSDV, and manual demeaning agree to numerical precision.
+
+# --- Two-way FE (region + year) with clustered SEs ---
+twfe <- feols(wait ~ staff | region + year, data = panel,
+              cluster = ~ region)
+summary(twfe)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from linearmodels.panel import PanelOLS
+
+rng = np.random.default_rng(2024)
+
+# --- Simulate a region-year panel (21 regions x 6 years) ---
+N, T, true_beta = 21, 6, -2.4
+alpha = rng.normal(22, 4.5, N)                      # baseline waiting time
+staff_bar = 7 + 0.9 * (rng.normal(0, 1, N))
+staff_bar = staff_bar + 0.45 * (alpha - alpha.mean())  # induce confounding
+
+rows = []
+for i in range(N):
+    for t in range(1, T + 1):
+        staff = staff_bar[i] + rng.normal(0, 1.0)
+        wait = alpha[i] + true_beta * (staff - 7) + rng.normal(0, 1.6)
+        rows.append({"region": i + 1, "year": t, "staff": staff, "wait": wait})
+panel = pd.DataFrame(rows)
+
+# --- 1. Pooled OLS (biased) ---
+pooled = smf.ols("wait ~ staff", data=panel).fit()
+
+# --- 2. LSDV: a dummy per region ---
+lsdv = smf.ols("wait ~ staff + C(region)", data=panel).fit()
+
+# --- 3. Manual demeaning, then OLS through the origin ---
+dm = panel.copy()
+dm["staff_dm"] = dm.groupby("region")["staff"].transform(lambda s: s - s.mean())
+dm["wait_dm"]  = dm.groupby("region")["wait"].transform(lambda s: s - s.mean())
+manual = smf.ols("wait_dm ~ staff_dm - 1", data=dm).fit()
+
+# --- 4. PanelOLS with entity (region) fixed effects ---
+pdata = panel.set_index(["region", "year"])
+fe = PanelOLS.from_formula("wait ~ staff + EntityEffects", data=pdata).fit()
+
+print(f"True beta             : {true_beta}")
+print(f"Pooled OLS beta       : {pooled.params['staff']:.3f}")
+print(f"LSDV beta             : {lsdv.params['staff']:.3f}")
+print(f"Manual demeaning beta : {manual.params['staff_dm']:.3f}")
+print(f"PanelOLS FE beta      : {fe.params['staff']:.3f}")
+# LSDV, manual demeaning, and PanelOLS agree to numerical precision.
+
+# --- Two-way FE (entity + time) with clustered SEs ---
+twfe = PanelOLS.from_formula(
+    "wait ~ staff + EntityEffects + TimeEffects", data=pdata
+).fit(cov_type="clustered", cluster_entity=True)
+print(twfe.summary)
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A tiny panel of **two regions observed over two years** records district-nurse density $x$ (per 10,000) and mean waiting time $y$ (days):
+
+| Region | Year | $x$ | $y$ |
+|:------:|:----:|:---:|:---:|
+| A      | 1    | 6   | 30  |
+| A      | 2    | 8   | 26  |
+| B      | 1    | 4   | 18  |
+| B      | 2    | 6   | 14  |
+
+(a) Compute the fixed-effects (within) estimate of $\beta$ by demeaning each region.
+(b) Compute the pooled-OLS slope ignoring region. Why does it differ?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Within estimate.** Demean within each region.
+
+Region A: $\bar{x}_A = 7$, $\bar{y}_A = 28$.
+
+- Year 1: $\tilde{x} = 6 - 7 = -1$, $\tilde{y} = 30 - 28 = 2$.
+- Year 2: $\tilde{x} = 8 - 7 = 1$, $\tilde{y} = 26 - 28 = -2$.
+
+Region B: $\bar{x}_B = 5$, $\bar{y}_B = 16$.
+
+- Year 1: $\tilde{x} = 4 - 5 = -1$, $\tilde{y} = 18 - 16 = 2$.
+- Year 2: $\tilde{x} = 6 - 5 = 1$, $\tilde{y} = 14 - 16 = -2$.
+
+Now run OLS through the origin on the four demeaned points:
+
+$$
+\hat\beta_{\text{FE}} = \frac{\sum \tilde{x}\tilde{y}}{\sum \tilde{x}^2}
+= \frac{(-1)(2) + (1)(-2) + (-1)(2) + (1)(-2)}{(-1)^2 + 1^2 + (-1)^2 + 1^2}
+= \frac{-2 - 2 - 2 - 2}{4} = \frac{-8}{4} = -2.
+$$
+
+So $\hat\beta_{\text{FE}} = -2$: one more nurse per 10,000 lowers waiting time by 2 days, within region.
+
+**(b) Pooled OLS.** Across all four points, $\bar{x} = 6$, $\bar{y} = 22$. Deviations from the grand means:
+
+| $x - \bar{x}$ | $y - \bar{y}$ |
+|:---:|:---:|
+| 0  | 8  |
+| 2  | 4  |
+| -2 | -4 |
+| 0  | -8 |
+
+$$
+\hat\beta_{\text{pooled}} = \frac{\sum (x-\bar{x})(y-\bar{y})}{\sum(x-\bar{x})^2}
+= \frac{(0)(8) + (2)(4) + (-2)(-4) + (0)(-8)}{0 + 4 + 4 + 0}
+= \frac{16}{8} = +2.
+$$
+
+Pooled OLS reports $+2$ --- the **opposite sign** from the truth. Why? Region A has both higher staffing on average *and* higher waiting times (it is the larger, busier region: high $\alpha_A = 28$ vs. $\alpha_B = 16$). The between-region pattern is "more nurses go with longer waits," which is pure confounding by $\alpha_i$. Pooled OLS is dominated by that between variation and gets the sign wrong. Demeaning removes the $\alpha_i$ gap and recovers the true within effect of $-2$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague says: "I added a fixed effect for every *vårdcentral* in my regression, so my estimate of the effect of being a *rural* clinic on patient satisfaction is now free of confounding." What is wrong with this claim?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Whether a clinic is rural is (over the study window) a **time-invariant** characteristic of that clinic. The clinic fixed effect $\alpha_i$ already absorbs *everything* fixed about clinic $i$ --- including its rural/urban status. After demeaning, the "rural" indicator becomes a column of zeros within every clinic ($z_{it} - \bar{z}_i = 0$ for a constant $z$), and its coefficient is **not identified**. In practice, software either drops the variable or returns `NA`/collinearity warnings.
+
+The colleague has confused two things:
+
+1. Fixed effects *removes the confounding influence* of all time-invariant clinic traits on *other* (time-varying) regressors. That part is true and valuable.
+2. But fixed effects *cannot estimate the effect of* a time-invariant regressor, because that effect is perfectly collinear with the unit dummy.
+
+To estimate the rural-vs-urban effect, you would need between-clinic variation, which fixed effects deliberately throws away. Options include random effects (if you are willing to assume $\operatorname{Cov}(\alpha_i, x_{it}) = 0$), a hierarchical model, or interacting the time-invariant variable with a time-varying one (e.g., does the *effect of staffing* differ between rural and urban clinics --- that interaction *is* identified, because staffing varies within clinic).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Using the structural model $y_{it} = \alpha_i + \beta x_{it} + e_{it}$ with $\operatorname{Cov}(\alpha_i, x_{it}) > 0$ and $\beta < 0$ (more nurses, shorter waits), state the **sign** of the pooled-OLS bias and explain in one sentence why fixed effects is immune to it.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The pooled-OLS probability limit is
+
+$$
+\operatorname{plim}\ \hat\beta_{\text{pooled}} = \beta + \frac{\operatorname{Cov}(x_{it}, \alpha_i)}{\operatorname{Var}(x_{it})}.
+$$
+
+Since $\operatorname{Cov}(x_{it}, \alpha_i) > 0$ and $\operatorname{Var}(x_{it}) > 0$, the bias term is **positive**. Added to a negative $\beta$, it pushes the pooled estimate **upward** (toward zero, or even positive). So pooled OLS **understates the magnitude** of the beneficial effect --- it makes nurses look less helpful than they are, and could even flip the sign (as in Exercise 1).
+
+Fixed effects is immune because the within transformation subtracts each unit's mean, which **removes $\alpha_i$ entirely** from the estimating equation; with no $\alpha_i$ left, there is no $\operatorname{Cov}(x, \alpha)$ term to create bias. The only requirement is strict exogeneity of the idiosyncratic shock $e_{it}$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the confounding slider to a strong positive value and switch between "Raw data" and "After demeaning." Explain (a) what visual feature of the raw plot encodes $\alpha_i$, and (b) why the demeaned fixed-effects line lands on the true $\beta$ no matter where the slider is.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** In the raw plot, $\alpha_i$ is encoded as the **vertical height of each region's cloud** --- its average waiting-time level. A high-$\alpha$ region sits high on the $y$-axis; a low-$\alpha$ region sits low. With strong positive confounding, the high clouds are also pushed to the **right** (high staffing), because $\operatorname{Cov}(\alpha_i, \bar{x}_i) > 0$. This diagonal arrangement of cloud *centers* is what rotates the pooled (red) line away from the true slope: the red line traces the between-cloud pattern, not the within-cloud slope.
+
+**(b)** Demeaning subtracts each region's own $(\bar{x}_i, \bar{y}_i)$, which **recenters every cloud on the origin**. The vertical separation that encoded $\alpha_i$ disappears, and with it the diagonal arrangement of cloud centers --- the confounding is literally subtracted out of the picture. What remains is only the *within-cloud* co-movement of staffing and waiting time, and that co-movement carries the same true slope $\beta = -2.4$ in every region by construction. OLS on the collapsed cloud therefore recovers $\beta$ regardless of how the slider arranged the clouds before demeaning. The slider changes the *between* structure (which demeaning erases) but never the *within* structure (which demeaning preserves).
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The within (fixed-effects) estimator is OLS on data demeaned by unit; because $\alpha_i$ is constant over time it differences out, so $\operatorname{Cov}(\alpha_i, x_{it}) \neq 0$ no longer biases $\hat\beta$.
+- Pooled OLS suffers omitted-variable bias of $\operatorname{Cov}(x_{it}, \alpha_i)/\operatorname{Var}(x_{it})$ --- a bias of inconsistency that more region-years only make more precise, not less wrong.
+- Demeaning, LSDV (a dummy per unit), and partialling out unit indicators are three routes to the identical $\hat\beta$, guaranteed by Frisch--Waugh--Lovell.
+- Fixed effects removes all time-invariant confounders (named or not) but cannot estimate time-invariant regressors and does nothing about time-varying confounding or reverse causality.
+- Two-way fixed effects adds a time effect $\lambda_t$ to absorb common year shocks; linear FE stays consistent in short panels, but nonlinear FE faces the incidental-parameters problem.
+:::
+
+## What Comes Next
+
+The within estimator gives us a consistent $\hat\beta$ even when unmeasured, time-invariant traits confound a naive comparison --- a genuinely powerful result. But a point estimate is only half the story. Demeaning induces correlation across a unit's residuals over time, observations within a region are not independent, and short panels raise degrees-of-freedom subtleties we glossed over. Getting the **standard errors** right --- clustering, serial correlation, and the small-sample corrections that honest inference demands --- is the subject of the next page, [Practical Issues](practical-issues.qmd).

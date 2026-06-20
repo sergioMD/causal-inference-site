@@ -1,0 +1,167 @@
+---
+title: "Glossary"
+subtitle: "Key terms and notation, with pointers to where each is developed"
+---
+
+A compact reference for the central concepts of the book. Each entry links to the page where the idea is introduced and developed in full.
+
+## Foundations: Potential Outcomes
+
+Potential outcome
+:   The outcome a unit *would* take under a given treatment, written $Y_i(1)$ (under treatment) and $Y_i(0)$ (under control). Only one is ever observed. See [Potential Outcomes](01-fundamental-problem/potential-outcomes.qmd).
+
+Individual treatment effect (ITE)
+:   The difference $\tau_i = Y_i(1) - Y_i(0)$ for a single unit. Never directly observable --- the [Fundamental Problem of Causal Inference](01-fundamental-problem/potential-outcomes.qmd).
+
+Fundamental Problem of Causal Inference
+:   We observe each unit under only one treatment state, so the counterfactual outcome --- and hence $\tau_i$ --- is missing for every unit. Causal inference is fundamentally a missing-data problem.
+
+ATE / ATT / ATU
+:   Average Treatment Effect $E[Y(1)-Y(0)]$; Average effect on the Treated $E[Y(1)-Y(0)\mid D=1]$; Average effect on the Untreated $E[Y(1)-Y(0)\mid D=0]$. They coincide only without selection on gains.
+
+Switching equation
+:   $Y_i^{\text{obs}} = D_i Y_i(1) + (1-D_i) Y_i(0)$ --- the rule mapping potential outcomes to the one we observe.
+
+SUTVA
+:   The Stable Unit Treatment Value Assumption: no interference between units, and a single version of treatment. Required for $Y_i(d)$ to be well defined. See [Potential Outcomes](01-fundamental-problem/potential-outcomes.qmd).
+
+Selection bias
+:   The component of a naive treatment--control comparison due to pre-existing differences: $E[Y(0)\mid D=1] - E[Y(0)\mid D=0]$. The decomposition Naive $=$ ATT $+$ selection bias is developed in [Selection Bias](01-fundamental-problem/selection-bias.qmd).
+
+Randomization
+:   Random assignment of treatment, which makes $D$ independent of the potential outcomes, eliminating selection bias *in expectation* and balancing observed and unobserved covariates. See [Randomization](01-fundamental-problem/randomization.qmd).
+
+## Graphical Causal Models (DAGs)
+
+DAG
+:   Directed Acyclic Graph: nodes are variables, directed edges are direct causal effects, and no cycles are allowed. Encodes causal assumptions. See [DAG Basics](02-dags/basics.qmd).
+
+Confounder
+:   A common cause of treatment and outcome ($D \leftarrow U \rightarrow Y$); leaving it uncontrolled opens a back-door path and biases the estimate.
+
+Collider
+:   A variable with two arrows pointing into it ($D \rightarrow C \leftarrow Y$). A collider *blocks* a path when left alone, and *opens* it when conditioned on --- the source of collider (selection) bias. See [Good vs Bad Controls](02-dags/good-bad-controls.qmd).
+
+Mediator
+:   A variable on the causal pathway from treatment to outcome ($D \rightarrow M \rightarrow Y$). Controlling for it removes part of the very effect you want.
+
+d-separation
+:   The graphical criterion for conditional independence: two variables are d-separated given a set $Z$ if $Z$ blocks every path between them. See [d-Separation](02-dags/d-separation.qmd).
+
+Back-door criterion
+:   A set $Z$ identifies the causal effect of $D$ on $Y$ if it blocks all back-door paths and contains no descendants of $D$. The basis for valid covariate adjustment.
+
+## Statistical Foundations
+
+Sampling distribution
+:   The distribution of an estimator across hypothetical repeated samples. Its spread is the standard error. See [Distributions & Spread](03-statistical-foundations/distributions-spread.qmd).
+
+Standard error
+:   The standard deviation of an estimator's sampling distribution; for a sample mean, $\sigma/\sqrt{n}$. Measures estimation uncertainty, and shrinks like $1/\sqrt{n}$.
+
+p-value
+:   The probability, *if the null were true*, of a test statistic at least as extreme as the one observed. Not the probability the null is true. See [Hypothesis Testing](03-statistical-foundations/hypothesis-testing.qmd).
+
+Type I / Type II error
+:   Rejecting a true null (false positive, rate $\alpha$); failing to reject a false null (false negative, rate $\beta$). Power is $1-\beta$.
+
+Confidence interval
+:   An interval constructed so that, across repeated samples, a fraction $1-\alpha$ of such intervals contain the true parameter. See [Confidence Intervals](03-statistical-foundations/confidence-intervals.qmd).
+
+CI--test duality
+:   A value $\theta_0$ lies inside the $(1-\alpha)$ confidence interval iff the two-sided level-$\alpha$ test fails to reject $\theta_0$.
+
+## Regression
+
+OLS
+:   Ordinary Least Squares: the coefficients minimizing the sum of squared residuals; $\hat\beta = (X'X)^{-1}X'y$. Fitted values are the projection of $y$ onto the column space of $X$. See [OLS Mechanics](04-regression/ols-mechanics.qmd).
+
+Frisch--Waugh--Lovell (FWL)
+:   A multiple-regression coefficient equals the simple-regression coefficient on the *residualized* regressor --- "controlling for" means "partialling out." See [Frisch-Waugh-Lovell](04-regression/frisch-waugh-lovell.qmd).
+
+Omitted variable bias (OVB)
+:   The bias from excluding a relevant correlated regressor: (effect of the omitted variable on $Y$) $\times$ (regression of the omitted variable on the included one). See [Omitted Variable Bias](04-regression/omitted-variable-bias.qmd).
+
+Interaction term
+:   A product regressor $x \cdot g$ allowing the effect of $x$ to depend on $g$ (effect heterogeneity). See [Interactions](04-regression/interactions.qmd).
+
+Heteroskedasticity
+:   Non-constant error variance. Leaves OLS unbiased but makes classical standard errors wrong; use robust (HC) standard errors. See [Inference](04-regression/inference.qmd).
+
+Clustered standard errors
+:   Standard errors that allow arbitrary correlation within groups (clusters), used when observations are dependent within units/regions.
+
+## Panel Data & Difference-in-Differences
+
+Panel data
+:   Repeated observations on the same units over time, $y_{it}$. Enables controlling for time-invariant unobserved heterogeneity. See [Panel Structure](05-panel/panel-structure.qmd).
+
+Fixed effects
+:   Unit-specific intercepts $\alpha_i$ absorbed by the within (demeaning) transformation, removing all time-invariant confounders. See [Fixed Effects](05-panel/fixed-effects.qmd).
+
+Difference-in-differences (DiD)
+:   Comparing the change in outcomes for a treated group to the change for a control group: $(\bar Y^{\text{post}}_T - \bar Y^{\text{pre}}_T) - (\bar Y^{\text{post}}_C - \bar Y^{\text{pre}}_C)$. See [Classic 2x2 DiD](06-did/classic-2x2.qmd).
+
+Parallel trends
+:   The DiD identifying assumption: absent treatment, treated and control groups would have followed the same outcome trend. Untestable, but probed with pre-trends. See [Parallel Trends](06-did/parallel-trends.qmd).
+
+Event study
+:   A specification with treatment leads and lags; pre-period coefficients near zero support parallel trends, post-period coefficients trace dynamic effects. See [Diagnostics](06-did/diagnostics.qmd).
+
+Two-way fixed effects (TWFE)
+:   A regression with unit and time fixed effects plus a treatment indicator. A valid DiD with common timing, but biased under staggered adoption with heterogeneous effects. See [Staggered Adoption](06-did/staggered.qmd).
+
+Goodman--Bacon decomposition
+:   Shows TWFE is a weighted average of all 2x2 DiDs, including "forbidden" comparisons using already-treated units as controls --- the source of negative weights under staggered timing.
+
+## Instrumental Variables & Regression Discontinuity
+
+Endogeneity
+:   $\operatorname{Cov}(x,\varepsilon)\neq 0$, from confounding, simultaneity, or measurement error, which makes OLS inconsistent. See [The Endogeneity Problem](07-iv/endogeneity.qmd).
+
+Instrument
+:   A variable $z$ that is relevant (predicts $x$), satisfies the exclusion restriction (affects $y$ only through $x$), and is exogenous. See [Relevance and Exclusion](07-iv/relevance-exclusion.qmd).
+
+Two-stage least squares (2SLS)
+:   The IV estimator $\hat\beta_{IV} = \operatorname{Cov}(z,y)/\operatorname{Cov}(z,x)$ --- the reduced form divided by the first stage. See [Two-Stage Least Squares](07-iv/two-stage-least-squares.qmd).
+
+Weak instrument
+:   An instrument with a small first stage (low $F$), causing severe bias toward OLS and a non-normal, high-variance IV distribution. See [Weak Instruments](07-iv/weak-instruments.qmd).
+
+LATE
+:   Local Average Treatment Effect: with a binary instrument and monotonicity, IV identifies the effect for *compliers* only, not the ATE. See [LATE and Compliers](07-iv/late.qmd).
+
+Regression discontinuity (RD)
+:   A design exploiting a treatment that switches at a cutoff in a running variable; the jump in the outcome at the cutoff identifies a local effect. See [Sharp RD](08-rdd/sharp-rd.qmd).
+
+Fuzzy RD
+:   An RD where crossing the cutoff changes the *probability* of treatment; the estimator is the outcome jump over the treatment jump --- an IV/Wald ratio. See [Fuzzy RD](08-rdd/fuzzy-rd.qmd).
+
+McCrary density test
+:   A falsification test for manipulation of the running variable: a discontinuity in its density at the cutoff signals sorting. See [Validity and Falsification](08-rdd/validity-tests.qmd).
+
+## Selection on Observables & Synthetic Control
+
+Conditional independence (unconfoundedness)
+:   $(Y(0),Y(1)) \perp D \mid X$: treatment is as good as random given observed covariates. The key assumption behind matching and weighting. See [Selection on Observables](09-matching/selection-on-observables.qmd).
+
+Overlap (common support)
+:   $0 < P(D=1\mid X) < 1$ for all $X$: treated and control units exist at every covariate value. Required for adjustment to identify effects. See [Overlap and Balance Diagnostics](09-matching/overlap-diagnostics.qmd).
+
+Propensity score
+:   $e(X) = P(D=1\mid X)$. Conditioning on this scalar balancing score suffices to remove bias under unconfoundedness. See [Propensity Scores](09-matching/propensity-scores.qmd).
+
+Inverse-probability weighting (IPW)
+:   Reweighting units by the inverse of their treatment probability to build a balanced pseudo-population. See [Weighting and Doubly Robust Estimation](09-matching/weighting-ipw.qmd).
+
+Doubly robust estimation
+:   Combining an outcome model and a propensity model so the estimator is consistent if *either* is correctly specified (AIPW).
+
+Standardized mean difference
+:   A scale-free measure of covariate imbalance between groups (rule of thumb: below 0.1 is good balance), the right diagnostic after matching/weighting.
+
+Synthetic control
+:   A counterfactual built as a weighted average of untreated donor units that tracks the treated unit's pre-treatment path; the post-treatment gap is the effect. See [The Synthetic Control Method](10-synthetic-control/method.qmd).
+
+Placebo (permutation) test
+:   Inference for synthetic control: apply the method to each donor as if treated, and judge whether the treated unit's gap (or RMSPE ratio) is unusual relative to the placebo distribution. See [Inference for Synthetic Control](10-synthetic-control/inference.qmd).

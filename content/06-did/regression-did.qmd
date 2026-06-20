@@ -1,0 +1,1184 @@
+---
+title: "Regression DiD"
+subtitle: "Implementing difference-in-differences in a regression framework"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write the canonical DiD regression and map each of its four coefficients ($\beta_0, \beta_1, \beta_2, \beta_3$) onto the four cell means
+- Show that the interaction coefficient $\beta_3$ is algebraically identical to the 2x2 double difference
+- Generalize to the two-way fixed-effects (TWFE) representation and explain why it reduces to the interaction regression under common timing
+- Cluster standard errors at the level of treatment assignment to handle serial correlation
+- Distinguish unconditional from conditional parallel trends, and recognize why TWFE breaks under staggered adoption
+:::
+
+## From a Table of Means to a Regression
+
+On the previous page we estimated the effect of a reform by hand. Imagine a *region* in Sweden --- say *Region Skåne* --- that rolled out a **fall-prevention program** (*fallpreventionsprogram*) in a set of its *vårdcentraler* (primary care centers). The program trains *distriktssköterskor* (district nurses) to screen elderly patients for fall risk and prescribe balance exercises. The outcome of interest is the number of fall-related emergency visits per 1,000 listed patients aged 75+ over a year.
+
+We have two groups and two periods:
+
+- **Treated centers** adopted the program; **control centers** did not.
+- We observe each center in a **pre** year (before rollout) and a **post** year (after rollout).
+
+The classic 2x2 estimator is the *double difference*: how much the treated group's fall rate changed, minus how much the control group's changed. Computing it from four cell means is fine for a single comparison on a whiteboard. But the moment you want a **standard error**, want to **adjust for covariates**, or want to handle **many centers over many years**, you need the regression form of difference-in-differences. That regression turns out to deliver the *exact same* point estimate as the 2x2 table --- but with a whole toolkit attached.
+
+This page shows that equivalence, maps every regression coefficient to a cell mean, and builds the bridge to the **two-way fixed-effects (TWFE)** representation that dominates applied work.
+
+::: {.glass-card .glass-card--insight}
+The regression is not a *different* estimator from the 2x2 double difference --- it is the *same* estimator, re-expressed. The interaction coefficient $\beta_3$ in the canonical DiD regression is algebraically identical to $(\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}}) - (\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}})$. Everything the regression adds --- standard errors, covariates, fixed effects --- is built on top of that identity.
+:::
+
+
+## The Canonical DiD Regression
+
+Let $Y_{it}$ be the outcome (fall-related ED visits per 1,000 patients) for center $i$ in period $t$. Define two indicator variables:
+
+- $\text{Treated}_i = 1$ if center $i$ is in the group that *will* adopt the program (a *fixed* group label, equal to 1 in both periods), and $0$ otherwise.
+- $\text{Post}_t = 1$ in the post period and $0$ in the pre period (a *time* label, the same for all centers).
+
+The **canonical difference-in-differences regression** is:
+
+$$
+Y_{it} = \beta_0 + \beta_1\, \text{Treated}_i + \beta_2\, \text{Post}_t + \beta_3\, (\text{Treated}_i \times \text{Post}_t) + \varepsilon_{it}
+$$
+
+**Read this as**: "The outcome for center $i$ at time $t$ equals a baseline level $\beta_0$, plus a fixed gap $\beta_1$ for being in the treated group, plus a common time shift $\beta_2$ for being in the post period, plus an *extra* shift $\beta_3$ that applies only to treated centers in the post period, plus noise."
+
+The magic is in the **interaction term** $\text{Treated}_i \times \text{Post}_t$. This product equals 1 only for treated centers in the post period --- exactly the cell where the program is active. So $\beta_3$ captures whatever happens to the treated group in the post period *over and above* the group gap ($\beta_1$) and the common time trend ($\beta_2$). That "over and above" piece is the difference-in-differences estimate.
+
+To see the coding concretely, take one control center and one treated center, each observed in both periods. The interaction column (the *product* of the two indicators) is $1$ in **exactly one** of the four rows --- the treated center in the post period:
+
+| Center | Period | $\text{Treated}_i$ | $\text{Post}_t$ | $\text{Treated}_i \times \text{Post}_t$ |
+|:--|:--|:--:|:--:|:--:|
+| Control VC | Pre | 0 | 0 | 0 |
+| Control VC | Post | 0 | 1 | 0 |
+| Treated VC | Pre | 1 | 0 | 0 |
+| **Treated VC** | **Post** | **1** | **1** | **1** |
+
+That lone $1$ is why $\beta_3$ "switches on" only in the treated-post cell --- it is the regression's way of singling out the one cell where the program is running.
+
+::: {.glass-card .glass-card--definition}
+The four coefficients map one-to-one onto the four cell means. Let $\bar{Y}_{g,p}$ denote the average outcome in group $g \in \{C, T\}$ (control, treated) and period $p \in \{\text{pre}, \text{post}\}$. Because the regression has four parameters and four cells, it fits the cell means **exactly** (the model is *saturated* --- it has exactly as many free coefficients as there are distinct group$\times$period cells, so it can reproduce every cell mean with zero approximation error):
+
+$$
+\begin{aligned}
+\beta_0 &= \bar{Y}_{C,\text{pre}} &&\text{(control, pre)}\\
+\beta_1 &= \bar{Y}_{T,\text{pre}} - \bar{Y}_{C,\text{pre}} &&\text{(treated--control gap, pre)}\\
+\beta_2 &= \bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}} &&\text{(control's pre$\to$post change)}\\
+\beta_3 &= \big(\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}}\big) - \big(\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}}\big) &&\text{(the DiD estimate)}
+\end{aligned}
+$$
+
+**Read $\beta_3$ as**: "the treated group's change from pre to post, minus the control group's change from pre to post." It is the *difference of two differences* --- the double difference --- and it is exactly the 2x2 DiD estimator from the previous page.
+:::
+
+### Why this works: plug in the four cells
+
+Each of the four cells corresponds to a specific combination of the two indicators. Substituting into the regression equation (and ignoring the error, since we are talking about *fitted* means) gives:
+
+| Cell | $\text{Treated}_i$ | $\text{Post}_t$ | Fitted mean |
+|:-----|:---:|:---:|:---|
+| Control, pre | 0 | 0 | $\beta_0$ |
+| Control, post | 0 | 1 | $\beta_0 + \beta_2$ |
+| Treated, pre | 1 | 0 | $\beta_0 + \beta_1$ |
+| Treated, post | 1 | 1 | $\beta_0 + \beta_1 + \beta_2 + \beta_3$ |
+
+Now form the double difference directly from this table:
+
+$$
+\underbrace{\big[(\beta_0 + \beta_1 + \beta_2 + \beta_3) - (\beta_0 + \beta_1)\big]}_{\text{treated: post} - \text{pre} \;=\; \beta_2 + \beta_3}
+-
+\underbrace{\big[(\beta_0 + \beta_2) - \beta_0\big]}_{\text{control: post} - \text{pre} \;=\; \beta_2}
+= \beta_3
+$$
+
+The picture below turns that algebra into a grid. Each of the four boxes is one cell, labelled by its **fitted-mean** expression in $\beta$'s. The two **slate** arrows are the *within-group* pre$\to$post changes ($\beta_2$ for control, $\beta_2+\beta_3$ for treated); subtracting the control arrow from the treated arrow is the **difference of two differences**, and everything but $\beta_3$ cancels --- the green readout at the bottom.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static 2x2 fitted-means grid (pure SVG, no inputs). Each cell shows its
+// fitted-mean expression; slate arrows are the two within-group differences,
+// the green strip is their difference (= β₃). Built with d3.create, returns node.
+p2_drawCellGrid = function ({ width = 480, height = 300 } = {}) {
+  const m = { t: 46, r: 24, b: 70, l: 120 };
+  const cw = (width - m.l - m.r) / 2;
+  const ch = (height - m.t - m.b) / 2;
+  const cx = c => m.l + c * cw;            // c ∈ {0,1} column (pre, post)
+  const cy = r => m.t + r * ch;            // r ∈ {0,1} row (control, treated)
+
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  defs.append("marker")
+    .attr("id", "p2grid-arrow").attr("viewBox", "0 -5 10 10")
+    .attr("refX", 8).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#3d5a6c");
+
+  // Column headers (Pre / Post)
+  svg.append("g").selectAll("text").data(["Pre", "Post"]).join("text")
+    .attr("x", (d, i) => cx(i) + cw / 2).attr("y", m.t - 16)
+    .attr("text-anchor", "middle").attr("font-size", 13).attr("font-weight", 700)
+    .attr("fill", "#1c1c1a").text(d => d);
+
+  // Row labels (Control / Treated)
+  const rows = [
+    { lab: "Control", col: "#3d5a6c" },
+    { lab: "Treated", col: "#990000" }
+  ];
+  svg.append("g").selectAll("text").data(rows).join("text")
+    .attr("x", m.l - 14).attr("y", (d, i) => cy(i) + ch / 2)
+    .attr("text-anchor", "end").attr("dominant-baseline", "central")
+    .attr("font-size", 13).attr("font-weight", 700)
+    .attr("fill", d => d.col).text(d => d.lab);
+
+  // Four cells with fitted-mean expressions.
+  const cells = [
+    { r: 0, c: 0, t: "β₀" },
+    { r: 0, c: 1, t: "β₀ + β₂" },
+    { r: 1, c: 0, t: "β₀ + β₁" },
+    { r: 1, c: 1, t: "β₀+β₁+β₂+β₃" }
+  ];
+  const cg = svg.append("g");
+  for (const cell of cells) {
+    const x = cx(cell.c), y = cy(cell.r);
+    cg.append("rect")
+      .attr("x", x + 6).attr("y", y + 6)
+      .attr("width", cw - 12).attr("height", ch - 12)
+      .attr("rx", 8).attr("fill", "#f6f5f1")
+      .attr("stroke", "#cfccc2").attr("stroke-width", 1.5);
+    cg.append("text")
+      .attr("x", x + cw / 2).attr("y", y + ch / 2)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", cell.t.length > 8 ? 13 : 15).attr("font-weight", 600)
+      .attr("fill", "#1c1c1a").text(cell.t);
+  }
+
+  // Two within-group difference arrows (pre -> post), one per row.
+  const arrows = [
+    { r: 0, lab: "control change = β₂" },
+    { r: 1, lab: "treated change = β₂ + β₃" }
+  ];
+  for (const a of arrows) {
+    const y = cy(a.r) + ch / 2;
+    const x1 = cx(0) + cw - 14, x2 = cx(1) + 18;
+    svg.append("line")
+      .attr("x1", x1).attr("y1", y).attr("x2", x2).attr("y2", y)
+      .attr("stroke", "#3d5a6c").attr("stroke-width", 2)
+      .attr("marker-end", "url(#p2grid-arrow)");
+    svg.append("text")
+      .attr("x", (x1 + x2) / 2).attr("y", y - 8)
+      .attr("text-anchor", "middle").attr("font-size", 10).attr("font-weight", 600)
+      .attr("fill", "#3d5a6c")
+      .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+      .text(a.lab);
+  }
+
+  // Bottom strip: the difference of the two differences.
+  svg.append("text")
+    .attr("x", width / 2).attr("y", height - 30)
+    .attr("text-anchor", "middle").attr("font-size", 13).attr("font-weight", 700)
+    .attr("fill", "#2e6f40")
+    .text("(β₂ + β₃) − β₂ = β₃   (the difference of two differences)");
+  svg.append("text")
+    .attr("x", width / 2).attr("y", height - 12)
+    .attr("text-anchor", "middle").attr("font-size", 11)
+    .attr("fill", "#79766e")
+    .text("treated change minus control change — everything but β₃ cancels");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; justify-content:center; margin:1rem 0 0.25rem;">
+  ${p2_drawCellGrid({ width: Math.min(520, width) })}
+</div>`
+```
+
+::: {.aside}
+The four boxes are the fitted cell means in $\beta$ notation; the two slate arrows are the within-group pre$\to$post changes. The treated arrow ($\beta_2+\beta_3$) minus the control arrow ($\beta_2$) leaves exactly $\beta_3$ --- the **double difference**.
+:::
+
+The $\beta_0$, $\beta_1$, and $\beta_2$ terms cancel, leaving only $\beta_3$. The control group's change ($\beta_2$) is *subtracted off* from the treated group's change ($\beta_2 + \beta_3$) --- which is precisely how DiD uses the control group to net out whatever common shock (a flu season, a national guideline change, a cold winter that raises falls everywhere) hit *both* groups between the two periods.
+
+
+## See It: Coefficients from the Four Cell Means
+
+Move the four cell means with the sliders. The left panel shows the two group trends and the parallel-trends counterfactual; the right panel shows the four regression coefficients $\beta_0, \beta_1, \beta_2, \beta_3$ that the saturated regression recovers. Watch how $\beta_3$ --- the DiD estimate --- responds.
+
+::: {.interactive-container}
+
+#### The DiD Coefficient Decomposition
+
+**Start here:** drag any of the four cell-mean sliders (all on the *falls per 1,000* scale) and watch the green **β₃** bar and the green arrow — that is the difference-in-differences estimate reacting in real time.
+
+```{ojs}
+//| echo: false
+
+viewof rdid_ctrl_pre = Inputs.range([20, 60], {
+  value: 42, step: 0.5,
+  label: "Control, PRE (falls per 1,000)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdid_ctrl_post = Inputs.range([20, 60], {
+  value: 46, step: 0.5,
+  label: "Control, POST (falls per 1,000)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdid_trt_pre = Inputs.range([20, 60], {
+  value: 50, step: 0.5,
+  label: "Treated, PRE (falls per 1,000)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdid_trt_post = Inputs.range([20, 60], {
+  value: 44, step: 0.5,
+  label: "Treated, POST (falls per 1,000)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdid_show_cf = Inputs.toggle({
+  label: "Show parallel-trends counterfactual",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<p style="font-family: Inter, sans-serif; font-size: 0.74rem; color: #79766e; margin: 0.1rem 0 0;">
+The dashed counterfactual line and the green β₃ arrow appear only when this toggle is on (the arrow is also hidden when β₃ is near zero).</p>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The four cell means, read directly from the sliders.
+rdid_cells = ({
+  C_pre:  rdid_ctrl_pre,
+  C_post: rdid_ctrl_post,
+  T_pre:  rdid_trt_pre,
+  T_post: rdid_trt_post
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Map the four cell means to the four regression coefficients.
+rdid_betas = {
+  const b0 = rdid_cells.C_pre;
+  const b1 = rdid_cells.T_pre - rdid_cells.C_pre;
+  const b2 = rdid_cells.C_post - rdid_cells.C_pre;
+  const b3 = (rdid_cells.T_post - rdid_cells.T_pre) -
+             (rdid_cells.C_post - rdid_cells.C_pre);
+  return { b0, b1, b2, b3 };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Tidy data for the "trends" line plot (the two observed group paths).
+rdid_lines = [
+  { group: "Control", period: 0, y: rdid_cells.C_pre },
+  { group: "Control", period: 1, y: rdid_cells.C_post },
+  { group: "Treated", period: 0, y: rdid_cells.T_pre },
+  { group: "Treated", period: 1, y: rdid_cells.T_post }
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The counterfactual treated path: treated starts where it starts, then
+// moves by the SAME pre->post change as the control group (parallel trends).
+rdid_cf = [
+  { period: 0, y: rdid_cells.T_pre },
+  { period: 1, y: rdid_cells.T_pre + (rdid_cells.C_post - rdid_cells.C_pre) }
+]
+```
+
+```{ojs}
+//| echo: false
+
+// Left panel: the two group trends and the counterfactual.
+Plot.plot({
+  width: Math.min(640, width),
+  height: 300,
+  marginLeft: 66,
+  marginRight: 110,
+  marginTop: 24,
+  marginBottom: 40,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+  x: {
+    label: "Period",
+    domain: [-0.15, 1.15],
+    ticks: [0, 1],
+    tickFormat: d => d === 0 ? "Pre" : "Post"
+  },
+  // Pad the y-domain to include the observed points AND the counterfactual
+  // endpoint (which can sit well outside [20,60]) plus headroom for the
+  // r=6 dot radius, so nothing clips the frame at extreme slider positions.
+  y: {
+    label: "Falls per 1,000 (75+)",
+    grid: true,
+    domain: (() => {
+      const ys = rdid_lines.map(d => d.y);
+      if (rdid_show_cf) ys.push(rdid_cf[0].y, rdid_cf[1].y);
+      const lo = Math.min(...ys), hi = Math.max(...ys);
+      const pad = Math.max(4, (hi - lo) * 0.1);
+      return [lo - pad, hi + pad];
+    })()
+  },
+  color: {
+    domain: ["Control", "Treated"],
+    range: ["#3d5a6c", "#990000"],
+    legend: true
+  },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a" }),
+    // Observed group paths
+    Plot.line(rdid_lines, { x: "period", y: "y", stroke: "group", strokeWidth: 3 }),
+    Plot.dot(rdid_lines, { x: "period", y: "y", fill: "group", r: 6 }),
+    // Counterfactual treated path (parallel to control)
+    rdid_show_cf ? Plot.line(rdid_cf, {
+      x: "period", y: "y",
+      stroke: "#990000", strokeWidth: 2, strokeDasharray: "5,4"
+    }) : null,
+    rdid_show_cf ? Plot.dot([rdid_cf[1]], {
+      x: "period", y: "y", stroke: "#990000", fill: "white", strokeWidth: 2, r: 5
+    }) : null,
+    // The DiD gap = vertical distance between observed treated-post and CF treated-post.
+    // Hide the arrow + label when |β₃| is tiny so they do not pile onto the endpoint dots.
+    (rdid_show_cf && Math.abs(rdid_betas.b3) >= 1.0) ? Plot.arrow([{
+      x1: 1, y1: rdid_cf[1].y, x2: 1, y2: rdid_cells.T_post
+    }], { x1: "x1", y1: "y1", x2: "x2", y2: "y2", stroke: "#2e6f40", strokeWidth: 2 }) : null,
+    // Label anchored to a fixed frame position (top-right) with a white halo,
+    // so it never tracks the moving series or clips the frame.
+    rdid_show_cf ? Plot.text([{}], {
+      frameAnchor: "top-right",
+      dx: -6, dy: 8,
+      text: [`β₃ = ${rdid_betas.b3.toFixed(1)}`],
+      textAnchor: "end",
+      fill: "#2e6f40", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Right panel: the four coefficients as bars.
+Plot.plot({
+  width: Math.min(640, width),
+  height: 240,
+  marginLeft: 66,
+  marginTop: 18,
+  marginBottom: 36,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+  x: {
+    label: null,
+    domain: ["β₀", "β₁", "β₂", "β₃"]
+  },
+  // Pad the y-domain beyond the data extent so the value labels (placed
+  // ~8px past each bar end) always have headroom and never clip the frame,
+  // even at the extreme slider positions where |β| can reach ~80.
+  y: {
+    label: "Coefficient value",
+    grid: true,
+    domain: (() => {
+      const vals = [rdid_betas.b0, rdid_betas.b1, rdid_betas.b2, rdid_betas.b3, 0];
+      const lo = Math.min(...vals), hi = Math.max(...vals);
+      const pad = Math.max(6, (hi - lo) * 0.12);
+      return [lo - pad, hi + pad];
+    })()
+  },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a" }),
+    Plot.barY([
+      { name: "β₀", v: rdid_betas.b0 },
+      { name: "β₁", v: rdid_betas.b1 },
+      { name: "β₂", v: rdid_betas.b2 },
+      { name: "β₃", v: rdid_betas.b3 }
+    ], {
+      x: "name", y: "v",
+      fill: d => d.name === "β₃" ? "#2e6f40" : "#79766e"
+    }),
+    // Labels for non-negative bars sit just above the bar top.
+    // (dx/dy are constant style options in Observable Plot — they cannot be
+    // per-datum functions — so positive and negative bars need separate marks.)
+    Plot.text([
+      { name: "β₀", v: rdid_betas.b0 },
+      { name: "β₁", v: rdid_betas.b1 },
+      { name: "β₂", v: rdid_betas.b2 },
+      { name: "β₃", v: rdid_betas.b3 }
+    ].filter(d => d.v >= 0), {
+      x: "name", y: "v",
+      text: d => d.v.toFixed(1),
+      dy: -8, lineAnchor: "bottom",
+      fontWeight: 700, fill: "#1c1c1a",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Labels for negative bars sit just below the bar bottom.
+    Plot.text([
+      { name: "β₀", v: rdid_betas.b0 },
+      { name: "β₁", v: rdid_betas.b1 },
+      { name: "β₂", v: rdid_betas.b2 },
+      { name: "β₃", v: rdid_betas.b3 }
+    ].filter(d => d.v < 0), {
+      x: "name", y: "v",
+      text: d => d.v.toFixed(1),
+      dy: 8, lineAnchor: "top",
+      fontWeight: 700, fill: "#1c1c1a",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// One-line key tying bar symbols to their meaning (was only in the x-axis labels).
+html`<p style="font-family: Inter, sans-serif; font-size: 0.78rem; color: #79766e; margin: 0.25rem 0 0;">
+β₀ baseline · β₁ group gap · β₂ time · <span style="color:#2e6f40; font-weight:600;">β₃ DiD estimate</span></p>`
+```
+
+```{ojs}
+//| echo: false
+
+// A small summary strip confirming the algebra.
+html`
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-top: 0.5rem; font-family: Inter, sans-serif; font-size: 0.82rem;">
+  <div style="min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(153,0,0,0.05); border: 1px solid rgba(153,0,0,0.18);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">Treated change</div>
+    <div style="font-size:1.05rem; font-weight:700; color:#990000;">${(rdid_cells.T_post - rdid_cells.T_pre).toFixed(1)}</div>
+  </div>
+  <div style="min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(61,90,108,0.06); border: 1px solid rgba(61,90,108,0.18);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">Control change</div>
+    <div style="font-size:1.05rem; font-weight:700; color:#3d5a6c;">${(rdid_cells.C_post - rdid_cells.C_pre).toFixed(1)}</div>
+  </div>
+  <div style="grid-column: 1 / -1; min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(46,111,64,0.07); border: 1px solid rgba(46,111,64,0.2);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">Double difference = β₃</div>
+    <div style="font-size:1.15rem; font-weight:700; color:#2e6f40;">${(rdid_cells.T_post - rdid_cells.T_pre).toFixed(1)} − ${(rdid_cells.C_post - rdid_cells.C_pre).toFixed(1)} = ${rdid_betas.b3.toFixed(1)} falls / 1,000</div>
+  </div>
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+
+// Additive readout: in the 2x2 case the TWFE coefficient β equals β₃ exactly.
+// This is a confirming display of the already-computed b3 (no new DGP), making
+// the headline "TWFE reduces to the interaction regression" tangible and live.
+html`<div style="margin-top:0.6rem; padding:0.55rem 0.8rem; border-radius:0.4rem; background:rgba(46,111,64,0.06); border:1px solid rgba(46,111,64,0.22); font-family:Inter, sans-serif; font-size:0.84rem; color:#1c1c1a;">
+  <span style="font-weight:700; color:#2e6f40;">Same estimator, two notations:</span>
+  in this 2&times;2 design the two-way fixed-effects coefficient is identical to the interaction &mdash;
+  <span style="font-weight:700;">TWFE&nbsp;β = β₃ = ${rdid_betas.b3.toFixed(1)}</span>
+  <span style="color:#2e6f40; font-weight:700;">&#10003;</span>
+  <span style="color:#79766e;"> (the fixed effects absorb β₀, β₁, β₂ and never change this number).</span>
+</div>`
+```
+
+:::
+
+### How to Read These Panels
+
+*The specific numbers in Steps 1--3 below assume the default slider positions. If you have moved the sliders, reset them (reload the page) to follow the walkthrough literally; otherwise read the panels live.*
+
+**Step 1: Find the four cells.** The left panel plots the two observed group paths. The slate line is the control centers (no program); the dark-red line is the treated centers. Each line connects its **pre** mean to its **post** mean. The four dots are the four cell means you control with the sliders.
+
+**Step 2: Read off the coefficients.** The bottom panel shows the four regression coefficients computed *directly* from those four means. With the default values, $\beta_0 = 42$ (control pre level), $\beta_1 = 8$ (treated centers start 8 visits higher --- they serve sicker, older catchments), $\beta_2 = 4$ (everyone's falls drift up by 4 over time, e.g. an aging population or a hard winter), and $\beta_3 = -10$ (the DiD). The green bar is the estimate that matters.
+
+**Step 3: Build the double difference yourself.** The summary strip spells out the arithmetic. The treated group changed by $44 - 50 = -6$. The control group changed by $46 - 42 = +4$. The difference of those differences is $-6 - 4 = -10$. That is $\beta_3$: the program *prevented* about 10 fall-related ED visits per 1,000 patients, after netting out the upward drift that hit everyone.
+
+**Step 4: See the counterfactual.** With "Show parallel-trends counterfactual" on, the dashed dark-red line is where the treated group *would have ended up* if it had followed the control group's trend ($\beta_2$) instead of its own. The green arrow is the vertical gap between that counterfactual and the actual treated-post mean. **That gap is $\beta_3$.** This is the visual heart of DiD: the control group's change supplies the counterfactual trend, and the leftover vertical distance is the treatment effect.
+
+**Step 5: Break it.** Drag "Control, POST" upward. As the control group's drift $\beta_2$ grows, the counterfactual ceiling rises, and $\beta_3$ becomes *more negative* --- the program looks more effective, because there was more "background worsening" for it to have averted. This is exactly why the choice of control group matters so much: it is the source of your counterfactual trend. **Read this as a vulnerability, not a feature:** the control's trend is an *assumption* you must defend, not a knob you may tune to inflate the effect. If the control is a poor stand-in for how the treated group *would* have moved, $\beta_3$ measures a differential trend rather than the program's effect --- which is precisely what the [Parallel Trends](parallel-trends.qmd) page teaches you to scrutinize.
+
+
+### Where the Bias Hides: the *True* Untreated Path
+
+The interactive above can only draw the **parallel-trends counterfactual** --- the dashed line you get by assuming the treated group would have copied the control's change. But there is a *third* line it can never show you, because it lives in the world that did not happen: the **true** path the treated group would have taken absent the program (its *untreated potential outcome*, the value $Y(0)$ each treated center would have had if it had never adopted). DiD is unbiased only when that true untreated path lands exactly on the parallel-trends counterfactual. When it does not, the vertical distance between them is **bias** --- the *differential trend* in $Y(0)$ that the [Math Details](#why-beta_3-identifies-the-att-under-parallel-trends) below isolates as the second bracket of $\beta_3$.
+
+The figure below makes that hidden line visible (we are allowed to draw it because this is a *simulation* where we know the truth). The treated centers actually serve older catchments whose falls were *already* climbing faster than the controls'. So their true untreated path (gold, dotted) rises **above** the parallel counterfactual (red, dashed). DiD's $\beta_3$ compares the observed treated-post mean only to the *parallel* line, so it credits the program with closing the drop to that line --- but the program's honest effect (the **ATT**, *average treatment effect on the treated*) is the *larger* drop, all the way down to the *true* untreated path. Because the treated group would have worsened faster on its own, DiD here **understates** the benefit. The gap between the two dashed/dotted endpoints is the bias DiD bakes in.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static "where the bias hides" figure. Self-contained scenario numbers
+// (NOT tied to the sliders above): treated centers have a steeper TRUE
+// untreated trend than controls, so the parallel-trends counterfactual
+// (what DiD assumes) sits BELOW the true Y(0) path. The vertical gap between
+// them is the differential-trend bias; the gap from observed-treated-post to
+// the true Y(0) endpoint is the honest ATT. β₃ (what DiD reports) = ATT + bias.
+p2_bias = {
+  const Cpre = 42, Cpost = 46;            // control: +4 drift
+  const Tpre = 50, Tpost = 44;            // treated: observed drop of -6
+  const ctrlChange = Cpost - Cpre;        // +4  → parallel-trends slope
+  const cfPost = Tpre + ctrlChange;       // parallel counterfactual endpoint = 54
+  const trueY0post = Tpre + 9;            // TRUE untreated endpoint = 59 (steeper)
+  const beta3 = (Tpost - Tpre) - ctrlChange;         // DiD estimate = -10
+  const att   = Tpost - trueY0post;                  // honest ATT = -15
+  // Differential trend in Y(0), exactly as defined in the Math Details:
+  // (treated's true Y(0) change) − (control's change). Here +5. β₃ = ATT + bias.
+  const bias  = (trueY0post - Tpre) - ctrlChange;    // differential trend = +5
+  return {
+    Cpre, Cpost, Tpre, Tpost, cfPost, trueY0post, beta3, att, bias,
+    obsControl: [{ period: 0, y: Cpre }, { period: 1, y: Cpost }],
+    obsTreated: [{ period: 0, y: Tpre }, { period: 1, y: Tpost }],
+    cfLine:     [{ period: 0, y: Tpre }, { period: 1, y: cfPost }],
+    trueLine:   [{ period: 0, y: Tpre }, { period: 1, y: trueY0post }]
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 340,
+  marginLeft: 66,
+  marginRight: 150,
+  marginTop: 24,
+  marginBottom: 46,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+  x: {
+    label: "Period",
+    domain: [-0.12, 1.4],
+    ticks: [0, 1],
+    tickFormat: d => d === 0 ? "Pre" : "Post"
+  },
+  y: {
+    label: "Falls per 1,000 (75+)",
+    grid: true,
+    domain: [40, 62]
+  },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a" }),
+    // Observed control path (supplies the parallel-trends slope).
+    Plot.line(p2_bias.obsControl, { x: "period", y: "y", stroke: "#3d5a6c", strokeWidth: 3 }),
+    Plot.dot(p2_bias.obsControl, { x: "period", y: "y", fill: "#3d5a6c", r: 5 }),
+    // Observed treated path.
+    Plot.line(p2_bias.obsTreated, { x: "period", y: "y", stroke: "#990000", strokeWidth: 3 }),
+    Plot.dot(p2_bias.obsTreated, { x: "period", y: "y", fill: "#990000", r: 5 }),
+    // Parallel-trends counterfactual (what DiD assumes Y(0) is).
+    Plot.line(p2_bias.cfLine, { x: "period", y: "y", stroke: "#990000", strokeWidth: 2, strokeDasharray: "5,4" }),
+    Plot.dot([p2_bias.cfLine[1]], { x: "period", y: "y", stroke: "#990000", fill: "white", strokeWidth: 2, r: 5 }),
+    // TRUE untreated path Y(0) (steeper — the world that did not happen).
+    Plot.line(p2_bias.trueLine, { x: "period", y: "y", stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "1,5" }),
+    Plot.dot([p2_bias.trueLine[1]], { x: "period", y: "y", stroke: "#9c7a33", fill: "white", strokeWidth: 2, r: 5 }),
+    // BIAS gap: parallel counterfactual ↔ true Y(0) (a red bracket at Post).
+    Plot.ruleX([1.06], { y1: p2_bias.cfPost, y2: p2_bias.trueY0post, stroke: "#b3000b", strokeWidth: 2 }),
+    // ATT gap: observed treated-post ↔ true Y(0) (a green bracket, offset right).
+    Plot.ruleX([1.18], { y1: p2_bias.Tpost, y2: p2_bias.trueY0post, stroke: "#2e6f40", strokeWidth: 2 }),
+    // Series labels at right (Plot.text with white halo — no rule/line label channel).
+    Plot.text([{ period: 1, y: p2_bias.Tpost }], {
+      x: "period", y: "y", dx: 8, text: ["observed treated"], textAnchor: "start",
+      fill: "#990000", fontWeight: 700, fontSize: 11, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ period: 1, y: p2_bias.cfPost }], {
+      x: "period", y: "y", dx: 8, dy: -2, text: ["parallel CF (DiD assumes)"], textAnchor: "start",
+      fill: "#990000", fontSize: 10, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ period: 1, y: p2_bias.trueY0post }], {
+      x: "period", y: "y", dx: 8, text: ["true untreated Y(0)"], textAnchor: "start",
+      fill: "#9c7a33", fontWeight: 700, fontSize: 11, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ period: 1, y: p2_bias.cfPost }], {
+      x: "period", y: "y", dx: -6, text: ["bias"], textAnchor: "end", lineAnchor: "bottom",
+      fill: "#b3000b", fontWeight: 700, fontSize: 10, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ period: 1, y: (p2_bias.Tpost + p2_bias.trueY0post) / 2 }], {
+      x: "period", y: "y", dx: 22, text: ["ATT"], textAnchor: "start",
+      fill: "#2e6f40", fontWeight: 700, fontSize: 10, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Decomposition readout: β₃ (what DiD reports) = honest ATT + differential-trend bias.
+html`<div style="margin-top:0.5rem; padding:0.6rem 0.85rem; border-radius:0.4rem; background:rgba(179,0,11,0.05); border:1px solid rgba(179,0,11,0.2); font-family:Inter, sans-serif; font-size:0.84rem; color:#1c1c1a;">
+  In this simulated scenario DiD reports
+  <span style="font-weight:700; color:#2e6f40;">β₃ = ${p2_bias.beta3.toFixed(0)}</span>, but the honest program effect is the larger
+  <span style="font-weight:700; color:#2e6f40;">ATT = ${p2_bias.att.toFixed(0)}</span>. The decomposition is
+  <span style="font-weight:700;">β₃ = ATT + bias = ${p2_bias.att.toFixed(0)} + (${p2_bias.bias > 0 ? "+" : ""}${p2_bias.bias.toFixed(0)}) = ${p2_bias.beta3.toFixed(0)}</span>:
+  because the treated group's falls were already climbing faster, the positive
+  <span style="color:#b3000b; font-weight:700;">differential-trend bias</span> term pulls β₃ toward zero, so DiD here under-credits the program.
+  Parallel trends is exactly the assumption that this <span style="color:#b3000b; font-weight:700;">bias</span> term is zero.</div>`
+```
+
+::: {.aside}
+The <span style="color:#9c7a33; font-weight:700;">gold dotted</span> line is the treated group's *true* untreated path --- normally invisible, shown here only because the data are simulated. DiD measures the drop to the <span style="color:#990000; font-weight:700;">red dashed</span> parallel counterfactual; the honest effect (<span style="color:#2e6f40; font-weight:700;">ATT</span>) is the larger drop, all the way down to the gold line. The <span style="color:#b3000b; font-weight:700;">red bracket</span> between them is the bias. The parallel-trends assumption is precisely the claim that the gold and red lines coincide.
+:::
+
+
+## Why Bother with the Regression?
+
+If $\beta_3$ is just the 2x2 double difference, why not stop at the table of four means? Three reasons, each of which the table cannot give you.
+
+### 1. Standard errors
+
+Regression hands you a standard error for $\beta_3$ automatically, so you can test $H_0: \beta_3 = 0$ and report a confidence interval. The double difference alone is just a point estimate. But there is a crucial subtlety about *which* standard error to trust --- see the [next section](#standard-errors-cluster-at-the-unit-level).
+
+### 2. Covariates
+
+Real centers differ in ways that may correlate with both treatment status and fall rates --- the average age of the catchment population, the share of patients in nursing homes, staffing density (*läkare* and *distriktssköterskor* per 1,000 listed patients). You can add these as controls:
+
+$$
+Y_{it} = \beta_0 + \beta_1 \text{Treated}_i + \beta_2 \text{Post}_t + \beta_3 (\text{Treated}_i \times \text{Post}_t) + \mathbf{X}_{it}'\boldsymbol{\gamma} + \varepsilon_{it}
+$$
+
+**Read this as**: the canonical DiD regression plus a vector of covariates $\mathbf{X}_{it}$ with coefficients $\boldsymbol{\gamma}$. Now $\beta_3$ is interpreted as a difference-in-differences *holding those covariates fixed*. This is the move toward **conditional parallel trends** --- the idea that the parallel-trends assumption need only hold *within* strata defined by $\mathbf{X}$. We treat it briefly below and in full on the next page.
+
+### 3. Many periods and many units
+
+With more than two periods or more than two groups, stacking everything into one regression with **fixed effects** is far cleaner than juggling a grid of means. This is the two-way fixed-effects representation, which we develop next.
+
+::: {.glass-card .glass-card--insight}
+The table of four means and the saturated regression are the *same* object viewed two ways. The regression earns its keep not by changing the estimate but by slotting that estimate into the full machinery of least squares: inference, adjustment, and generalization to panels.
+:::
+
+
+## The Two-Way Fixed-Effects Representation
+
+Now generalize. Suppose we observe $N$ centers over $T$ periods (not just two). Let $D_{it} = 1$ if center $i$ is *actively treated* in period $t$ (the program is running), and $0$ otherwise. The **two-way fixed-effects (TWFE)** regression is:
+
+$$
+Y_{it} = \alpha_i + \gamma_t + \beta\, D_{it} + \varepsilon_{it}
+$$
+
+**Read this as**: "The outcome for center $i$ at time $t$ equals a center-specific intercept $\alpha_i$ (a *unit fixed effect*), plus a period-specific intercept $\gamma_t$ (a *time fixed effect*), plus a treatment effect $\beta$ that applies whenever the program is active, plus noise."
+
+The two sets of fixed effects do the same jobs that $\beta_1$ and $\beta_2$ did in the 2x2 regression, but more flexibly:
+
+- The **unit fixed effects** $\alpha_i$ absorb every *time-invariant* difference between centers --- their baseline fall rate, their fixed catchment characteristics, the building they sit in. This generalizes the single treated-vs-control gap $\beta_1$ into one intercept per center.
+- The **time fixed effects** $\gamma_t$ absorb every shock common to all centers in a given period --- a national clinical guideline, a flu year, a cold winter. This generalizes the single common time shift $\beta_2$ into one intercept per period.
+
+What survives this **double demeaning** (subtracting off each center's own average *and* each period's average, so only the leftover within-center, within-period wiggles remain) is $\beta$: the variation in the outcome that lines up with switching the program on. Under parallel trends, $\beta$ is the DiD estimate.
+
+::: {.glass-card .glass-card--definition}
+**TWFE reduces to the interaction regression in the 2x2 case.** With exactly two groups and two periods, and treatment that switches on for the treated group in the post period only, the TWFE model
+$$
+Y_{it} = \alpha_i + \gamma_t + \beta D_{it} + \varepsilon_{it}
+$$
+delivers $\hat\beta$ *identical* to the interaction coefficient $\hat\beta_3$ from
+$$
+Y_{it} = \beta_0 + \beta_1 \text{Treated}_i + \beta_2 \text{Post}_t + \beta_3 (\text{Treated}_i \times \text{Post}_t) + \varepsilon_{it}.
+$$
+In the 2x2 design the unit effects $\alpha_i$ collapse to "treated vs. control" (only the group label has any cross-sectional variation that is not collinear with the others), the time effects $\gamma_t$ collapse to "pre vs. post," and $D_{it}$ equals the interaction $\text{Treated}_i \times \text{Post}_t$. Same numbers, more general notation.
+:::
+
+The TWFE form is attractive because it scales: 21 *regioner*, 1,000 *vårdcentraler*, 10 years of data --- all in one line. You never have to enumerate cells. But that convenience hides a trap when treatment timing varies, which is the subject of the warning below.
+
+::: {.glass-card .glass-card--warning}
+**The clean equivalence holds only with common timing.** Everything on this page assumes a *single* treatment date: all treated units switch on at the same time. In that world, $\hat\beta$ from TWFE is a genuine, well-behaved difference-in-differences.
+
+When units adopt the program at **different** times --- *staggered adoption* --- the single coefficient $\beta$ from $Y_{it} = \alpha_i + \gamma_t + \beta D_{it} + \varepsilon_{it}$ is **no longer a simple DiD**. It becomes a *weighted average* of many 2x2 comparisons, and some of those comparisons use **already-treated units as controls** ("forbidden comparisons"). When treatment effects vary over time, this can attach **negative weights** to some true effects and produce an estimate with the wrong sign even when every unit was helped. Do not assume the TWFE coefficient is "the DiD" once timing is staggered. We dissect this failure --- and the modern estimators that fix it (Callaway--Sant'Anna, Sun--Abraham, de Chaisemartin--D'Haultfœuille) --- on the [Staggered Adoption](staggered.qmd) page.
+:::
+
+The timeline below previews the trap. Region A switches on in 2018, Region B in 2021. The honest comparison (green) uses Region B's not-yet-treated years as the control. The **forbidden** comparison (red) uses *already-treated* Region A as a "control" for Region B around 2021 --- and that is where TWFE can pick up negative weights.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static data for the staggered-timeline figure: each region's treated span.
+p2_stagger = ({
+  bars: [
+    { region: "Region A", t0: 2015, t1: 2018, status: "untreated" },
+    { region: "Region A", t0: 2018, t1: 2023, status: "treated" },
+    { region: "Region B", t0: 2015, t1: 2021, status: "untreated" },
+    { region: "Region B", t0: 2021, t1: 2023, status: "treated" }
+  ],
+  switches: [
+    { region: "Region A", year: 2018, txt: "A switches on (2018)" },
+    { region: "Region B", year: 2021, txt: "B switches on (2021)" }
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(560, width),
+  height: 220,
+  marginLeft: 92,
+  marginRight: 24,
+  marginBottom: 46,
+  marginTop: 28,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+  x: { label: "Year →", domain: [2015, 2023], tickFormat: "d", grid: true },
+  y: { label: null, domain: ["Region B", "Region A"] },
+  color: {
+    domain: ["untreated", "treated"],
+    range: ["#cfccc2", "#990000"],
+    legend: true
+  },
+  marks: [
+    // Treated / untreated spans as horizontal bars per region.
+    Plot.barX(p2_stagger.bars, {
+      x1: "t0", x2: "t1", y: "region", fill: "status",
+      insetTop: 18, insetBottom: 18
+    }),
+    // Mark each region's switch-on year.
+    Plot.tickX(p2_stagger.switches, { x: "year", y: "region", stroke: "#1c1c1a", strokeWidth: 1.5 }),
+    // The "forbidden comparison": already-treated A used as control for B at 2021.
+    Plot.arrow([{ x1: 2018.5, y1: "Region A", x2: 2021, y2: "Region B" }], {
+      x1: "x1", y1: "y1", x2: "x2", y2: "y2",
+      stroke: "#b3000b", strokeWidth: 2, bend: true
+    }),
+    Plot.text([{ x: 2019.6, y: "Region A" }], {
+      x: "x", y: "y", dy: -22,
+      text: ["forbidden comparison:"],
+      fill: "#b3000b", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: 2019.6, y: "Region A" }], {
+      x: "x", y: "y", dy: -10,
+      text: ["already-treated A as B's control"],
+      fill: "#b3000b", fontSize: 10,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Grey = not-yet-treated years; red = treated years. TWFE's single $\beta$ averages many 2&times;2s, and the red arrow flags a "forbidden" one --- it borrows Region A's *already-treated* years as a control for Region B, which is exactly the comparison the heterogeneity-robust estimators forbid.
+:::
+
+
+## Standard Errors: Cluster at the Unit Level {#standard-errors-cluster-at-the-unit-level}
+
+The point estimate is the easy part; the standard error is where DiD analyses most often go wrong.
+
+The problem is **serial correlation**. A center's fall rate this year is highly predictive of its fall rate next year --- centers have persistent, sticky characteristics (an aging neighborhood, a chronically understaffed clinic). When you stack many years of data, the residuals $\varepsilon_{it}$ for the *same center* are correlated across time. Default OLS standard errors assume the observations are independent; here they are not, so default standard errors are **far too small**, and you will declare effects "significant" that are nothing of the sort.
+
+Bertrand, Duflo, and Mullainathan (2004) showed this dramatically: naive DiD standard errors led to rejection rates of the true null around 45%, not the nominal 5%. The fix tracks the practical inference issues from the panel-data module --- see [Practical Issues in Panel Data](../05-panel/practical-issues.qmd).
+
+The two pictures below make the danger visible. On the left, two centers' residuals over time: the **i.i.d.** series (slate) jitters around zero with no memory, while the **serially correlated** series (red) drifts in long swings --- each year looks like the last. When residuals carry that much memory, twelve yearly observations are worth far fewer than twelve *independent* ones, so the default standard error (which assumes independence) is badly too small. The right panel shows the consequence: the false-positive rate balloons from the nominal 5% to about 45%.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Deterministic residual paths for the side-by-side illustration.
+// Self-contained RNG so this figure does not depend on any other cell.
+p2_se_data = {
+  function lcg(seed) { let s = seed >>> 0; return () => (s = (1664525 * s + 1013904223) >>> 0) / 4294967296; }
+  function nrm(r) { return Math.sqrt(-2 * Math.log(r() || 1e-9)) * Math.cos(2 * Math.PI * r()); }
+  const T = 12, years = Array.from({ length: T }, (_, i) => 2012 + i);
+  const r1 = lcg(11), r2 = lcg(404);
+  const iid = [], ser = [];
+  let prev = 0;
+  for (let i = 0; i < T; i++) {
+    iid.push({ year: years[i], e: nrm(r1) * 1.4, kind: "i.i.d. residuals" });
+    prev = 0.85 * prev + nrm(r2) * 0.9;        // AR(1): strong serial correlation
+    ser.push({ year: years[i], e: prev, kind: "serially correlated" });
+  }
+  return iid.concat(ser);
+}
+
+p2_reject = ([
+  { label: "Default OLS SE", rate: 45, note: "claims significance" },
+  { label: "Nominal target", rate: 5, note: "the truth (5%)" }
+])
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); gap:1rem; align-items:start;">
+  <div>${
+    Plot.plot({
+      width: 320,
+      height: 240,
+      marginLeft: 60,
+      marginBottom: 46,
+      style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+      x: { label: "Year →", tickFormat: "d", ticks: 4 },
+      y: { label: "Residual εᵢₜ", grid: true, domain: [-4, 4] },
+      color: { domain: ["i.i.d. residuals", "serially correlated"], range: ["#3d5a6c", "#990000"], legend: true },
+      marks: [
+        Plot.ruleY([0], { stroke: "#1c1c1a" }),
+        Plot.line(p2_se_data, { x: "year", y: "e", stroke: "kind", strokeWidth: 2 }),
+        Plot.dot(p2_se_data, { x: "year", y: "e", fill: "kind", r: 2.5 })
+      ]
+    })
+  }</div>
+  <div>${
+    Plot.plot({
+      width: 320,
+      height: 240,
+      marginLeft: 60,
+      marginBottom: 60,
+      style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+      x: { label: null, domain: ["Default OLS SE", "Nominal target"], tickRotate: -12 },
+      y: { label: "Rejection rate of a TRUE null (%)", grid: true, domain: [0, 55] },
+      marks: [
+        Plot.ruleY([0], { stroke: "#1c1c1a" }),
+        Plot.barY(p2_reject, { x: "label", y: "rate", fill: d => d.rate > 10 ? "#b3000b" : "#2e6f40" }),
+        Plot.text(p2_reject, {
+          x: "label", y: "rate", text: d => d.rate + "%", dy: -8, lineAnchor: "bottom",
+          fontWeight: 700, fill: "#1c1c1a", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+        })
+      ]
+    })
+  }</div>
+</div>`
+```
+
+::: {.aside}
+Left: with serial correlation (red), residuals move in slow swings, so each center carries far less independent information than its number of years suggests. Right: the Bertrand--Duflo--Mullainathan (2004) result --- naive standard errors reject a *true* null about 45% of the time instead of the intended 5%. Clustering is the fix.
+:::
+
+::: {.glass-card .glass-card--assumption}
+**Cluster the standard errors at the level of treatment assignment** --- here, the *center* (or, if the program is assigned region-wide, the *region*). Clustered ("sandwich") standard errors allow $\varepsilon_{it}$ to be arbitrarily correlated *within* a cluster while assuming independence *across* clusters.
+
+$$
+\widehat{\text{Var}}_{\text{cluster}}(\hat\beta) = (\mathbf{X}'\mathbf{X})^{-1}\left(\sum_{g=1}^{G} \mathbf{X}_g'\,\hat{\boldsymbol{\varepsilon}}_g\,\hat{\boldsymbol{\varepsilon}}_g'\,\mathbf{X}_g\right)(\mathbf{X}'\mathbf{X})^{-1}
+$$
+
+**Read this as**: the cluster-robust variance is a sandwich whose meat sums, over the $G$ clusters, the outer product of each cluster's stacked regressor-times-residual terms --- letting within-cluster residuals covary freely.
+
+**A caution on few clusters.** Cluster-robust inference relies on having *many* clusters; with only a handful (say, comparing a few treated regions to a few controls), the asymptotics fail and standard errors are again unreliable. With few clusters, use the wild cluster bootstrap (Cameron, Gelbach & Miller, 2008) instead. The 21 *regioner* is a borderline case; hundreds of *vårdcentraler* is comfortable.
+:::
+
+
+## Covariates and Conditional Parallel Trends
+
+We can add baseline covariates to relax the parallel-trends assumption. The unconditional version asks: would treated and control centers have moved *in parallel* on their own? The **conditional** version asks the same thing *within* groups of centers that share covariate values $\mathbf{X}$:
+
+$$
+E[\,Y_{it}(0) - Y_{i,t-1}(0) \mid \text{Treated}, \mathbf{X}\,] = E[\,Y_{it}(0) - Y_{i,t-1}(0) \mid \text{Control}, \mathbf{X}\,]
+$$
+
+**Read this as**: "Within centers that look alike on the covariates $\mathbf{X}$, the treated and control groups would have experienced the *same* untreated change over time." If treated centers serve older populations whose fall rates were *already* rising faster, unconditional parallel trends fails --- but conditional parallel trends, controlling for age structure, may hold.
+
+A warning that we make precise on the next page: throwing covariates into the linear regression is *not* always the same as estimating a conditional-parallel-trends effect. If the covariates themselves are affected by treatment, or if their effect interacts with time, the simple additive control can introduce its own bias. Modern doubly-robust DiD estimators (Sant'Anna & Zhao, 2020) handle covariates more carefully. For now, the takeaway is: covariates let you defend a *weaker, conditional* version of parallel trends, and the regression makes adding them trivial.
+
+
+<details>
+<summary>Math Details: The Four Coefficients as Cell Means (full derivation)</summary>
+<div class="details-content">
+
+### Setting up the population regression
+
+Take expectations of the DiD regression within each of the four cells. Because the right-hand side is fully saturated (four parameters, four cells), the population regression line passes *exactly* through the four conditional means. Define $\mu_{gp} = E[Y_{it} \mid \text{group } g, \text{ period } p]$.
+
+**Cell 1 --- Control, pre** ($\text{Treated}=0, \text{Post}=0$):
+$$
+\mu_{C,\text{pre}} = \beta_0 + \beta_1(0) + \beta_2(0) + \beta_3(0) = \beta_0
+$$
+So $\boxed{\beta_0 = \mu_{C,\text{pre}}}$ --- the baseline level.
+
+**Cell 2 --- Treated, pre** ($\text{Treated}=1, \text{Post}=0$):
+$$
+\mu_{T,\text{pre}} = \beta_0 + \beta_1(1) + \beta_2(0) + \beta_3(0) = \beta_0 + \beta_1
+$$
+Solving, $\boxed{\beta_1 = \mu_{T,\text{pre}} - \mu_{C,\text{pre}}}$ --- the pre-period gap between groups.
+
+**Cell 3 --- Control, post** ($\text{Treated}=0, \text{Post}=1$):
+$$
+\mu_{C,\text{post}} = \beta_0 + \beta_2 \implies \boxed{\beta_2 = \mu_{C,\text{post}} - \mu_{C,\text{pre}}}
+$$
+the control group's pre-to-post change (the common time trend).
+
+**Cell 4 --- Treated, post** ($\text{Treated}=1, \text{Post}=1$):
+$$
+\mu_{T,\text{post}} = \beta_0 + \beta_1 + \beta_2 + \beta_3
+$$
+Substituting the three solved coefficients:
+$$
+\mu_{T,\text{post}} = \mu_{C,\text{pre}} + (\mu_{T,\text{pre}} - \mu_{C,\text{pre}}) + (\mu_{C,\text{post}} - \mu_{C,\text{pre}}) + \beta_3
+$$
+$$
+\mu_{T,\text{post}} = \mu_{T,\text{pre}} + \mu_{C,\text{post}} - \mu_{C,\text{pre}} + \beta_3
+$$
+Solving for $\beta_3$:
+$$
+\boxed{\beta_3 = (\mu_{T,\text{post}} - \mu_{T,\text{pre}}) - (\mu_{C,\text{post}} - \mu_{C,\text{pre}})}
+$$
+
+This is the double difference, exactly. The sample analog replaces each $\mu_{gp}$ with the cell average $\bar{Y}_{gp}$, and OLS on the 2x2 data returns precisely these four numbers.
+
+### Why $\beta_3$ identifies the ATT under parallel trends
+
+What does $\beta_3$ estimate causally? Write each observed mean in potential-outcomes terms, using the convention that $Y(1)$ is a unit's outcome *with* the program and $Y(0)$ its outcome *without* it --- two mutually exclusive worlds, only one of which we ever observe for any given unit. The treated-post mean mixes the treated potential outcome with the time trend; the other three cells are all untreated outcomes. The DiD **estimand** (the precisely-defined quantity we are *trying* to estimate, as opposed to the number a particular estimator happens to return) is:
+$$
+\beta_3 = \underbrace{\big(E[Y_{T,\text{post}}(1)] - E[Y_{T,\text{post}}(0)]\big)}_{\text{ATT}} + \underbrace{\Big(\big(E[Y_{T,\text{post}}(0)] - E[Y_{T,\text{pre}}(0)]\big) - \big(E[Y_{C,\text{post}}(0)] - E[Y_{C,\text{pre}}(0)]\big)\Big)}_{\text{differential trend in } Y(0)}
+$$
+
+**Read this as**: $\beta_3$ equals the true **ATT** --- the *average treatment effect on the treated*, i.e. the program's average effect among the centers that actually adopted it --- *plus* the difference in the two groups' untreated trends. The **parallel trends assumption** says the second bracket is zero --- treated and control would have moved identically absent the program. Under that assumption, $\beta_3 = \text{ATT}$. The interactive's "break it" step (dragging the control's post mean) is precisely manipulating this differential-trend term.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+We simulate a panel of *vårdcentraler*, half of which adopt the fall-prevention program in the post period, and confirm that (a) the by-hand 2x2 double difference, (b) the interaction regression $\beta_3$, and (c) the TWFE coefficient all coincide --- and we attach properly clustered standard errors.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(fixest)
+
+set.seed(2024)
+
+# --- Simulate a 2-period panel of 200 vårdcentraler ---
+n_centers <- 200
+centers <- tibble(
+  center  = 1:n_centers,
+  treated = rep(0:1, each = n_centers / 2),  # half adopt the program
+  # treated centers serve older catchments -> higher baseline fall rate
+  base    = 42 + 8 * (rep(0:1, each = n_centers / 2)) + rnorm(n_centers, 0, 3),
+  age     = 78 + 2 * (rep(0:1, each = n_centers / 2)) + rnorm(n_centers, 0, 1)
+)
+
+# True ATT = -10 fall-related ED visits per 1,000; common time drift = +4
+panel <- centers %>%
+  crossing(post = c(0, 1)) %>%
+  mutate(
+    d   = treated * post,                       # active-treatment indicator D_it
+    y   = base + 4 * post - 10 * d + rnorm(n(), 0, 2)
+  )
+
+# --- (a) By-hand 2x2 double difference ---
+cells <- panel %>%
+  group_by(treated, post) %>%
+  summarise(ybar = mean(y), .groups = "drop")
+did_byhand <- with(cells,
+  (ybar[treated == 1 & post == 1] - ybar[treated == 1 & post == 0]) -
+  (ybar[treated == 0 & post == 1] - ybar[treated == 0 & post == 0]))
+cat("By-hand 2x2 DiD:        ", round(did_byhand, 3), "\n")
+
+# --- (b) Interaction regression; cluster SEs at the center level ---
+m_interact <- feols(y ~ treated * post, data = panel, cluster = ~center)
+cat("Interaction beta3:      ",
+    round(coef(m_interact)["treated:post"], 3), "\n")
+
+# --- (c) Two-way fixed effects: y ~ d | center + post ---
+m_twfe <- feols(y ~ d | center + post, data = panel, cluster = ~center)
+cat("TWFE beta:              ", round(coef(m_twfe)["d"], 3), "\n")
+
+# --- With a covariate (catchment age): conditional parallel trends ---
+m_cov <- feols(y ~ d + age | center + post, data = panel, cluster = ~center)
+
+etable(m_interact, m_twfe, m_cov,
+       cluster = ~center,
+       headers = c("Interaction", "TWFE", "TWFE + age"))
+# All three report beta_hat ~ -10, matching the by-hand double difference.
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from linearmodels.panel import PanelOLS
+
+rng = np.random.default_rng(2024)
+
+# --- Simulate a 2-period panel of 200 vårdcentraler ---
+n_centers = 200
+treated = np.repeat([0, 1], n_centers // 2)          # half adopt the program
+base    = 42 + 8 * treated + rng.normal(0, 3, n_centers)
+age     = 78 + 2 * treated + rng.normal(0, 1, n_centers)
+
+rows = []
+for c in range(n_centers):
+    for post in (0, 1):
+        d = treated[c] * post                         # active-treatment D_it
+        y = base[c] + 4 * post - 10 * d + rng.normal(0, 2)
+        rows.append((c, treated[c], post, d, age[c], y))
+panel = pd.DataFrame(rows, columns=["center", "treated", "post", "d", "age", "y"])
+
+# --- (a) By-hand 2x2 double difference ---
+cell = panel.groupby(["treated", "post"])["y"].mean()
+did_byhand = ((cell[(1, 1)] - cell[(1, 0)]) - (cell[(0, 1)] - cell[(0, 0)]))
+print(f"By-hand 2x2 DiD:   {did_byhand:.3f}")
+
+# --- (b) Interaction regression; cluster SEs at the center level ---
+m_interact = smf.ols("y ~ treated * post", data=panel).fit(
+    cov_type="cluster", cov_kwds={"groups": panel["center"]})
+print(f"Interaction beta3: {m_interact.params['treated:post']:.3f}")
+
+# --- (c) Two-way fixed effects via linearmodels.PanelOLS ---
+pdat = panel.set_index(["center", "post"])
+m_twfe = PanelOLS(pdat["y"], pdat[["d"]],
+                  entity_effects=True, time_effects=True).fit(
+    cov_type="clustered", cluster_entity=True)
+print(f"TWFE beta:         {m_twfe.params['d']:.3f}")
+
+# --- With a covariate (catchment age): conditional parallel trends ---
+m_cov = PanelOLS(pdat["y"], pdat[["d", "age"]],
+                 entity_effects=True, time_effects=True).fit(
+    cov_type="clustered", cluster_entity=True)
+print(f"TWFE + age beta:   {m_cov.params['d']:.3f}")
+# All three estimates land at ~ -10, matching the by-hand double difference.
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A *region* evaluates its fall-prevention program with a single 2x2 comparison. The four cell means (fall-related ED visits per 1,000 patients aged 75+) are:
+
+| | Pre | Post |
+|:--|:--:|:--:|
+| **Control centers** | 38 | 41 |
+| **Treated centers** | 45 | 40 |
+
+(a) Compute $\beta_0, \beta_1, \beta_2, \beta_3$ from the canonical DiD regression.
+(b) Interpret each coefficient in plain language.
+(c) What is the estimated effect of the program?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Using the mapping from cell means to coefficients:
+
+- $\beta_0 = \bar{Y}_{C,\text{pre}} = 38$
+- $\beta_1 = \bar{Y}_{T,\text{pre}} - \bar{Y}_{C,\text{pre}} = 45 - 38 = 7$
+- $\beta_2 = \bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}} = 41 - 38 = 3$
+- $\beta_3 = (\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}}) - (\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}}) = (40 - 45) - (41 - 38) = -5 - 3 = -8$
+
+**(b)**
+
+- $\beta_0 = 38$: the baseline fall rate in control centers in the pre period.
+- $\beta_1 = 7$: even before the program, treated centers had 7 more fall visits per 1,000 --- they serve older, frailer catchments. This is a *level* gap, not a causal effect.
+- $\beta_2 = 3$: the control group's fall rate rose by 3 over time --- a common background trend (an aging population, a harsh winter) affecting everyone.
+- $\beta_3 = -8$: the difference-in-differences. Net of the group gap and the common trend, the program is associated with 8 *fewer* fall-related ED visits per 1,000.
+
+**(c)** Under parallel trends, the program **prevented about 8 fall-related ED visits per 1,000 patients aged 75+**. Note that the treated group's *raw* change was only $-5$; subtracting the control group's $+3$ background drift reveals a larger true benefit ($-8$), because absent the program the treated centers would also have drifted upward.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague runs the TWFE regression $Y_{it} = \alpha_i + \gamma_t + \beta D_{it} + \varepsilon_{it}$ on a two-group, two-period dataset and gets $\hat\beta = -8$. They then run the interaction regression $Y_{it} = \beta_0 + \beta_1 \text{Treated}_i + \beta_2 \text{Post}_t + \beta_3(\text{Treated}_i \times \text{Post}_t) + \varepsilon_{it}$ and worry because the regression output shows *four* coefficients instead of one. Should the two $\hat\beta$ estimates differ? Explain what each model is doing with the data.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**No --- $\hat\beta_3$ from the interaction regression must equal $\hat\beta = -8$ from TWFE exactly.** They are algebraically the same estimator.
+
+In the 2x2 case:
+
+- The **interaction regression** explicitly parameterizes the two-group, two-period structure: $\beta_1$ is the group gap, $\beta_2$ is the time shift, and $\beta_3$ is the interaction. You see four coefficients because the model spells out all four cell means.
+- The **TWFE regression** absorbs the same structure into fixed effects. With only two groups, the unit fixed effects $\alpha_i$ collapse to a single "treated vs. control" contrast (one is dropped for collinearity with the intercept); with only two periods, the time fixed effects $\gamma_t$ collapse to a single "pre vs. post" contrast; and $D_{it}$ — active treatment — equals the interaction $\text{Treated}_i \times \text{Post}_t$. The fixed effects play the roles of $\beta_1$ and $\beta_2$ but are not reported as a clean group/time gap.
+
+So TWFE reports *fewer* coefficients only because it folds the nuisance parameters ($\beta_0, \beta_1, \beta_2$) into fixed effects it does not print. The treatment coefficient is identical. The colleague should not worry --- they can verify by checking that $\hat\beta = \hat\beta_3$ to the last decimal. (The standard errors will also match if both use the same clustering.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher has 12 years of annual data on 300 *vårdcentraler*. She runs the interaction regression and reports a $t$-statistic of 4.1 on $\beta_3$ using default (homoskedastic, i.i.d.) OLS standard errors. A reviewer insists she re-run with standard errors clustered at the center level, after which the $t$-statistic drops to 1.6.
+
+(a) Why did the standard error grow so much?
+(b) Which standard error should she report, and why?
+(c) Under what circumstance would clustering at the center level itself be problematic here?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Default OLS standard errors assume the $T = 12$ observations within each center are independent. They are not: a center's fall rate is **serially correlated** --- persistent local factors (an aging neighborhood, chronic understaffing) make this year's residual look like last year's. With positively correlated within-center residuals, each center contributes far less *independent* information than 12 i.i.d. observations would. Treating correlated data as independent makes the default standard error far too small, inflating the $t$-statistic. This is exactly the Bertrand--Duflo--Mullainathan (2004) phenomenon.
+
+**(b)** She should report the **clustered** standard error ($t = 1.6$). It is the honest one: it allows arbitrary within-center serial correlation and only assumes independence *across* centers, which matches the data-generating process. The drop from 4.1 to 1.6 means the apparently strong result is actually **not statistically significant** at conventional levels once serial correlation is accounted for. Reporting the default $t = 4.1$ would be a false positive.
+
+**(c)** Clustering relies on having *many* clusters. With 300 centers she is fine. But if treatment were assigned at the **region** level (all centers in a region adopt together), the relevant cluster is the region, and serial *and cross-center* correlation within a region must be allowed for --- leaving as few as a handful of treated clusters. With few clusters the cluster-robust asymptotics break down and she should switch to the **wild cluster bootstrap** (Cameron, Gelbach & Miller, 2008).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Two *regioner* both run the same fall-prevention program, but in **different years**: Region A switches its centers on in 2018, Region B in 2021. A data scientist pools all centers across 2015--2023 and estimates the single TWFE regression $Y_{it} = \alpha_i + \gamma_t + \beta D_{it} + \varepsilon_{it}$, then reports $\hat\beta$ as "the difference-in-differences estimate of the program." Identify the conceptual error and explain, in two or three sentences, why $\hat\beta$ here is *not* guaranteed to be a clean DiD.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+This is **staggered adoption**, not common timing, so the clean TWFE-equals-DiD equivalence developed on this page **does not apply**. With staggered treatment, the single coefficient $\hat\beta$ is a *weighted average of many 2x2 comparisons*, and crucially some of those comparisons use **already-treated** units (Region A after 2018) as the "control" group for **later-treated** units (Region B around 2021). These "forbidden comparisons" can receive **negative weights** when treatment effects change over time, so $\hat\beta$ can be biased --- in extreme cases it can even take the wrong sign while every center was genuinely helped.
+
+The data scientist should instead use a heterogeneity-robust estimator (Callaway--Sant'Anna, Sun--Abraham, or de Chaisemartin--D'Haultfœuille) that only ever compares newly-treated units to not-yet-treated units. This is exactly the subject of the [Staggered Adoption](staggered.qmd) page.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The canonical DiD regression is *saturated*: its four coefficients fit the four cell means exactly, and the interaction $\beta_3$ equals the 2x2 double difference --- same estimator, re-expressed.
+- The regression earns its keep not by changing the estimate but by attaching standard errors, covariate adjustment, and generalization to panels.
+- TWFE ($Y_{it} = \alpha_i + \gamma_t + \beta D_{it} + \varepsilon_{it}$) absorbs the group gap and time shift into fixed effects and reduces to the interaction regression in the 2x2 case.
+- Cluster standard errors at the level of treatment assignment: serial correlation makes default OLS errors far too small (Bertrand--Duflo--Mullainathan), and with few clusters use the wild cluster bootstrap.
+- Covariates buy you a weaker, *conditional* parallel-trends assumption --- but the clean TWFE-equals-DiD equivalence holds only under common timing, not staggered adoption.
+:::
+
+## What Comes Next
+
+We have shown that the difference-in-differences estimate is just the interaction coefficient $\beta_3$ in a regression --- and that the two-way fixed-effects form generalizes it to many units and periods, complete with clustered standard errors and covariate adjustment. But every line of this page has rested on one load-bearing assumption: that, absent the program, the treated and control centers would have moved in **parallel**. If that assumption fails, $\beta_3$ measures a differential trend, not a treatment effect. The next page, [Parallel Trends](parallel-trends.qmd), examines how to assess, test, and defend that assumption --- and shows exactly what pre-trend tests can and cannot tell you.

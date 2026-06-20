@@ -1,0 +1,820 @@
+---
+title: "Partial Pooling and Shrinkage"
+subtitle: "Borrowing strength across groups"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Distinguish the three ways to estimate a group-specific quantity --- no pooling, complete pooling, and partial pooling --- and state what each one assumes
+- Write the partial-pooling estimate as a precision-weighted average of a group's own mean and the grand mean, and read its shrinkage weight aloud
+- Explain why small or noisy groups shrink hard toward the grand mean while large groups barely move
+- Connect partial pooling to the random-effects / multilevel model and to the James--Stein insight that shrinkage lowers total error
+- Fit a partial-pooling model in R (`lme4::lmer`) and Python (`statsmodels` `MixedLM`) and recover each group's shrunk estimate
+:::
+
+## One Number per Vårdcentral, and Why It Is Hard
+
+*Socialstyrelsen* (the National Board of Health and Welfare) publishes a quality indicator for every *vårdcentral* (primary care center) in Sweden: the share of a center's Type 2 diabetes patients who reach their individual **HbA1c target**. A small rural center in Norrbotten might have 38 diabetes patients on its books; a large urban center in Göteborg might have 900. Both report a target-attainment rate, and a regional commissioner wants to rank them, reward the leaders, and coach the laggards.
+
+Here is the trap. Suppose the small center reports that 11 of its 38 patients hit target --- a rate of 29%. The large center reports 405 of 900 --- a rate of 45%. Is the small center really worse? Or did it just have a bad year with a handful of unlucky patients? With only 38 patients, a single difficult case moves the rate by almost three percentage points. The small center's number is *real* but *noisy*; the large center's number is almost as solid as bedrock.
+
+The question of this page is deceptively simple: **what is the best estimate of each center's true target-attainment rate?** We will see that the obvious answer --- "just use each center's own data" --- is statistically *inadmissible*, beaten by a method that deliberately nudges every center's estimate toward the national average. The amount of nudging is not arbitrary: it is dictated, precisely, by how noisy that center's own data is relative to how much centers genuinely differ. This is **partial pooling**, and it is the beating heart of every multilevel model.
+
+
+## Three Ways to Estimate a Group Mean
+
+Let there be $J$ vårdcentraler, indexed $j = 1, \dots, J$. Center $j$ has $n_j$ diabetes patients, and we observe its raw target-attainment rate $\bar{y}_j$ (the fraction who hit target). We want $\mu_j$, the center's *true* underlying rate. There are exactly three strategies.
+
+::: {.glass-card .glass-card--definition}
+**No pooling.** Estimate each center entirely from its own data:
+$$
+\hat{\mu}_j^{\text{no-pool}} = \bar{y}_j .
+$$
+Each center is an island. **Unbiased** for every $\mu_j$, but for small $n_j$ the estimate is *wildly noisy* --- its sampling variance is $\sigma^2_y / n_j$, which explodes when $n_j$ is small.
+
+**Complete pooling.** Ignore the group labels entirely and use one grand mean for everyone:
+$$
+\hat{\mu}_j^{\text{pool}} = \bar{y}_{\bullet} = \frac{1}{J}\sum_{k=1}^{J} \bar{y}_k \quad (\text{or the patient-weighted grand mean}).
+$$
+**Stable** --- it pools all the data --- but it *denies that centers differ at all*. If center quality genuinely varies, this estimate is biased for every center except the average one.
+
+**Partial pooling.** A weighted compromise between the two:
+$$
+\hat{\mu}_j^{\text{partial}} = \lambda_j \, \bar{y}_j + (1 - \lambda_j)\, \bar{y}_{\bullet},
+$$
+where the **shrinkage weight** $\lambda_j \in [0, 1]$ depends on how much we trust center $j$'s own data. Read this aloud: *"the partially-pooled estimate is lambda-j times the center's own rate, plus one-minus-lambda-j times the grand mean."* When $\lambda_j = 1$ we recover no pooling; when $\lambda_j = 0$ we recover complete pooling. The art is choosing $\lambda_j$ from the data.
+:::
+
+No pooling and complete pooling are the two extremes of a single dial, and **partial pooling sits in between, with the dial position chosen separately for each group.** A center with thousands of patients earns a $\lambda_j$ near 1 (trust its own number); a center with a dozen patients gets a $\lambda_j$ near 0 (lean on the national average). The next section pins down exactly where the dial lands.
+
+
+## The Shrinkage Weight: Reliability
+
+The key idea is that each center's raw rate $\bar{y}_j$ is a *measurement* of its true rate $\mu_j$, and like any measurement it carries error. The multilevel model writes down two variances:
+
+- $\sigma^2_y$ --- the **within-group** (sampling) variance of a single patient's outcome, so $\bar{y}_j$ has sampling variance $\sigma^2_y / n_j$;
+- $\tau^2$ --- the **between-group** variance, i.e. how much the *true* rates $\mu_j$ actually spread across centers.
+
+The optimal weight on center $j$'s own data turns out to be its **reliability** --- the share of the variance in $\bar{y}_j$ that reflects a real signal rather than sampling noise:
+
+$$
+\lambda_j \;=\; \frac{\tau^2}{\tau^2 + \sigma^2_y / n_j} \;=\; \frac{n_j \, \tau^2}{n_j\, \tau^2 + \sigma^2_y}.
+$$
+
+Read the middle expression aloud: *"lambda-j is the between-group variance divided by the between-group variance plus the sampling variance of this center's mean."* It is a signal-to-(signal-plus-noise) ratio. Three facts fall out immediately, and they are the entire intuition of the page:
+
+1. **Bigger groups shrink less.** As $n_j \to \infty$, the sampling term $\sigma^2_y / n_j \to 0$, so $\lambda_j \to 1$: a huge center is trusted almost entirely on its own data.
+2. **Smaller groups shrink more.** As $n_j \to 0$ (a tiny center), $\lambda_j \to 0$: with almost no data of its own, the estimate collapses onto the grand mean.
+3. **More between-group spread means less shrinkage for everyone.** As $\tau^2$ grows (centers genuinely differ a lot), $\lambda_j \to 1$ for all $j$ --- if centers are wildly different, the grand mean is a poor guide and we trust local data. As $\tau^2 \to 0$ (centers are all alike), $\lambda_j \to 0$ and partial pooling becomes complete pooling.
+
+::: {.glass-card .glass-card--insight}
+**Shrinkage is not a fudge --- it is the optimal use of two sources of information.** Center $j$'s own data says $\bar{y}_j$; the rest of Sweden says $\bar{y}_{\bullet}$. Each is a noisy estimate of $\mu_j$ (the grand mean is biased for $\mu_j$ but very precise; the local mean is unbiased but imprecise). The precision-weighted average of two estimates of the same quantity is exactly $\lambda_j \bar{y}_j + (1-\lambda_j)\bar{y}_\bullet$ with the weights above. Partial pooling *is* inverse-variance weighting, applied across the levels of a hierarchy.
+:::
+
+
+## See It: Watch the Estimates Shrink
+
+The interactive below shows $J = 12$ vårdcentraler. Each center has a raw target-attainment rate (the **slate dots**, with a 95% interval whose width reflects that center's sample size) and a partially-pooled estimate (the **Uppsala-red dots**). A faint arrow connects each raw mean to its shrunk estimate, and every arrow points toward the **ochre grand-mean line**. Drive the two sliders and watch the geometry:
+
+- **Between-center spread $\tau$** controls how genuinely different the centers are. Small $\tau$ = strong shrinkage (long arrows, everything piles onto the grand mean); large $\tau$ = weak shrinkage (short arrows, raw and shrunk nearly coincide).
+- **Typical center size $n$** rescales every center's sample (small centers stay small relative to large ones). Small $n$ = noisy raw means, wide intervals, heavy shrinkage; large $n$ = tight intervals, little shrinkage.
+
+Notice especially that **small centers shrink farther than large ones at the same $\tau$** --- the arrows are not all the same length. That is the whole point.
+
+::: {.interactive-container}
+
+#### Partial pooling: raw means shrinking toward the grand mean
+
+```{ojs}
+//| echo: false
+
+// Uppsala-academic palette shared across this page's interactives.
+mlpool_pal = ({
+  estimate: "#990000",   // focal: the partially-pooled (shrunk) estimate
+  raw:      "#3d5a6c",    // comparison: each center's own raw mean
+  good:     "#2e6f40",    // success / on-target
+  grand:    "#9c7a33",    // highlight: the grand-mean reference line
+  ink:      "#1c1c1a",    // ink / reference lines
+  axis:     "#555555",    // axis text
+  hair:     "#e6e3db",    // gridlines
+  muted:    "#79766e",    // muted ink / arrows
+  fill:     "#f6f5f1"     // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${mlpool_pal.axis};
+    background: ${mlpool_pal.fill};
+    border-left: 3px solid ${mlpool_pal.estimate};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> drag <em>Between-center spread</em> down toward 0
+  and watch every red estimate slide onto the ochre grand-mean line (complete
+  pooling). Then drag it up and the red dots snap back to the slate raw means
+  (no pooling). The guided tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlpool_tau = Inputs.range([0.5, 12], {
+  value: 4,
+  step: 0.5,
+  label: "Between-center spread τ (pp of true variation)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlpool_nscale = Inputs.range([0.25, 4], {
+  value: 1,
+  step: 0.25,
+  label: "Typical center size (× baseline patients)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlpool_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Twelve vårdcentraler with FIXED true rates and FIXED baseline sample sizes,
+// deliberately ranging from tiny rural centers to large urban ones. The true
+// rates are spread around a 45% national mean; the slider τ rescales how far the
+// *displayed* true spread is, and nscale rescales every center's sample size.
+mlpool_baseCenters = [
+  { id: 1,  name: "Kiruna",      z: -1.6, baseN: 34 },
+  { id: 2,  name: "Gällivare",   z: -1.1, baseN: 48 },
+  { id: 3,  name: "Härnösand",   z: -0.8, baseN: 62 },
+  { id: 4,  name: "Falun",       z: -0.4, baseN: 110 },
+  { id: 5,  name: "Karlstad",    z: -0.2, baseN: 180 },
+  { id: 6,  name: "Örebro",      z:  0.0, baseN: 240 },
+  { id: 7,  name: "Linköping",   z:  0.2, baseN: 300 },
+  { id: 8,  name: "Uppsala",     z:  0.5, baseN: 420 },
+  { id: 9,  name: "Västerås",    z:  0.7, baseN: 360 },
+  { id: 10, name: "Malmö",       z:  1.0, baseN: 640 },
+  { id: 11, name: "Göteborg",    z:  1.4, baseN: 900 },
+  { id: 12, name: "Stockholm C", z:  1.7, baseN: 1200 }
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Grand mean (national target-attainment rate, %) and the per-patient outcome
+// SD on the percentage scale. A patient either hits target (1) or not (0); for a
+// rate p the per-patient SD is sqrt(p(1-p)). We use a representative σ_y so that
+// the sampling variance of a center's mean is σ_y² / n.
+mlpool_grandMean = 45      // % of diabetes patients reaching HbA1c target
+mlpool_sigmaY    = 50      // per-patient outcome SD on the 0–100 pp scale: a 0/100 Bernoulli with p≈.45 has SD √(.45·.55)·100 ≈ 49.7 ≈ 50
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the live centers: true rate, sample size, a fresh noisy raw mean,
+// the reliability weight λ_j, and the partially-pooled estimate.
+// mlpool_draw is referenced (not mutated) so the button resamples the noise.
+mlpool_centers = {
+  mlpool_draw;                                   // resample trigger
+  const tau   = mlpool_tau;
+  const sigma = mlpool_sigmaY;
+  const grand = mlpool_grandMean;
+  const rnd   = d3.randomNormal.source(d3.randomLcg(0.42 + 0.137 * mlpool_draw))(0, 1);
+
+  return mlpool_baseCenters.map(c => {
+    const n      = Math.max(8, Math.round(c.baseN * mlpool_nscale));
+    const muTrue = grand + tau * c.z;            // true rate (slider scales spread)
+    const seRaw  = sigma / Math.sqrt(n);         // SE of this center's raw mean
+    const raw    = muTrue + seRaw * rnd();        // noisy observed raw rate
+    const lambda = (tau * tau) / (tau * tau + (sigma * sigma) / n);  // reliability
+    const shrunk = lambda * raw + (1 - lambda) * grand;
+    return { ...c, n, muTrue, seRaw, raw, lambda, shrunk };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(700, width),
+  height: 430,
+  marginLeft: 95,
+  marginRight: 30,
+  marginTop: 36,
+  marginBottom: 48,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+  x: {
+    label: "Diabetes patients reaching HbA1c target (%)",
+    domain: [10, 80],
+    grid: true
+  },
+  y: {
+    label: null,
+    domain: mlpool_centers.map(c => c.name),
+    tickFormat: d => d
+  },
+  marks: [
+    // Grand-mean reference line (ochre).
+    Plot.ruleX([mlpool_grandMean], {
+      stroke: mlpool_pal.grand, strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ x: mlpool_grandMean }], {
+      x: "x", frameAnchor: "top",
+      text: () => `Grand mean ${mlpool_grandMean}%`,
+      fill: mlpool_pal.grand, fontWeight: 700, fontSize: 11,
+      dy: -8, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // 95% sampling interval for each raw mean (width ∝ 1/√n).
+    Plot.ruleY(mlpool_centers, {
+      y: "name",
+      x1: d => d.raw - 1.96 * d.seRaw,
+      x2: d => d.raw + 1.96 * d.seRaw,
+      stroke: mlpool_pal.raw, strokeWidth: 1.5, strokeOpacity: 0.5
+    }),
+
+    // Shrinkage arrow: raw mean → shrunk estimate.
+    Plot.arrow(mlpool_centers, {
+      y1: "name", y2: "name",
+      x1: "raw", x2: "shrunk",
+      stroke: mlpool_pal.muted, strokeWidth: 1.5, headLength: 6
+    }),
+
+    // Raw means (slate).
+    Plot.dot(mlpool_centers, {
+      x: "raw", y: "name",
+      fill: mlpool_pal.raw, r: 5,
+      title: d => `${d.name}\nn = ${d.n} patients\nRaw mean: ${d.raw.toFixed(1)}%\nλ = ${d.lambda.toFixed(2)}`
+    }),
+
+    // Partially-pooled estimates (Uppsala red).
+    Plot.dot(mlpool_centers, {
+      x: "shrunk", y: "name",
+      fill: mlpool_pal.estimate, r: 6,
+      title: d => `${d.name}\nShrunk estimate: ${d.shrunk.toFixed(1)}%\nλ = ${d.lambda.toFixed(2)} (n = ${d.n})`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// On-chart legend + live mean shrinkage readout.
+{
+  const meanLambda = d3.mean(mlpool_centers, d => d.lambda);
+  return html`<div style="
+      font-family: Inter, sans-serif;
+      font-size: 0.78rem;
+      color: ${mlpool_pal.axis};
+      margin-top: 0.4rem;
+      line-height: 1.5;">
+    <span style="color:${mlpool_pal.raw};font-weight:700;">&#9679; Raw mean</span>
+    (own data, &plusmn;95% interval) &nbsp;&rarr;&nbsp;
+    <span style="color:${mlpool_pal.estimate};font-weight:700;">&#9679; Partially-pooled estimate</span>
+    &nbsp;|&nbsp;
+    <span style="color:${mlpool_pal.grand};font-weight:700;">&ndash;&ndash; grand mean</span>.
+    Average reliability across the 12 centers: <strong>&lambda;&#772; = ${meanLambda.toFixed(2)}</strong>
+    &mdash; centers keep ${(meanLambda * 100).toFixed(0)}% of their own signal, on average.
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// A compact table of the two smallest and two largest centers so the reader can
+// read the per-group λ and see that small centers shrink hardest.
+{
+  const sorted = [...mlpool_centers].sort((a, b) => a.n - b.n);
+  const show = [sorted[0], sorted[1], sorted[sorted.length - 2], sorted[sorted.length - 1]];
+  const row = c => {
+    const move = Math.abs(c.raw - c.shrunk);
+    return html`<tr>
+      <td style="text-align:left;">${c.name}</td>
+      <td>${c.n}</td>
+      <td>${c.raw.toFixed(1)}%</td>
+      <td><span style="color:${mlpool_pal.estimate};font-weight:600;">${c.shrunk.toFixed(1)}%</span></td>
+      <td>${c.lambda.toFixed(2)}</td>
+      <td>${move.toFixed(1)} pp</td>
+    </tr>`;
+  };
+  return html`<table class="science-table" style="margin-top:0.75rem;">
+    <thead><tr>
+      <th style="text-align:left;">Center</th><th>n</th><th>Raw</th>
+      <th>Shrunk</th><th>&lambda;</th><th>Moved</th>
+    </tr></thead>
+    <tbody>${show.map(row)}</tbody>
+  </table>`;
+}
+```
+
+:::
+
+### How to Read the Shrinkage Plot
+
+Work through the controls in this order; each step isolates one idea.
+
+**Step 1: Read a single center.** Pick a row. The slate dot is its raw target-attainment rate; the thin slate whisker is the 95% sampling interval (wide for small centers, narrow for large ones). The red dot is the partially-pooled estimate, and the grey arrow shows how far the raw number was pulled. Every arrow points toward the ochre grand-mean line at 45%.
+
+**Step 2: Confirm small centers shrink hardest.** Look at the top rows (Kiruna, Gällivare --- the small rural centers) versus the bottom rows (Göteborg, Stockholm --- the large urban ones). At any fixed $\tau$, the small centers have the *longest* arrows and the *lowest* $\lambda$ in the summary table: with little data of their own, they borrow heavily from the national average. The large centers barely move.
+
+**Step 3: Collapse to complete pooling.** Drag **Between-center spread $\tau$** down toward 0.5. Now the model believes centers are nearly identical, so $\lambda_j \to 0$ for everyone and *all* the red dots pile up on the ochre line. This is complete pooling: one number for all of Sweden.
+
+**Step 4: Recover no pooling.** Drag $\tau$ up to 12. The model now believes centers differ enormously, so $\lambda_j \to 1$ and each red dot snaps back onto its slate raw mean. The arrows shrink to nothing. This is no pooling: every center on its own.
+
+**Step 5: Change the sample sizes.** Drag **Typical center size** down to 0.25×. Every interval widens, every raw mean gets noisier, and the average reliability $\bar{\lambda}$ in the readout drops --- so the whole panel shrinks harder. Drag it up to 4× and the reverse happens. Sample size and between-group variance are the *only* two things that set the shrinkage.
+
+**Step 6: Resample.** Click **Draw new sample** a few times. The slate raw means jump around --- especially the small centers, whose noise is large --- but the red shrunk estimates are far more stable, because they lean on the grand mean. That stability is the efficiency gain partial pooling buys.
+
+
+## Break It: When Shrinkage Helps and When It Hurts
+
+Shrinkage is a *biased* estimator of any single $\mu_j$ --- it deliberately pulls each center off its own (unbiased) mean. So why use it? Because we usually care about *total* error across all centers, not the error for one. The James--Stein result (1961) is the stunning fact that, for $J \ge 3$ groups, shrinking *always* lowers the expected total squared error relative to no pooling --- the no-pooling estimator is **inadmissible**. The interactive below makes that concrete: it reports the mean squared error of all three strategies against the (here known) true rates, and lets you find the shrinkage amount that minimizes it.
+
+::: {.interactive-container}
+
+#### Total error: no pooling vs complete pooling vs partial pooling
+
+```{ojs}
+//| echo: false
+
+viewof mlpool_lambdaManual = Inputs.range([0, 1], {
+  value: 0.5,
+  step: 0.02,
+  label: "Manual shrinkage λ (1 = no pooling, 0 = complete pooling)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlpool_tau2 = Inputs.range([0.5, 12], {
+  value: 4,
+  step: 0.5,
+  label: "True between-center spread τ"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlpool_draw2 = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Same 12 centers; here we sweep a SINGLE manual λ applied to all centers so the
+// MSE-vs-λ curve is one-dimensional and easy to read. (The per-group optimum
+// from the formula is shown for reference.)
+mlpool_mseData = {
+  mlpool_draw2;
+  const tau   = mlpool_tau2;
+  const sigma = mlpool_sigmaY;
+  const grand = mlpool_grandMean;
+  const rnd   = d3.randomNormal.source(d3.randomLcg(0.91 + 0.071 * mlpool_draw2))(0, 1);
+
+  const centers = mlpool_baseCenters.map(c => {
+    const n      = Math.max(8, Math.round(c.baseN));
+    const muTrue = grand + tau * c.z;
+    const seRaw  = sigma / Math.sqrt(n);
+    const raw    = muTrue + seRaw * rnd();
+    const lamOpt = (tau * tau) / (tau * tau + (sigma * sigma) / n);
+    return { ...c, n, muTrue, seRaw, raw, lamOpt };
+  });
+
+  // MSE of a given uniform λ against the known true rates.
+  const mseAt = lam => d3.mean(centers, c => {
+    const est = lam * c.raw + (1 - lam) * grand;
+    return (est - c.muTrue) ** 2;
+  });
+
+  const grid = d3.range(0, 1.001, 0.02).map(lam => ({ lam, mse: mseAt(lam) }));
+  const best = grid.reduce((a, b) => (b.mse < a.mse ? b : a));
+
+  return {
+    centers, grid,
+    mseNoPool:   mseAt(1),
+    msePool:     mseAt(0),
+    msePartial:  mseAt(mlpool_lambdaManual),
+    bestLam:     best.lam,
+    bestMse:     best.mse,
+    meanLamOpt:  d3.mean(centers, c => c.lamOpt)
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(700, width),
+  height: 300,
+  marginLeft: 60,
+  marginRight: 24,
+  marginBottom: 48,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+  x: { label: "Shrinkage weight λ  (0 = complete pooling → 1 = no pooling)", domain: [0, 1], grid: true },
+  y: { label: "Mean squared error (pp²)", grid: true },
+  marks: [
+    Plot.line(mlpool_mseData.grid, { x: "lam", y: "mse", stroke: mlpool_pal.ink, strokeWidth: 2 }),
+    // Optimal λ.
+    Plot.ruleX([mlpool_mseData.bestLam], { stroke: mlpool_pal.good, strokeWidth: 1.5, strokeDasharray: "4,3" }),
+    Plot.dot([{ x: mlpool_mseData.bestLam, y: mlpool_mseData.bestMse }], { x: "x", y: "y", r: 6, fill: mlpool_pal.good }),
+    Plot.text([{ x: mlpool_mseData.bestLam, y: mlpool_mseData.bestMse }], {
+      x: "x", y: "y", text: () => `MSE-optimal λ ≈ ${mlpool_mseData.bestLam.toFixed(2)}`,
+      dy: -14, fill: mlpool_pal.good, fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke", textAnchor: "middle"
+    }),
+    // Current manual choice.
+    Plot.ruleX([mlpool_lambdaManual], { stroke: mlpool_pal.estimate, strokeWidth: 1.5 }),
+    Plot.dot([{ x: mlpool_lambdaManual, y: mlpool_mseData.msePartial }], { x: "x", y: "y", r: 6, fill: mlpool_pal.estimate }),
+    Plot.text([{ x: mlpool_lambdaManual, y: mlpool_mseData.msePartial }], {
+      x: "x", y: "y", text: () => `your λ = ${mlpool_lambdaManual.toFixed(2)}`,
+      dy: 18, fill: mlpool_pal.estimate, fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke", textAnchor: "middle"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Three-way MSE scoreboard.
+{
+  const d = mlpool_mseData;
+  const item = (name, value, color, note) => html`<div style="
+      flex: 1 1 0; min-width: 9rem; text-align: center;
+      padding: 0.6rem 0.4rem; border-radius: 0.5rem; background: ${mlpool_pal.fill};">
+    <div style="font-family:Inter,sans-serif;font-size:0.68rem;font-weight:700;
+        text-transform:uppercase;letter-spacing:0.05em;color:${mlpool_pal.muted};">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:${color};">${value.toFixed(1)}</div>
+    <div style="font-family:Inter,sans-serif;font-size:0.66rem;color:${mlpool_pal.axis};">${note}</div>
+  </div>`;
+  return html`<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem;">
+    ${item("No pooling (λ=1)", d.mseNoPool, mlpool_pal.raw, "unbiased, noisy")}
+    ${item("Complete pooling (λ=0)", d.msePool, mlpool_pal.grand, "stable, biased")}
+    ${item("Partial (your λ)", d.msePartial,
+        d.msePartial <= Math.min(d.mseNoPool, d.msePool) ? mlpool_pal.good : mlpool_pal.estimate,
+        d.msePartial <= Math.min(d.mseNoPool, d.msePool) ? "beats both extremes" : "move toward optimum")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line verdict. NOTE: this curve sweeps a SINGLE shared λ across 12 groups
+// whose sample sizes (and squared biases) differ, so its optimum is a
+// precision-weighted blend — NOT the simple average λ̄ of the per-group optima.
+// The honest, robust message is that the optimum is interior (beats both
+// extremes); the per-group formula λ_j is each group's OWN optimum, shown in the
+// first interactive.
+{
+  const d = mlpool_mseData;
+  const msg = `The MSE curve bottoms out at a shared λ ≈ ${d.bestLam.toFixed(2)} — strictly between pure no-pooling (λ=1) and pure pooling (λ=0), so an interior amount of shrinkage beats both extremes (the James–Stein guarantee). That shared optimum is a precision-weighted blend of the groups, so it need not equal the simple average per-group reliability λ̄ ≈ ${d.meanLamOpt.toFixed(2)}; the per-group formula λ_j gives each center its OWN optimal weight (the geometry in the first interactive). Notice the U is flat near the bottom: a wide range of moderate λ still beats both endpoints.`;
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${mlpool_pal.good}; background: rgba(46,111,64,0.05);
+      font-family: Inter, sans-serif; font-size: 0.85rem; line-height: 1.5; color: ${mlpool_pal.ink};">
+    ${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the MSE Curve
+
+**Step 1: See the U.** The black curve is total squared error against the truth as you slide a single shrinkage weight $\lambda$ from 0 (complete pooling, far left) to 1 (no pooling, far right). It is U-shaped: both extremes are worse than something in the middle.
+
+**Step 2: Find the floor.** The green dashed line marks the shared $\lambda$ that minimizes MSE on this curve. It sits strictly between the two extremes --- an interior amount of shrinkage always beats both. (This curve applies *one* $\lambda$ to all 12 centers at once, so its optimum is a precision-weighted blend across groups and need not equal the simple average $\bar{\lambda}$ of the per-group reliabilities. The per-group formula $\lambda_j = \tau^2/(\tau^2 + \sigma^2_y/n_j)$ is each *individual* center's MSE-optimal weight --- that is the shrinkage you saw in the first interactive, and the Math Details below prove it is the exact minimizer for a single group.)
+
+**Step 3: Beat both extremes.** Slide your red $\lambda$ to the floor. The scoreboard's "Partial" tile turns green when it beats *both* no pooling and complete pooling at once --- the James--Stein guarantee made visible.
+
+**Step 4: Stretch the centers apart.** Push **True between-center spread $\tau$** up. The optimal $\lambda$ marches toward 1 (when centers really differ, trust local data) and the MSE gap between the strategies narrows. Pull $\tau$ down and the optimum slides toward 0 (when centers are alike, pool hard).
+
+
+## The Multilevel Model Behind the Curtain
+
+Everything above is the closed-form face of a model you have already met. Write the two-level (random-intercept) model for patient $i$ in center $j$:
+
+$$
+y_{ij} = \mu + u_j + \varepsilon_{ij}, \qquad u_j \sim \mathcal{N}(0, \tau^2), \quad \varepsilon_{ij} \sim \mathcal{N}(0, \sigma^2_y),
+$$
+
+where $\mu$ is the grand mean, $u_j$ is center $j$'s deviation from it (a *random* effect), and $\varepsilon_{ij}$ is patient-level noise. Read it aloud: *"a patient's outcome equals the national mean, plus a center-specific bump drawn from a normal distribution, plus individual noise."* The center's true rate is $\mu_j = \mu + u_j$.
+
+The partially-pooled estimate $\hat{\mu}_j^{\text{partial}}$ is exactly the **best linear unbiased predictor (BLUP)** of $\mu + u_j$ from this model. Fitting the model by REML (restricted maximum likelihood) estimates $\tau^2$ and $\sigma^2_y$ from the data themselves --- so the model *learns how much to shrink* rather than asking you to dial it in. This is why a multilevel / random-effects model and "partial pooling" are two names for one idea.
+
+::: {.glass-card .glass-card--assumption}
+**What partial pooling assumes.** The shrinkage formula and the BLUP are optimal under three conditions worth stating plainly:
+
+1. **Exchangeability.** The center effects $u_j$ are draws from a *common* distribution --- centers are like one another a priori, before seeing their data. If a center is categorically different (e.g., a specialist diabetes clinic, not a general vårdcentral), pooling it with the rest distorts both.
+2. **The random-effect mean is uncorrelated with the predictors** (when covariates are present). This is the random-effects exogeneity assumption from the previous module; violate it and the shrinkage borrows from a biased grand mean. (The Mundlak/correlated-random-effects fix from the last page restores it.)
+3. **Correct variance components.** Shrinkage uses $\tau^2$ and $\sigma^2_y$; if $\tau^2$ is badly estimated (few groups, $J$ small), the amount of shrinkage can be off.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Shrinkage can hide a genuinely excellent --- or genuinely failing --- small center.** Because a tiny center is pulled hard toward the national average, a small vårdcentral that is *truly* exceptional will be reported as merely average, and a small one that is *truly* failing will look acceptable. Partial pooling minimizes *total* error across all centers, not the error for the one center a commissioner most needs to act on. For high-stakes individual decisions, report the *uncertainty* (the posterior interval), not just the shrunk point estimate, and remember that "no signal yet" is the honest message for a 30-patient center.
+:::
+
+
+## Estimate It: lme4 and statsmodels
+
+Both panels simulate the same 12 vårdcentraler (small rural to large urban), fit the random-intercept model, and extract each center's partially-pooled estimate. The fitted shrinkage matches the formula $\lambda_j = \tau^2 / (\tau^2 + \sigma^2_y/n_j)$.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(lme4)
+library(dplyr)
+
+set.seed(2024)
+
+# --- 12 vårdcentraler: true target-attainment rate + patient count ---
+centers <- tibble(
+  center = factor(1:12),
+  n      = c(34, 48, 62, 110, 180, 240, 300, 420, 360, 640, 900, 1200),
+  mu_true = 45 + 4 * c(-1.6,-1.1,-0.8,-0.4,-0.2,0,0.2,0.5,0.7,1.0,1.4,1.7)  # %
+)
+
+# Patient-level data: outcome = 100 if patient reaches HbA1c target, else 0,
+# with per-center probability mu_true/100 (the rate we want to recover).
+patients <- centers |>
+  rowwise() |>
+  do(tibble(center = .$center,
+            y = 100 * rbinom(.$n, 1, .$mu_true / 100))) |>
+  ungroup()
+
+# --- Complete & no pooling, for comparison ---
+grand   <- mean(patients$y)                                   # complete pooling
+no_pool <- patients |> group_by(center) |> summarise(raw = mean(y))
+
+# --- Partial pooling: random-intercept model fit by REML ---
+m <- lmer(y ~ 1 + (1 | center), data = patients)
+
+vc      <- as.data.frame(VarCorr(m))
+tau2    <- vc$vcov[vc$grp == "center"]      # between-center variance
+sigma2  <- vc$vcov[vc$grp == "Residual"]    # within-center (patient) variance
+
+# BLUP = grand mean + shrunk random intercept = the partial-pooling estimate
+blup <- coef(m)$center[, "(Intercept)"]
+
+out <- no_pool |>
+  left_join(centers, by = "center") |>
+  mutate(
+    lambda      = (n * tau2) / (n * tau2 + sigma2),   # reliability weight
+    partial     = blup,
+    pooled      = grand,
+    check_hand  = lambda * raw + (1 - lambda) * grand # ≈ partial
+  )
+
+print(round(out[, c("n","raw","partial","check_hand","lambda")], 2))
+cat(sprintf("\nτ² = %.1f, σ² = %.1f, grand mean = %.1f%%\n", tau2, sigma2, grand))
+# Smallest center (n=34) shrinks hardest (low λ); largest (n=1200) barely moves.
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(2024)
+
+# --- 12 vårdcentraler: true target-attainment rate + patient count ---
+n_j     = np.array([34, 48, 62, 110, 180, 240, 300, 420, 360, 640, 900, 1200])
+z       = np.array([-1.6,-1.1,-0.8,-0.4,-0.2,0,0.2,0.5,0.7,1.0,1.4,1.7])
+mu_true = 45 + 4 * z                                   # true rate (%)
+
+# Patient-level data: y = 100 if patient hits HbA1c target, else 0.
+rows = []
+for j, (n, p) in enumerate(zip(n_j, mu_true / 100)):
+    y = 100 * rng.binomial(1, p, size=n)
+    rows.append(pd.DataFrame({"center": j + 1, "y": y}))
+patients = pd.concat(rows, ignore_index=True)
+patients["center"] = patients["center"].astype("category")
+
+# --- Complete & no pooling ---
+grand   = patients["y"].mean()                                   # complete pooling
+no_pool = patients.groupby("center", observed=True)["y"].mean()  # raw means
+
+# --- Partial pooling: random-intercept model (REML) ---
+m = smf.mixedlm("y ~ 1", patients, groups=patients["center"]).fit(reml=True)
+
+tau2   = float(m.cov_re.iloc[0, 0])    # between-center variance
+sigma2 = float(m.scale)               # within-center (patient) variance
+
+# Partial-pooling estimate = fixed intercept + predicted random effect (BLUP)
+re_blup  = pd.Series({k: v.iloc[0] for k, v in m.random_effects.items()})
+partial  = m.fe_params["Intercept"] + re_blup
+
+out = pd.DataFrame({"n": n_j, "raw": no_pool.values,
+                    "partial": partial.reindex(no_pool.index).values})
+out["lambda"]     = (out["n"] * tau2) / (out["n"] * tau2 + sigma2)   # reliability
+out["check_hand"] = out["lambda"] * out["raw"] + (1 - out["lambda"]) * grand
+
+print(out.round(2))
+print(f"\nτ² = {tau2:.1f}, σ² = {sigma2:.1f}, grand mean = {grand:.1f}%")
+# Smallest center (n=34) shrinks hardest (low λ); largest (n=1200) barely moves.
+```
+
+:::
+
+Both routes return the same picture: the smallest center's $\lambda$ is well below 1 (it leans on the national 45%), while the largest center's $\lambda$ is near 1 (it stands almost entirely on its own data), and the by-hand reconstruction `check_hand` matches the model's BLUP up to the small difference between REML's variance estimates and the population values.
+
+
+<details>
+<summary>Math Details: deriving the shrinkage weight as a precision-weighted average</summary>
+<div class="details-content">
+
+### Setup
+
+Treat each center's true rate as a draw $\mu_j \sim \mathcal{N}(\mu, \tau^2)$, and its observed mean as a noisy reading $\bar{y}_j \mid \mu_j \sim \mathcal{N}(\mu_j, \sigma^2_y / n_j)$. We want the posterior mean of $\mu_j$ given $\bar{y}_j$ --- the best (minimum-MSE) estimate of the center's true rate.
+
+### The two pieces of information
+
+We have two independent, normally-distributed estimates of the same unknown $\mu_j$:
+
+- the center's **own mean**, $\bar{y}_j$, which is *unbiased* for $\mu_j$ with variance $\sigma^2_y / n_j$;
+- the **grand mean**, $\mu$ (estimated by $\bar{y}_\bullet$), which is biased for the specific $\mu_j$ but, as the center of the prior, carries information with "variance" $\tau^2$ about how far $\mu_j$ can stray.
+
+### Precision-weighted (inverse-variance) average
+
+For two independent Gaussian readings of one quantity, the minimum-variance combination weights each by its **precision** (inverse variance). The posterior mean is
+
+$$
+\mathbb{E}[\mu_j \mid \bar{y}_j]
+= \frac{\dfrac{1}{\sigma^2_y/n_j}\,\bar{y}_j + \dfrac{1}{\tau^2}\,\mu}
+       {\dfrac{1}{\sigma^2_y/n_j} + \dfrac{1}{\tau^2}}.
+$$
+
+Multiply numerator and denominator by $\tau^2 \cdot (\sigma^2_y/n_j)$ and collect terms:
+
+$$
+\mathbb{E}[\mu_j \mid \bar{y}_j]
+= \underbrace{\frac{\tau^2}{\tau^2 + \sigma^2_y/n_j}}_{\displaystyle \lambda_j}\,\bar{y}_j
++ \underbrace{\frac{\sigma^2_y/n_j}{\tau^2 + \sigma^2_y/n_j}}_{\displaystyle 1-\lambda_j}\,\mu .
+$$
+
+This is exactly the partial-pooling estimate $\hat{\mu}_j^{\text{partial}} = \lambda_j \bar{y}_j + (1-\lambda_j)\mu$, with
+
+$$
+\boxed{\;\lambda_j = \frac{\tau^2}{\tau^2 + \sigma^2_y/n_j} = \frac{n_j\tau^2}{n_j\tau^2 + \sigma^2_y}\;}
+$$
+
+the **reliability** of center $j$'s own mean.
+
+### Why this is the MSE-minimizer
+
+Among all estimators of the form $\hat{\mu}_j = w\,\bar{y}_j + (1-w)\mu$, the mean squared error is
+
+$$
+\text{MSE}(w) = \underbrace{w^2\,\frac{\sigma^2_y}{n_j}}_{\text{variance}} + \underbrace{(1-w)^2\,\tau^2}_{\text{squared bias term}},
+$$
+
+since $\bar{y}_j$ contributes variance $\sigma^2_y/n_j$ and the pull toward $\mu$ contributes a bias whose expected square, over the prior on $\mu_j$, is $(1-w)^2\tau^2$. Differentiating and setting to zero,
+
+$$
+\frac{d}{dw}\text{MSE}(w) = 2w\,\frac{\sigma^2_y}{n_j} - 2(1-w)\,\tau^2 = 0
+\;\Longrightarrow\;
+w^\star = \frac{\tau^2}{\tau^2 + \sigma^2_y/n_j} = \lambda_j .
+$$
+
+So the reliability weight is not merely a Bayesian convenience --- it is the value of $w$ that minimizes mean squared error, which is exactly why the U-shaped curve in the second interactive bottoms out at $\lambda_j$.
+
+### The James--Stein connection
+
+When the $\sigma^2_y/n_j$ are equal across groups and we *estimate* the common shrinkage factor from the data (rather than assuming $\tau^2$ known), the resulting estimator is the James--Stein estimator. Its dominance result --- lower total MSE than no pooling for any $J \ge 3$, *whatever* the true $\mu_j$ --- is the formal statement that the no-pooling estimator is **inadmissible**, and the reason multilevel modelling is the default for grouped data.
+
+</div>
+</details>
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region has two vårdcentraler. The within-patient outcome variance is $\sigma^2_y = 400$ (on the percentage-point scale) and the between-center variance is $\tau^2 = 25$. Center A has $n_A = 40$ patients and a raw target-attainment rate of $\bar{y}_A = 30\%$; center B has $n_B = 800$ patients and $\bar{y}_B = 52\%$. The grand mean is $\mu = 45\%$.
+
+(a) Compute the shrinkage weight $\lambda_j$ for each center. (b) Compute each center's partially-pooled estimate. (c) Which center moved farther toward the grand mean, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Using $\lambda_j = n_j\tau^2 / (n_j\tau^2 + \sigma^2_y)$:
+
+- Center A: $\lambda_A = \dfrac{40 \cdot 25}{40 \cdot 25 + 400} = \dfrac{1000}{1400} = 0.714$.
+- Center B: $\lambda_B = \dfrac{800 \cdot 25}{800 \cdot 25 + 400} = \dfrac{20000}{20400} = 0.980$.
+
+**(b)** $\hat{\mu}_j = \lambda_j \bar{y}_j + (1-\lambda_j)\mu$:
+
+- Center A: $0.714 \cdot 30 + 0.286 \cdot 45 = 21.43 + 12.86 = 34.3\%$.
+- Center B: $0.980 \cdot 52 + 0.020 \cdot 45 = 50.98 + 0.88 = 51.9\%$.
+
+**(c)** Center A moved $30 \to 34.3$, a pull of $+4.3$ pp; center B moved $52 \to 51.9$, a pull of only $-0.1$ pp. Center A moved far more because it has far fewer patients ($n_A = 40$ vs $n_B = 800$): its own mean is noisy ($\sigma^2_y/n_A = 10$ vs $\sigma^2_y/n_B = 0.5$), so a much larger share of its variance is sampling noise, and the model trusts the grand mean more. Small groups shrink hardest.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Show that as a center's sample size $n_j \to \infty$, its partially-pooled estimate converges to its own raw mean, and as $n_j \to 0$ it converges to the grand mean. Interpret each limit in one sentence.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Write $\lambda_j = \dfrac{n_j\tau^2}{n_j\tau^2 + \sigma^2_y}$.
+
+**Large $n_j$:** divide top and bottom by $n_j$: $\lambda_j = \dfrac{\tau^2}{\tau^2 + \sigma^2_y/n_j}$. As $n_j \to \infty$, $\sigma^2_y/n_j \to 0$, so $\lambda_j \to 1$ and $\hat{\mu}_j \to 1\cdot\bar{y}_j + 0\cdot\mu = \bar{y}_j$. *A center with effectively infinite data measures its own rate perfectly, so partial pooling defers entirely to it (no pooling).*
+
+**Small $n_j$:** as $n_j \to 0$, the numerator $n_j\tau^2 \to 0$ while the denominator $\to \sigma^2_y > 0$, so $\lambda_j \to 0$ and $\hat{\mu}_j \to 0\cdot\bar{y}_j + 1\cdot\mu = \mu$. *A center with essentially no data of its own carries no usable signal, so partial pooling falls back on the national average (complete pooling).*
+
+Partial pooling smoothly interpolates between the two extremes, with the interpolation governed entirely by $n_j$ (given $\tau^2, \sigma^2_y$).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A commissioner protests: "Partial pooling is biased --- it deliberately pulls each center off its own honest mean. Surely the unbiased no-pooling estimate is better." Using the MSE decomposition $\text{MSE}(w) = w^2\,\sigma^2_y/n_j + (1-w)^2\tau^2$, explain why a small amount of bias can lower total error, and identify the one situation in which no pooling really is optimal.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+MSE is variance **plus** squared bias. No pooling ($w = 1$) has zero bias but pays the full variance $\sigma^2_y/n_j$, which is large for small $n_j$. Moving $w$ slightly below 1 introduces a small squared bias $(1-w)^2\tau^2$ but cuts the variance term $w^2\sigma^2_y/n_j$. Because the variance term falls *linearly* in $w^2$ from a large value while the bias term rises from zero, the net effect near $w=1$ is a *decrease* in MSE --- a bias--variance trade where a little bias buys a lot of variance reduction. Formally, the derivative at $w=1$ is $\left.\frac{d\,\text{MSE}}{dw}\right|_{w=1} = 2\sigma^2_y/n_j > 0$, so MSE is *increasing* in $w$ at the no-pooling endpoint; lowering $w$ must reduce it.
+
+The one case where no pooling is optimal is $\tau^2 \to \infty$ (or $n_j \to \infty$): if centers are infinitely different, any pull toward the grand mean is pure bias with no offsetting prior information, so $\lambda_j = \tau^2/(\tau^2 + \sigma^2_y/n_j) \to 1$ and the optimum *is* the raw mean. With finite, real between-center variance, some shrinkage always helps (the James--Stein result).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A region runs a **fall-prevention program** and measures, per vårdcentral, the annual rate of fall-related ER visits per 1,000 elderly residents. A new clinic opened this year and has data on only $n = 15$ residents; its raw rate is a startling 5 visits per 1,000, versus a regional grand mean of 40. The variance components are $\sigma^2_y = 9000$ and $\tau^2 = 300$.
+
+(a) Compute the clinic's shrinkage weight and its partially-pooled estimate. (b) The clinic's manager wants to advertise "we are 8× safer than the regional average." What does partial pooling say to that claim? (c) What single piece of information should accompany the shrunk estimate before any decision is made?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\lambda = \dfrac{n\tau^2}{n\tau^2 + \sigma^2_y} = \dfrac{15 \cdot 300}{15 \cdot 300 + 9000} = \dfrac{4500}{13500} = 0.333$. Partially-pooled estimate: $0.333 \cdot 5 + 0.667 \cdot 40 = 1.67 + 26.67 = 28.3$ visits per 1,000.
+
+**(b)** The model is deeply skeptical of the headline. With only 15 residents, the clinic's own rate is mostly noise ($\lambda = 0.33$, so two-thirds of the estimate is borrowed from the regional average). The shrunk estimate of 28.3 is *below* the grand mean of 40 --- consistent with the clinic being somewhat safer --- but nowhere near "8× safer." The eye-catching 5-per-1,000 is almost certainly a small-sample fluke; a single year with 15 residents and zero or one fall produces exactly such extreme-looking rates.
+
+**(c)** The **uncertainty** of the estimate --- a posterior/prediction interval. For a 15-resident clinic that interval will be very wide, and the honest message is "we cannot yet distinguish this clinic from the regional average." Reporting the shrunk point estimate of 28.3 without its interval would repeat the original error of taking a tiny-sample number at face value. Shrinkage tames the point estimate, but the *interval* is what stops a premature decision.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Group-specific estimates come in three flavours: no pooling (own data only --- unbiased but noisy), complete pooling (one grand mean --- stable but blind to real differences), and partial pooling (a weighted compromise).
+- The partial-pooling estimate is $\hat{\mu}_j = \lambda_j\bar{y}_j + (1-\lambda_j)\bar{y}_\bullet$, an inverse-variance-weighted average of the group's own mean and the grand mean.
+- The shrinkage weight is the reliability $\lambda_j = \tau^2/(\tau^2 + \sigma^2_y/n_j)$: small or noisy groups shrink hard toward the grand mean; large groups barely move; more between-group variance means less shrinkage for all.
+- Shrinkage trades a little bias for a large variance reduction, so partial pooling beats *both* extremes in total MSE (James--Stein: no pooling is inadmissible for $J \ge 3$).
+- Partial pooling is the random-effects / multilevel model in disguise: the shrunk estimate is the BLUP, and fitting by REML lets the data choose how much to shrink --- but report uncertainty before acting on any single small group.
+:::
+
+## What Comes Next
+
+We let every group differ only in its *intercept* --- each vårdcentral got its own baseline level, shrunk toward the national mean. But groups can differ in more than their starting point: the *slope* of a relationship can vary too. Does the effect of nurse staffing on HbA1c control differ from one region to the next? Does a coaching program help large centers more than small ones? The next page, [Random Intercepts and Random Slopes](random-intercepts-slopes.qmd), extends the multilevel model so that each group carries *both* a random intercept and a random slope --- and shows that partial pooling then operates on the slopes too, shrinking each group's estimated effect toward the average effect by exactly the same reliability logic you have just learned.

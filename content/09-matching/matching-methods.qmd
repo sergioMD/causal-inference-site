@@ -1,0 +1,1176 @@
+---
+title: "Matching Methods"
+subtitle: "Exact, nearest-neighbor, and caliper matching"
+---
+
+## Building a Comparison Group by Hand
+
+The [Selection on Observables](selection-on-observables.qmd) page made a deal with us. *If* every variable that drives both enrollment and the outcome is measured --- if conditional ignorability holds --- then we can recover the causal effect by comparing treated and control units *that look alike on those variables*. That page proved the principle. This page is about the most literal, transparent way to carry it out: **matching**. For each treated patient, go find one or more control patients who resemble them on the measured covariates, and use those controls to stand in for the treated patient's missing counterfactual.
+
+Concretely, return to the *Diabetessamordning* (diabetes coordination program) that some of Sweden's 21 *regioner* run at their *vårdcentraler* (primary care centers). A region wants to know whether enrolling a patient in the program lowers their HbA1c. The patients who enrolled are, as always, not a random sample --- they are older and sicker than the patients who did not. A raw difference in mean HbA1c would conflate the program with that imbalance. Matching repairs the comparison the old-fashioned way: it pairs each enrolled patient with a *non*-enrolled patient of similar **age** and **comorbidity burden** (the Charlson index, a standard count of chronic conditions), then reads the effect off the matched pairs.
+
+Matching is not a new identification strategy --- it rides entirely on the selection-on-observables assumption from the previous page. What it offers is a particularly *honest* estimator: you can see exactly which control was used for which treated unit, inspect whether the match is any good, and discard treated units for whom no decent control exists. That transparency is the whole appeal, and it is also where the difficulties live.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Construct an estimate of the ATT by pairing each treated unit with comparable control(s) on measured covariates.
+- Distinguish exact, nearest-neighbor (Euclidean and Mahalanobis), and caliper matching, and choose between matching with and without replacement and 1:1 vs 1:k.
+- Read the bias--variance trade-off that a caliper controls: tight calipers buy comparability at the cost of dropping treated units and inflating variance.
+- Explain why exact matching collapses under the curse of dimensionality, motivating the propensity score on the next page.
+:::
+
+
+## The Matching Estimand and Estimator
+
+Matching almost always targets the **average treatment effect on the treated** (ATT), because the natural thing to do is fill in the missing $Y_i(0)$ for *treated* units using controls. Recall from [Potential Outcomes](../01-fundamental-problem/potential-outcomes.qmd) that
+
+$$
+\text{ATT} = E\big[\,Y_i(1) - Y_i(0) \mid D_i = 1\,\big].
+$$
+
+**Read this as**: "Among the patients who actually enrolled, the average gap between their HbA1c *with* the program and what their HbA1c *would have been without* it." The first term, $Y_i(1)$, we observe directly --- it is the treated patient's realized outcome. The second term, $Y_i(0)$ for an enrolled patient, is the missing counterfactual. Matching estimates that one missing quantity by borrowing the observed outcomes of similar controls.
+
+::: {.glass-card .glass-card--definition}
+Let $\mathcal{J}(i)$ be the set of control units **matched to** treated unit $i$ --- the $k$ controls whose covariates $X_j$ are closest to $X_i$. The **imputed counterfactual** for treated unit $i$ is the average outcome of its matches,
+
+$$
+\widehat{Y}_i(0) = \frac{1}{|\mathcal{J}(i)|} \sum_{j \in \mathcal{J}(i)} Y_j ,
+$$
+
+and the **matching estimator of the ATT** averages the imputed effect over the $N_T$ treated units:
+
+$$
+\widehat{\text{ATT}}_{\text{match}} = \frac{1}{N_T} \sum_{i : D_i = 1} \Big( Y_i - \widehat{Y}_i(0) \Big)
+= \frac{1}{N_T} \sum_{i : D_i = 1} \Big( Y_i - \frac{1}{|\mathcal{J}(i)|} \sum_{j \in \mathcal{J}(i)} Y_j \Big).
+$$
+:::
+
+**Read the estimator as**: "For each enrolled patient, subtract the average HbA1c of the controls we matched to them; then average that difference across all enrolled patients." Every piece is observable. The only modelling choice is *how we pick* $\mathcal{J}(i)$ --- which controls count as "close" --- and that choice is the entire subject of this page.
+
+Notice what matching is *not* doing. It is not fitting a regression line through the data and extrapolating. It is making local, like-with-like comparisons. If no control resembles a particular treated patient, matching tells you so (you will be forced to either drop that patient or accept a bad match), whereas a regression would quietly extrapolate a fitted surface into a region with no data. That refusal to extrapolate is matching's great virtue.
+
+
+## What "Close" Means: Distance Metrics
+
+To match, we need to say how far apart two patients are in covariate space. Several definitions are in common use, in roughly increasing order of sophistication.
+
+### Exact matching
+
+The strictest rule: two units match only if their covariates are **identical**. If our covariates are age (in whole years) and Charlson comorbidity count, an enrolled 67-year-old with two chronic conditions is matched only to *non*-enrolled 67-year-olds with exactly two chronic conditions. When an exact match exists, it is unimpeachable --- the units are literally indistinguishable on $X$. The trouble is that exact matches usually do *not* exist, a problem we return to under the curse of dimensionality.
+
+### Nearest-neighbor on a distance
+
+When exact matching is infeasible, we settle for *close* rather than *identical*. Define a distance $\,d(X_i, X_j)\,$ between covariate vectors and match each treated unit to the control(s) minimizing it. Two distances dominate practice:
+
+Before any of these formulas, one word needs unpacking: **standardizing** a covariate means dividing it by its standard deviation (its typical spread) so that a one-SD gap in age counts the same as a one-SD gap in comorbidity --- otherwise "age in years" (which ranges over decades) would swamp "number of chronic conditions" (which ranges over a handful) purely because of its larger numeric scale.
+
+::: {.glass-card .glass-card--definition}
+**Euclidean distance** (after standardizing each covariate to unit variance):
+
+$$
+d_{\text{Euc}}(X_i, X_j) = \sqrt{\sum_{p=1}^{P} \left( \frac{X_{ip} - X_{jp}}{s_p} \right)^2 },
+$$
+
+where $s_p$ is the standard deviation of covariate $p$. **Mahalanobis distance** generalizes this by also accounting for *correlation* between covariates through the covariance matrix $\Sigma$:
+
+$$
+d_{\text{Mah}}(X_i, X_j) = \sqrt{ (X_i - X_j)^{\top}\, \Sigma^{-1}\, (X_i - X_j) }.
+$$
+:::
+
+**Read the Mahalanobis formula as**: "Measure the gap between the two covariate vectors, but rescale and rotate the space by the inverse covariance matrix so that directions in which the covariates vary a lot --- or vary together --- count for less." If age and comorbidity are strongly correlated in the data (older patients have more chronic conditions), Euclidean distance double-counts that shared variation; Mahalanobis distance does not. When the covariates are uncorrelated and standardized, $\Sigma$ is the identity and Mahalanobis reduces exactly to Euclidean distance --- they are the same idea, with Mahalanobis adding a correction for the geometry of the data.
+
+**Seeing the difference.** The figure below makes the correction visible. Age and comorbidity are positively correlated here (older patients carry more chronic conditions), so the data cloud is tilted. Around one focus treated patient (black ring) we draw the set of points each metric calls "equally close": Euclidean uses a **circle** (it ignores the tilt), while Mahalanobis uses an **ellipse stretched along the cloud's diagonal** (it discounts variation in the direction the data already vary together). Because the two equidistance contours have different shapes, they can pick *different* nearest controls --- the Euclidean pick and the Mahalanobis pick are flagged.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Self-contained illustration: same focus patient, two distance metrics on
+// CORRELATED covariates. Static figure; independent of the live widget. ──
+mamah_data = {
+  // Tiny deterministic PRNG so the picture is stable across renders.
+  let s = 424242;
+  const u = () => {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const randn = () => {
+    let a = 0, b = 0;
+    while (a === 0) a = u();
+    while (b === 0) b = u();
+    return Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * b);
+  };
+  // Correlated controls: comorbidity rises with age (rho ≈ 0.7).
+  const control = d3.range(60).map((_, i) => {
+    const z = randn();
+    const age = 60 + 8 * z;
+    const com = 2.2 + 0.85 * z + 0.7 * randn();   // shares the age factor z
+    return { id: i + 1, age, com };
+  });
+  const focus = { age: 60, com: 2.2 };            // a central treated patient
+  return { control, focus };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Pooled SDs and 2x2 covariance (and its inverse) for the two metrics.
+mamah_geom = {
+  const all = mamah_data.control;
+  const ageSd = d3.deviation(all, d => d.age) || 1;
+  const comSd = d3.deviation(all, d => d.com) || 1;
+  const mAge = d3.mean(all, d => d.age);
+  const mCom = d3.mean(all, d => d.com);
+  const sAA = d3.mean(all, d => (d.age - mAge) ** 2);
+  const sCC = d3.mean(all, d => (d.com - mCom) ** 2);
+  const sAC = d3.mean(all, d => (d.age - mAge) * (d.com - mCom));
+  const det = sAA * sCC - sAC * sAC;
+  // Inverse covariance Σ⁻¹ entries.
+  const inv = { aa: sCC / det, cc: sAA / det, ac: -sAC / det };
+  return { ageSd, comSd, inv };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+mamah_dEuc = (a, b) => {
+  const da = (a.age - b.age) / mamah_geom.ageSd;
+  const dc = (a.com - b.com) / mamah_geom.comSd;
+  return Math.sqrt(da * da + dc * dc);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+mamah_dMah = (a, b) => {
+  const da = a.age - b.age, dc = a.com - b.com;
+  const g = mamah_geom.inv;
+  return Math.sqrt(g.aa * da * da + 2 * g.ac * da * dc + g.cc * dc * dc);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Nearest control under each metric (they can differ).
+mamah_picks = {
+  const f = mamah_data.focus;
+  const byEuc = d3.least(mamah_data.control, c => mamah_dEuc(f, c));
+  const byMah = d3.least(mamah_data.control, c => mamah_dMah(f, c));
+  return { byEuc, byMah, same: byEuc.id === byMah.id };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Equidistance contours through each metric's chosen control, sampled as
+// polylines in DATA coordinates so they render as a circle / tilted ellipse.
+mamah_rings = {
+  const f = mamah_data.focus;
+  const g = mamah_geom;
+  const rEuc = mamah_dEuc(f, mamah_picks.byEuc);
+  const rMah = mamah_dMah(f, mamah_picks.byMah);
+  const euc = d3.range(0, 361, 4).map(deg => {
+    const r = deg * Math.PI / 180;
+    return { age: f.age + rEuc * g.ageSd * Math.cos(r),
+             com: f.com + rEuc * g.comSd * Math.sin(r) };
+  });
+  // Mahalanobis contour: solve the quadratic form = rMah² by parameterizing
+  // direction and scaling the radius so the contour is the true ellipse.
+  const mah = d3.range(0, 361, 4).map(deg => {
+    const r = deg * Math.PI / 180;
+    const cx = Math.cos(r), cy = Math.sin(r);
+    const q = g.inv.aa * cx * cx + 2 * g.inv.ac * cx * cy + g.inv.cc * cy * cy;
+    const scale = rMah / Math.sqrt(q);
+    return { age: f.age + scale * cx, com: f.com + scale * cy };
+  });
+  return { euc, mah };
+}
+```
+
+```{ojs}
+//| echo: false
+
+{
+  const f = mamah_data.focus;
+  const pe = mamah_picks.byEuc, pm = mamah_picks.byMah;
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 380,
+    marginLeft: 62,
+    marginBottom: 48,
+    marginTop: 16,
+    marginRight: 16,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Age (years)", grid: true },
+    y: { label: "Comorbidity", grid: true },
+    marks: [
+      // Control cloud (tilted because age & comorbidity are correlated).
+      Plot.dot(mamah_data.control, {
+        x: "age", y: "com", fill: "#3d5a6c", fillOpacity: 0.35, r: 3.5
+      }),
+      // Equidistance contours.
+      Plot.line(mamah_rings.euc, {
+        x: "age", y: "com", stroke: "#9c7a33", strokeWidth: 2,
+        strokeDasharray: "5,4", curve: "catmull-rom"
+      }),
+      Plot.line(mamah_rings.mah, {
+        x: "age", y: "com", stroke: "#990000", strokeWidth: 2,
+        curve: "catmull-rom"
+      }),
+      // The two chosen controls.
+      Plot.dot([pe], { x: "age", y: "com", r: 7, fill: "none",
+        stroke: "#9c7a33", strokeWidth: 2.5 }),
+      Plot.dot([pm], { x: "age", y: "com", r: 7, fill: "none",
+        stroke: "#990000", strokeWidth: 2.5 }),
+      // Focus patient.
+      Plot.dot([f], { x: "age", y: "com", r: 6, fill: "#1c1c1a",
+        stroke: "white", strokeWidth: 1.5 }),
+      // Labels with white halos (no label channel on dot/line marks).
+      Plot.text([{ age: f.age, com: f.com, t: "focus" }], {
+        x: "age", y: "com", text: "t", dy: -13, fontSize: 11, fontWeight: 700,
+        fill: "#1c1c1a", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ age: pe.age, com: pe.com, t: "Euclidean pick" }], {
+        x: "age", y: "com", text: "t", dy: -13, fontSize: 10.5, fontWeight: 700,
+        fill: "#9c7a33", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ age: pm.age, com: pm.com, t: "Mahalanobis pick" }], {
+        x: "age", y: "com", text: "t", dy: 18, fontSize: 10.5, fontWeight: 700,
+        fill: "#990000", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+<span style="color:#9c7a33; font-weight:700;">Ochre dashed circle</span> = Euclidean equidistance contour; <span style="color:#990000; font-weight:700;">red solid ellipse</span> = Mahalanobis equidistance contour, stretched along the age--comorbidity correlation. The two metrics ring different controls as the nearest neighbour: Euclidean rewards a control that is close on each axis separately, while Mahalanobis discounts the diagonal the data already travel along, so it can prefer a control that is farther in raw units but more *typical* given the correlation.
+:::
+
+### Caliper matching
+
+Nearest-neighbor matching will *always* return a match, even the closest control to a treated patient with no real counterpart. A **caliper** forbids that: it sets a maximum allowable distance $c$, and a treated unit is matched only if its nearest control lies *within* the caliper. Treated units with no control inside the caliper are **dropped** from the estimate.
+
+::: {.glass-card .glass-card--insight}
+A caliper changes the estimand --- the *estimand* being the precise quantity you are trying to estimate, the target that exists before any data or estimator. With a binding caliper you no longer estimate the ATT over *all* treated units --- you estimate it over the treated units that have an acceptable comparison, the region of **common support**. This is usually a feature, not a bug: an effect for the patients we can credibly compare is more honest than an effect that leans on indefensible matches. But it must be reported. "We estimate the ATT" becomes "we estimate the ATT among the 84% of enrolled patients with a control within caliper $c$."
+:::
+
+### With vs without replacement, and 1:k matching
+
+Two more dials complete the toolkit.
+
+- **With or without replacement.** *Without replacement*, each control may be used as a match at most once; *with replacement*, a single excellent control can serve as the counterfactual for several treated units. Matching with replacement lowers bias (every treated unit gets its genuinely closest control, not merely the closest one not yet taken) at the cost of higher variance (the estimate leans on fewer distinct controls).
+- **1:1 vs 1:k.** Matching each treated unit to its single nearest control (1:1) minimizes bias per match but uses little of the control data. Matching to the $k$ nearest controls (1:k) averages over more controls, which lowers variance, but the 2nd through $k$th neighbors are necessarily farther away and so reintroduce bias.
+
+Every one of these choices --- caliper width, replacement, $k$ --- is a knob on the same underlying **bias--variance trade-off**, which the interactive below lets you feel directly.
+
+
+## See It: Matching in Covariate Space
+
+The panel below shows 40 *non*-enrolled control patients (slate) and a set of enrolled patients (red) plotted by age and Charlson comorbidity count. Pick any one enrolled patient with the selector; a caliper circle is drawn around them, and the controls that fall *inside* the circle light up as their matches. Drag the caliper slider and watch the trade-off in real time: a tight caliper admits only genuinely similar controls (low bias) but may leave a treated patient with *no* match at all (that patient is dropped, raising variance); a loose caliper always finds matches but lets in dissimilar controls (bias creeps back). The estimated ATT, and the number of treated patients actually used, update live. (HbA1c is itself a percentage, so an *effect* on it is measured in **percentage points** (pp) --- the arithmetic gap between two percentages, e.g. a drop from 7.0% to 6.4% is $-0.6$ pp, not a $-0.6$% relative change.)
+
+::: {.interactive-container}
+
+#### Caliper Matching on Age and Comorbidity
+
+**Start here:** pick one enrolled patient with the *Highlight* slider, then drag the *Caliper width* slider and watch which controls light up as matches and how the **Matched ATT** tile responds. (This demo matches *with replacement*, so a strong control can serve several treated patients.)
+
+```{ojs}
+//| echo: false
+
+viewof mamatch_caliper = Inputs.range([0.3, 3.5], {
+  value: 1.2,
+  step: 0.05,
+  label: "Caliper width (standardized distance)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mamatch_k = Inputs.range([1, 5], {
+  value: 1,
+  step: 1,
+  label: "Match each treated to k nearest (1:k)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mamatch_focus = Inputs.range([1, 12], {
+  value: 5,
+  step: 1,
+  label: "Highlight enrolled patient #"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mamatch_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e;
+    margin-top:-0.25rem;">
+  Draw new sample reshuffles all patients; patient numbers are re-assigned, so the
+  highlighted patient changes identity after each draw.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Generate a fixed-by-seed cohort of enrolled (treated) and non-enrolled
+// (control) patients. Treated patients are OLDER and SICKER on average — the
+// selection-on-observables setup. mamatch_draw reseeds on click. ──
+mamatch_rng = {
+  mamatch_draw;                              // dependency: reseed on button press
+  // Small deterministic PRNG (mulberry32) so a click gives a fresh-but-stable draw.
+  let seed = 20240619 + mamatch_draw * 7919;
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standard normal via Box–Muller from the seeded uniform generator.
+mamatch_randn = {
+  const u = mamatch_rng;
+  return function () {
+    let a = 0, b = 0;
+    while (a === 0) a = u();
+    while (b === 0) b = u();
+    return Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * b);
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The cohort. Covariates: age (years) and comorbidity (Charlson count). ──
+// Outcome: HbA1c (%). Both covariates raise baseline HbA1c (sicker -> higher),
+// and the program lowers HbA1c by a TRUE constant effect of -0.6 pp.
+// Because treated are older/sicker, a naive control mean is biased upward;
+// matching on (age, comorbidity) removes that bias.
+mamatch_TRUE_EFFECT = -0.6
+
+mamatch_cohort = {
+  const randn = mamatch_randn;
+  const trueEffect = mamatch_TRUE_EFFECT;
+
+  // Outcome model: HbA1c = 6.0 + 0.035*(age-60) + 0.45*comorbidity + effect + noise
+  const f0 = (age, com) => 6.0 + 0.035 * (age - 60) + 0.45 * com;
+
+  // 12 enrolled (treated): older, sicker.
+  const treated = d3.range(12).map((_, i) => {
+    const age = Math.round(64 + 7 * randn());
+    const com = Math.max(0, Math.round(2.4 + 1.1 * randn()));
+    const y0  = f0(age, com) + 0.35 * randn();
+    return {
+      id: i + 1, group: "Enrolled", d: 1,
+      age, com,
+      y: y0 + trueEffect            // observed Y(1): program applied
+    };
+  });
+
+  // 40 non-enrolled (control): younger, healthier on average.
+  const control = d3.range(40).map((_, i) => {
+    const age = Math.round(56 + 8 * randn());
+    const com = Math.max(0, Math.round(1.3 + 1.0 * randn()));
+    const y0  = f0(age, com) + 0.35 * randn();
+    return {
+      id: i + 1, group: "Non-enrolled", d: 0,
+      age, com,
+      y: y0                         // observed Y(0)
+    };
+  });
+
+  return { treated, control };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standardizers: scale age and comorbidity to unit SD over the pooled sample,
+// so the caliper (and Euclidean distance) treats one SD of age like one SD of
+// comorbidity. This is the standard pre-match standardization.
+mamatch_scales = {
+  const all = mamatch_cohort.treated.concat(mamatch_cohort.control);
+  const ageSd = d3.deviation(all, d => d.age) || 1;
+  const comSd = d3.deviation(all, d => d.com) || 1;
+  return { ageSd, comSd };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standardized Euclidean distance between two patients.
+mamatch_dist = function (a, b) {
+  const da = (a.age - b.age) / mamatch_scales.ageSd;
+  const dc = (a.com - b.com) / mamatch_scales.comSd;
+  return Math.sqrt(da * da + dc * dc);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── For every treated unit, rank all controls by distance, keep the k nearest
+// that also fall within the caliper. A treated unit with FEWER than 1 control
+// in caliper is dropped (matched = false). Matching is WITH replacement here so
+// the focus highlight is easy to read; the ATT uses the same matched sets. ──
+mamatch_matches = {
+  const k = mamatch_k;
+  const cal = mamatch_caliper;
+  const ctrl = mamatch_cohort.control;
+
+  return mamatch_cohort.treated.map(t => {
+    const ranked = ctrl
+      .map(c => ({ c, dist: mamatch_dist(t, c) }))
+      .sort((p, q) => p.dist - q.dist)
+      .filter(p => p.dist <= cal)
+      .slice(0, k);
+    const matched = ranked.length > 0;
+    const yhat0 = matched ? d3.mean(ranked, p => p.c.y) : null;   // imputed Y(0)
+    return {
+      treated: t,
+      matchControls: ranked.map(p => p.c),
+      matchIds: new Set(ranked.map(p => p.c.id)),
+      matched,
+      yhat0,
+      effect: matched ? t.y - yhat0 : null
+    };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Live ATT over the treated units that actually found a match in caliper.
+mamatch_results = {
+  const used = mamatch_matches.filter(m => m.matched);
+  const att = used.length ? d3.mean(used, m => m.effect) : NaN;
+
+  // Naive contrast for comparison: mean treated outcome − mean ALL control outcome.
+  const naive = d3.mean(mamatch_cohort.treated, d => d.y)
+              - d3.mean(mamatch_cohort.control, d => d.y);
+
+  return {
+    att,
+    naive,
+    nUsed: used.length,
+    nTotal: mamatch_cohort.treated.length
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The scatter. Controls (slate), enrolled (red). The focus patient is ringed
+// with the caliper circle; controls inside the circle (its matches) are filled,
+// the rest are hollow. Links connect the focus patient to its matched controls. ──
+{
+  const focus = mamatch_cohort.treated.find(t => t.id === mamatch_focus)
+              || mamatch_cohort.treated[0];
+  const focusMatch = mamatch_matches.find(m => m.treated.id === focus.id);
+  const inFocus = focusMatch ? focusMatch.matchIds : new Set();
+
+  // Caliper circle radius in DATA units: the caliper is in standardized space,
+  // so we draw an ellipse by sampling points at radius = caliper around the
+  // focus, mapped back through the per-axis SDs.
+  const ring = d3.range(0, 361, 6).map(deg => {
+    const r = deg * Math.PI / 180;
+    return {
+      age: focus.age + mamatch_caliper * mamatch_scales.ageSd * Math.cos(r),
+      com: focus.com + mamatch_caliper * mamatch_scales.comSd * Math.sin(r)
+    };
+  });
+
+  const links = focusMatch
+    ? focusMatch.matchControls.map(c => ({
+        x1: focus.age, y1: focus.com, x2: c.age, y2: c.com
+      }))
+    : [];
+
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 420,
+    marginLeft: 64,
+    marginBottom: 52,
+    marginTop: 16,
+    marginRight: 16,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Age (years)", grid: true, domain: [40, 88] },
+    y: { label: "Comorbidity", grid: true, domain: [-0.6, 7] },
+    color: {
+      domain: ["Enrolled", "Non-enrolled"],
+      range: ["#990000", "#3d5a6c"],
+      legend: true
+    },
+    marks: [
+      // Caliper region around the focus patient.
+      Plot.line(ring, {
+        x: "age", y: "com",
+        stroke: "#990000", strokeWidth: 1.5, strokeDasharray: "4,4",
+        strokeOpacity: 0.7, curve: "catmull-rom"
+      }),
+      // Links from focus to its matched controls.
+      Plot.link(links, {
+        x1: "x1", y1: "y1", x2: "x2", y2: "y2",
+        stroke: "#2e6f40", strokeWidth: 1.5, strokeOpacity: 0.7
+      }),
+      // Control patients: filled if matched to the focus patient, hollow otherwise.
+      Plot.dot(mamatch_cohort.control, {
+        x: "age", y: "com",
+        fill: d => inFocus.has(d.id) ? "#3d5a6c" : "white",
+        stroke: "#3d5a6c", strokeWidth: 1.5,
+        r: d => inFocus.has(d.id) ? 6 : 4,
+        title: d => `Non-enrolled #${d.id}\nAge ${d.age}, comorbidity ${d.com}\nHbA1c ${d.y.toFixed(2)}`
+      }),
+      // Enrolled patients: the focus one is larger and ringed.
+      Plot.dot(mamatch_cohort.treated, {
+        x: "age", y: "com",
+        fill: "#990000",
+        stroke: d => d.id === focus.id ? "#1c1c1a" : "white",
+        strokeWidth: d => d.id === focus.id ? 2.5 : 1,
+        r: d => d.id === focus.id ? 8 : 5,
+        title: d => `Enrolled #${d.id}\nAge ${d.age}, comorbidity ${d.com}\nHbA1c ${d.y.toFixed(2)}`
+      }),
+      // Label the focus patient (anchored above the dot, with a white halo so it
+      // stays legible against rings/dots and never clips into the plot edges).
+      Plot.text([focus], {
+        x: "age", y: "com",
+        text: d => `#${d.id}`,
+        dy: -14, fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Live readout: ATT among matched, treated-units used, naive contrast, and
+// the focus patient's own imputed effect. Colors flag whether the matched ATT
+// is near the true effect baked into the simulation. ──
+{
+  const r = mamatch_results;
+  const focusMatch = mamatch_matches.find(m => m.treated.id === mamatch_focus);
+  const truth = mamatch_TRUE_EFFECT;
+
+  const attClose = isFinite(r.att) && Math.abs(r.att - truth) < 0.25;
+  const fmt = v => isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}` : "—";
+
+  const tile = (name, value, color, bg) => html`<div style="
+      text-align: center; min-height: 4.2rem;
+      display:flex; flex-direction:column; justify-content:center;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.2rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  const focusLine = focusMatch && focusMatch.matched
+    ? html`<div style="margin-top:0.6rem; font-family:'Inter',sans-serif;
+        font-size:0.84rem; color:#1c1c1a;">
+        Enrolled #${mamatch_focus}: matched to ${focusMatch.matchControls.length}
+        control(s); imputed Ŷ(0) = ${focusMatch.yhat0.toFixed(2)},
+        observed Y = ${focusMatch.treated.y.toFixed(2)},
+        imputed effect = <strong>${fmt(focusMatch.effect)}</strong> pp.
+      </div>`
+    : html`<div style="margin-top:0.6rem; font-family:'Inter',sans-serif;
+        font-size:0.84rem; color:#b3000b;">
+        Enrolled #${mamatch_focus}: <strong>no control within the caliper</strong> —
+        this patient is dropped from the estimate.
+      </div>`;
+
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${tile("Matched ATT", fmt(r.att),
+          attClose ? "#2e6f40" : "#1c1c1a",
+          attClose ? "rgba(46,111,64,0.08)" : "#f6f5f1")}
+      ${tile("Treated used", `${r.nUsed} / ${r.nTotal}`,
+          r.nUsed === r.nTotal ? "#1c1c1a" : "#9c7a33", "#f6f5f1")}
+      ${tile("Naive diff", fmt(r.naive), "#3d5a6c", "rgba(61,90,108,0.08)")}
+      ${tile("True effect", fmt(truth), "#990000", "rgba(153,0,0,0.06)")}
+    </div>
+    <div style="margin-top:0.4rem; font-family:'Inter',sans-serif; font-size:0.72rem;
+        color:#79766e;">
+      All values in percentage points (pp). Green = matched ATT within 0.25 of the
+      truth; ochre = some treated units dropped.
+    </div>
+    ${focusLine}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Additive dynamic verdict: reads the existing live results and slider state
+// and names WHICH side of the bias–variance trade-off the current settings sit
+// on. Reads existing reactive values only; does not touch the widget's DGP. ──
+{
+  const r = mamatch_results;
+  const cal = mamatch_caliper;
+  const dropped = r.nTotal - r.nUsed;
+  const offTruth = isFinite(r.att) ? Math.abs(r.att - mamatch_TRUE_EFFECT) : Infinity;
+
+  let text, color, bg, border;
+  if (!isFinite(r.att)) {
+    text = "No treated unit has a control inside the caliper — the estimate is empty. Loosen the caliper.";
+    color = "#b3000b"; bg = "rgba(179,0,11,0.06)"; border = "#b3000b";
+  } else if (dropped >= Math.ceil(r.nTotal / 2)) {
+    text = `Tight-caliper regime: ${dropped} of ${r.nTotal} treated units dropped. Matches are close (low bias) but the ATT now rests on few units, so it wobbles from sample to sample — high variance. Click "Draw new sample" a few times and watch it jump.`;
+    color = "#9c7a33"; bg = "rgba(156,122,51,0.08)"; border = "#9c7a33";
+  } else if (cal >= 2.4 && offTruth >= 0.25) {
+    text = `Loose-caliper regime: every treated unit keeps a match (stable, low variance), but the rings now swallow dissimilar controls, so the ATT has drifted ${offTruth.toFixed(2)} pp off the true −0.6 — bias creeping in.`;
+    color = "#3d5a6c"; bg = "rgba(61,90,108,0.08)"; border = "#3d5a6c";
+  } else if (offTruth < 0.25 && dropped <= 2) {
+    text = `Sweet spot: the matched ATT is within ${offTruth.toFixed(2)} pp of the truth while keeping ${r.nUsed} of ${r.nTotal} treated units — low bias AND low variance at once. This is the balance the caliper is searching for.`;
+    color = "#2e6f40"; bg = "rgba(46,111,64,0.08)"; border = "#2e6f40";
+  } else {
+    text = `Intermediate setting: ${r.nUsed} of ${r.nTotal} treated units kept, ATT ${offTruth.toFixed(2)} pp from the truth. Nudge the caliper to feel bias and variance trade against each other.`;
+    color = "#1c1c1a"; bg = "#f6f5f1"; border = "#79766e";
+  }
+
+  return html`<div style="margin-top:0.7rem; font-family:'Inter',sans-serif;
+      font-size:0.82rem; line-height:1.45; font-weight:600; color:${color};
+      background:${bg}; border-left:3px solid ${border};
+      border-radius:0 0.35rem 0.35rem 0; padding:0.55rem 0.8rem;">
+    ${text}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Matching Scatter
+
+Work through these in order; each isolates one moving part of matching.
+
+**Step 1: Read the cloud.** The red dots are the 12 enrolled patients; the slate dots are the 40 non-enrolled controls. Notice the red cloud sits up and to the right --- enrolled patients are *older* and have *more* comorbidities. That imbalance is exactly why the naive contrast (bottom readout, slate) is badly wrong: it compares sick treated patients to a much healthier control pool, and so understates the program's benefit (it may even show the wrong sign). Concretely: because higher comorbidity *raises* HbA1c and the enrolled are the sicker patients, the untreated comparison pool looks artificially healthy, masking --- or even reversing --- the program's true reduction.
+
+**Step 2: Match a single patient.** Use the **Highlight enrolled patient #** slider to pick one enrolled patient. A dashed red caliper circle is drawn around them, and the controls falling inside it fill in solid slate with green links to the focus patient --- these are that patient's matches. The readout reports their imputed $\widehat{Y}_i(0)$ (the average HbA1c of those controls) and the imputed individual effect $Y_i - \widehat{Y}_i(0)$.
+
+**Step 3: Tighten the caliper.** Drag **Caliper width** down toward 0.3. (The caliper number is a radius in *standardized* space; because age and comorbidity have different standard deviations, that single radius is drawn as an *ellipse* in raw age/comorbidity units rather than a perfect circle.) The circle shrinks; matches that were inside fall out. For some focus patients the circle eventually contains *no* control --- the readout turns red and announces the patient is **dropped**. Watch the "Treated used" tile fall below 12. This is the cost of a tight caliper: better matches for the patients you keep, but fewer patients kept, and a noisier ATT.
+
+**Step 4: Loosen the caliper.** Drag it up toward 3.5. Every patient now finds matches (Treated used returns to 12 / 12), but the circles swell to engulf controls who are visibly *dissimilar* --- much younger or much healthier. The matched ATT drifts away from the true $-0.6$ as that bias creeps in. Somewhere in the middle is a sweet spot where the ATT tile turns green (within 0.25 of the truth) while keeping most treated units.
+
+**Step 5: Average over more controls.** Push **k** from 1 up to 5. Each treated unit now borrows its 5 nearest controls instead of 1. The estimate steadies (lower variance --- try clicking *Draw new sample* repeatedly and watch it wobble less than at k = 1), but the 2nd--5th neighbors are farther away, so with a wide caliper the bias can grow. This is the 1:1-vs-1:k trade-off in miniature.
+
+**Step 6: Resample.** Click **Draw new sample** several times at a *tight* caliper and again at a *loose* one. The matched ATT jumps around far more under a tight caliper (few units, high variance) than a loose one (many units, low variance but biased). You are watching the bias--variance trade-off as a live tug-of-war.
+
+
+## The Bias--Variance Trade-off, Made Explicit
+
+Everything you just felt has a name. The quality of a matching estimator is governed by two competing forces.
+
+::: {.glass-card .glass-card--insight}
+**Tight matching reduces bias but raises variance.** A tight caliper (or 1:1 matching) ensures every matched control genuinely resembles its treated unit, so the imputed $\widehat{Y}_i(0)$ is close to the true counterfactual --- **low bias**. But it uses few controls and discards treated units that have no near neighbor, so the ATT rests on a small, fragile sample --- **high variance**.
+
+**Loose matching reduces variance but raises bias.** A wide caliper (or large $k$) keeps every treated unit and averages over many controls, so the estimate is stable across samples --- **low variance**. But those extra controls are farther away in covariate space, so $\widehat{Y}_i(0)$ is contaminated by differences in $X$ --- **bias**.
+:::
+
+The two forces trade off along the caliper axis, and the *mean squared error* (MSE) --- the standard scorecard that adds them up, MSE $=$ bias$^2$ $+$ variance --- traces a **U-shape**: high on the left (tight calipers: little bias but big variance), high on the right (loose calipers: small variance but heavy bias), with a minimum somewhere in between. The schematic below shows the canonical curve. It is a *qualitative* picture of the trade-off, not output from the simulation --- the exact location of the minimum depends on your data --- but the shape is universal, and it is what the caliper slider is implicitly searching for.
+
+```{ojs}
+//| echo: false
+
+{
+  // ── Schematic bias²/variance/MSE-vs-caliper U-curve. Stylized illustration
+  // of the trade-off, NOT fitted to the live cohort. ──
+  const xs = d3.range(0.3, 3.51, 0.04);
+  // Bias² grows with caliper width (looser → more dissimilar matches).
+  const bias2 = x => 0.06 + 0.42 * Math.pow(Math.max(0, x - 0.3) / 3.2, 1.7);
+  // Variance falls with caliper width (looser → more units kept, more controls).
+  const varc  = x => 0.05 + 0.62 * Math.exp(-1.5 * (x - 0.3));
+  const rows = xs.flatMap(x => [
+    { cal: x, val: bias2(x),            series: "Bias²" },
+    { cal: x, val: varc(x),             series: "Variance" },
+    { cal: x, val: bias2(x) + varc(x),  series: "Total MSE" }
+  ]);
+  const mseAt = x => bias2(x) + varc(x);
+  const star = d3.least(xs, mseAt);
+
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 340,
+    marginLeft: 62,
+    marginBottom: 48,
+    marginTop: 18,
+    marginRight: 110,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Caliper width  (tight → loose)", grid: true, domain: [0.3, 3.5] },
+    y: { label: "Error contribution", grid: true, domain: [0, 0.85] },
+    color: {
+      domain: ["Bias²", "Variance", "Total MSE"],
+      range: ["#990000", "#3d5a6c", "#1c1c1a"]
+    },
+    marks: [
+      Plot.ruleX([star], { stroke: "#2e6f40", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      Plot.line(rows, {
+        x: "cal", y: "val", stroke: "series",
+        strokeWidth: d => d.series === "Total MSE" ? 3 : 2,
+        strokeDasharray: d => d.series === "Total MSE" ? null : "5,4"
+      }),
+      Plot.dot([{ cal: star, val: mseAt(star) }], {
+        x: "cal", y: "val", r: 5, fill: "#2e6f40", stroke: "white", strokeWidth: 1.5
+      }),
+      // End-of-line labels with white halos (no label channel on line marks).
+      Plot.text([{ cal: 3.5, val: bias2(3.5), t: "Bias²" }], {
+        x: "cal", y: "val", text: "t", dx: 6, textAnchor: "start", fontSize: 11,
+        fontWeight: 700, fill: "#990000", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ cal: 3.5, val: varc(3.5), t: "Variance" }], {
+        x: "cal", y: "val", text: "t", dx: 6, textAnchor: "start", fontSize: 11,
+        fontWeight: 700, fill: "#3d5a6c", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ cal: 3.5, val: mseAt(3.5), t: "Total MSE" }], {
+        x: "cal", y: "val", text: "t", dx: 6, textAnchor: "start", fontSize: 11,
+        fontWeight: 700, fill: "#1c1c1a", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ cal: star, val: 0.82, t: "MSE minimum" }], {
+        x: "cal", y: "val", text: "t", fontSize: 10.5, fontWeight: 700,
+        fill: "#2e6f40", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Schematic, not fitted to the simulation. <span style="color:#990000; font-weight:700;">Bias²</span> rises as the caliper loosens (more dissimilar matches admitted); <span style="color:#3d5a6c; font-weight:700;">variance</span> falls (more treated units kept, more controls averaged); their sum, the <span style="color:#1c1c1a; font-weight:700;">total MSE</span>, is U-shaped with a sweet spot (green) at intermediate caliper width.
+:::
+
+There is no universally correct setting; the right caliper depends on how richly the control pool covers the treated patients' covariate region. A common discipline is to report results across several calipers (a sensitivity analysis) and to *always* report how many treated units survived, since a beautiful ATT computed on 40% of the treated answers a different question than one computed on 95%.
+
+
+## The Curse of Dimensionality
+
+We have been matching on two covariates. Real selection-on-observables claims usually require *many*: age, sex, comorbidity, prior HbA1c, BMI, smoking status, deprivation index, the list goes on. Here exact matching --- the gold standard when it works --- falls apart.
+
+::: {.glass-card .glass-card--warning}
+**Exact matching collapses as covariates accumulate.** Suppose each of $P$ covariates is discretized into just 5 bins. The covariate space then has $5^P$ distinct cells. With $P = 2$ that is 25 cells --- a few hundred patients populate them densely, and exact matches abound. With $P = 6$ it is $5^6 = 15{,}625$ cells; with $P = 10$ it is nearly **10 million** cells. Any realistic cohort of a few thousand patients leaves almost every cell empty, so the overwhelming majority of treated patients have *no* control sharing their exact covariate profile. The matches you need simply do not exist.
+:::
+
+The figure below plots that blow-up directly. The vertical axis is on a **log scale** (each gridline is ten times the last), so the exponential cell count $5^P$ climbs as a straight line, while a fixed cohort of a few thousand patients is a flat horizontal line. The moment the cell-count line crosses *above* the cohort line, the average cell holds fewer than one patient --- exact matches have effectively vanished.
+
+```{ojs}
+//| echo: false
+
+{
+  // ── 5^P cells vs a fixed cohort, log y-axis. The crossing point is where
+  // exact matching becomes hopeless (more cells than patients). ──
+  const bins = 5, cohort = 3000;
+  const Ps = d3.range(2, 11);
+  const cells = Ps.map(P => ({ P, n: Math.pow(bins, P) }));
+  // First P where cells exceed the cohort (the crossover).
+  const crossP = Ps.find(P => Math.pow(bins, P) > cohort);
+
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 360,
+    marginLeft: 70,
+    marginBottom: 48,
+    marginTop: 18,
+    marginRight: 16,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Number of covariates (P)", grid: true, domain: [2, 10], ticks: Ps },
+    y: {
+      type: "log", label: "Count (log scale)", grid: true,
+      domain: [10, 2e7],
+      tickFormat: v => v >= 1e6 ? `${v / 1e6}M` : v >= 1e3 ? `${v / 1e3}k` : `${v}`
+    },
+    marks: [
+      // Cohort size: flat reference line.
+      Plot.ruleY([cohort], { stroke: "#3d5a6c", strokeWidth: 2, strokeDasharray: "5,4" }),
+      // Crossover marker.
+      Plot.ruleX([crossP], { stroke: "#79766e", strokeWidth: 1.2, strokeDasharray: "2,3" }),
+      // 5^P cell count (straight line on a log axis).
+      Plot.line(cells, { x: "P", y: "n", stroke: "#990000", strokeWidth: 3 }),
+      Plot.dot(cells, { x: "P", y: "n", r: 3.5, fill: "#990000" }),
+      // Labels with white halos.
+      Plot.text([{ P: 9.6, n: Math.pow(bins, 9.6), t: "5^P cells" }], {
+        x: "P", y: "n", text: "t", dy: -10, textAnchor: "end", fontSize: 11,
+        fontWeight: 700, fill: "#990000", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ P: 2.2, n: cohort, t: "cohort ≈ 3,000 patients" }], {
+        x: "P", y: "n", text: "t", dy: -10, textAnchor: "start", fontSize: 11,
+        fontWeight: 700, fill: "#3d5a6c", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ P: crossP, n: 9e6, t: "more cells than patients →" }], {
+        x: "P", y: "n", text: "t", dx: -6, textAnchor: "end", fontSize: 10.5,
+        fontWeight: 700, fill: "#79766e", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Five bins per covariate. The <span style="color:#990000; font-weight:700;">red</span> line is the number of distinct covariate cells, $5^P$; the <span style="color:#3d5a6c; font-weight:700;">slate dashed</span> line is a fixed cohort of about 3,000 patients. They cross between $P=4$ and $P=5$: beyond that, there are more cells than patients, so most cells are empty and exact matches disappear.
+:::
+
+**Read this as**: the volume of covariate space grows *exponentially* in the number of covariates, but your sample size does not. Data that felt abundant in two dimensions becomes hopelessly sparse in ten --- every point is far from every other point, and "nearest neighbor" stops meaning "near." Nearest-neighbor and caliper matching soften the blow (they accept *close* rather than *identical* matches), but they too degrade as $P$ grows: with enough covariates, even the nearest control is far away, and the bias the caliper was meant to control returns.
+
+This is the wall that motivates the next page. The escape, due to Rosenbaum and Rubin (1983), is to stop matching on the high-dimensional vector $X$ and instead match on a single scalar summary of it: the **propensity score** $e(X) = P(D = 1 \mid X)$, the probability of enrollment given covariates. Their remarkable result is that matching on this one number is enough to remove the bias that matching on all of $X$ would --- collapsing a 10-dimensional matching problem back to a 1-dimensional one.
+
+
+<details>
+<summary>Math Details: The Matching Estimator and Its Bias</summary>
+<div class="details-content">
+
+### Why matching identifies the ATT
+
+Under the two assumptions carried over from [Selection on Observables](selection-on-observables.qmd) --- **conditional ignorability**, $\{Y(0), Y(1)\} \perp D \mid X$, and **overlap**, $0 < P(D=1\mid X) < 1$ --- the conditional mean of the control outcome equals the conditional mean of the treated units' missing counterfactual:
+
+$$
+E\big[\,Y_i(0) \mid X = x,\, D_i = 1\,\big] = E\big[\,Y_i(0) \mid X = x,\, D_i = 0\,\big] = E\big[\,Y \mid X = x,\, D = 0\,\big].
+$$
+
+**Read this as**: "Once we condition on covariates $x$, the untreated potential outcome of treated patients with profile $x$ is, on average, the same as the observed outcome of *control* patients with profile $x$." This is the entire licence to substitute matched controls for the missing counterfactual. Averaging the right-hand side over the covariate distribution *of the treated* gives the ATT:
+
+$$
+\text{ATT} = E_X\Big[\, E[Y \mid X, D{=}1] - E[Y \mid X, D{=}0] \,\big|\, D = 1 \Big].
+$$
+
+A matcher estimates the inner control mean $E[Y \mid X, D{=}0]$ locally, by the average outcome of the controls nearest to each treated unit --- which is precisely $\widehat{Y}_i(0)$.
+
+### The matching bias
+
+With finitely many controls, the matched control's covariates $X_j$ rarely equal the treated unit's $X_i$ *exactly*; they differ by the **matching discrepancy** $X_i - X_j$. Write the control outcome surface as $\mu_0(x) = E[Y \mid X = x, D = 0]$. A first-order Taylor expansion of $\mu_0$ around $X_i$ gives, for a 1:1 match,
+
+$$
+Y_i - Y_j \;\approx\; \underbrace{\tau_i}_{\text{true effect}} \;+\; \underbrace{\nabla \mu_0(X_i)^{\top} (X_i - X_j)}_{\text{matching bias}} \;+\; (\text{noise}).
+$$
+
+**Read this as**: "The matched difference equals the true effect, plus a bias term that is the slope of the control outcome surface times the leftover covariate gap between the treated unit and its match." Two things shrink this bias: making the discrepancy $X_i - X_j$ small (a **tighter caliper**, exact matching in the limit), and a flatter outcome surface (smaller $\nabla\mu_0$). This is the exact mechanism behind the bias--variance trade-off: the caliper caps $\|X_i - X_j\|$, hence caps the bias --- but the tighter the cap, the fewer units survive, raising variance.
+
+Abadie and Imbens (2006) showed that with a *fixed* number of matches $k$ and continuous covariates, this bias does **not** vanish fast enough as $N \to \infty$ for the naive matching estimator to be $\sqrt{N}$-consistent when $P \ge 2$ --- the curse of dimensionality biting again --- which is why they proposed an explicit **bias correction** that regresses out $\nabla\mu_0$. Their estimator (implemented as `Matching::Match` in R and in `causalinference` in Python) subtracts an estimate of the bias term above from each matched difference.
+
+</div>
+</details>
+
+
+## Code: Matching to Estimate the ATT
+
+Both implementations build the same enrolled/non-enrolled cohort, match on age and comorbidity, and report the matched ATT against the naive contrast and the true effect baked into the simulation.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(MatchIt)
+library(dplyr)
+
+set.seed(20240619)
+
+n_t <- 120; n_c <- 400
+true_effect <- -0.6
+
+# Enrolled (treated): older, sicker. Non-enrolled (control): younger, healthier.
+treated <- tibble(
+  d   = 1,
+  age = round(rnorm(n_t, 64, 7)),
+  com = pmax(0, round(rnorm(n_t, 2.4, 1.1)))
+)
+control <- tibble(
+  d   = 0,
+  age = round(rnorm(n_c, 56, 8)),
+  com = pmax(0, round(rnorm(n_c, 1.3, 1.0)))
+)
+
+f0 <- function(age, com) 6.0 + 0.035 * (age - 60) + 0.45 * com   # control surface
+dat <- bind_rows(treated, control) |>
+  mutate(hba1c = f0(age, com) + true_effect * d + rnorm(n(), 0, 0.35))
+
+# Naive contrast: ignores that the treated are sicker -> biased.
+naive <- mean(dat$hba1c[dat$d == 1]) - mean(dat$hba1c[dat$d == 0])
+
+# Nearest-neighbor matching on (age, comorbidity), Mahalanobis distance,
+# 1:1, with a caliper of 0.25 SD on the linear distance. estimand = ATT.
+m <- matchit(d ~ age + com, data = dat,
+             method = "nearest", distance = "mahalanobis",
+             caliper = 0.25, ratio = 1, replace = FALSE,
+             estimand = "ATT")
+
+md  <- match.data(m)
+# ATT among matched: weighted difference in matched-pair outcomes.
+att <- with(md, weighted.mean(hba1c[d == 1], w[d == 1]) -
+                weighted.mean(hba1c[d == 0], w[d == 0]))
+
+cat(sprintf("Naive contrast: %+.3f pp\n", naive))
+cat(sprintf("Matched ATT:    %+.3f pp  (true = %+.2f)\n", att, true_effect))
+cat(sprintf("Treated matched: %d of %d\n",
+            sum(md$d == 1), n_t))
+summary(m)   # balance table: standardized mean differences before/after
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from sklearn.neighbors import NearestNeighbors
+
+rng = np.random.default_rng(20240619)
+n_t, n_c, true_effect = 120, 400, -0.6
+
+# Enrolled (treated): older, sicker.  Non-enrolled (control): younger, healthier.
+treated = pd.DataFrame({
+    "d": 1,
+    "age": np.round(rng.normal(64, 7, n_t)),
+    "com": np.clip(np.round(rng.normal(2.4, 1.1, n_t)), 0, None),
+})
+control = pd.DataFrame({
+    "d": 0,
+    "age": np.round(rng.normal(56, 8, n_c)),
+    "com": np.clip(np.round(rng.normal(1.3, 1.0, n_c)), 0, None),
+})
+
+def f0(age, com):                      # control outcome surface
+    return 6.0 + 0.035 * (age - 60) + 0.45 * com
+
+dat = pd.concat([treated, control], ignore_index=True)
+dat["hba1c"] = f0(dat.age, dat.com) + true_effect * dat.d + rng.normal(0, 0.35, len(dat))
+
+# Naive contrast: treated are sicker -> biased.
+naive = dat.loc[dat.d == 1, "hba1c"].mean() - dat.loc[dat.d == 0, "hba1c"].mean()
+
+# Standardize covariates, then 1:1 nearest-neighbor match (Euclidean) with caliper.
+X = dat[["age", "com"]].to_numpy(float)
+X = (X - X.mean(0)) / X.std(0)
+Xt, Xc = X[dat.d == 1], X[dat.d == 0]
+yt = dat.loc[dat.d == 1, "hba1c"].to_numpy()
+yc = dat.loc[dat.d == 0, "hba1c"].to_numpy()
+
+nn = NearestNeighbors(n_neighbors=1).fit(Xc)
+dist, idx = nn.kneighbors(Xt)
+caliper = 0.25
+keep = dist[:, 0] <= caliper                      # drop treated with no control in caliper
+
+att = np.mean(yt[keep] - yc[idx[keep, 0]])        # matching ATT among matched
+
+print(f"Naive contrast: {naive:+.3f} pp")
+print(f"Matched ATT:    {att:+.3f} pp  (true = {true_effect:+.2f})")
+print(f"Treated matched: {keep.sum()} of {n_t}")
+```
+
+:::
+
+Both routes recover an ATT close to the true $-0.60$, while the naive contrast --- comparing sicker enrolled patients to a healthier control pool --- is badly biased toward zero or even positive. The R version additionally prints a **balance table**: the **standardized mean difference** (SMD) --- the gap in a covariate's mean between treated and controls, divided by its standard deviation so the gap is reported in SD units rather than raw years or counts --- in age and comorbidity should shrink toward 0 after matching, the diagnostic that tells you the comparison groups are now comparable.
+
+The canonical way to *show* that diagnostic is a **Love plot**: one dot per covariate, before and after matching, on a common SMD axis. The figure below is a representative Love plot for this cohort. A common rule of thumb flags any covariate with $|\text{SMD}| > 0.1$ as imbalanced; matching should pull the dots inside that band.
+
+```{ojs}
+//| echo: false
+
+{
+  // ── Representative Love plot: |SMD| before vs after matching. Illustrative
+  // values typical of this cohort, not recomputed from the live widget. ──
+  const rows = [
+    { cov: "Age",         when: "Before matching", smd: 0.78 },
+    { cov: "Age",         when: "After matching",  smd: 0.06 },
+    { cov: "Comorbidity", when: "Before matching", smd: 0.71 },
+    { cov: "Comorbidity", when: "After matching",  smd: 0.04 }
+  ];
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 240,
+    marginLeft: 110,
+    marginBottom: 48,
+    marginTop: 18,
+    marginRight: 120,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Absolute standardized mean difference  |SMD|", grid: true, domain: [0, 0.9] },
+    y: { label: null, domain: ["Comorbidity", "Age"] },
+    color: {
+      domain: ["Before matching", "After matching"],
+      range: ["#990000", "#2e6f40"], legend: true
+    },
+    marks: [
+      // 0.10 imbalance threshold.
+      Plot.ruleX([0.1], { stroke: "#79766e", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      // Connect each covariate's before/after dots.
+      Plot.link(["Age", "Comorbidity"].map(c => ({
+        cov: c,
+        x1: rows.find(r => r.cov === c && r.when === "Before matching").smd,
+        x2: rows.find(r => r.cov === c && r.when === "After matching").smd
+      })), { x1: "x1", x2: "x2", y1: "cov", y2: "cov", stroke: "#79766e", strokeWidth: 1.5 }),
+      Plot.dot(rows, { x: "smd", y: "cov", fill: "when", r: 6, stroke: "white", strokeWidth: 1.5 }),
+      Plot.text([{ x: 0.1, y: "Age", t: "0.10 threshold" }], {
+        x: "x", y: "y", text: "t", dy: -28, fontSize: 10.5, fontWeight: 700,
+        fill: "#79766e", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Representative values, not recomputed live. Each covariate has a <span style="color:#990000; font-weight:700;">before-matching</span> and an <span style="color:#2e6f40; font-weight:700;">after-matching</span> SMD; matching pulls both inside the conventional 0.10 imbalance band (grey dashed), which is what "the groups are now comparable" looks like.
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A vårdcentral enrolls 4 patients in the diabetes program and has 4 non-enrolled controls. You match **1:1 without replacement** on a single standardized covariate (prior HbA1c, already standardized). Observed outcomes (post-program HbA1c, lower is better) and the covariate:
+
+| Enrolled | covariate | $Y$ | | Control | covariate | $Y$ |
+|:---:|:---:|:---:|---|:---:|:---:|:---:|
+| T1 | 0.2 | 7.1 | | C1 | 0.1 | 7.6 |
+| T2 | 1.0 | 7.8 | | C2 | 0.9 | 8.3 |
+| T3 | $-0.5$ | 6.6 | | C3 | $-0.6$ | 7.0 |
+| T4 | 1.8 | 8.2 | | C4 | 1.6 | 8.9 |
+
+Match each treated unit to its nearest control on the covariate, then compute the matching estimate of the ATT.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Nearest control by covariate distance: T1 (0.2) $\to$ C1 (0.1); T2 (1.0) $\to$ C2 (0.9); T3 ($-0.5$) $\to$ C3 ($-0.6$); T4 (1.8) $\to$ C4 (1.6). Each match is unique, so without-replacement is satisfied.
+
+Imputed effects $Y_i - \widehat{Y}_i(0)$:
+
+- T1: $7.1 - 7.6 = -0.5$
+- T2: $7.8 - 8.3 = -0.5$
+- T3: $6.6 - 7.0 = -0.4$
+- T4: $8.2 - 8.9 = -0.7$
+
+$$
+\widehat{\text{ATT}} = \frac{-0.5 - 0.5 - 0.4 - 0.7}{4} = \frac{-2.1}{4} = -0.525 \text{ pp}.
+$$
+
+The program lowers HbA1c by about 0.53 percentage points among the enrolled. Note that the *naive* contrast --- mean treated $(7.425)$ minus mean control $(7.95)$ --- gives $-0.525$ as well. That is *not* a coincidence of good balance: with 4 treated, 4 controls, and 1:1 matching **without replacement**, the matching is a bijection that uses every control exactly once, so the matched control mean *equals* the full control mean and the matched ATT is *identically* the naive contrast. Matching only departs from the naive estimate when it does **not** weight every control equally --- when a caliper drops units (Exercise 2), when matching is *with* replacement (a good control is reused), when $k>1$, or when there are more controls than treated so some go unused. It is *then* --- with imbalanced groups and unused controls --- that matching earns its keep by reweighting toward the comparable controls.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the same data as Exercise 1, you now impose a **caliper of 0.15** on the standardized covariate. (a) Which treated units still find a match? (b) Recompute the ATT among the matched units. (c) In one sentence, state how the caliper changed the estimand.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Match distances on the covariate: T1 $|0.2-0.1| = 0.10$ (within 0.15 ✓); T2 $|1.0-0.9| = 0.10$ (✓); T3 $|-0.5-(-0.6)| = 0.10$ (✓); T4 $|1.8-1.6| = 0.20$ (**exceeds 0.15 ✗**). So T1, T2, T3 keep their matches; **T4 is dropped**.
+
+**(b)** ATT over the three surviving units:
+
+$$
+\widehat{\text{ATT}} = \frac{-0.5 - 0.5 - 0.4}{3} = \frac{-1.4}{3} \approx -0.467 \text{ pp}.
+$$
+
+**(c)** The caliper changed the estimand from "ATT over all 4 enrolled patients" to "ATT over the 3 enrolled patients with a control within 0.15 SD" --- the effect on the region of common support, no longer the full treated population. T4, the sickest patient with the largest effect ($-0.7$), was exactly the one dropped, which is why the caliper'd estimate is *smaller in magnitude*.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague proposes **exact matching on six covariates** --- age band (6 categories), sex (2), smoking status (2), BMI band (5), prior-HbA1c band (5), and deprivation quintile (5) --- for a cohort of 3,000 patients of whom 600 are enrolled. (a) How many distinct covariate cells does exact matching require? (b) Roughly how many patients fall in the average cell, and why does this doom exact matching here? (c) Name the single-number summary that resolves the problem and the page that develops it.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The number of cells is the product of the category counts:
+
+$$
+6 \times 2 \times 2 \times 5 \times 5 \times 5 = 6{,}000 \text{ cells}.
+$$
+
+**(b)** With 3,000 patients spread over 6,000 cells, the average cell holds $3000 / 6000 = 0.5$ patients --- *fewer than one*. Most cells are empty, and a cell containing an enrolled patient will, far more often than not, contain *no* non-enrolled patient to match them to. (It is even worse than the average suggests: patients are concentrated in a handful of common profiles, leaving the rest of the space emptier still.) Exact matching would discard the large majority of the 600 enrolled patients for lack of an exact counterpart. This is the curse of dimensionality: the cell count $6{,}000$ swamps the sample size $3{,}000$ two-to-one.
+
+**(c)** The **propensity score** $e(X) = P(D = 1 \mid X)$ --- a single scalar summary of all six covariates --- restores a feasible 1-dimensional matching problem. It is developed on the next page, [Propensity Scores](propensity-scores.qmd).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Explain the bias--variance trade-off of matching with replacement vs without replacement, and of 1:1 vs 1:k, using the matching-bias decomposition from the Math Details ($Y_i - Y_j \approx \tau_i + \nabla\mu_0(X_i)^\top(X_i - X_j) + \text{noise}$). For each of the two choices, say which direction reduces bias and which reduces variance.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**With vs without replacement.** *With* replacement, every treated unit is matched to its genuinely closest control, so the discrepancy $X_i - X_j$ --- and hence the bias term $\nabla\mu_0(X_i)^\top(X_i - X_j)$ --- is as small as the data allow: **lower bias**. *Without* replacement, controls get "used up," so later-matched treated units are forced onto more distant, second-best controls with a larger discrepancy: **more bias**. The cost of replacement is **variance**: a single control reused for many treated units means the ATT leans on fewer distinct outcomes, so a quirk in one heavily-reused control propagates into many matched differences.
+
+**1:1 vs 1:k.** Going from 1:1 to 1:k averages each $\widehat{Y}_i(0)$ over $k$ controls. Averaging more outcomes reduces the **variance** of the imputed counterfactual. But the 2nd through $k$th nearest controls have *larger* discrepancies $X_i - X_j$ than the 1st, so the bias term $\nabla\mu_0(X_i)^\top(X_i - X_j)$ grows on average: **more bias**. Thus 1:1 minimizes bias, larger $k$ minimizes variance.
+
+In both cases the structure is identical: the choice that keeps matches *closer* in covariate space (without replacement loses this; with replacement keeps it / 1:1 keeps it; 1:k loses it) controls the discrepancy and hence the bias, while the choice that *pools more outcome information* (replacement reuses good controls; 1:k averages more) controls the variance. There is no free lunch --- this is the same trade-off the caliper slider exposes.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Matching estimates the ATT by imputing each treated unit's missing $Y_i(0)$ as the average outcome of its matched control(s); it identifies the ATT only under the selection-on-observables assumptions (conditional ignorability + overlap), which it does not itself test.
+- Distance metrics define "close": exact (identical $X$), Euclidean (standardized), and Mahalanobis (also corrects for covariate correlation). A caliper caps the allowed distance and thereby caps the matching bias.
+- Every matching knob --- caliper width, with/without replacement, 1:1 vs 1:k --- is the same bias--variance trade-off: closer matches lower bias but use fewer units (higher variance); looser/more matches lower variance but admit dissimilar controls (higher bias).
+- A binding caliper changes the estimand to the ATT on the region of common support; always report how many treated units were actually used.
+- Exact matching collapses under the curse of dimensionality --- the number of covariate cells grows exponentially while the sample does not --- which motivates collapsing $X$ to a single propensity score.
+:::
+
+
+## What Comes Next
+
+Matching on a handful of covariates is transparent and intuitive, but the curse of dimensionality is a hard ceiling: with many covariates, exact matches vanish and even nearest neighbors drift far apart, dragging the matching bias back in. The next page, [Propensity Scores](propensity-scores.qmd), shows the escape route --- Rosenbaum and Rubin's (1983) result that conditioning on the single scalar $e(X) = P(D = 1 \mid X)$ removes the same bias as conditioning on the full covariate vector. We will estimate that probability, verify overlap, and use it to match, stratify, and weight --- turning the unwieldy high-dimensional matching problem of this page into a tractable one-dimensional one.

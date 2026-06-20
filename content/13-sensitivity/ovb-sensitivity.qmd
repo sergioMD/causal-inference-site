@@ -1,0 +1,735 @@
+---
+title: "Sensitivity to Omitted Variables"
+subtitle: "How strong must a confounder be to overturn your result?"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Reframe the unfalsifiable claim "there is no unobserved confounding" as the falsifiable question "how strong would a confounder have to be to overturn my finding?"
+- Use coefficient stability (Oster, 2019) to bound omitted-variable bias from how the estimate and $R^2$ move as observed controls are added, under an assumption about proportional selection ($\delta$, $R^2_{\max}$)
+- Read a Cinelli--Hazlett (2020) sensitivity contour plot, locating the bias-adjusted estimate from a confounder's partial $R^2$ with the treatment and with the outcome
+- Compute and interpret the **robustness value** --- the share of residual variation a confounder must explain in *both* treatment and outcome to drive the estimate to zero --- and benchmark it against an observed covariate
+- Run a formal sensitivity analysis in R and Python with `sensemakr` and report it honestly
+:::
+
+## The Assumption You Can Never Test
+
+A *vårdcentral* (primary care center) in Region Östergötland rolls out *Diabetessamordning* --- a structured diabetes coordination program that pairs each Type 2 diabetes patient with a *distriktssköterska* (district nurse) for individualized follow-up. An analyst pulls twelve months of records on $n = 1200$ patients across the region, regresses the change in HbA1c (mmol/mol) on a program-enrollment indicator, and controls for the obvious confounders: age, sex, baseline HbA1c, BMI, years since diagnosis, and which *region* funds the clinic. The program coefficient comes back at
+
+$$
+\hat\tau = -3.20 \ \text{mmol/mol} \quad (\text{se} = 0.80,\ t = -4.0).
+$$
+
+Enrolled patients improved their blood sugar by 3.2 mmol/mol more than comparable non-enrolled patients. The result is precise and clinically meaningful --- a regional *verksamhetschef* (clinic manager) is ready to scale the program.
+
+But this is observational data. The estimate is unbiased *only if* enrollment is unconfounded given the controls --- if there is no unobserved variable that drives both who enrolls and how their HbA1c evolves. And there is an obvious candidate the records do not capture: **patient motivation**. Motivated patients are both more likely to enroll *and* more likely to improve regardless of the program. Diet adherence, health literacy, and a supportive home situation play the same dual role.
+
+::: {.glass-card .glass-card--warning}
+"No unobserved confounding" is not a hypothesis you can test against your data --- the confounder is, by definition, unobserved. Every selection-on-observables estimate (matching, propensity scores, regression adjustment) rests on this *unfalsifiable* premise. Asserting it does not make it true, and a reviewer who simply demands "but what about motivation?" cannot be answered by running another regression on the same data.
+:::
+
+So we change the question. Instead of *assuming* the confounder away, we ask a question the data *can* discipline:
+
+> **How strong would an unobserved confounder have to be --- relative to the variables we already control for --- to explain away the finding?**
+
+If the answer is "implausibly strong --- far stronger than baseline HbA1c, the single best predictor we have," the result is robust. If the answer is "a confounder no stronger than age would do it," the finding hangs by a thread. This is **sensitivity analysis**, and it turns an unfalsifiable assumption into a quantitative, falsifiable statement.
+
+## Two Lenses on the Same Problem
+
+The previous module asked how much *sampling noise* could move your estimate, resampling the data to get honest standard errors --- including the [clustered and wild bootstrap](../12-bootstrap/cluster-bootstrap.qmd) for dependent observations. Sensitivity analysis asks a different "how much" question: not how much the *data* could wobble, but how much a *missing variable* could bias the point estimate itself. This page develops two complementary tools for it, both built on the same omitted-variable-bias (OVB) algebra you met in [Module 4](../04-regression/omitted-variable-bias.qmd).
+
+::: {.glass-card .glass-card--definition}
+**Coefficient stability** (Oster, 2019) watches how the treatment coefficient and the regression $R^2$ *move* as you add observed controls. If adding strong controls barely budges the coefficient, that movement is evidence about how much the *remaining* unobservables could move it. Formalizing this requires two judgment calls: how much selection runs on unobservables relative to observables ($\delta$), and how much variation the unobservables could possibly explain ($R^2_{\max}$).
+
+**Partial-$R^2$ sensitivity** (Cinelli & Hazlett, 2020) asks directly: a hypothetical confounder $Z$ that explains a share $R^2_{D\sim Z}$ of the *residual* variation in treatment and a share $R^2_{Y\sim Z}$ of the residual variation in the outcome would bias the estimate by a computable amount. The headline summary is the **robustness value** --- the single number $RV$ such that a confounder with $R^2_{D\sim Z} = R^2_{Y\sim Z} = RV$ drives the estimate exactly to zero.
+:::
+
+Coefficient stability uses the controls you *have*; partial-$R^2$ sensitivity reasons about the confounder you *fear*. Together they convert "trust me, it's unconfounded" into "a confounder would need to be at least this strong, which is more than X times the strength of the best observed predictor." We start with the more intuitive of the two.
+
+## Lens 1: Coefficient Stability (Oster 2019)
+
+Run the regression twice. First the **short** model with no controls; then the **long** model with all observed controls. Record the coefficient and $R^2$ each time.
+
+| Model | Controls | $\hat\beta$ (mmol/mol) | $R^2$ |
+|:------|:---------|:----------------------:|:-----:|
+| Short ($\dot\beta,\,\dot R$) | none | $-5.00$ | $0.20$ |
+| Long ($\tilde\beta,\,\tilde R$) | age, sex, baseline HbA1c, BMI, duration, region | $-3.20$ | $0.45$ |
+
+Adding controls pulled the coefficient from $-5.00$ toward zero (to $-3.20$) and raised the $R^2$ from $0.20$ to $0.45$. The controls clearly *mattered* --- they absorbed real confounding. The Oster insight is that the *ratio* of coefficient movement to $R^2$ movement is itself informative about the unobservables, **if** we are willing to assume that selection on unobservables is proportional to selection on observables.
+
+::: {.glass-card .glass-card--definition}
+Let $\delta$ be the **proportional selection** coefficient: $\delta = 1$ means the unobservables are *exactly as important* for selection into treatment as the observables already in the model; $\delta = 2$ means twice as important. Let $R^2_{\max}$ be the $R^2$ a hypothetical regression would attain if we could include *all* confounders, observed and unobserved. The **bias-adjusted treatment effect** is approximately
+
+$$
+\beta^{*} \;\approx\; \tilde\beta \;-\; \delta \,\big(\dot\beta - \tilde\beta\big)\,\frac{R^2_{\max} - \tilde R^2}{\tilde R^2 - \dot R^2}.
+$$
+
+**Read this as**: "start from the controlled estimate $\tilde\beta$, then subtract the coefficient movement caused by *observed* controls, $(\dot\beta - \tilde\beta)$, scaled up by $\delta$ and by how much explanatory room is left, $(R^2_{\max} - \tilde R^2)$, relative to how much the observed controls already used, $(\tilde R^2 - \dot R^2)$." If the unobservables behave like the observables ($\delta=1$) and have the same explanatory power left to give, they would move the coefficient by the same kind of step the observed controls just took.
+:::
+
+Two benchmark calculations are conventional. Oster recommends capping $R^2_{\max}$ at $\min(1.3\,\tilde R^2,\,1)$, reflecting that the controlled model is rarely a perfect fit; here $R^2_{\max} = 1.3 \times 0.45 = 0.585$.
+
+**Benchmark A --- the bias-adjusted estimate at $\delta = 1$.** Plugging in,
+
+$$
+\beta^{*} = -3.20 - 1 \cdot \big(-5.00 - (-3.20)\big)\cdot\frac{0.585 - 0.45}{0.45 - 0.20} = -2.23.
+$$
+
+Even granting unobservables *as strong as* the observed controls, the effect only shrinks from $-3.20$ to $-2.23$ --- it stays well away from zero. The **identified set** as $\delta$ ranges over $[0,1]$ is $[-3.20,\,-2.23]$; it excludes zero, which Oster treats as the bar for "robust."
+
+**Benchmark B --- the $\delta$ that kills the result.** Solve $\beta^{*} = 0$ for $\delta$:
+
+$$
+\delta^{*} = \frac{(\tilde\beta - 0)(\tilde R^2 - \dot R^2)}{(\dot\beta - \tilde\beta)(R^2_{\max} - \tilde R^2)} = \frac{(-3.20)(0.45 - 0.20)}{(-5.00 + 3.20)(0.585 - 0.45)} \approx 3.29.
+$$
+
+To explain away the effect, selection on unobservables would have to be **3.3 times as strong** as selection on the rich set of observables. That is a demanding requirement: the analyst already controlled for baseline HbA1c, the single most powerful predictor of future HbA1c. A $\delta$ above 1 is already a stretch; $\delta = 3.3$ is hard to credit.
+
+::: {.glass-card .glass-card--assumption}
+Coefficient stability is only as good as its two assumptions. **(1) Proportional selection.** $\delta$ links the unobservables to the observables; if your observed controls are weak or unrepresentative of the omitted ones, $\delta$ has no anchor. **(2) $R^2_{\max}$.** The bound is highly sensitive to this number; $R^2_{\max} = 1$ (treatment effect fully deterministic given all confounders) is usually too pessimistic, which is why Oster recommends the $1.3\,\tilde R^2$ cap. Report the *whole* $(\delta, R^2_{\max})$ surface, not a single cherry-picked cell. **A stable coefficient is necessary but not sufficient for robustness** --- a coefficient can be stable simply because the observed controls are uninformative.
+:::
+
+## Lens 2: The Robustness Value (Cinelli--Hazlett 2020)
+
+Coefficient stability needed the observed controls to *anchor* the unobservables through $\delta$. The partial-$R^2$ approach drops that crutch and reasons about the confounder on its own terms, using two quantities a domain expert can reason about directly:
+
+- $R^2_{D\sim Z\,|\,X}$ --- the share of the variation in *treatment* (enrollment), left over after the observed controls $X$, that the confounder $Z$ explains. "Among patients who look identical on age, baseline HbA1c, etc., how much does motivation predict who actually enrolls?"
+- $R^2_{Y\sim Z\,|\,X,D}$ --- the share of the variation in the *outcome*, left over after controls $X$ and treatment $D$, that $Z$ explains. "Among such patients, how much does motivation predict HbA1c improvement *on its own*?"
+
+A confounder is dangerous only if it scores high on *both*. Something that strongly predicts enrollment but is unrelated to the outcome (an instrument-like variable) induces *no* bias; neither does a strong outcome predictor that is unrelated to enrollment. The bias depends on the product.
+
+::: {.glass-card .glass-card--definition}
+The omitted-variable bias of the OLS estimate can be written entirely in terms of these two partial $R^2$ values and the standard error:
+
+$$
+|\widehat{\text{bias}}| \;=\; \operatorname{se}(\hat\tau)\,\sqrt{\mathit{df}}\,\sqrt{\frac{R^2_{Y\sim Z\,|\,X,D}\;\cdot\;R^2_{D\sim Z\,|\,X}}{1 - R^2_{D\sim Z\,|\,X}}}.
+$$
+
+**Read this as**: "the bias equals the standard error, scaled by the square root of the degrees of freedom, times the square root of (the product of the two partial $R^2$s) divided by (one minus the treatment partial $R^2$)." The bias-adjusted estimate is then $\hat\tau_{\text{adj}} = \hat\tau \mp |\widehat{\text{bias}}|$, choosing the sign that moves the estimate toward (and possibly past) zero --- the worst case for your conclusion.
+:::
+
+Notice what this formula *does not* require: no $\delta$, no $R^2_{\max}$, no proportional-selection assumption. You sweep the two partial $R^2$s over a plausible range and read off how far the estimate can move. The single most useful summary collapses the two axes onto their diagonal.
+
+::: {.glass-card .glass-card--definition}
+The **robustness value** $RV_q$ is the partial $R^2$ a confounder must have with *both* treatment and outcome (i.e., on the diagonal $R^2_{D\sim Z} = R^2_{Y\sim Z} = RV$) to change the estimate by a fraction $q$ of itself. To drive the estimate to zero, set $q = 1$:
+
+$$
+RV_{q} = \tfrac{1}{2}\!\left(\sqrt{\,f_q^{4} + 4 f_q^{2}\,} \;-\; f_q^{2}\right), \qquad f_q = \frac{q\,|t|}{\sqrt{\mathit{df}}},
+$$
+
+where $t = \hat\tau / \operatorname{se}(\hat\tau)$ is the observed $t$-statistic.
+
+**Read this as**: "the robustness value is a simple function of the observed $t$-statistic and the degrees of freedom." A bigger $|t|$ (a stronger, more precise result) yields a bigger $RV$ --- it takes a stronger confounder to overturn a stronger finding.
+:::
+
+For our diabetes study, $t = -4.0$ and $\mathit{df} = 1192$, so $f_1 = 4.0/\sqrt{1192} = 0.1159$ and
+
+$$
+RV_{q=1} = \tfrac{1}{2}\!\left(\sqrt{0.1159^4 + 4\cdot 0.1159^2} - 0.1159^2\right) = 0.109 \;=\; \mathbf{10.9\%}.
+$$
+
+**A confounder must explain at least 10.9% of the residual variation in *both* enrollment *and* HbA1c improvement to bring the estimate to zero.** A weaker variant, $RV_{q=1,\alpha=0.05} = 5.7\%$, is the strength needed merely to render the result statistically insignificant at the 5% level. To make these numbers mean something, we benchmark them against a covariate we *can* measure.
+
+::: {.glass-card .glass-card--insight}
+**Benchmarking against an observed covariate.** Drop baseline HbA1c from the model and measure how much *it* explains of the residual variation in treatment and outcome. Suppose baseline HbA1c --- a strong, clinically central predictor --- has $R^2_{D\sim X} \approx 3\%$ and $R^2_{Y\sim X} \approx 5\%$. The feared confounder "motivation" would need to be **several times stronger than baseline HbA1c** along *both* dimensions to reach the $10.9\%$ diagonal. Stated that way, the robustness claim becomes something a clinician can actually judge --- and likely reject as implausible.
+:::
+
+## See It: The Sensitivity Contour Plot
+
+The contour plot below is the workhorse of modern sensitivity analysis. The horizontal axis is the confounder's partial $R^2$ with **treatment**; the vertical axis is its partial $R^2$ with the **outcome**. Each curved contour line is a *level set* of the bias-adjusted estimate: every point on a given line yields the same adjusted effect. The unconfounded estimate ($-3.20$) sits at the origin (a confounder explaining nothing changes nothing). Move up and to the right --- a stronger confounder --- and you cross contour lines toward zero.
+
+Drag the two sliders to place a hypothetical confounder. The plot marks where it lands, reports the bias-adjusted estimate, and shows the **robustness value** (the red point where the bold zero-contour crosses the diagonal) and a **benchmark marker** for the observed covariate "baseline HbA1c."
+
+::: {.interactive-container}
+
+#### Sensitivity contours: how far can a confounder move the estimate?
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Uppsala-academic palette shared across this page's interactives. ──
+seovb_pal = ({
+  treat:  "#990000",   // focal / treatment axis (Uppsala red)
+  slate:  "#3d5a6c",   // comparison / outcome axis
+  good:    "#2e6f40",   // safe / robust (green)
+  ochre:   "#9c7a33",   // benchmark / highlight (ochre)
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis label text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1",   // subtle tile fill
+  bad:     "#b3000b"    // alarm / killed result
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The observed study (fixed). These are the numbers used throughout the
+// prose so the chart can never drift from the text. ──
+seovb_study = ({
+  tau: -3.20,     // OLS treatment estimate (mmol/mol)
+  se: 0.80,       // standard error
+  df: 1192,       // degrees of freedom (n - k = 1200 - 8)
+  // Observed benchmark covariate: baseline HbA1c (partial R^2 with D and with Y).
+  bench: { rd: 0.03, ry: 0.05, name: "baseline HbA1c" }
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// t-statistic of the observed estimate.
+seovb_t = seovb_study.tau / seovb_study.se
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Bias-adjusted estimate (Cinelli–Hazlett). The confounder partial R^2 with
+// treatment (rD) and with outcome (rY) determine the OVB; we move the estimate
+// toward zero (the worst case for the conclusion). Sign of tau is preserved.
+seovb_adjust = function (rD, rY) {
+  const { se, df, tau } = seovb_study;
+  // Guard the rD -> 1 corner so the ratio stays finite.
+  const rDc = Math.min(0.999, Math.max(0, rD));
+  const bias = se * Math.sqrt(df) * Math.sqrt((rY * rDc) / (1 - rDc));
+  // Pull the estimate toward 0 by the bias magnitude (worst case for the
+  // conclusion): a negative estimate is moved up, a positive one moved down.
+  return tau + (tau < 0 ? bias : -bias);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Robustness value RV_{q=1}: the diagonal partial R^2 that drives the estimate
+// to zero. Function of the observed t and df only.
+seovb_RV = {
+  const f = Math.abs(seovb_t) / Math.sqrt(seovb_study.df);
+  return 0.5 * (Math.sqrt(f ** 4 + 4 * f ** 2) - f ** 2);
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Sliders: the hypothetical confounder's partial R^2 with treatment and
+// with the outcome. Each is a standalone viewof cell (one definition each). ──
+viewof seovb_rD = Inputs.range([0, 0.30], {
+  value: 0.03,
+  step: 0.005,
+  label: "Confounder R² with treatment (enrollment)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof seovb_rY = Inputs.range([0, 0.30], {
+  value: 0.05,
+  step: 0.005,
+  label: "Confounder R² with outcome (HbA1c change)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Convenience: the adjusted estimate at the current slider position.
+seovb_adjNow = seovb_adjust(seovb_rD, seovb_rY)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the contour level-set lines analytically. For a target adjusted
+// estimate `target`, the implied bias magnitude is |tau - target|; the level
+// set in (rD, rY) space is rY = b^2 * (1 - rD) / (se^2 * df * rD), where
+// b = |tau - target|. We sample rD on a fine grid for each contour value.
+seovb_contours = {
+  const { se, df, tau } = seovb_study;
+  // A spread of adjusted-estimate targets to draw as contours, plus the
+  // critical zero line, which is drawn separately and bold.
+  const targets = [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5];
+  const grid = d3.range(0.004, 0.301, 0.004);
+  const lines = [];
+  for (const target of targets) {
+    const b = Math.abs(tau - target);            // required bias magnitude
+    const pts = [];
+    for (const rD of grid) {
+      const rY = (b * b) * (1 - rD) / (se * se * df * rD);
+      if (rY > 0 && rY <= 0.30) pts.push({ rD, rY, target });
+    }
+    if (pts.length > 1) lines.push({ target, pts });
+  }
+  return lines;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The bold zero-contour: the set of (rD, rY) that drive the estimate to 0.
+seovb_zeroLine = {
+  const { se, df, tau } = seovb_study;
+  const b = Math.abs(tau);                        // bias needed to reach 0
+  const grid = d3.range(0.004, 0.301, 0.003);
+  const pts = [];
+  for (const rD of grid) {
+    const rY = (b * b) * (1 - rD) / (se * se * df * rD);
+    if (rY > 0 && rY <= 0.30) pts.push({ rD, rY });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Contour label anchors — one labelled point per contour, placed where the
+// curve is comfortably inside the frame so text never clips the edges.
+seovb_contourLabels = seovb_contours.map(c => {
+  // Choose the point nearest rD = 0.12 for a stable, readable anchor.
+  const anchor = c.pts.reduce((best, p) =>
+    Math.abs(p.rD - 0.12) < Math.abs(best.rD - 0.12) ? p : best, c.pts[0]);
+  return { rD: anchor.rD, rY: anchor.rY, label: anchor.target.toFixed(1) };
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── The contour plot. ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 440,
+  marginLeft: 64,
+  marginBottom: 52,
+  marginTop: 30,
+  marginRight: 18,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: seovb_pal.axis },
+  x: {
+    label: "Confounder partial R²  with  treatment  →",
+    domain: [0, 0.30],
+    grid: false,
+    tickFormat: d => (d * 100).toFixed(0) + "%"
+  },
+  y: {
+    label: "↑ Confounder partial R²  with  outcome",
+    domain: [0, 0.30],
+    grid: false,
+    tickFormat: d => (d * 100).toFixed(0) + "%"
+  },
+  marks: [
+    Plot.gridX({ stroke: seovb_pal.hair }),
+    Plot.gridY({ stroke: seovb_pal.hair }),
+
+    // Faint contour level-sets (constant adjusted estimate).
+    ...seovb_contours.map(c =>
+      Plot.line(c.pts, {
+        x: "rD", y: "rY",
+        stroke: seovb_pal.slate, strokeWidth: 1, strokeOpacity: 0.5
+      })
+    ),
+    // Contour value labels (white halo so they survive over gridlines).
+    Plot.text(seovb_contourLabels, {
+      x: "rD", y: "rY", text: "label",
+      fill: seovb_pal.slate, fontSize: 10,
+      stroke: "white", strokeWidth: 2.5, paintOrder: "stroke"
+    }),
+
+    // The bold zero-contour: where the estimate is fully explained away.
+    Plot.line(seovb_zeroLine, {
+      x: "rD", y: "rY",
+      stroke: seovb_pal.bad, strokeWidth: 2.5
+    }),
+    Plot.text([{ rD: 0.205, rY: 0.205 }], {
+      x: "rD", y: "rY", text: () => "adjusted est. = 0",
+      fill: seovb_pal.bad, fontSize: 11, fontWeight: 700,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke",
+      dy: -8
+    }),
+
+    // The robustness value: where the zero-contour crosses the 45° diagonal.
+    Plot.line([{ rD: 0, rY: 0 }, { rD: 0.30, rY: 0.30 }], {
+      x: "rD", y: "rY", stroke: seovb_pal.ink, strokeWidth: 1, strokeDasharray: "3,3"
+    }),
+    Plot.dot([{ rD: seovb_RV, rY: seovb_RV }], {
+      x: "rD", y: "rY", fill: seovb_pal.bad, r: 6, stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text([{ rD: seovb_RV, rY: seovb_RV }], {
+      x: "rD", y: "rY",
+      text: () => `RV = ${(seovb_RV * 100).toFixed(1)}%`,
+      fill: seovb_pal.bad, fontSize: 11, fontWeight: 700,
+      dx: 30, dy: -2, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // Benchmark covariate marker (observed baseline HbA1c).
+    Plot.dot([seovb_study.bench], {
+      x: "rd", y: "ry", fill: seovb_pal.ochre, r: 6, symbol: "diamond",
+      stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text([seovb_study.bench], {
+      x: "rd", y: "ry", text: d => d.name,
+      fill: seovb_pal.ochre, fontSize: 10, fontWeight: 700,
+      dx: 8, dy: 12, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+
+    // The reader's hypothetical confounder (from the sliders).
+    Plot.dot([{ rD: seovb_rD, rY: seovb_rY }], {
+      x: "rD", y: "rY", fill: seovb_pal.treat, r: 7,
+      stroke: "white", strokeWidth: 2
+    }),
+    Plot.text([{ rD: seovb_rD, rY: seovb_rY }], {
+      x: "rD", y: "rY",
+      text: () => `adj. est. = ${seovb_adjNow.toFixed(2)}`,
+      fill: seovb_pal.treat, fontSize: 11, fontWeight: 700,
+      dy: -14, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── Live readout panel — the four numbers that matter, driven directly from
+// the sliders so they can never disagree with the chart. ──
+{
+  const adj = seovb_adjNow;
+  const killed = (seovb_study.tau < 0 && adj >= 0) || (seovb_study.tau > 0 && adj <= 0);
+  const sig = Math.abs(adj) > 1.96 * seovb_study.se;   // crude: still > ~2 SE from 0
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${seovb_pal.fill}; border: 1px solid ${seovb_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${seovb_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.85rem;">
+    ${tile("Unadjusted estimate", seovb_study.tau.toFixed(2), seovb_pal.ink)}
+    ${tile("Adjusted estimate", adj.toFixed(2),
+        killed ? seovb_pal.bad : (sig ? seovb_pal.good : seovb_pal.ochre))}
+    ${tile("Robustness value", (seovb_RV * 100).toFixed(1) + "%", seovb_pal.treat)}
+    ${tile("Verdict",
+        killed ? "overturned" : (sig ? "survives" : "weakened"),
+        killed ? seovb_pal.bad : (sig ? seovb_pal.good : seovb_pal.ochre))}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line plain-language verdict that updates with the sliders.
+{
+  const adj = seovb_adjNow;
+  const bench = seovb_study.bench;
+  const onZero = (seovb_study.tau < 0 && adj >= -0.05);
+  let msg, color;
+  if (onZero) {
+    msg = `A confounder this strong (R² of ${(seovb_rD*100).toFixed(1)}% with enrollment and ` +
+          `${(seovb_rY*100).toFixed(1)}% with HbA1c) erases the effect — but compare it to ` +
+          `baseline HbA1c at only ${(bench.rd*100).toFixed(0)}% / ${(bench.ry*100).toFixed(0)}%. ` +
+          `Is an unmeasured variable really several times stronger than the best predictor you have?`;
+    color = seovb_pal.bad;
+  } else if (seovb_rD <= bench.rd && seovb_rY <= bench.ry) {
+    msg = `This confounder is no stronger than baseline HbA1c on either axis, yet the estimate ` +
+          `only moves to ${adj.toFixed(2)}. The finding is comfortably robust to such a confounder.`;
+    color = seovb_pal.good;
+  } else {
+    msg = `At R² = ${(seovb_rD*100).toFixed(1)}% (treatment) and ${(seovb_rY*100).toFixed(1)}% (outcome), ` +
+          `the estimate moves from ${seovb_study.tau.toFixed(2)} to ${adj.toFixed(2)}. It survives, ` +
+          `but document how plausible a confounder this strong would be.`;
+    color = seovb_pal.ochre;
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem; border-radius:0.35rem;
+      border-left:3px solid ${color}; background:${seovb_pal.fill};
+      font-family:'Inter',system-ui,sans-serif; font-size:0.86rem; line-height:1.5;
+      color:${seovb_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Contour Plot
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Anchor at the origin.** A confounder with zero partial $R^2$ on either axis sits at the bottom-left corner and changes nothing --- the adjusted estimate equals the unadjusted $-3.20$. Bias requires strength on *both* axes; that is why the bottom edge and left edge of the plot are "safe."
+
+**Step 2: Read a contour line.** Each thin slate curve is a level set: every $(R^2_D, R^2_Y)$ pair on it produces the *same* adjusted estimate (the number printed on the line). The contours bow toward the corner because what matters is the *product* of the two $R^2$s --- a confounder can be moderate on both axes or extreme on one and weak on the other and land on the same line.
+
+**Step 3: Find the point of no return.** The bold red curve is the **zero-contour**: any confounder landing on it drives the estimate exactly to zero. Everything *below and left* of it leaves a non-zero effect; everything *above and right* flips the sign. This single curve is the boundary between "robust" and "overturned."
+
+**Step 4: Read the robustness value.** The red dot sits where the zero-contour crosses the 45° dashed diagonal --- the point with *equal* strength on both axes. Its coordinate is $RV = 10.9\%$. That is the headline number: a confounder equally related to treatment and outcome must explain $10.9\%$ of the residual variation in each to undo the finding.
+
+**Step 5: Benchmark against what you can measure.** The ochre diamond marks **baseline HbA1c** --- a real, strong, observed covariate --- at roughly $3\%$ / $5\%$. It sits far inside the safe region, nowhere near the zero-contour. For an unmeasured confounder to overturn the result, it would have to be *several times stronger* than your best measured predictor. State your robustness claim in exactly these terms.
+
+**Step 6: Place your own confounder.** Drag the two sliders. The red dot moves and the adjusted estimate updates live. Try to reach the zero-contour and notice how extreme *both* sliders must be. Then set both sliders at or below the ochre benchmark and confirm the estimate barely moves --- the visual proof that a plausibly-sized confounder cannot rescue a skeptic's objection here.
+
+## When Sensitivity Analysis Changes the Verdict
+
+Robustness is not guaranteed --- it is *measured*. Consider a second, deliberately fragile study to see the contour logic deliver a warning instead of reassurance.
+
+::: {.glass-card .glass-card--insight}
+A *vårdcentral* pilots a new SEK-funded *egenvård*-app (self-care app) for hypertension and reports a systolic blood-pressure reduction with $\hat\tau = -2.0$ mmHg, $\operatorname{se} = 0.95$, $t = -2.1$, on $n = 240$ patients (with the same six controls, $\mathit{df} = 232$). The result clears the 5% bar, but barely. Its robustness value is only $RV_{q=1} \approx 12.9\%$ to reach zero --- and just $RV_{\alpha=0.05} \approx 0.9\%$ to lose significance. A confounder *weaker* than a typical observed covariate could render this finding insignificant. Same machinery, opposite conclusion: the diabetes result is fortified, the app result is flagged as fragile. Sensitivity analysis is a falsifiable test, and it does sometimes fail.
+:::
+
+The contrast is the whole point. A small, imprecise estimate ($|t|$ near 2) has a small robustness value; a large, precise estimate ($|t| = 4$) has a large one. Reporting the $RV$ alongside the estimate tells a reader, in one number, how much faith the result can bear.
+
+<details>
+<summary>Math Details: Deriving the OVB formula and the robustness value</summary>
+<div class="details-content">
+
+### The omitted-variable bias in partial-$R^2$ form
+
+Suppose the true model includes a confounder $Z$,
+$$
+Y = \tau D + X\beta + \gamma Z + \varepsilon,
+$$
+but we estimate the *restricted* model omitting $Z$. By the Frisch--Waugh--Lovell theorem (see [Module 4](../04-regression/frisch-waugh-lovell.qmd)), partial out $X$ from everything; let $\tilde D, \tilde Y, \tilde Z$ denote the $X$-residualized variables. The classical OVB of $\hat\tau$ is the product of two regression coefficients:
+$$
+\widehat{\text{bias}} = \hat\tau_{\text{restricted}} - \tau = \hat\gamma \cdot \hat\delta_{Z\sim D},
+$$
+where $\hat\gamma$ is the effect of $Z$ on $Y$ controlling for $D$, and $\hat\delta_{Z\sim D}$ is the coefficient from regressing $\tilde Z$ on $\tilde D$. Cinelli and Hazlett re-express each factor in terms of *partial $R^2$* values. Writing $R^2_{Y\sim Z\mid X,D}$ and $R^2_{D\sim Z\mid X}$ for the two partial $R^2$s, algebra on the residual variances gives
+
+$$
+|\widehat{\text{bias}}| = \operatorname{se}(\hat\tau)\,\sqrt{\mathit{df}}\,\sqrt{\frac{R^2_{Y\sim Z\mid X,D}\, R^2_{D\sim Z\mid X}}{1 - R^2_{D\sim Z\mid X}}}.
+$$
+
+The factor $\operatorname{se}(\hat\tau)\sqrt{\mathit{df}}$ converts the unitless partial-$R^2$ product into the units of $\hat\tau$. The key structural fact is that the two partial $R^2$s enter *symmetrically through their product* (up to the $1-R^2_{D\sim Z}$ denominator), which is why the contour lines are hyperbola-like.
+
+### Solving for the robustness value
+
+Set the confounder on the diagonal, $R^2_{D\sim Z\mid X} = R^2_{Y\sim Z\mid X,D} = RV$, and require the bias to equal a fraction $q$ of the estimate, $|\widehat{\text{bias}}| = q\,|\hat\tau| = q\,|t|\operatorname{se}$. Substituting and dividing by $\operatorname{se}$:
+
+$$
+q\,|t| = \sqrt{\mathit{df}}\,\sqrt{\frac{RV^2}{1 - RV}} \quad\Longrightarrow\quad \frac{q^2 t^2}{\mathit{df}} = \frac{RV^2}{1 - RV}.
+$$
+
+Let $f_q^2 = q^2 t^2 / \mathit{df}$. Then $RV^2 = f_q^2(1 - RV)$, i.e. $RV^2 + f_q^2 RV - f_q^2 = 0$, a quadratic in $RV$. The positive root is
+
+$$
+RV_q = \frac{-f_q^2 + \sqrt{f_q^4 + 4 f_q^2}}{2} = \tfrac{1}{2}\!\left(\sqrt{f_q^4 + 4 f_q^2} - f_q^2\right). \qquad\checkmark
+$$
+
+For our study, $f_1 = |{-4.0}|/\sqrt{1192} = 0.1159$, so $f_1^2 = 0.01343$, and $RV_1 = \tfrac12(\sqrt{0.01343^2 + 4\cdot 0.01343} - 0.01343) = 0.109$. To overturn statistical significance instead of the point estimate, replace $|t|$ with $|t| - t^{*}_{\alpha}$ (the distance to the critical value), giving the smaller $RV_{\alpha} = 5.7\%$.
+
+### Extreme-scenario bound
+
+A useful upper bound: even a confounder that explains *all* residual outcome variation ($R^2_{Y\sim Z} = 1$) cannot bias $\hat\tau$ by more than $\operatorname{se}\sqrt{\mathit{df}}\sqrt{R^2_{D\sim Z}/(1-R^2_{D\sim Z})}$. Comparing this worst case to the partial $R^2$ of the *treatment with the outcome*, $R^2_{D\sim Y\mid X} = t^2/(t^2 + \mathit{df}) = 16/1208 = 1.32\%$, gives the most adversarial single-number robustness statement.
+
+</div>
+</details>
+
+## Running a Formal Sensitivity Analysis
+
+The `sensemakr` package (Cinelli, Ferwerda & Hazlett) implements the partial-$R^2$ analysis in both R and Python: it computes the robustness value, draws the contour plot, and benchmarks against named observed covariates in one call. The panels below fit the diabetes regression and reproduce the numbers above. Oster's coefficient-stability bound is available via the `robomit` R package or the `relativeImp`/manual approach shown.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("sensemakr")
+library(sensemakr)
+
+## ---- Fit the OLS model on the vårdcentral data ----
+# df has: hba1c_change, enrolled (0/1), and observed controls.
+model <- lm(hba1c_change ~ enrolled + age + sex + baseline_hba1c +
+              bmi + duration + region, data = df)
+
+## ---- Sensitivity to an unobserved confounder of `enrolled` ----
+sens <- sensemakr(
+  model      = model,
+  treatment  = "enrolled",
+  # Benchmark the hypothetical confounder against this observed covariate:
+  benchmark_covariates = "baseline_hba1c",
+  kd = 1:3   # confounder 1x, 2x, 3x as strong as baseline_hba1c (on treatment)
+)
+
+summary(sens)        # prints the robustness value, RV_alpha, partial R^2(D~Y)
+plot(sens)           # the partial-R^2 sensitivity contour plot
+plot(sens, type = "extreme")   # extreme-scenario bound
+
+# Headline numbers (match the prose):
+sens$sensitivity_stats$rv_q       # ≈ 0.109  (RV to drive estimate to 0)
+sens$sensitivity_stats$rv_qa      # ≈ 0.057  (RV to lose 5% significance)
+sens$sensitivity_stats$r2yd.x     # ≈ 0.0132 (partial R^2 of treatment with Y)
+
+## ---- Oster (2019) coefficient stability ----
+# install.packages("robomit")
+library(robomit)
+# delta needed to bring beta to 0, given R_max = 1.3 * R_controlled:
+o_delta <- o_delta(y = "hba1c_change", x = "enrolled",
+                   con = c("age","sex","baseline_hba1c","bmi","duration","region"),
+                   delta = NA, R2max = 0.585, type = "lm", data = df)
+o_delta              # δ* ≈ 3.29  (selection on unobservables vs observables)
+```
+
+### Python
+
+```python
+# pip install sensemakr statsmodels pandas
+import pandas as pd
+import statsmodels.formula.api as smf
+import sensemakr as smkr
+
+# ---- Fit the OLS model on the vårdcentral data ----
+model = smf.ols(
+    "hba1c_change ~ enrolled + age + sex + baseline_hba1c "
+    "+ bmi + duration + region",
+    data=df,
+).fit()
+
+# ---- Sensitivity to an unobserved confounder of `enrolled` ----
+sens = smkr.Sensemakr(
+    model=model,
+    treatment="enrolled",
+    benchmark_covariates="baseline_hba1c",
+    kd=[1, 2, 3],   # confounder 1x, 2x, 3x as strong as baseline_hba1c
+)
+
+sens.summary()             # robustness value, RV_alpha, partial R^2(D~Y)
+sens.plot()                # the partial-R^2 sensitivity contour plot
+sens.plot(plot_type="extreme")
+
+# Headline numbers (match the prose):
+print(sens.sensitivity_stats["rv_q"])    # ≈ 0.109  (RV to reach 0)
+print(sens.sensitivity_stats["rv_qa"])   # ≈ 0.057  (RV to lose significance)
+print(sens.sensitivity_stats["r2yd_x"])  # ≈ 0.0132 (partial R^2 of D with Y)
+
+# ---- Oster (2019) coefficient stability, computed by hand ----
+import numpy as np
+b_short, R_short = -5.00, 0.20    # no controls
+b_long,  R_long  = -3.20, 0.45    # with observed controls
+R_max = 1.3 * R_long              # ≈ 0.585  (Oster's recommended cap)
+
+beta_star = b_long - 1.0 * (b_short - b_long) * (R_max - R_long) / (R_long - R_short)
+delta_star = (b_long - 0) * (R_long - R_short) / ((b_short - b_long) * (R_max - R_long))
+print(f"beta*(delta=1) = {beta_star:.2f}")   # ≈ -2.23
+print(f"delta*         = {delta_star:.2f}")   # ≈  3.29
+```
+
+:::
+
+Both languages return $RV_{q=1} \approx 0.109$, $RV_{\alpha} \approx 0.057$, and a partial $R^2$ of treatment with outcome of $1.32\%$, matching the worked numbers exactly. The Oster routine returns $\delta^{*} \approx 3.29$ and a bias-adjusted $\beta^{*}(\delta=1) \approx -2.23$ --- the two lenses agree that this finding is hard to overturn.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A study of a *fysioterapi* (physiotherapy) program on back-pain disability days reports $\hat\tau = -6.0$ days, $\operatorname{se} = 1.50$, on $n = 500$ patients with $k = 10$ parameters.
+
+(a) Compute the $t$-statistic and the degrees of freedom. (b) Compute the robustness value $RV_{q=1}$ (the diagonal partial $R^2$ needed to drive the estimate to zero). (c) Interpret it in one sentence.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $t = \hat\tau / \operatorname{se} = -6.0 / 1.50 = -4.0$; $\mathit{df} = n - k = 500 - 10 = 490$.
+
+**(b)** $f_1 = |t| / \sqrt{\mathit{df}} = 4.0 / \sqrt{490} = 0.1807$, so $f_1^2 = 0.03266$. Then
+$$
+RV_1 = \tfrac{1}{2}\!\left(\sqrt{0.03266^2 + 4\cdot 0.03266} - 0.03266\right) = \tfrac12(\sqrt{0.13172} - 0.03266) = 0.165.
+$$
+So $RV_{q=1} \approx 16.5\%$.
+
+**(c)** A confounder must explain at least $16.5\%$ of the residual variation in *both* program participation and disability days to bring the estimate to zero --- a higher bar than the diabetes study because, although the $t$-statistic is the same ($-4.0$), the smaller degrees of freedom raise $RV$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the diabetes study ($\hat\tau = -3.20$, $\operatorname{se} = 0.80$, $\mathit{df} = 1192$), a colleague proposes a confounder $Z$ with $R^2_{D\sim Z} = 0.05$ and $R^2_{Y\sim Z} = 0.10$. (a) Compute the bias magnitude. (b) Compute the bias-adjusted estimate. (c) Does the finding survive?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $|\widehat{\text{bias}}| = \operatorname{se}\sqrt{\mathit{df}}\sqrt{\dfrac{R^2_{Y\sim Z}\,R^2_{D\sim Z}}{1 - R^2_{D\sim Z}}} = 0.80\sqrt{1192}\sqrt{\dfrac{0.10\cdot 0.05}{1 - 0.05}}.$
+Compute step by step: $0.80\sqrt{1192} = 0.80 \times 34.53 = 27.62$; the inner fraction is $0.005/0.95 = 0.005263$, whose square root is $0.07255$. So $|\widehat{\text{bias}}| = 27.62 \times 0.07255 = 2.00$.
+
+**(b)** The estimate is negative, so the worst case pulls it toward zero: $\hat\tau_{\text{adj}} = -3.20 + 2.00 = -1.20$.
+
+**(c)** Yes, but with a caveat. The adjusted estimate $-1.20$ is still negative (the program still helps), and $-1.20 / 0.80 = -1.5$ in $t$-units is no longer significant at 5%. A confounder twice as strong as baseline HbA1c on both axes would not flip the sign but *would* dissolve statistical significance --- consistent with $RV_{\alpha} = 5.7\%$ being well below these partial $R^2$s.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Explain why a variable that strongly predicts treatment assignment but is *unrelated* to the outcome (a near-instrument) induces **no** omitted-variable bias, using the partial-$R^2$ bias formula. Then explain why this is exactly the property that makes good instruments useful and bad controls dangerous.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+In the bias formula
+$$
+|\widehat{\text{bias}}| = \operatorname{se}\sqrt{\mathit{df}}\sqrt{\frac{R^2_{Y\sim Z\mid X,D}\, R^2_{D\sim Z\mid X}}{1 - R^2_{D\sim Z\mid X}}},
+$$
+the bias is proportional to $\sqrt{R^2_{Y\sim Z}}$. If $Z$ is unrelated to the outcome conditional on $X$ and $D$, then $R^2_{Y\sim Z\mid X,D} = 0$, and the entire bias term is zero *regardless of how strongly $Z$ predicts treatment*. Bias requires the confounder to move *both* treatment and outcome; a variable on only one axis is harmless as a confounder.
+
+This is the defining logic of instruments: a valid instrument is strongly related to treatment ($R^2_{D\sim Z}$ large) but affects the outcome *only* through treatment (the exclusion restriction, $R^2_{Y\sim Z}$ = 0 in the structural equation). The same property explains the danger of conditioning on a near-instrument as a "control" --- it inflates the variance of $\hat\tau$ (it eats treatment variation) without removing bias, and if it has any direct outcome path it can *amplify* bias. Controlling for variables that predict treatment but not the outcome is the bad-control pattern from [Module 2](../02-dags/good-bad-controls.qmd).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Two studies report the *same* point estimate $\hat\tau = -2.0$. Study A has $\operatorname{se} = 0.40$ ($t = -5.0$), Study B has $\operatorname{se} = 0.95$ ($t = -2.1$); both have $\mathit{df} = 300$. (a) Without computing exactly, which has the larger robustness value, and why? (b) What does this teach about reporting a point estimate alone? (c) Connect this to the Oster notion of a "stable" coefficient.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Study A. The robustness value increases with $|t|$ through $f_q = q|t|/\sqrt{\mathit{df}}$: a larger $t$-statistic means a stronger, more precise result, which a confounder must work harder to overturn. Concretely, $RV_A$ uses $f = 5.0/\sqrt{300} = 0.289$ (so $f^2 = 25/300 = 1/12$) giving $RV_A \approx 25.0\%$, while $RV_B$ uses $f = 2.1/\sqrt{300} = 0.121$ giving $RV_B \approx 11.4\%$. Same point estimate, very different fragility.
+
+**(b)** A point estimate alone says nothing about robustness to confounding. Two studies can agree on $\hat\tau$ yet differ enormously in how easily an omitted variable could overturn them. Precision (the standard error) is part of the robustness story, which is why the $RV$ is a function of $t$, not of $\hat\tau$ alone. Always report the robustness value (or the full contour) alongside the estimate.
+
+**(c)** Oster's "stable coefficient" is the same idea in coefficient-movement language: a result is credible when plausible unobservables (small $\delta$) leave the coefficient far from zero. A high robustness value and a large $\delta^{*}$ are two summaries of the same underlying fact --- the finding is *far* from the cliff edge. Neither is a substitute for substantive judgment about whether a confounder of the required strength actually exists.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- "No unobserved confounding" is unfalsifiable; sensitivity analysis replaces it with the falsifiable question "how strong must a confounder be to overturn the result?"
+- Coefficient stability (Oster 2019) bounds the bias from how the estimate and $R^2$ move as observed controls are added, given a proportional-selection $\delta$ and an $R^2_{\max}$ cap; report the bias-adjusted $\beta^{*}$ and the $\delta^{*}$ that reaches zero.
+- The partial-$R^2$ bias depends on the confounder's strength with *both* treatment and outcome --- a variable strong on only one axis induces no bias.
+- The robustness value $RV_{q=1} = \tfrac12(\sqrt{f^4+4f^2}-f^2)$ with $f = |t|/\sqrt{\mathit{df}}$ is the single-number summary: $10.9\%$ for the diabetes study, meaning a confounder must explain $10.9\%$ of residual variation in each to undo the finding.
+- Always *benchmark* the robustness value against an observed covariate; "a confounder several times stronger than baseline HbA1c" is a claim a domain expert can judge.
+:::
+
+## What Comes Next
+
+The tools on this page treat sensitivity through the *linear, partial-$R^2$* geometry of regression: how much residual variation a confounder must explain to move a coefficient. That framing is ideal for selection-on-observables designs estimated by OLS. But matched and stratified designs --- where treatment and control units are paired on observed covariates --- call for a sensitivity analysis tuned to the matched structure, expressed not as a partial $R^2$ but as an *odds ratio* $\Gamma$ on the hidden assignment probabilities within matched sets. The next page, [Rosenbaum Bounds](rosenbaum-bounds.qmd), develops exactly that: how large a departure from random assignment *within matched pairs* would be needed to overturn a significant result, and how to report the critical $\Gamma$ as the matched-design counterpart of the robustness value you just learned to read.

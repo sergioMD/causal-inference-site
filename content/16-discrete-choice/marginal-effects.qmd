@@ -1,0 +1,593 @@
+---
+title: "Interpreting Nonlinear Models: Marginal Effects and Odds Ratios"
+subtitle: "From coefficients to effects you can report"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain why a logit or probit *coefficient* is not, by itself, an interpretable effect on the probability of the outcome
+- Define the marginal effect of a continuous regressor and read it off the slope (tangent) of the fitted S-curve
+- Distinguish the Average Marginal Effect (AME) from the Marginal Effect at the Mean (MEM), and say when each is appropriate
+- Convert a logit coefficient into an odds ratio $\exp(\beta)$ and state exactly what it does and does not mean
+- Compute the partial effect of a *dummy* regressor as a difference in predicted probabilities, and report effects in R and Python
+:::
+
+## The Question Behind Every Logit Table
+
+A *vårdcentral* (primary care center) in Region Uppsala runs a logistic regression to predict whether a Type 2 diabetes patient reaches the HbA1c target (at or below 52 mmol/mol) within a year. One regressor is the number of *distriktssköterska* (district nurse) follow-up visits. The software reports a coefficient of $\hat\beta = 0.42$. The *verksamhetschef* (clinic manager) asks the obvious question: **"so how much does one extra visit raise a patient's chance of hitting target?"**
+
+The honest first answer is uncomfortable: *it depends on the patient.* In ordinary least squares, the coefficient $\hat\beta$ *is* the answer --- every patient's predicted outcome rises by exactly $\hat\beta$ per extra visit, full stop. But logit and probit run the linear index $x'\beta$ through an S-shaped curve. On that curve, the same one-unit nudge in $x$ moves the probability a lot in the steep middle and almost nothing in the flat tails. A patient already at 90% probability of success has little room to gain; a patient near 50% gains the most. The coefficient $0.42$ is measured on the *latent index / log-odds* scale, not on the probability scale anyone actually reports.
+
+This page is about closing that gap: turning the coefficients from [Binary Outcomes: LPM, Logit, and Probit](binary-outcomes.qmd) into numbers a clinic manager, a regional board, or a referee can read --- **marginal effects** on the probability scale, and **odds ratios** for logit. These models are fit by maximum likelihood (see the [Maximum Likelihood module](../11-mle-gmm/)); here we take the fitted $\hat\beta$ as given and ask what it *means*.
+
+## Why a Coefficient Is Not an Effect
+
+Write the logit model for the probability that patient $i$ reaches target:
+
+$$
+P(y_i = 1 \mid x_i) = \Lambda(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}},
+$$
+
+where $\Lambda$ is the logistic (sigmoid) CDF. **Read this as**: "the probability of success equals the logistic function evaluated at the linear index $x_i'\beta$." The index $x_i'\beta$ can be any real number; $\Lambda$ squashes it into $(0,1)$. For probit, replace $\Lambda$ with $\Phi$, the standard Normal CDF.
+
+The effect of a small change in a *continuous* regressor $x_k$ is the derivative of this probability with respect to $x_k$ --- the slope of the curve at that patient's position. By the chain rule,
+
+$$
+\frac{\partial P(y=1 \mid x)}{\partial x_k} \;=\; \underbrace{\lambda(x'\beta)}_{\text{density at the index}} \cdot \beta_k ,
+$$
+
+where $\lambda = \Lambda(1-\Lambda)$ is the logistic density (for probit it is $\phi$, the Normal density). **Read this as**: "the marginal effect equals the coefficient $\beta_k$ scaled by the height of the density at the patient's index value." That scaling factor $\lambda(x'\beta)$ is the punchline: it is **largest where the index is near zero (probability near 0.5)** and **shrinks toward zero in the tails**. The coefficient sets the *direction* and a common *ceiling*; the curve decides how much of that ceiling each patient actually gets.
+
+::: {.glass-card .glass-card--definition}
+The **marginal effect** of a continuous regressor $x_k$ is the partial derivative of the predicted probability with respect to $x_k$:
+
+$$
+\text{ME}_k(x) \;=\; \frac{\partial P(y=1\mid x)}{\partial x_k} \;=\; f(x'\beta)\,\beta_k,
+$$
+
+where $f = \lambda$ for logit and $f = \phi$ for probit. It is the *instantaneous slope of the S-curve* at the point $x$, in units of "change in probability per one-unit change in $x_k$." Because $f(x'\beta)$ depends on **where the patient sits**, every individual has their own marginal effect.
+:::
+
+So $\hat\beta = 0.42$ does not mean "+0.42 in probability." It means "+0.42 on the log-odds scale," and the probability effect ranges from near zero (for patients already almost certain to succeed or fail) up to a maximum of $0.25 \times 0.42 \approx 0.105$ at the steepest point of the curve, since the logistic density peaks at $\lambda = 0.25$ when $\Lambda = 0.5$.
+
+## See It: Drag $x$ Along the S-Curve
+
+The interactive below fits a one-regressor logit of "reached HbA1c target" on the number of district-nurse follow-up visits. Drag the visit count and watch the **tangent line** pivot: its slope *is* the marginal effect at that patient. The slope is steepest where the curve passes through $p = 0.5$ and flattens to nothing in both tails. The two summary numbers --- AME and MEM, defined just below --- are drawn on the same curve so you can see they are generally *different* points.
+
+::: {.interactive-container}
+
+#### Marginal effect = the slope of the probability curve
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette tokens, shared across this page's interactives.
+bcme_pal = ({
+  focal:  "#990000",  // focal series (Uppsala red): the fitted probability curve
+  slate:  "#3d5a6c",  // comparison (slate): the tangent / MEM marker
+  good:   "#2e6f40",  // on-target green: AME marker
+  ochre:  "#9c7a33",  // highlight / annotation
+  ink:    "#1c1c1a",  // ink text & reference lines
+  axis:   "#79766e",  // axis text (muted Uppsala token)
+  hair:   "#e6e3db",  // gridlines
+  muted:  "#79766e",  // muted ink
+  fill:   "#f6f5f1"   // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+// Fitted logit coefficients for "reached HbA1c target" on follow-up visits.
+// These stand in for a glm() fit; beta0 puts the 50% crossover at ~4.5 visits.
+bcme_beta0 = -1.9
+```
+
+```{ojs}
+//| echo: false
+bcme_beta1 = 0.42
+```
+
+```{ojs}
+//| echo: false
+// Logistic CDF and density used throughout.
+bcme_Lambda = z => 1 / (1 + Math.exp(-z))
+```
+
+```{ojs}
+//| echo: false
+bcme_lambda = z => { const L = bcme_Lambda(z); return L * (1 - L); }
+```
+
+```{ojs}
+//| echo: false
+viewof bcme_xVisits = Inputs.range([0, 12], {
+  value: 4.5,
+  step: 0.1,
+  label: "Patient's follow-up visits  x  (drag along the curve)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The fitted probability curve, sampled on a fine grid for plotting.
+bcme_curve = d3.range(0, 12.01, 0.1).map(x => ({
+  x,
+  p: bcme_Lambda(bcme_beta0 + bcme_beta1 * x)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Marginal effect at the dragged patient: slope of the curve there.
+bcme_meHere = bcme_lambda(bcme_beta0 + bcme_beta1 * bcme_xVisits) * bcme_beta1
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+bcme_pHere = bcme_Lambda(bcme_beta0 + bcme_beta1 * bcme_xVisits)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A short tangent segment through the dragged point, with slope = bcme_meHere.
+// Drawn over a +/- 1.6 visit window so it reads as "the local linear approx".
+bcme_tangent = {
+  const half = 1.6;
+  const x0 = Math.max(0, bcme_xVisits - half);
+  const x1 = Math.min(12, bcme_xVisits + half);
+  return [
+    { x: x0, p: bcme_pHere + bcme_meHere * (x0 - bcme_xVisits) },
+    { x: x1, p: bcme_pHere + bcme_meHere * (x1 - bcme_xVisits) }
+  ];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A small synthetic sample of patients, used to compute the AME honestly
+// (average of each patient's own marginal effect) and to place the MEM.
+// Visit counts drawn once, deterministically, so the page is reproducible.
+bcme_sample = {
+  const rng = d3.randomNormal.source(d3.randomLcg(2024))(4.6, 2.3);
+  const xs = d3.range(300).map(() => Math.max(0, Math.min(12, rng())));
+  return xs.map(x => ({ x, idx: bcme_beta0 + bcme_beta1 * x }));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// AME: average over patients of f(x_i'beta) * beta1  (the recommended summary).
+bcme_AME = d3.mean(bcme_sample, d => bcme_lambda(d.idx) * bcme_beta1)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// MEM: f(xbar'beta) * beta1, evaluated at the mean regressor value.
+bcme_xbar = d3.mean(bcme_sample, d => d.x)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+bcme_MEM = bcme_lambda(bcme_beta0 + bcme_beta1 * bcme_xbar) * bcme_beta1
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+bcme_pMEM = bcme_Lambda(bcme_beta0 + bcme_beta1 * bcme_xbar)
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginRight: 22,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: bcme_pal.axis
+  },
+  x: {
+    label: "Follow-up visits  x  →",
+    domain: [0, 12],
+    grid: false
+  },
+  y: {
+    label: "↑ P(reached HbA1c target)",
+    domain: [0, 1],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: bcme_pal.hair }),
+    // Reference line at p = 0.5, where the slope (marginal effect) is largest.
+    Plot.ruleY([0.5], { stroke: bcme_pal.hair, strokeWidth: 1 }),
+    // The fitted logistic probability curve (focal — Uppsala red).
+    Plot.line(bcme_curve, {
+      x: "x", y: "p", stroke: bcme_pal.focal, strokeWidth: 2.5
+    }),
+    // The tangent at the dragged patient: its slope IS the marginal effect.
+    Plot.line(bcme_tangent, {
+      x: "x", y: "p", stroke: bcme_pal.slate, strokeWidth: 2, strokeDasharray: "5,3"
+    }),
+    // MEM marker (slate hollow) — evaluated at the mean regressor.
+    Plot.dot([{ x: bcme_xbar, p: bcme_pMEM }], {
+      x: "x", y: "p", fill: "white", stroke: bcme_pal.slate, strokeWidth: 2, r: 5
+    }),
+    Plot.text([{ x: bcme_xbar, p: bcme_pMEM }], {
+      x: "x", y: "p",
+      text: d => `mean x = ${bcme_xbar.toFixed(1)}`,
+      fill: bcme_pal.slate, fontSize: 10.5, fontWeight: 600,
+      dy: 16, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The dragged patient (focal red dot) on the curve.
+    Plot.dot([{ x: bcme_xVisits, p: bcme_pHere }], {
+      x: "x", y: "p", fill: bcme_pal.focal, r: 6
+    }),
+    Plot.text([{ x: bcme_xVisits, p: bcme_pHere }], {
+      x: "x", y: "p",
+      text: d => `slope = ${bcme_meHere.toFixed(3)}`,
+      fill: bcme_pal.focal, fontSize: 12, fontWeight: 700,
+      dy: -14, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tying the picture to the numbers. Inside an ojs html`` cell so the
+// reactive values interpolate (markdown ${...} would render literally).
+{
+  const tile = (label, value, color, sub) => html`<div style="
+      flex: 1 1 0; min-width: 7.5rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.4rem;
+      background: ${bcme_pal.fill}; border: 1px solid ${bcme_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${bcme_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.62rem;
+        color:${bcme_pal.muted}; margin-top:0.1rem;">${sub}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("ME at your patient", "+" + bcme_meHere.toFixed(3), bcme_pal.focal,
+        "Δprob per +1 visit, here")}
+    ${tile("P here", bcme_pHere.toFixed(3), bcme_pal.ink, "current probability")}
+    ${tile("AME", "+" + bcme_AME.toFixed(3), bcme_pal.good, "averaged over patients")}
+    ${tile("MEM", "+" + bcme_MEM.toFixed(3), bcme_pal.slate, "at the mean patient")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the S-Curve and Its Tangent
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the curve.** The red S-curve is the fitted probability $\Lambda(\hat\beta_0 + \hat\beta_1 x)$ that a patient reaches the HbA1c target, as a function of follow-up visits $x$. It is flat near 0 visits (almost no one hits target), rises through the middle, and flattens again near 1 (almost everyone hits target). This is the shape that makes the coefficient non-interpretable on its own.
+
+**Step 2: Watch the tangent pivot.** Drag the patient's visit count. The slate dashed line is the *tangent* to the curve at that patient. Its slope is the marginal effect --- the "ME at your patient" tile. Park the patient near the middle (around 4 to 5 visits, where $p \approx 0.5$) and the tangent is steep: an extra visit buys the most probability. Drag to the far right (10+ visits) and the tangent goes nearly flat: that patient was already near-certain, so an extra visit barely moves them.
+
+**Step 3: Confirm the maximum is at $p = 0.5$.** The thin horizontal reference line marks $p = 0.5$. The tangent is steepest exactly where the red curve crosses it. The largest possible marginal effect for this regressor is $0.25 \times \hat\beta_1 = 0.25 \times 0.42 \approx 0.105$ --- you cannot get a bigger probability bump than that, no matter the patient.
+
+**Step 4: Compare AME and MEM.** The green "AME" tile averages each of 300 patients' *own* tangent slopes; the slate "MEM" tile is the single slope at the *average* patient (the hollow slate dot at "mean x"). They are close here but not identical --- AME averages the curve's slope over the whole spread of patients, while MEM reads it at one representative point. When patients are bunched in the steep middle the two nearly coincide; when they straddle the flat tails they diverge.
+
+## AME vs. MEM: Two Ways to Summarize a Curve
+
+Because every patient has their own marginal effect, we need *one* number to report. There are two standard ways to collapse the distribution of effects, and they answer subtly different questions.
+
+::: {.glass-card .glass-card--definition}
+The **Average Marginal Effect (AME)** computes each observation's marginal effect at its *own* covariate values, then averages:
+
+$$
+\text{AME}_k \;=\; \frac{1}{n}\sum_{i=1}^{n} f(x_i'\hat\beta)\,\hat\beta_k.
+$$
+
+**Read this as**: "average, over all $n$ patients, of each patient's own slope." It is the mean of the individual effects --- "if every patient in the sample got one more visit, the average increase in the probability of hitting target."
+
+The **Marginal Effect at the Mean (MEM)** instead builds one synthetic average patient and evaluates the slope there:
+
+$$
+\text{MEM}_k \;=\; f(\bar{x}'\hat\beta)\,\hat\beta_k.
+$$
+
+**Read this as**: "the slope at the single hypothetical patient whose covariates equal the sample means." It describes a patient who may not exist (e.g., $0.6$ of a comorbidity).
+:::
+
+::: {.glass-card .glass-card--insight}
+**Prefer the AME.** The AME averages a genuine quantity --- each real patient's own effect --- so it answers the policy question "what happens on average if I nudge $x$ for everyone?" The MEM evaluates the effect at an *average patient* who is often a fiction (half a diagnosis, $0.3$ of a region). With dummy regressors the MEM is especially odd: the "mean patient" is $73\%$ female. The two coincide only when $f$ is roughly linear over the range of the data; they diverge when patients sit in the curve's flat tails. Modern packages (`marginaleffects`, `margins`, `get_margeff`) default to the AME for exactly this reason.
+:::
+
+## Partial Effects for Dummy Regressors
+
+The derivative formula assumes $x_k$ can change by an infinitesimal amount. A *dummy* regressor --- say $\text{kvinna}_i = 1$ for female patients --- cannot. It only takes the values 0 and 1, so its effect is not a slope but a **discrete difference** in predicted probability between the two states, holding everything else fixed.
+
+::: {.glass-card .glass-card--definition}
+The **partial effect of a dummy** $d$ is the difference in predicted probability when $d$ is switched from 0 to 1, with all other covariates $x$ held at fixed values:
+
+$$
+\Delta_d \;=\; F\!\big(\beta_0 + \beta_d \cdot 1 + x'\beta\big) \;-\; F\!\big(\beta_0 + \beta_d \cdot 0 + x'\beta\big),
+$$
+
+where $F = \Lambda$ (logit) or $\Phi$ (probit). **Read this as**: "the predicted probability with the dummy on, minus the predicted probability with it off." Averaging $\Delta_d$ over the sample gives the *average* discrete change --- the dummy analogue of the AME.
+:::
+
+For example, if switching $\text{kvinna}$ from 0 to 1 (other covariates at their observed values, averaged) raises the predicted probability of hitting target from $0.61$ to $0.68$, the reportable partial effect is $+0.07$ --- "women in this program are 7 percentage points more likely to reach target, holding visits and age fixed." That is a sentence a regional board understands; the raw coefficient $\beta_d$ on the log-odds scale is not.
+
+## Odds Ratios: The Logit-Specific Shortcut
+
+Logit has one extra interpretive trick that probit lacks. Exponentiating a logit coefficient gives an **odds ratio**, which is *constant* across patients --- it does not depend on where you sit on the curve. The price is that it speaks the language of *odds*, not probabilities.
+
+Recall the odds of success are $\text{odds} = p/(1-p)$. The logit model is linear in the **log-odds**:
+
+$$
+\log\frac{P(y=1\mid x)}{P(y=0\mid x)} \;=\; x'\beta.
+$$
+
+**Read this as**: "the log of the odds of success equals the linear index $x'\beta$." Increase $x_k$ by one unit and the log-odds rise by exactly $\beta_k$ --- for *every* patient, because this scale is linear. Exponentiating, the *odds* get **multiplied** by $e^{\beta_k}$.
+
+::: {.glass-card .glass-card--definition}
+The **odds ratio** for a one-unit increase in $x_k$ is
+
+$$
+\text{OR}_k \;=\; e^{\beta_k}.
+$$
+
+**Read this as**: "$e$ raised to the coefficient." It is the multiplicative factor by which the odds of success change per one-unit increase in $x_k$. $\text{OR} > 1$ means the odds rise, $\text{OR} < 1$ means they fall, $\text{OR} = 1$ means no effect. For our visits coefficient, $\text{OR} = e^{0.42} \approx 1.52$: **each extra district-nurse visit multiplies the odds of hitting target by about 1.5** --- a $52\%$ increase in the *odds* (not the probability).
+:::
+
+::: {.glass-card .glass-card--warning}
+**An odds ratio is not a risk ratio, and not a probability change.** "$52\%$ higher odds" is routinely misread as "$52\%$ more likely." When the baseline probability is small the two are close, but for a patient already at $p = 0.8$ (odds $4{:}1$), multiplying the odds by $1.52$ gives odds $6.08{:}1$, i.e. $p = 0.859$ --- a rise of only $5.9$ percentage points, nowhere near $52\%$. The odds ratio's virtue (constant across patients) is also its limitation: a *constant odds ratio* corresponds to a *probability effect that still depends on the baseline*. Report odds ratios for compactness, but report a marginal effect (AME) when you want the answer on the probability scale your audience thinks in.
+:::
+
+<details>
+<summary>Math Details: Deriving the marginal effects and the AME/MEM distinction</summary>
+<div class="details-content">
+
+### Marginal effect by the chain rule
+
+For an index model $P(y=1\mid x) = F(x'\beta)$ with a continuous regressor $x_k$, differentiate with respect to $x_k$. Only the index $x'\beta$ depends on $x_k$, and $\partial(x'\beta)/\partial x_k = \beta_k$, so by the chain rule
+
+$$
+\frac{\partial F(x'\beta)}{\partial x_k} = F'(x'\beta)\cdot \frac{\partial (x'\beta)}{\partial x_k} = f(x'\beta)\,\beta_k,
+$$
+
+where $f = F'$ is the density. Two specializations:
+
+**Probit.** $F = \Phi$, so $f = \phi$, the standard Normal density. The marginal effect is
+$$
+\text{ME}_k^{\text{probit}} = \phi(x'\beta)\,\beta_k.
+$$
+
+**Logit.** $F = \Lambda$, the logistic CDF. Its derivative is
+$$
+\Lambda'(z) = \frac{e^{-z}}{(1+e^{-z})^2} = \Lambda(z)\big(1 - \Lambda(z)\big),
+$$
+so writing $\Lambda = \Lambda(x'\beta)$,
+$$
+\text{ME}_k^{\text{logit}} = \Lambda\,(1-\Lambda)\,\beta_k.
+$$
+
+The factor $\Lambda(1-\Lambda)$ is the variance of a Bernoulli with success probability $\Lambda$. It is maximized at $\Lambda = 1/2$, where it equals $1/4$; hence the largest possible logit marginal effect of regressor $k$ is $\tfrac14\beta_k$. It vanishes as $\Lambda \to 0$ or $\Lambda \to 1$ --- the flat tails of the S-curve.
+
+### Why the odds ratio is constant
+
+From $\Lambda(z) = 1/(1+e^{-z})$ we get $1-\Lambda(z) = e^{-z}/(1+e^{-z})$, so the odds are
+$$
+\frac{\Lambda(z)}{1-\Lambda(z)} = \frac{1}{e^{-z}} = e^{z} = e^{x'\beta}.
+$$
+Increase $x_k$ by 1: the odds become $e^{x'\beta + \beta_k} = e^{x'\beta}\cdot e^{\beta_k}$. The multiplicative factor $e^{\beta_k}$ is free of $x$ --- this is special to the logistic link and is why odds ratios are a logit-only convenience. The corresponding *probability* change, $\Lambda(x'\beta+\beta_k) - \Lambda(x'\beta)$, still depends on the baseline $x'\beta$.
+
+### AME vs MEM as two functionals of the same fit
+
+Both summaries push the per-observation marginal effect $m_i = f(x_i'\hat\beta)\,\hat\beta_k$ through a different operator:
+
+$$
+\text{AME}_k = \frac1n\sum_i f(x_i'\hat\beta)\,\hat\beta_k = \frac1n\sum_i m_i,
+\qquad
+\text{MEM}_k = f\!\Big(\Big(\tfrac1n\sum_i x_i\Big)'\hat\beta\Big)\,\hat\beta_k.
+$$
+
+The AME applies $f$ first and averages second; the MEM averages the covariates first and applies $f$ once. Because $f$ (the Normal or logistic density) is **nonlinear** --- concave near its peak, convex in the tails --- Jensen's inequality says $\frac1n\sum_i f(x_i'\hat\beta) \neq f(\bar x'\hat\beta)$ in general, so $\text{AME} \neq \text{MEM}$. They agree exactly only if $f$ is linear over the support of the data, or if all $x_i$ are identical. Standard errors for both come from the delta method applied to the (smooth) functions above, using the MLE variance of $\hat\beta$.
+
+</div>
+</details>
+
+## Computing Marginal Effects and Odds Ratios
+
+Both panels fit the same logit --- "reached HbA1c target" on follow-up visits, patient age, and a female dummy --- then report the AME, the MEM, the dummy's average partial effect, and the odds ratios. In R use `marginaleffects` (or the older `margins`); in Python use `statsmodels`' `get_margeff`. Do **not** read the raw coefficients as effects.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("marginaleffects"))  # if needed
+library(marginaleffects)
+
+set.seed(2024)
+n <- 600
+visits <- pmax(0, round(rnorm(n, 4.6, 2.3)))     # district-nurse follow-ups
+age    <- round(rnorm(n, 64, 11))                 # patient age, years
+kvinna <- rbinom(n, 1, 0.55)                      # 1 = female
+
+# True data-generating index, then a Bernoulli draw for the target outcome.
+idx <- -1.9 + 0.42 * visits - 0.015 * (age - 64) + 0.30 * kvinna
+y   <- rbinom(n, 1, plogis(idx))                  # 1 = reached HbA1c target
+
+df  <- data.frame(y, visits, age, kvinna)
+fit <- glm(y ~ visits + age + kvinna, family = binomial(link = "logit"), data = df)
+
+# Raw coefficients are on the LOG-ODDS scale — NOT effects on probability.
+coef(fit)
+
+# Odds ratios = exp(beta), with CIs. Logit-specific, constant across patients.
+exp(cbind(OR = coef(fit), confint(fit)))
+
+# Average Marginal Effect (recommended default): each patient's own slope,
+# averaged. "dydx" for continuous regressors; for the dummy it reports the
+# average discrete 0 -> 1 change automatically.
+avg_slopes(fit)
+
+# Marginal Effect at the Mean: evaluate the slope at the average covariate vector.
+slopes(fit, newdata = "mean")
+
+# Average partial effect of the female dummy as an explicit contrast.
+avg_comparisons(fit, variables = "kvinna")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(2024)
+n = 600
+visits = np.clip(np.round(rng.normal(4.6, 2.3, n)), 0, None)  # follow-ups
+age    = np.round(rng.normal(64, 11, n))                       # age, years
+kvinna = rng.binomial(1, 0.55, n)                              # 1 = female
+
+# True index, then a Bernoulli draw for "reached HbA1c target".
+idx = -1.9 + 0.42 * visits - 0.015 * (age - 64) + 0.30 * kvinna
+p   = 1 / (1 + np.exp(-idx))
+y   = rng.binomial(1, p)
+
+df  = pd.DataFrame({"y": y, "visits": visits, "age": age, "kvinna": kvinna})
+fit = smf.logit("y ~ visits + age + kvinna", data=df).fit()
+
+# Raw coefficients are LOG-ODDS, not probability effects.
+print(fit.params)
+
+# Odds ratios = exp(beta). Logit-specific and constant across patients.
+print(np.exp(fit.params))
+
+# Average Marginal Effect (default): each obs's own slope, then averaged.
+# 'dydx' for continuous; the dummy gets an average discrete change.
+print(fit.get_margeff(at="overall", method="dydx").summary())
+
+# Marginal Effect at the Mean: evaluate at the average covariate vector.
+print(fit.get_margeff(at="mean", method="dydx").summary())
+```
+
+:::
+
+In both languages the AME for `visits` lands near $+0.08$ --- "one extra district-nurse visit raises the probability of hitting target by about 8 percentage points on average" --- while the odds ratio is $e^{0.42}\approx 1.52$. The numbers agree across R and Python up to the random draw; the AME and odds ratio describe the *same* coefficient on two different scales.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A logit for "patient readmitted to hospital within 30 days" includes a continuous regressor *daily medications* with coefficient $\hat\beta = 0.25$.
+
+(a) What is the largest possible marginal effect of one extra daily medication on the probability of readmission? (b) For a patient currently at predicted probability $p = 0.10$, what is the marginal effect there? (c) Explain why (a) and (b) differ.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The logit marginal effect is $\Lambda(1-\Lambda)\,\hat\beta$, maximized at $\Lambda = 0.5$ where $\Lambda(1-\Lambda) = 0.25$. So the largest possible effect is $0.25 \times 0.25 = 0.0625$, i.e. about $+6.25$ percentage points per extra medication --- attained only for a patient at $p = 0.5$.
+
+**(b)** At $p = 0.10$, $\Lambda(1-\Lambda) = 0.10 \times 0.90 = 0.09$. The marginal effect is $0.09 \times 0.25 = 0.0225$, about $+2.25$ percentage points.
+
+**(c)** They differ because the marginal effect is the *slope of the S-curve*, which depends on where the patient sits. At $p = 0.5$ the curve is steepest; at $p = 0.10$ it is in the lower tail and much flatter, so the same coefficient buys far less probability. The coefficient is constant; the probability effect is not.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A logit for "reached HbA1c target" reports an odds ratio of $1.80$ for being enrolled in a structured *Diabetessamordning* (diabetes coordination program).
+
+(a) State the effect in words on the odds scale. (b) A patient under standard care has probability $0.40$ of hitting target. What is their probability if enrolled, according to this odds ratio? (c) What is the percentage-point change, and why is it not $80\%$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Enrolling in the program multiplies a patient's *odds* of reaching target by $1.80$ --- an $80\%$ increase in the odds, holding other covariates fixed.
+
+**(b)** Baseline odds at $p = 0.40$: $0.40/0.60 = 0.6\overline{6}$. Multiply by $1.80$: new odds $= 1.20$. Convert back: $p = \text{odds}/(1+\text{odds}) = 1.20/2.20 = 0.5\overline{45} \approx 0.545$.
+
+**(c)** The probability rises from $0.40$ to about $0.545$ --- a change of roughly $+14.5$ percentage points, not $80\%$. The $80\%$ refers to *odds*, a ratio of probabilities, not the probability itself. The percentage-point change depends on the baseline; at a different starting probability the same odds ratio gives a different probability change. This is exactly why an AME is more transparent to a non-technical audience.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague reports the MEM for *follow-up visits* and you report the AME from the same fitted logit. Yours is $+0.081$; theirs is $+0.103$.
+
+(a) Define each quantity in one sentence. (b) Give a concrete reason they differ. (c) Which would you put in a policy brief, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The **AME** averages each patient's own marginal effect $f(x_i'\hat\beta)\hat\beta_k$ over the sample; the **MEM** evaluates a single marginal effect $f(\bar x'\hat\beta)\hat\beta_k$ at the average covariate vector.
+
+**(b)** The density factor $f$ is nonlinear, so by Jensen's inequality the average of the slopes ($\text{AME}$) generally differs from the slope at the average ($\text{MEM}$). Here the MEM is larger, which happens when the *average patient* sits closer to the steep middle of the curve ($p \approx 0.5$) than the bulk of the actual patients, many of whom lie in the flatter tails where their individual slopes are smaller --- dragging the average (AME) down.
+
+**(c)** The AME, for a policy brief. It is the average of effects on *real* patients and answers "if every patient got one more visit, how much does the average probability rise?" The MEM describes a hypothetical average patient (possibly $0.55$ female, $4.6$ visits) who may not exist, and is harder to defend to a non-technical audience.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive at the top of the page, set the patient to $x = 4.5$ visits (near the 50% crossover) and note the slope; then drag to $x = 11$ visits.
+
+(a) What happens to the marginal effect (the tangent slope), and why? (b) The fitted $\hat\beta_1 = 0.42$ never changes as you drag --- so what *does* change to make the probability effect shrink? (c) Convert $\hat\beta_1$ to an odds ratio and confirm it is the same regardless of where the patient sits.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $x = 4.5$ the patient is near $p = 0.5$, where the curve is steepest, so the tangent slope (marginal effect) is near its maximum, $0.25 \times 0.42 \approx 0.105$. At $x = 11$ the patient is far up the curve near $p \approx 0.95$, in the flat upper tail, so the slope is small --- an extra visit barely raises an already-near-certain probability.
+
+**(b)** The coefficient $\hat\beta_1$ is fixed; what changes is the **density factor** $\Lambda(x'\hat\beta)\big(1-\Lambda(x'\hat\beta)\big)$. It is $\approx 0.25$ at $p = 0.5$ but collapses toward $0$ in the tails (at $p = 0.95$ it is $0.95 \times 0.05 \approx 0.0475$). The marginal effect is this factor times $\hat\beta_1$, so it shrinks even though $\hat\beta_1$ is constant.
+
+**(c)** The odds ratio is $e^{0.42} \approx 1.52$. Because the logit is linear in the log-odds, a one-unit increase in $x$ multiplies the odds by $e^{\hat\beta_1}$ *regardless of the starting point* --- the odds ratio is constant across patients even though the probability effect (part b) is not.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A logit or probit coefficient lives on the latent index / log-odds scale; it sets direction and a ceiling, but is *not* the effect on the probability of the outcome.
+- The marginal effect of a continuous regressor is $f(x'\hat\beta)\,\hat\beta_k$ --- the slope of the S-curve, largest near $p = 0.5$ and vanishing in the tails, so every patient has their own.
+- Report the **AME** (average each patient's own slope) over the **MEM** (slope at the average patient): the AME averages effects on real units, the MEM describes a possibly-fictional average patient.
+- For a dummy regressor the partial effect is a *discrete* difference in predicted probability (0 vs 1), averaged over the sample.
+- The odds ratio $e^{\hat\beta_k}$ is a logit-only convenience: constant across patients on the odds scale, but "higher odds" is not "higher probability" --- use the AME when your audience thinks in probabilities.
+:::
+
+## What Comes Next
+
+We can now turn any logit or probit fit into a reportable effect: a marginal effect on the probability scale, an AME for the headline number, a partial effect for dummies, and an odds ratio for compact summaries. So far the outcome has been *binary* --- one threshold, target reached or not. But many primary-care outcomes have more than two categories: which of several vårdcentraler a patient chooses, or an *ordered* severity scale from "well controlled" to "poorly controlled." The same maximum-likelihood machinery and the same "coefficients are not effects" warning carry over, but the marginal effects now come as a *vector* across categories. The next page, [Multinomial and Ordered Choice](multinomial-ordered.qmd), builds those models and shows how to read their effects.

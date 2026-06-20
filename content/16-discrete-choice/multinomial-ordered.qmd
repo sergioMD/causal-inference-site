@@ -1,0 +1,668 @@
+---
+title: "Multinomial and Ordered Choice"
+subtitle: "More than two categories"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Build the multinomial logit from random utility and write its softmax choice probabilities relative to a base category
+- Interpret multinomial coefficients as *relative-risk ratios* rather than as effects on a single probability
+- State the Independence of Irrelevant Alternatives (IIA) property, recognize when it is plausible, and name the red-bus/blue-bus failure
+- Construct the ordered logit/probit from one latent index and a set of estimated cutpoints, and read off the proportional-odds (parallel-regression) assumption
+- Fit both models in R (`nnet::multinom`, `MASS::polr`) and Python (`statsmodels` `MNLogit`, `OrderedModel`), and read their output correctly
+:::
+
+## When the Outcome Has More Than Two Doors
+
+The [logit and probit pages](../11-mle-gmm/likelihood.qmd) handled a single binary door: a patient either reached the HbA1c target or did not. Most outcomes in Swedish primary care are not so tidy. A patient registering with the *1177 Vårdguiden* portal chooses *among* several kinds of primary-care provider: a public *vårdcentral* run by the *region*, a privately operated but publicly funded *vårdcentral*, or a *digital läkarbesök* (digital doctor visit) app. A *distriktssköterska* (district nurse) records a patient's self-rated health on the standard five-step scale from "mycket dålig" (very poor) to "mycket god" (very good). Neither outcome is binary, and the two differ in a way that drives everything that follows.
+
+The provider choice is **unordered**: "public vårdcentral," "private vårdcentral," and "digital app" are distinct categories with no natural ranking. Self-rated health is **ordered**: the five steps march from worse to better, and "god" sits unambiguously between "någorlunda" (fair) and "mycket god." These two structures call for two different models --- the **multinomial logit** for unordered alternatives and the **ordered logit/probit** for ranked ones. Both are estimated by [maximum likelihood](../11-mle-gmm/likelihood.qmd), and both reduce to ordinary binary logit/probit when the number of categories drops to two.
+
+This page builds each from its own first principle: the multinomial logit from a model of *utility-maximizing choice*, and the ordered model from a *single latent index sliced by cutpoints*. We will see why their coefficients demand careful interpretation, where each model's key assumption bites, and how to fit them in both languages.
+
+## Multinomial Logit from Random Utility
+
+Suppose a newly registered patient $i$ must pick exactly one of $J$ provider types, $j \in \{1, \dots, J\}$. Random-utility theory (McFadden, 1974) says each patient attaches a *utility* to each option and chooses the one with the highest utility. The utility patient $i$ derives from option $j$ splits into a systematic part and a random part:
+
+$$
+U_{ij} = \mathbf{x}_i^{\top}\boldsymbol{\beta}_j + \varepsilon_{ij}.
+$$
+
+**Read this as**: "the utility of provider $j$ for patient $i$ equals an observed index --- the patient's characteristics $\mathbf{x}_i$ (age, distance to clinic, chronic-disease burden) weighted by option-specific coefficients $\boldsymbol{\beta}_j$ --- plus an idiosyncratic shock $\varepsilon_{ij}$ that the analyst never sees." The patient chooses provider $j$ exactly when $U_{ij} \ge U_{ik}$ for every other option $k$.
+
+The model becomes the **multinomial logit** under one specific distributional assumption: the shocks $\varepsilon_{ij}$ are i.i.d. across options and patients, each drawn from a *Type-I extreme value* (Gumbel) distribution. This particular choice is not arbitrary --- it is the one that makes the maximization "which utility is largest?" collapse into a clean closed form. The probability that patient $i$ chooses option $j$ becomes the **softmax**:
+
+::: {.glass-card .glass-card--definition}
+The **multinomial logit choice probability** for option $j$ is the softmax of the linear indices:
+
+$$
+P(y_i = j \mid \mathbf{x}_i) \;=\; \frac{\exp(\mathbf{x}_i^{\top}\boldsymbol{\beta}_j)}{\displaystyle\sum_{k=1}^{J} \exp(\mathbf{x}_i^{\top}\boldsymbol{\beta}_k)}.
+$$
+
+**Read this as**: "the probability that patient $i$ picks provider $j$ equals $e$ raised to $j$'s index, divided by the sum of $e$ raised to *every* option's index." The exponentials are non-negative and the denominator sums them, so the $J$ probabilities are each in $(0,1)$ and add to exactly 1 --- a genuine probability distribution over the alternatives.
+:::
+
+The coefficients $\boldsymbol{\beta}_j$ are not separately identified, because adding the *same* constant vector to every $\boldsymbol{\beta}_j$ multiplies numerator and denominator by the same factor and leaves all probabilities unchanged. We pin them down by choosing a **base (reference) category** --- say the public vårdcentral --- and setting $\boldsymbol{\beta}_{\text{base}} = \mathbf{0}$. Every other option's coefficients are then read *relative to* that base. With $J = 2$, this is exactly binary logit: one index, one base.
+
+## Relative-Risk Ratios, Not Probability Effects
+
+Here is the trap that snares every first-time user of multinomial logit. A positive coefficient $\beta_{jk}$ on covariate $k$ does **not** mean "raising $x_k$ raises the probability of choosing option $j$." It means "raising $x_k$ raises the *odds of $j$ relative to the base*." Because all probabilities must still sum to 1, pushing one up necessarily pushes others down, and the net effect on $P(y_i = j)$ can even flip sign.
+
+The clean quantity is the **relative-risk ratio** (RRR), obtained by exponentiating the coefficient. From the softmax, the ratio of two choice probabilities is strikingly simple:
+
+$$
+\frac{P(y_i = j)}{P(y_i = \text{base})} \;=\; \exp(\mathbf{x}_i^{\top}\boldsymbol{\beta}_j).
+$$
+
+**Read this as**: "the odds of choosing provider $j$ over the base provider are $e$ raised to $j$'s linear index." The whole denominator cancels --- the relative odds of $j$ versus the base depend *only* on $j$'s own coefficients, not on any other option. A one-unit rise in $x_k$ multiplies those relative odds by $\exp(\beta_{jk})$, which is the RRR.
+
+::: {.glass-card .glass-card--insight}
+**Coefficient, RRR, and marginal effect are three different animals.** The raw coefficient $\beta_{jk}$ is on the *log relative-odds* scale (sign tells you direction versus base). The RRR $\exp(\beta_{jk})$ is the multiplicative factor on those relative odds (RRR $> 1$ means more likely than base; RRR $< 1$ means less likely). The *marginal effect* $\partial P(y_i=j)/\partial x_k$ is what most readers actually want --- and it depends on *all* the coefficients through the softmax, must be computed at specified covariate values, and can carry the opposite sign from $\beta_{jk}$. See [Marginal Effects](marginal-effects.qmd) for how to turn coefficients into the effects people care about.
+:::
+
+## Independence of Irrelevant Alternatives (IIA)
+
+The cancellation that made the RRR so clean has a dark side. Because $P(j)/P(\text{base}) = \exp(\mathbf{x}_i^{\top}\boldsymbol{\beta}_j)$ ignores every option other than $j$ and the base, the *ratio of any two choice probabilities is independent of which other options exist*. This is the **Independence of Irrelevant Alternatives** property.
+
+::: {.glass-card .glass-card--assumption}
+**Independence of Irrelevant Alternatives (IIA).** For any two alternatives $j$ and $m$,
+
+$$
+\frac{P(y_i = j)}{P(y_i = m)} \;=\; \exp\!\big(\mathbf{x}_i^{\top}(\boldsymbol{\beta}_j - \boldsymbol{\beta}_m)\big),
+$$
+
+which does **not** depend on the set of other available alternatives. Adding or removing a *third* option leaves the odds of $j$ versus $m$ exactly unchanged.
+
+This holds because the Gumbel shocks $\varepsilon_{ij}$ are assumed *independent across alternatives*: no two options share an unobserved taste component.
+:::
+
+IIA is reasonable when the alternatives are genuinely distinct in patients' minds. It fails spectacularly when two options are close substitutes --- they share unobserved attributes, violating the independence of the shocks. The classic cautionary tale is the **red-bus/blue-bus problem**.
+
+::: {.glass-card .glass-card--warning}
+**The red-bus/blue-bus failure.** Suppose commuters split evenly between *car* and a *red bus*, so $P(\text{car}) = P(\text{red bus}) = \tfrac12$ and the odds are $1{:}1$. Now introduce a *blue bus*, identical to the red bus in every way but colour. Common sense says bus riders split between the two buses, leaving roughly $P(\text{car}) = \tfrac12$, $P(\text{red}) = P(\text{blue}) = \tfrac14$. But IIA *forces* the car-to-red odds to stay $1{:}1$, so multinomial logit predicts $P(\text{car}) = P(\text{red}) = P(\text{blue}) = \tfrac13$ --- the irrelevant blue bus has magically stolen probability from the car. The model cannot see that the two buses are near-perfect substitutes.
+
+**In a Swedish primary-care setting:** treat a "private vårdcentral" and a "digital app run by the same private operator" as two options. They share an unobserved "trust in private providers" taste, so introducing the second cannibalizes the first far more than it touches the public vårdcentral --- exactly the substitution IIA forbids. When alternatives are close substitutes, reach for **nested logit** or **mixed (random-coefficients) logit** instead, or test IIA with a Hausman--McFadden specification test.
+:::
+
+## Ordered Outcomes: One Latent Index, Several Cutpoints
+
+Self-rated health is a different beast. Its five categories are *ordered*, and we want a model that respects that ranking with far fewer parameters than a multinomial logit would spend. The ordered logit/probit does this by positing a single, continuous **latent index** of "true underlying health" that we never observe directly:
+
+$$
+y_i^{*} \;=\; \mathbf{x}_i^{\top}\boldsymbol{\beta} + \varepsilon_i.
+$$
+
+**Read this as**: "each patient has an unobserved latent health score $y_i^{*}$ equal to an observed index $\mathbf{x}_i^{\top}\boldsymbol{\beta}$ (age, HbA1c, number of yearly visits, exercise) plus noise $\varepsilon_i$." We do not see $y_i^{*}$; we see only which *band* of the latent scale the patient falls into, carved out by a set of estimated **cutpoints** (thresholds) $\tau_1 < \tau_2 < \cdots < \tau_{J-1}$:
+
+$$
+y_i = \begin{cases}
+1 \ (\text{mycket dålig}) & \text{if } y_i^{*} \le \tau_1,\\
+2 \ (\text{dålig}) & \text{if } \tau_1 < y_i^{*} \le \tau_2,\\
+\;\;\vdots & \\
+J \ (\text{mycket god}) & \text{if } y_i^{*} > \tau_{J-1}.
+\end{cases}
+$$
+
+**Read this as**: "the patient reports category $j$ exactly when the latent health index lands between cutpoint $\tau_{j-1}$ and cutpoint $\tau_j$." A single slope vector $\boldsymbol{\beta}$ shifts the *whole* index left or right; the cutpoints stay fixed and chop it into ordered slices. The probability of each observed category is the area under the error density that falls between two consecutive cutpoints.
+
+::: {.glass-card .glass-card--definition}
+The **ordered-response probability** of category $j$ is the difference of two cumulative error probabilities:
+
+$$
+P(y_i = j \mid \mathbf{x}_i) \;=\; F(\tau_j - \mathbf{x}_i^{\top}\boldsymbol{\beta}) \;-\; F(\tau_{j-1} - \mathbf{x}_i^{\top}\boldsymbol{\beta}),
+$$
+
+with $\tau_0 = -\infty$ and $\tau_J = +\infty$. Here $F$ is the **logistic** CDF for ordered *logit* and the **standard normal** CDF $\Phi$ for ordered *probit*.
+
+**Read this as**: "the chance of reporting category $j$ is the cumulative probability that the latent index lands below the upper cutpoint $\tau_j$, minus the cumulative probability it lands below the lower cutpoint $\tau_{j-1}$ --- the slab of probability mass trapped between the two thresholds." Raising the index $\mathbf{x}_i^{\top}\boldsymbol{\beta}$ slides the density right, pouring mass out of the low categories and into the high ones.
+:::
+
+Because the latent scale has no natural origin or unit, we normalize: the index carries no separate intercept (the cutpoints absorb the location), and the error variance is fixed (variance $\pi^2/3$ for logit, $1$ for probit). What we estimate are the slopes $\boldsymbol{\beta}$ and the $J-1$ cutpoints. With two categories, there is one cutpoint and the model *is* binary logit/probit.
+
+## See It: Cutpoints Slicing the Latent Health Index
+
+The interactive below is the heart of the page. It draws the latent-index error density and three movable cutpoints that carve the line into four ordered self-rated-health categories. The **index slider** sets $\mathbf{x}_i^{\top}\boldsymbol{\beta}$ --- think of it as "this patient's observed health score" --- and slides the whole density along the axis. The shaded areas between cutpoints *are* the category probabilities; watch them pour out of "Dålig" and into "Mycket god" as you raise the index. The bar chart underneath reads those four areas directly.
+
+::: {.interactive-container}
+
+#### Ordered choice: a latent index sliced by cutpoints
+
+```{ojs}
+//| echo: false
+// ─── Uppsala-academic palette, shared across this page's interactives. ───
+bcmnl_pal = ({
+  red:    "#990000",   // focal series (Uppsala red)
+  slate:  "#3d5a6c",   // secondary / comparison
+  green:  "#2e6f40",   // good / on-target
+  ochre:  "#9c7a33",   // highlight / cutpoints
+  ink:    "#1c1c1a",   // ink text & reference lines
+  axis:   "#79766e",   // axis label text (Uppsala muted ink)
+  hair:   "#e6e3db",   // gridlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+// The four ordered self-rated-health categories, low -> high. Each is given a
+// fixed colour on a worse-to-better ramp (red = poor, green = good) so the bars
+// and shaded slabs stay legible as the cutpoints move.
+bcmnl_cats = [
+  { key: "Dålig",       color: "#990000" },
+  { key: "Någorlunda",  color: "#9c7a33" },
+  { key: "God",         color: "#3d5a6c" },
+  { key: "Mycket god",  color: "#2e6f40" }
+]
+```
+
+```{ojs}
+//| echo: false
+viewof bcmnl_index = Inputs.range([-3, 3], {
+  value: 0.4,
+  step: 0.05,
+  label: "Patient health index  xβ  (slides the density)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bcmnl_tau1 = Inputs.range([-3, 3], {
+  value: -1.1,
+  step: 0.05,
+  label: "Cutpoint τ₁  (Dålig | Någorlunda)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bcmnl_tau2 = Inputs.range([-3, 3], {
+  value: 0.2,
+  step: 0.05,
+  label: "Cutpoint τ₂  (Någorlunda | God)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bcmnl_tau3 = Inputs.range([-3, 3], {
+  value: 1.4,
+  step: 0.05,
+  label: "Cutpoint τ₃  (God | Mycket god)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bcmnl_link = Inputs.radio(["logit", "probit"], {
+  value: "logit",
+  label: "Latent error distribution"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sort the three thresholds so the model stays well-defined even if the reader
+// drags one cutpoint past another. Ordered logit/probit REQUIRES τ₁<τ₂<τ₃.
+bcmnl_taus = [bcmnl_tau1, bcmnl_tau2, bcmnl_tau3].slice().sort((a, b) => a - b)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Standard logistic and normal pdf/cdf. The latent index xβ shifts the density,
+// so we evaluate F and f at (t − xβ): a higher index slides probability mass to
+// the right, into the better health categories.
+bcmnl_logisticPdf = z => { const e = Math.exp(-z); return e / Math.pow(1 + e, 2); }
+bcmnl_logisticCdf = z => 1 / (1 + Math.exp(-z))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Standard normal pdf and an Abramowitz–Stegun rational approximation of Φ.
+bcmnl_normalPdf = z => Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI)
+bcmnl_normalCdf = function (z) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = bcmnl_normalPdf(z);
+  const p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 +
+            t * (-1.821255978 + t * 1.330274429))));
+  return z >= 0 ? 1 - p : p;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Select pdf/cdf according to the chosen link, evaluated on the SHIFTED axis.
+bcmnl_pdf = z => bcmnl_link === "logit" ? bcmnl_logisticPdf(z) : bcmnl_normalPdf(z)
+bcmnl_cdf = z => bcmnl_link === "logit" ? bcmnl_logisticCdf(z) : bcmnl_normalCdf(z)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The density curve, shifted by the index: f(t − xβ) sampled on a fine grid.
+bcmnl_density = d3.range(-5, 5.001, 0.04).map(t => ({
+  t,
+  y: bcmnl_pdf(t - bcmnl_index)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Category probabilities = slabs of the shifted density between cutpoints, i.e.
+// P(j) = F(τ_j − xβ) − F(τ_{j−1} − xβ), with τ₀=−∞ and τ₄=+∞.
+bcmnl_probs = {
+  const lo = [-Infinity, ...bcmnl_taus];
+  const hi = [...bcmnl_taus, Infinity];
+  return bcmnl_cats.map((c, j) => {
+    const upper = hi[j] === Infinity ? 1 : bcmnl_cdf(hi[j] - bcmnl_index);
+    const lower = lo[j] === -Infinity ? 0 : bcmnl_cdf(lo[j] - bcmnl_index);
+    return { key: c.key, color: c.color, p: Math.max(0, upper - lower) };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Shade the area under the density inside each category band. We clip the
+// density grid to [τ_{j−1}, τ_j] and add the two vertical "walls" so areaY
+// closes cleanly on the baseline.
+bcmnl_bands = {
+  const lo = [-5, ...bcmnl_taus];
+  const hi = [...bcmnl_taus, 5];
+  return bcmnl_cats.map((c, j) => {
+    const a = lo[j], b = hi[j];
+    const pts = bcmnl_density.filter(d => d.t >= a && d.t <= b);
+    const seg = [
+      { t: a, y: bcmnl_pdf(a - bcmnl_index), key: c.key, color: c.color },
+      ...pts.map(d => ({ ...d, key: c.key, color: c.color })),
+      { t: b, y: bcmnl_pdf(b - bcmnl_index), key: c.key, color: c.color }
+    ];
+    return seg;
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// ── Top panel: the latent density, its cutpoints, and the shaded slabs. ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 300,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 16,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: bcmnl_pal.axis
+  },
+  x: { label: "Latent health index  y*  →", domain: [-5, 5], grid: false },
+  // Domain max 0.42 so the NORMAL peak (≈0.399 under probit) is not clipped;
+  // the logistic peak (0.25) sits comfortably below it too.
+  y: { label: "↑ density", domain: [0, 0.42], grid: true, ticks: 4 },
+  marks: [
+    Plot.gridY({ stroke: bcmnl_pal.hair }),
+    // Shaded category slabs (one areaY per band, coloured by category).
+    ...bcmnl_bands.map(seg => Plot.areaY(seg, {
+      x: "t", y: "y", fill: seg[0].color, fillOpacity: 0.30
+    })),
+    // The density curve itself (focal — Uppsala red).
+    Plot.line(bcmnl_density, { x: "t", y: "y", stroke: bcmnl_pal.red, strokeWidth: 2.5 }),
+    // The three cutpoints as ochre dashed walls.
+    Plot.ruleX(bcmnl_taus, { stroke: bcmnl_pal.ochre, strokeWidth: 2, strokeDasharray: "5,4" }),
+    // Cutpoint labels in the top band (Plot.ruleX has no text channel — use text).
+    Plot.text(
+      bcmnl_taus.map((t, i) => ({ t, lab: `τ${["₁", "₂", "₃"][i]}` })),
+      {
+        x: "t", y: () => 0.405, text: "lab",
+        fill: bcmnl_pal.ochre, fontWeight: 700, fontSize: 11, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }
+    ),
+    // Mark the index location on the baseline (slate dot).
+    Plot.dot([{ t: bcmnl_index, y: 0 }], { x: "t", y: "y", fill: bcmnl_pal.slate, r: 5 }),
+    Plot.text([{ t: bcmnl_index, y: 0 }], {
+      x: "t", y: () => 0.03, text: () => "xβ",
+      fill: bcmnl_pal.slate, fontWeight: 700, fontSize: 11, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// ── Bottom panel: the four category probabilities as a bar chart. ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 230,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 22,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: bcmnl_pal.axis
+  },
+  x: { label: "Self-rated health category", domain: bcmnl_cats.map(c => c.key) },
+  y: { label: "↑ P(category)", domain: [0, 1], grid: true, percent: true },
+  marks: [
+    Plot.gridY({ stroke: bcmnl_pal.hair }),
+    Plot.barY(bcmnl_probs, { x: "key", y: "p", fill: "color", fillOpacity: 0.85 }),
+    Plot.ruleY([0], { stroke: bcmnl_pal.ink }),
+    // Value labels above each bar, with a white halo so they read over gridlines.
+    Plot.text(bcmnl_probs, {
+      x: "key", y: "p",
+      text: d => `${(d.p * 100).toFixed(0)}%`,
+      dy: -8, fill: bcmnl_pal.ink, fontWeight: 700, fontSize: 12, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout: the most likely category and the probability vector. Built in an
+// html`` cell so reactive values interpolate (markdown ${...} would render raw).
+{
+  const top = bcmnl_probs.reduce((a, b) => (b.p > a.p ? b : a));
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:#f6f5f1; border:1px solid #e6e3db;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.05rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Index xβ", bcmnl_index.toFixed(2), "#3d5a6c")}
+    ${tile("Most likely", top.key, top.color)}
+    ${tile("its P", (top.p * 100).toFixed(1) + "%", "#990000")}
+    ${tile("Σ P", (bcmnl_probs.reduce((s, d) => s + d.p, 0) * 100).toFixed(0) + "%", "#2e6f40")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Cutpoint Visual
+
+Work through these in order; each isolates one moving part.
+
+**Step 1: Read the density and its slabs.** The red curve is the latent error density centred on the patient's health index $\mathbf{x}_i^{\top}\boldsymbol{\beta}$ (the slate "xβ" dot on the baseline). The three ochre dashed walls are the cutpoints $\tau_1, \tau_2, \tau_3$. The coloured area between consecutive walls is the probability of the corresponding self-rated-health category --- low (red) on the left through high (green) on the right.
+
+**Step 2: Match areas to bars.** The bottom bar chart simply reads off those four shaded areas. Confirm that the four bars sum to 100% (the "Σ P" tile stays green at 100%): the slabs partition the entire density, so the probabilities must add to one.
+
+**Step 3: Slide the index.** Drag **Patient health index xβ** to the right. The whole density slides right, its mass pours out of "Dålig" and "Någorlunda" and into "God" and "Mycket god," and the bars shift accordingly. This is the model's core mechanic: a single index moves *all* category probabilities at once, monotonically up the ordered scale.
+
+**Step 4: Move a cutpoint.** Drag **τ₂** (Någorlunda | God) leftward. You are *narrowing* the "Någorlunda" band and *widening* "God," so probability transfers from the former to the latter --- without touching the index. Cutpoints set where one category ends and the next begins; the data estimate them. (If you drag a cutpoint past its neighbour, the model auto-sorts them, since ordered models require $\tau_1 < \tau_2 < \tau_3$.)
+
+**Step 5: Switch the link.** Toggle from **logit** to **probit**. The logistic density has slightly fatter tails than the normal, so the extreme categories ("Dålig," "Mycket god") lose a little mass under probit. The qualitative story --- one index, ordered slabs --- is identical; the two links rarely disagree on substantive conclusions.
+
+## The Proportional-Odds Assumption
+
+The ordered model spends only *one* slope vector $\boldsymbol{\beta}$ on all $J-1$ thresholds. That parsimony rests on a strong restriction.
+
+::: {.glass-card .glass-card--assumption}
+**Proportional odds (parallel regressions).** A covariate's effect $\boldsymbol{\beta}$ is the *same across every cutpoint*. Equivalently, for ordered logit the effect of $x_k$ on the log-odds of being *above* any threshold $j$ is identical for all $j$:
+
+$$
+\log \frac{P(y_i > j \mid \mathbf{x}_i)}{P(y_i \le j \mid \mathbf{x}_i)} \;=\; \mathbf{x}_i^{\top}\boldsymbol{\beta} - \tau_j .
+$$
+
+**Read this as**: "the log-odds of reporting a category above $j$ versus at-or-below $j$ is the same linear index shifted only by the threshold $\tau_j$." The slope $\boldsymbol{\beta}$ does not carry a $j$ subscript --- one extra year of age (or one extra yearly visit) shifts the odds of "better than fair" by the *same* amount as the odds of "better than good."
+:::
+
+::: {.glass-card .glass-card--warning}
+**When proportional odds fails.** If a covariate matters more at one end of the scale than the other --- say HbA1c sharply distinguishes "Dålig" from everything above it but barely separates "God" from "Mycket god" --- then a single $\boldsymbol{\beta}$ is wrong, and the parallel-regression assumption is violated. Test it with a Brant test (Stata's `brant`, R's `brant::brant`) or a likelihood-ratio test against a *generalized ordered logit* that lets $\boldsymbol{\beta}_j$ vary by threshold. If it fails, options include the **generalized ordered logit** (`oglmx`, `vglm` with `cumulative(parallel = FALSE)`), a **partial proportional-odds** model, or simply falling back to a **multinomial logit** that imposes no ordering at all (at the cost of $J-1$ extra parameter sets).
+:::
+
+<details>
+<summary>Math Details: The softmax and the ordered-probit cutpoint probabilities</summary>
+<div class="details-content">
+
+### Multinomial logit from the Gumbel shock
+
+Under random utility $U_{ij} = V_{ij} + \varepsilon_{ij}$ with $V_{ij} = \mathbf{x}_i^{\top}\boldsymbol{\beta}_j$, option $j$ is chosen when $U_{ij} \ge U_{ik}$ for all $k$. If the $\varepsilon_{ij}$ are i.i.d. Type-I extreme value (Gumbel), with CDF $G(\varepsilon) = \exp(-e^{-\varepsilon})$, the probability that $j$ wins is
+
+$$
+P(y_i = j) = P\big(\varepsilon_{ik} \le \varepsilon_{ij} + V_{ij} - V_{ik},\ \forall k \ne j\big).
+$$
+
+Conditioning on $\varepsilon_{ij}$ and using independence, the $k \ne j$ terms multiply:
+
+$$
+P(y_i = j) = \int_{-\infty}^{\infty} \Big[\textstyle\prod_{k \ne j} \exp\!\big(-e^{-(\varepsilon + V_{ij} - V_{ik})}\big)\Big] \, e^{-\varepsilon} \exp(-e^{-\varepsilon}) \, d\varepsilon.
+$$
+
+Carrying out the integral (a standard Gumbel result) collapses everything to the softmax
+
+$$
+P(y_i = j) = \frac{e^{V_{ij}}}{\sum_{k=1}^{J} e^{V_{ik}}} = \frac{\exp(\mathbf{x}_i^{\top}\boldsymbol{\beta}_j)}{\sum_{k=1}^{J} \exp(\mathbf{x}_i^{\top}\boldsymbol{\beta}_k)}.
+$$
+
+Normalizing $\boldsymbol{\beta}_{\text{base}} = \mathbf{0}$ identifies the remaining coefficients, and the relative odds $P(j)/P(\text{base}) = \exp(\mathbf{x}_i^{\top}\boldsymbol{\beta}_j)$ follow immediately --- the source of both the RRR interpretation and the IIA property.
+
+### Ordered-probit cutpoint probabilities
+
+With latent index $y_i^{*} = \mathbf{x}_i^{\top}\boldsymbol{\beta} + \varepsilon_i$ and $\varepsilon_i \sim \mathcal{N}(0,1)$, the observed category is $y_i = j$ iff $\tau_{j-1} < y_i^{*} \le \tau_j$. Then
+
+$$
+P(y_i = j) = P(\tau_{j-1} < \mathbf{x}_i^{\top}\boldsymbol{\beta} + \varepsilon_i \le \tau_j)
+           = P(\tau_{j-1} - \mathbf{x}_i^{\top}\boldsymbol{\beta} < \varepsilon_i \le \tau_j - \mathbf{x}_i^{\top}\boldsymbol{\beta}).
+$$
+
+Because $\varepsilon_i$ is standard normal, this is a difference of two normal CDFs:
+
+$$
+P(y_i = j) = \Phi(\tau_j - \mathbf{x}_i^{\top}\boldsymbol{\beta}) - \Phi(\tau_{j-1} - \mathbf{x}_i^{\top}\boldsymbol{\beta}),
+$$
+
+with $\tau_0 = -\infty$ (so $\Phi(\tau_0 - \cdot) = 0$) and $\tau_J = +\infty$ (so $\Phi(\tau_J - \cdot) = 1$). Replacing $\Phi$ with the logistic CDF gives ordered *logit*. The log-likelihood over $n$ patients is $\ell(\boldsymbol{\beta}, \boldsymbol{\tau}) = \sum_{i=1}^n \sum_{j=1}^J \mathbb{1}\{y_i = j\} \log P(y_i = j)$, maximized jointly over the slopes and the cutpoints --- a direct application of the [likelihood machinery](../11-mle-gmm/likelihood.qmd). Differentiating the index (holding cutpoints fixed) shows the proportional-odds restriction: a single $\boldsymbol{\beta}$ shifts every threshold's log-odds by the same amount.
+
+</div>
+</details>
+
+## Fitting Both Models
+
+The panels below fit a multinomial logit for provider choice and an ordered logit/probit for self-rated health on small simulated Swedish primary-care datasets. The idiomatic packages are `nnet::multinom` and `MASS::polr` in R, and `statsmodels`' `MNLogit` and `OrderedModel` in Python.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("nnet", "MASS"))
+library(nnet)   # multinom(): multinomial logit
+library(MASS)   # polr(): proportional-odds ordered logit/probit
+
+set.seed(2024)
+n <- 600
+
+## ---- Data: provider choice + self-rated health for n patients ----
+age   <- round(rnorm(n, 52, 16))            # patient age
+dist  <- round(abs(rnorm(n, 8, 5)), 1)      # km to nearest vårdcentral
+hba1c <- round(rnorm(n, 52, 9))             # HbA1c (mmol/mol)
+
+# Unordered provider choice: public / private vårdcentral / digital app.
+# Younger, farther-from-clinic patients lean digital; this is a teaching DGP.
+score_priv <- -0.4 + 0.10 * (dist - 8) - 0.010 * (age - 52)
+score_dig  <- -0.2 + 0.18 * (dist - 8) - 0.045 * (age - 52)
+denom <- 1 + exp(score_priv) + exp(score_dig)          # public = base
+p_pub  <- 1 / denom; p_priv <- exp(score_priv) / denom; p_dig <- exp(score_dig) / denom
+provider <- apply(cbind(p_pub, p_priv, p_dig), 1,
+                  function(p) sample(c("public", "private", "digital"), 1, prob = p))
+provider <- relevel(factor(provider), ref = "public")  # public is the base
+
+## ---- Multinomial logit: provider ~ age + distance ----
+mnl <- multinom(provider ~ scale(age) + scale(dist), trace = FALSE)
+summary(mnl)
+# Relative-risk ratios = exp(coef): >1 means more likely than the public base.
+exp(coef(mnl))
+
+## ---- Ordered logit: self-rated health (1=Dålig ... 4=Mycket god) ----
+ystar  <- -0.05 * (hba1c - 52) - 0.02 * (age - 52) + rlogis(n)
+health <- cut(ystar, breaks = c(-Inf, -1.1, 0.2, 1.4, Inf),
+              labels = c("Dalig", "Nagorlunda", "God", "Mycket_god"),
+              ordered_result = TRUE)
+
+ol <- polr(health ~ scale(hba1c) + scale(age), method = "logistic")  # "probit" too
+summary(ol)                 # slopes + estimated cutpoints (Intercepts)
+exp(coef(ol))               # proportional-odds odds ratios
+head(predict(ol, type = "probs"))   # per-patient category probabilities
+```
+
+### Python
+
+```python
+# pip install statsmodels pandas numpy
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.discrete.discrete_model import MNLogit
+from statsmodels.miscmodels.ordinal_model import OrderedModel
+
+rng = np.random.default_rng(2024)
+n = 600
+
+# ---- Data: provider choice + self-rated health for n patients ----
+age   = rng.normal(52, 16, n)
+dist  = np.abs(rng.normal(8, 5, n))            # km to nearest vårdcentral
+hba1c = rng.normal(52, 9, n)                   # HbA1c (mmol/mol)
+
+# Unordered provider choice (public = base category).
+s_priv = -0.4 + 0.10 * (dist - 8) - 0.010 * (age - 52)
+s_dig  = -0.2 + 0.18 * (dist - 8) - 0.045 * (age - 52)
+denom  = 1 + np.exp(s_priv) + np.exp(s_dig)
+P = np.column_stack([1/denom, np.exp(s_priv)/denom, np.exp(s_dig)/denom])
+choice = np.array([rng.choice(["public", "private", "digital"], p=p) for p in P])
+
+z = lambda v: (v - v.mean()) / v.std()
+X = sm.add_constant(pd.DataFrame({"age_z": z(age), "dist_z": z(dist)}))
+
+# ---- Multinomial logit (statsmodels uses the first level as the base) ----
+y_mnl = pd.Categorical(choice, categories=["public", "private", "digital"])
+mnl = MNLogit(y_mnl.codes, X).fit(disp=False)
+print(mnl.summary())
+print("Relative-risk ratios:\n", np.exp(mnl.params))   # >1 = more likely than base
+
+# ---- Ordered logit: self-rated health, 4 ordered categories ----
+ystar  = -0.05 * (hba1c - 52) - 0.02 * (age - 52) + rng.logistic(size=n)
+health = pd.cut(ystar, bins=[-np.inf, -1.1, 0.2, 1.4, np.inf],
+                labels=["Dalig", "Nagorlunda", "God", "Mycket_god"], ordered=True)
+
+Xo = pd.DataFrame({"hba1c_z": z(hba1c), "age_z": z(age)})
+ol = OrderedModel(health, Xo, distr="logit").fit(method="bfgs", disp=False)  # "probit" too
+print(ol.summary())                       # slopes + estimated cutpoints
+print(ol.predict(Xo).head())              # per-patient category probabilities
+```
+
+:::
+
+In both languages, `multinom`/`MNLogit` returns one coefficient *block per non-base alternative* (exponentiate for relative-risk ratios), while `polr`/`OrderedModel` returns a *single* slope vector plus the $J-1$ cutpoints. That contrast --- many coefficient blocks versus one shared slope --- is the practical fingerprint of "unordered versus ordered."
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A multinomial logit of provider choice (base = public vårdcentral) reports a coefficient on `distance_km` of $\beta = 0.20$ for the *digital app* alternative. (a) Compute and interpret the relative-risk ratio. (b) A colleague concludes "so each extra km raises the probability of choosing the digital app." Is that necessarily correct? Explain.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The RRR is $\exp(0.20) = 1.221$. Each additional kilometre to the nearest vårdcentral multiplies the odds of choosing the *digital app relative to the public vårdcentral* by about 1.22 --- a 22% increase in those relative odds, holding other covariates fixed.
+
+**(b)** Not necessarily. The coefficient is on the *relative odds versus the base*, not on $P(\text{digital})$ itself. Because all probabilities sum to 1, the marginal effect $\partial P(\text{digital})/\partial \text{distance}$ depends on *every* alternative's coefficients through the softmax and must be evaluated at specific covariate values. In most cases here it will be positive, but a positive coefficient does not guarantee a positive marginal effect --- if distance also strongly pulls patients toward the *private* alternative, the digital probability could even fall. Always compute the marginal effect (see [Marginal Effects](marginal-effects.qmd)) before making probability claims.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In a region's commuting-mode model, $P(\text{car}) = P(\text{bus}) = 0.5$. The region adds a tram that is, to riders, nearly identical to the bus. (a) What does multinomial logit (under IIA) predict for the three probabilities? (b) What would you expect in reality? (c) Which property is violated and what is one model that fixes it?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** IIA forces the car-to-bus odds to stay $1{:}1$ regardless of the tram. With three options sharing that constraint, multinomial logit predicts $P(\text{car}) = P(\text{bus}) = P(\text{tram}) = 1/3 \approx 0.33$. The car's probability drops from 0.50 to 0.33 purely because an irrelevant near-duplicate of the bus appeared.
+
+**(b)** In reality the tram should cannibalize the bus, not the car: roughly $P(\text{car}) \approx 0.50$, $P(\text{bus}) \approx 0.25$, $P(\text{tram}) \approx 0.25$. The bus and tram are close substitutes.
+
+**(c)** The **Independence of Irrelevant Alternatives** property is violated, because bus and tram share an unobserved "public-transit taste" so their shocks are *not* independent. A **nested logit** (group bus and tram into a transit nest) or a **mixed/random-coefficients logit** relaxes IIA and recovers sensible substitution.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+An ordered probit of self-rated health (four ordered categories) on standardized HbA1c estimates a slope $\hat\beta_{\text{HbA1c}} = -0.30$ and cutpoints $\hat\tau_1 = -1.0$, $\hat\tau_2 = 0.3$, $\hat\tau_3 = 1.5$. For a patient with index $\mathbf{x}_i^{\top}\boldsymbol{\beta} = 0.30$ (one SD below mean HbA1c, so healthier), compute the probability of each of the four categories using $\Phi$. Verify they sum to 1. ($\Phi(-1.3)=0.097$, $\Phi(0)=0.500$, $\Phi(1.2)=0.885$.)
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Use $P(y=j) = \Phi(\tau_j - \mathbf{x}^{\top}\boldsymbol{\beta}) - \Phi(\tau_{j-1} - \mathbf{x}^{\top}\boldsymbol{\beta})$ with index $0.30$:
+
+- Arguments: $\tau_1 - 0.30 = -1.3$, $\tau_2 - 0.30 = 0.0$, $\tau_3 - 0.30 = 1.2$.
+- $P(\text{Dålig}) = \Phi(-1.3) - 0 = 0.097$.
+- $P(\text{Någorlunda}) = \Phi(0.0) - \Phi(-1.3) = 0.500 - 0.097 = 0.403$.
+- $P(\text{God}) = \Phi(1.2) - \Phi(0.0) = 0.885 - 0.500 = 0.385$.
+- $P(\text{Mycket god}) = 1 - \Phi(1.2) = 1 - 0.885 = 0.115$.
+
+**Sum:** $0.097 + 0.403 + 0.385 + 0.115 = 1.000$ $\checkmark$. The healthier index puts most mass in the two middle-to-good categories, exactly as the cutpoint visual shows when you slide the index right.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive, set the link to **logit** and the index to $0$. (a) With the default cutpoints, which category is most likely, and why? (b) Now drag the index toward $+3$. Describe what happens to the four probabilities and connect it to the proportional-odds assumption. (c) Why must the four bars always sum to 100%?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With the index at 0 and cutpoints near $-1.1, 0.2, 1.4$, the density is centred just below $\tau_2$, so the largest slab is the one straddling the centre --- "Någorlunda" or "God" depending on exact placement. The most probable category is whichever band captures the most density mass around the centre of the curve.
+
+**(b)** As the index rises toward $+3$, the entire density slides right; mass drains out of "Dålig" and "Någorlunda" and accumulates in "God" and then "Mycket god," until "Mycket god" dominates. Crucially, *one* index movement reshapes *all four* probabilities simultaneously and monotonically up the ordered scale --- that single-slope, parallel-shift behaviour is precisely the proportional-odds assumption made visible.
+
+**(c)** The three cutpoints partition the real line into four exhaustive, non-overlapping bands, and the density integrates to 1 over the whole line. The four slabs therefore tile the entire area under the curve, so their probabilities must sum to exactly 1 (100%) --- the "Σ P" tile stays green.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Multinomial logit models *unordered* alternatives via softmax probabilities derived from random utility with i.i.d. Gumbel shocks; one alternative is the base, and all others' coefficients are read relative to it.
+- Exponentiated multinomial coefficients are *relative-risk ratios* (odds versus the base), not probability effects --- the marginal effect depends on all coefficients and can even flip sign.
+- IIA forces the odds of any two alternatives to ignore the other options; it fails when alternatives are close substitutes (red-bus/blue-bus), where nested or mixed logit is needed.
+- Ordered logit/probit builds one latent index sliced by $J-1$ estimated cutpoints; the category probability is the slab of the error density trapped between two consecutive thresholds.
+- The proportional-odds (parallel-regression) assumption gives the ordered model a single shared slope --- parsimonious but testable (Brant test); when it fails, use generalized ordered logit or fall back to multinomial logit.
+:::
+
+## What Comes Next
+
+Multinomial and ordered models extend the binary logit/probit toolkit to outcomes with several categories --- unordered or ranked --- all estimated by the same [maximum-likelihood](../11-mle-gmm/likelihood.qmd) machinery and all demanding care when translating coefficients into the marginal effects readers actually want. But some outcomes are neither binary nor categorical: they are *counts* --- the number of yearly *vårdcentral* visits, hospital readmissions within 30 days, or prescriptions filled. Counts are non-negative integers with their own mean--variance structure, and forcing them into a linear or categorical mould throws away information. The next module, [Count Data](../17-count-data/poisson-regression.qmd), develops the Poisson and negative-binomial models built for exactly this kind of outcome.

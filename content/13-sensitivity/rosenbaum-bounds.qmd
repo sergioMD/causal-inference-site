@@ -1,0 +1,647 @@
+---
+title: "Rosenbaum Bounds"
+subtitle: "Sensitivity of a matched study to hidden bias"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State Rosenbaum's sensitivity model and interpret the parameter $\Gamma$ as a bound on how unequal two matched units' *odds* of treatment could be because of an unobserved confounder
+- Explain why, once we admit hidden bias, a matched-pairs $p$-value becomes a $p$-value *interval* rather than a single number
+- Compute the worst-case (upper-bound) one-sided $p$-value for a matched-pairs sign test under a given $\Gamma$
+- Read off the **breakpoint** $\Gamma$ at which a significant finding first loses significance, and use it to judge robustness to hidden bias
+- Distinguish a finite-sample breakpoint from **design sensitivity** $\tilde\Gamma$, the value the breakpoint approaches as the sample grows
+:::
+
+## When "Adjusting for Everything Observed" Is Not Enough
+
+A region in mid-Sweden ran a structured *Diabetessamordning* (diabetes coordination program) at its *vårdcentraler* (primary care centers). To evaluate it, an analyst built a [matched study](../09-matching/matching-methods.qmd): each enrolled patient was paired with a non-enrolled patient of the same age band, sex, comorbidity burden (Charlson index), and baseline HbA1c. Within each of the $S = 20$ informative pairs, the analyst recorded which member ended the year with the *lower* HbA1c --- lower is better. The program member came out ahead in $T = 16$ of the 20 pairs. A matched-pairs sign test rejects "no effect" with a one-sided $p$-value of $0.0059$. The finding looks solid.
+
+But matching only balances what is *measured*. Suppose patients who enrolled were also, on average, more motivated --- they kept appointments, walked more, watched their diet --- in ways not captured by any variable in the register. Two patients who look identical on age, sex, Charlson, and baseline HbA1c might still differ in this hidden motivation, and motivation could push both *enrollment* and *outcome*. Matching cannot rule this out. The question Rosenbaum sensitivity analysis answers is not "is there hidden bias?" --- we can never know --- but rather: **how strong would a hidden confounder have to be to explain away the result?**
+
+That reframing is the entire contribution. Instead of asserting that ignorability holds (the [selection-on-observables](../09-matching/selection-on-observables.qmd) assumption matching rides on), we *quantify our exposure* to its failure. A finding that survives only a whisper of hidden bias is fragile; one that survives a hurricane is robust. Rosenbaum bounds put a number on the wind speed.
+
+This page is the matched-study counterpart to the [previous page on omitted-variable sensitivity](ovb-sensitivity.qmd), which worked in the regression world of partial $R^2$. Here the design is a set of matched pairs, and the sensitivity parameter is an odds ratio.
+
+## The Sensitivity Parameter $\Gamma$
+
+Within a matched pair, the two units were *constructed* to be identical on observed covariates $x$. If treatment assignment depended only on $x$, then --- given that exactly one of the pair was treated --- each member was equally likely to be the treated one: a fair coin, probability $\tfrac12$ each. That is the situation $\Gamma = 1$: **no hidden bias**.
+
+Hidden bias breaks the coin. Let $\pi_j$ be unit $j$'s probability of receiving treatment, and write the *odds* of treatment as $\pi_j/(1-\pi_j)$. Rosenbaum's model bounds how far apart the odds of two matched units $j$ and $k$ (who share the same $x$) can be:
+
+$$
+\frac{1}{\Gamma} \;\le\; \frac{\pi_j/(1-\pi_j)}{\pi_k/(1-\pi_k)} \;\le\; \Gamma, \qquad \Gamma \ge 1.
+$$
+
+::: {.glass-card .glass-card--definition}
+The **sensitivity parameter** $\Gamma$ is the largest factor by which two units matched on observed covariates may differ in their *odds* of receiving treatment, owing to an unmeasured confounder.
+
+**Read this aloud as**: "for any two units with the same observed $x$, the ratio of their treatment odds lies between one-over-Gamma and Gamma." $\Gamma = 1$ forces the two odds to be equal --- identical observed covariates imply identical treatment probability, so within a pair each member is treated with probability $\tfrac12$ (the randomization benchmark). $\Gamma = 2$ permits one matched patient to have up to *twice* the odds of enrolling as their otherwise-identical partner, because of something we never measured. Larger $\Gamma$ admits stronger hidden bias.
+:::
+
+The crucial consequence is for the within-pair coin. If a hidden confounder can shift the odds by a factor up to $\Gamma$, then within a discordant pair the probability that a *particular* member is the treated one is no longer pinned at $\tfrac12$. It can lie anywhere in a band:
+
+$$
+p^{-} \;=\; \frac{1}{1+\Gamma} \;\le\; \Pr(\text{this member treated}) \;\le\; \frac{\Gamma}{1+\Gamma} \;=\; p^{+}.
+$$
+
+**Read this as**: "the within-pair treatment probability is squeezed between one-over-one-plus-Gamma and Gamma-over-one-plus-Gamma." At $\Gamma = 1$ both ends equal $\tfrac12$ and the coin is fair. At $\Gamma = 2$ the band widens to $[\tfrac13, \tfrac23]$. This single band is the engine of everything below: it converts an assumption about hidden bias into a range of possible null distributions for the test statistic.
+
+::: {.glass-card .glass-card--insight}
+**$\Gamma$ is a "what-if," not an estimate.** Nothing in the data identifies $\Gamma$ --- it parameterizes a confounder we cannot see. We do not estimate $\Gamma$; we *sweep* it and watch what happens to our conclusion. The output is not "the bias is $\Gamma = 1.8$" but "our finding stays significant for every $\Gamma$ up to $1.49$, and only beyond that could hidden bias overturn it."
+:::
+
+## From One $p$-Value to a $p$-Value Interval
+
+Under $\Gamma = 1$, each of the $S$ discordant pairs is an independent fair coin, and the number of pairs where the *treated* unit does better, call it $T$, is $\text{Binomial}(S, \tfrac12)$ under the null of no treatment effect. The one-sided $p$-value is the familiar sign test, $\Pr(\text{Bin}(S,\tfrac12) \ge T)$.
+
+Once $\Gamma > 1$, the per-pair probability is no longer $\tfrac12$ but only *bounded* inside $[p^-, p^+]$. We do not know the true probabilities --- they depend on the unmeasured confounder --- so we report the *range* of $p$-values consistent with the model. The two extremes are what matter:
+
+::: {.glass-card .glass-card--definition}
+For a one-sided test whose alternative is that treatment *helps* (so large $T$ is evidence against the null), the worst- and best-case $p$-values under a given $\Gamma$ are
+
+$$
+p^{+}\text{-bound: } \overline{p}(\Gamma) = \Pr\!\big(\text{Bin}(S, \tfrac{\Gamma}{1+\Gamma}) \ge T\big),
+\qquad
+p^{-}\text{-bound: } \underline{p}(\Gamma) = \Pr\!\big(\text{Bin}(S, \tfrac{1}{1+\Gamma}) \ge T\big).
+$$
+
+**Read $\overline{p}(\Gamma)$ aloud as**: "the probability that a Binomial with $S$ trials and success probability Gamma-over-one-plus-Gamma is at least $T$." This is the **worst case**: it lets a hidden confounder maximally *manufacture* the appearance that treated units do better, inflating the per-pair probability to $p^{+}$ and so making the observed $T$ look as unsurprising as the model permits. Because it is the *largest* $p$-value the model allows, it is the honest number to defend a finding against. The lower bound $\underline{p}(\Gamma)$ is its mirror image and is rarely the operative quantity for a positive finding.
+:::
+
+At $\Gamma = 1$ the two bounds collapse onto the ordinary sign-test $p$-value. As $\Gamma$ grows, the *upper* bound $\overline{p}(\Gamma)$ rises monotonically: the more hidden bias we permit, the more easily an unmeasured confounder could account for our 16-of-20, and the weaker our evidence becomes. The headline of a Rosenbaum analysis is the value of $\Gamma$ at which $\overline{p}(\Gamma)$ first crosses the significance threshold.
+
+::: {.glass-card .glass-card--definition}
+The **breakpoint** (or *sensitivity value*) $\Gamma^\star$ is the smallest $\Gamma$ at which the worst-case $p$-value reaches the significance level $\alpha$:
+
+$$
+\Gamma^\star = \min\{\Gamma \ge 1 : \overline{p}(\Gamma) \ge \alpha\}.
+$$
+
+For all $\Gamma < \Gamma^\star$ the finding remains significant *no matter how the admitted hidden bias is configured*; at $\Gamma = \Gamma^\star$ a sufficiently placed confounder could just barely erase significance. A larger $\Gamma^\star$ means a more robust finding.
+:::
+
+For our diabetes study ($S=20$, $T=16$, $\alpha = 0.05$), the worst-case $p$-value is $0.0059$ at $\Gamma = 1$, climbs to $0.037$ at $\Gamma = 1.4$, and crosses $0.05$ at $\Gamma^\star \approx 1.49$. **Interpretation**: a hidden confounder would need to raise one matched patient's odds of enrolling by roughly $49\%$ over their observationally-identical partner before it could explain away the program's apparent benefit. That is a modest amount of robustness --- enough to take seriously, not enough to be complacent.
+
+## See It: The $\Gamma$-Slider and the Widening $p$-Value Band
+
+The interactive plots the worst-case $p$-value $\overline{p}(\Gamma)$ (Uppsala red) and the best-case bound $\underline{p}(\Gamma)$ (slate) as you sweep $\Gamma$. The shaded band between them is the range of $p$-values consistent with hidden bias of strength up to that $\Gamma$. The horizontal ochre line is your significance threshold $\alpha$; the green marker on the $\Gamma$-axis is the breakpoint $\Gamma^\star$ where the worst-case curve crosses it. Drag the $\Gamma$ slider and watch the band fan open; change the pair counts to see a stronger or weaker design move the breakpoint.
+
+::: {.interactive-container}
+
+#### Worst-case and best-case $p$-value bounds vs. hidden bias $\Gamma$
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+seros_pal = ({
+  focal:  "#990000",   // worst-case p (focal series, Uppsala red)
+  slate:  "#3d5a6c",   // best-case p (comparison)
+  good:   "#2e6f40",   // breakpoint / robust
+  ochre:  "#9c7a33",   // alpha threshold / highlight
+  bad:    "#b3000b",   // not-significant alarm
+  ink:    "#1c1c1a",   // ink text & reference rules
+  axis:   "#79766e",   // axis text
+  hair:   "#e6e3db",   // gridlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+viewof seros_S = Inputs.range([6, 60], {
+  value: 20,
+  step: 1,
+  label: "Discordant pairs S (pairs with a clear winner)"
+})
+```
+
+```{ojs}
+//| echo: false
+// T tracks the chosen S near the clinic proportion 0.8 but is reader-overridable.
+// Re-created when S changes so it can never exceed S. (Reads seros_S, writes
+// seros_T — no cycle.)
+viewof seros_T = Inputs.range([0, seros_S], {
+  value: Math.round(0.8 * seros_S),
+  step: 1,
+  label: "Pairs where the treated unit did better, T"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof seros_Gamma = Inputs.range([1, 4], {
+  value: 1.5,
+  step: 0.01,
+  label: "Hidden bias Γ (drag to widen the band)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof seros_alpha = Inputs.range([0.01, 0.10], {
+  value: 0.05,
+  step: 0.005,
+  label: "Significance level α"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Exact upper-tail binomial P(Bin(n,p) >= t), computed in log space so the
+// factorials stay finite for n up to 60.
+seros_logFact = function (n) {
+  let s = 0;
+  for (let i = 2; i <= n; i++) s += Math.log(i);
+  return s;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+seros_logChoose = (n, k) =>
+  seros_logFact(n) - seros_logFact(k) - seros_logFact(n - k)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+seros_binomGE = function (n, t, p) {
+  if (t <= 0) return 1;
+  if (t > n) return 0;
+  const pc = Math.min(1 - 1e-12, Math.max(1e-12, p));
+  let s = 0;
+  for (let k = t; k <= n; k++) {
+    s += Math.exp(seros_logChoose(n, k) + k * Math.log(pc) + (n - k) * Math.log(1 - pc));
+  }
+  return Math.min(1, s);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Worst-case (upper) p-value at bias G: uses p+ = G/(1+G).
+seros_pUpper = G => seros_binomGE(seros_S, seros_T, G / (1 + G))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Best-case (lower) p-value at bias G: uses p- = 1/(1+G).
+seros_pLower = G => seros_binomGE(seros_S, seros_T, 1 / (1 + G))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Breakpoint Γ*: smallest Γ where the worst-case p first reaches α.
+// Bisection on the monotone increasing upper bound; capped at the slider max.
+seros_breakpoint = {
+  const gmax = 8;
+  if (seros_pUpper(1) >= seros_alpha) return 1;        // never significant
+  if (seros_pUpper(gmax) < seros_alpha) return gmax;   // robust beyond the axis
+  let lo = 1, hi = gmax;
+  for (let it = 0; it < 80; it++) {
+    const m = (lo + hi) / 2;
+    if (seros_pUpper(m) < seros_alpha) lo = m; else hi = m;
+  }
+  return (lo + hi) / 2;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sample both bounds on a fine Γ grid for the band.
+seros_curve = d3.range(1, 4.001, 0.02).map(G => ({
+  G,
+  upper: seros_pUpper(G),
+  lower: seros_pLower(G)
+}))
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginRight: 20,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: seros_pal.axis
+  },
+  x: {
+    label: "Hidden bias  Γ  →",
+    domain: [1, 4],
+    grid: false
+  },
+  y: {
+    label: "↑ One-sided p-value",
+    domain: [0, Math.min(1, Math.max(0.35, seros_pUpper(4) * 1.1))],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: seros_pal.hair }),
+    // The p-value band: range of p consistent with bias up to Γ.
+    Plot.areaY(seros_curve, {
+      x: "G", y1: "lower", y2: "upper",
+      fill: seros_pal.focal, fillOpacity: 0.08
+    }),
+    // Best-case bound (slate).
+    Plot.line(seros_curve, {
+      x: "G", y: "lower",
+      stroke: seros_pal.slate, strokeWidth: 1.5, strokeDasharray: "4,3"
+    }),
+    // Worst-case bound (focal red) — the operative curve.
+    Plot.line(seros_curve, {
+      x: "G", y: "upper",
+      stroke: seros_pal.focal, strokeWidth: 2.5
+    }),
+    // Significance threshold α (ochre).
+    Plot.ruleY([seros_alpha], {
+      stroke: seros_pal.ochre, strokeWidth: 1.75, strokeDasharray: "6,4"
+    }),
+    Plot.text([{ G: 3.85, y: seros_alpha }], {
+      x: "G", y: "y",
+      text: () => `α = ${seros_alpha.toFixed(3)}`,
+      fill: seros_pal.ochre, fontWeight: 700, fontSize: 11,
+      dy: -7, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Breakpoint Γ* marker on the x-axis (green if inside the plotted range).
+    seros_breakpoint <= 4 ? Plot.ruleX([seros_breakpoint], {
+      stroke: seros_pal.good, strokeWidth: 2, strokeDasharray: "5,4"
+    }) : null,
+    seros_breakpoint <= 4 ? Plot.dot([{ G: seros_breakpoint, y: seros_alpha }], {
+      x: "G", y: "y", fill: seros_pal.good, r: 5
+    }) : null,
+    seros_breakpoint <= 4 ? Plot.text([{ G: seros_breakpoint, y: seros_alpha }], {
+      x: "G", y: "y",
+      text: () => `Γ⋆ = ${seros_breakpoint.toFixed(2)}`,
+      fill: seros_pal.good, fontWeight: 700, fontSize: 12,
+      dy: 16, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+    // The reader's current Γ — vertical ink rule + dot on the worst-case curve.
+    Plot.ruleX([seros_Gamma], {
+      stroke: seros_pal.ink, strokeWidth: 1
+    }),
+    Plot.dot([{ G: seros_Gamma, y: seros_pUpper(seros_Gamma) }], {
+      x: "G", y: "y",
+      fill: "white", stroke: seros_pal.focal, strokeWidth: 2.5, r: 5.5
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tiles tying the picture to the numbers. Built inside an ojs cell
+// with html`` so reactive values interpolate (markdown ${...} would render
+// literally).
+{
+  const G = seros_Gamma;
+  const up = seros_pUpper(G);
+  const lo = seros_pLower(G);
+  const sig = up < seros_alpha;
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${seros_pal.fill}; border: 1px solid ${seros_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${seros_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("At your Γ", G.toFixed(2), seros_pal.ink)}
+    ${tile("worst-case p", up.toFixed(4), sig ? seros_pal.good : seros_pal.bad)}
+    ${tile("best-case p", lo.toFixed(4), seros_pal.slate)}
+    ${tile("breakpoint Γ⋆", seros_breakpoint >= 8 ? "> 8" : seros_breakpoint.toFixed(2), seros_pal.good)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// One-line verdict that updates with the sliders.
+{
+  const G = seros_Gamma;
+  const up = seros_pUpper(G);
+  const sig = up < seros_alpha;
+  const bp = seros_breakpoint;
+  const msg = sig
+    ? `At Γ = ${G.toFixed(2)} the worst-case p = ${up.toFixed(4)} is still below α = ${seros_alpha.toFixed(3)}: even this much hidden bias cannot overturn the finding. It only breaks once Γ exceeds Γ⋆ = ${bp >= 8 ? "8 (off the axis)" : bp.toFixed(2)}.`
+    : `At Γ = ${G.toFixed(2)} the worst-case p = ${up.toFixed(4)} has reached α = ${seros_alpha.toFixed(3)}: a confounder this strong could account for the result. The finding stays robust only for Γ below Γ⋆ = ${bp.toFixed(2)}.`;
+  const color = sig ? seros_pal.good : seros_pal.bad;
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${color}; background: ${seros_pal.fill};
+      font-family: 'Inter', system-ui, sans-serif; font-size: 0.86rem;
+      line-height: 1.45; color: ${seros_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the $p$-Value Band
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Anchor at $\Gamma = 1$.** Slide $\Gamma$ all the way left to $1$. The red and slate curves meet and the band pinches shut: with no hidden bias there is a *single* $p$-value, the ordinary sign test. With the defaults ($S=20$, $T=16$) it reads $0.0059$ --- comfortably below $\alpha$.
+
+**Step 2: Open the band.** Drag $\Gamma$ rightward. The red **worst-case** curve climbs and the slate **best-case** curve falls, so the shaded band fans open. The band is the set of $p$-values a confounder of strength up to $\Gamma$ could produce. We always defend the finding using the *top* of the band --- the worst case.
+
+**Step 3: Find the breakpoint.** Follow the red curve until it touches the ochre $\alpha$ line. The green marker on the $\Gamma$-axis sits directly below that crossing: it is $\Gamma^\star \approx 1.49$. To the left of it the worst case is still significant; to the right, hidden bias could explain the result away. This single number is the headline of the analysis.
+
+**Step 4: Make the design stronger.** Raise $S$ toward 40 while $T$ tracks the same $0.8$ proportion (e.g. $T \approx 32$). The whole red curve shifts down and the breakpoint $\Gamma^\star$ moves *right* --- more evidence at the same effect size buys robustness to stronger hidden bias.
+
+**Step 5: Make the effect weaker.** Hold $S$ fixed and drag $T$ down toward $S/2$. The base $p$-value at $\Gamma=1$ rises and $\Gamma^\star$ collapses toward $1$. A finding that is barely significant under no bias has essentially no cushion against hidden bias --- the breakpoint is the cushion.
+
+## Design Sensitivity: Robustness Is a Property of the Study, Not Just the Data
+
+Step 4 hinted at something deep. As the sample grows *while the true effect stays the same*, the breakpoint does not wander randomly --- it climbs toward a fixed limit determined by the study's design and the size of the true effect. Rosenbaum named this limit the **design sensitivity** $\tilde\Gamma$.
+
+::: {.glass-card .glass-card--definition}
+**Design sensitivity** $\tilde\Gamma$ is the value the breakpoint $\Gamma^\star$ converges to as the sample size $\to \infty$, when the true treatment effect and the data-generating process are held fixed.
+
+For the matched-pairs sign test, if the *true* probability that the treated unit does better is $\rho$, then
+
+$$
+\tilde\Gamma = \frac{\rho}{1-\rho}.
+$$
+
+**Read this as**: "design sensitivity equals the odds that, in a discordant pair, the treated unit is the better one." If the program truly makes the treated unit the winner in $80\%$ of discordant pairs ($\rho = 0.8$), then $\tilde\Gamma = 0.8/0.2 = 4$: in a large enough study, the finding will withstand hidden bias up to roughly a fourfold odds distortion.
+:::
+
+This is a remarkable shift in perspective. Design sensitivity is computed *before* collecting data, from the anticipated effect and the planned analysis. It tells you the *ceiling* of robustness your design can ever reach. Two designs that both reject the null at $\Gamma=1$ can have wildly different $\tilde\Gamma$, and the one with the larger design sensitivity is the better study --- it will be the harder one to dismiss as confounded. With our diabetes effect ($\rho = 0.8$), the finite-sample breakpoint climbs $1.49 \to 2.01 \to 2.96 \to 3.51$ as the pair count grows $20 \to 40 \to 200 \to 1000$, all marching toward the ceiling $\tilde\Gamma = 4$.
+
+::: {.glass-card .glass-card--insight}
+**More data buys robustness, not just precision.** In a randomized trial, a larger $n$ shrinks the confidence interval. In an observational matched study, a larger $n$ *also* raises the breakpoint toward $\tilde\Gamma$ --- it makes the finding harder to attribute to hidden bias. Designing for a high $\tilde\Gamma$ (better matching, larger doses, sharper outcomes) can matter more than designing for a tight standard error, because in observational work the binding constraint is usually confounding, not sampling noise.
+:::
+
+## Assumptions and Cautions
+
+::: {.glass-card .glass-card--assumption}
+**Rosenbaum bounds require:**
+
+1. **A valid matched design.** Pairs must be matched on the observed covariates; the sensitivity model concerns only *unobserved* bias *on top of* a correct match. A poorly matched study has *observed* imbalance that no $\Gamma$ accounts for.
+
+2. **A bounded-odds confounder.** The model assumes the unmeasured confounder shifts treatment odds by at most $\Gamma$ within a pair. It is an *amplification* device: a single number $\Gamma$ stands in for "everything we did not measure," not for any specific named variable.
+
+3. **A sharp null and an exact (or asymptotic) reference test.** The classic bounds use Fisher's sharp null of *no effect for any unit* and a randomization-distribution test (sign test, signed-rank, or $m$-statistics). The worst-case calculation tilts that distribution to its least-favorable configuration.
+:::
+
+::: {.glass-card .glass-card--warning}
+**$\Gamma$ alone does not say whether bias is plausible.** A breakpoint of $\Gamma^\star = 1.5$ is reassuring only if no realistic unmeasured confounder could plausibly distort enrollment odds by $50\%$. *Amplification* (Rosenbaum & Silber) translates a $\Gamma$ into the pair of associations --- confounder-to-treatment and confounder-to-outcome --- that would produce it, which is far easier to judge against substantive knowledge. Report $\Gamma^\star$, then argue about whether a confounder that strong is credible. A large $\Gamma^\star$ is necessary for robustness, never sufficient on its own.
+:::
+
+<details>
+<summary>Math Details: The worst-case p-value of the matched-pairs sign test</summary>
+<div class="details-content">
+
+### Setup
+
+We have $S$ discordant matched pairs (pairs in which the two HbA1c outcomes differ; tied pairs carry no sign-test information and are dropped). For pair $s$, let $Z_s = 1$ if the *treated* member has the better (lower) outcome and $Z_s = 0$ otherwise. The sign-test statistic is
+
+$$
+T = \sum_{s=1}^{S} Z_s .
+$$
+
+Under Fisher's sharp null "treatment changes no one's outcome," the *labels* treated/control within a pair are exchangeable to the extent assignment was random. Which member is labeled treated is governed entirely by the treatment-assignment probabilities.
+
+### The within-pair probability under bias $\Gamma$
+
+Condition on a discordant pair $\{j,k\}$ with exactly one treated unit. Let $\pi_j,\pi_k$ be their treatment probabilities. The probability that the *specific* member who happens to have the better outcome is the treated one works out to
+
+$$
+\theta_s = \frac{\pi_j(1-\pi_k)}{\pi_j(1-\pi_k) + \pi_k(1-\pi_j)} .
+$$
+
+Dividing numerator and denominator by $\pi_k(1-\pi_j)$ shows $\theta_s$ depends only on the odds ratio $r = \dfrac{\pi_j/(1-\pi_j)}{\pi_k/(1-\pi_k)}$, namely $\theta_s = r/(1+r)$. The sensitivity model bounds $1/\Gamma \le r \le \Gamma$, so
+
+$$
+\frac{1}{1+\Gamma} \;=\; p^{-} \;\le\; \theta_s \;\le\; p^{+} \;=\; \frac{\Gamma}{1+\Gamma}.
+$$
+
+Each pair is independent, so $T = \sum_s Z_s$ is a sum of independent (not identical) Bernoulli$(\theta_s)$ variables with each $\theta_s \in [p^-, p^+]$.
+
+### Bounding the tail probability
+
+We want the largest possible upper-tail probability $\Pr(T \ge t)$ over all admissible $(\theta_1,\dots,\theta_S)$. The upper tail of a sum of independent Bernoullis is *monotone increasing* in each $\theta_s$ (stochastic ordering: raising any single success probability can only push mass into the upper tail). Therefore the maximum is attained by setting every $\theta_s$ to its upper limit $p^{+} = \Gamma/(1+\Gamma)$, which makes $T$ exactly $\text{Binomial}(S, p^{+})$. The **worst-case (upper-bound) $p$-value** is
+
+$$
+\overline{p}(\Gamma) = \Pr\!\big(\text{Bin}(S, p^{+}) \ge t\big)
+= \sum_{k=t}^{S} \binom{S}{k} (p^{+})^{k}(1-p^{+})^{S-k}.
+$$
+
+Symmetrically, setting every $\theta_s = p^{-}$ minimizes the tail and gives the best-case bound $\underline{p}(\Gamma) = \Pr(\text{Bin}(S,p^{-}) \ge t)$. At $\Gamma = 1$, $p^{+}=p^{-}=\tfrac12$ and both reduce to the classical sign test.
+
+### The breakpoint
+
+Since $p^{+} = \Gamma/(1+\Gamma)$ increases in $\Gamma$, the upper-tail probability $\overline{p}(\Gamma)$ increases monotonically in $\Gamma$. Hence there is a unique smallest $\Gamma$ at which it reaches $\alpha$:
+
+$$
+\Gamma^\star = \min\{\Gamma \ge 1 : \overline{p}(\Gamma) \ge \alpha\},
+$$
+
+found by a one-dimensional root search (bisection) on the monotone function $\overline{p}(\cdot) - \alpha$.
+
+### Design sensitivity
+
+Suppose the *truth* makes each pair treated-better with probability $\rho > \tfrac12$, so $T/S \to \rho$. The worst-case test under bias $\Gamma$ compares $T/S$ against the mean $p^{+}(\Gamma) = \Gamma/(1+\Gamma)$. The test rejects in the limit exactly when $\rho > p^{+}(\Gamma)$, i.e. when $\Gamma < \rho/(1-\rho)$. Thus the breakpoint converges to
+
+$$
+\tilde\Gamma = \frac{\rho}{1-\rho},
+$$
+
+the **design sensitivity** --- a fixed property of the effect size and the design, independent of $S$. The same logic, with signed-rank or $m$-statistic means in place of $p^{+}$, yields design sensitivities for the more powerful tests.
+
+</div>
+</details>
+
+## Computing Rosenbaum Bounds
+
+Both panels run the same diabetes design: $S = 20$ discordant pairs with the treated unit better in $T = 16$. The R panel uses the dedicated `rbounds`/`sensitivitymv` machinery; the Python panel builds the bound from first principles with `scipy.stats.binom` and locates the breakpoint by bisection. Both should report a base $p$ of $0.0059$ and a breakpoint near $\Gamma^\star \approx 1.49$.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("rbounds", "sensitivitymv"))   # if needed
+
+## ---- Option A: the binomial sign-test bound, by hand ----
+S <- 20L; T <- 16L; alpha <- 0.05
+
+# Worst-case one-sided p at bias Gamma: success prob p+ = G/(1+G).
+p_upper <- function(G) pbinom(T - 1L, S, G / (1 + G), lower.tail = FALSE)
+
+cat("Base p (Gamma = 1):", round(p_upper(1), 4), "\n")     # 0.0059
+cat("Worst-case p at Gamma = 1.5:", round(p_upper(1.5), 4), "\n")  # 0.0510
+
+# Breakpoint: smallest Gamma where the worst-case p reaches alpha.
+gamma_star <- uniroot(function(G) p_upper(G) - alpha,
+                      lower = 1, upper = 8)$root
+cat("Breakpoint Gamma* =", round(gamma_star, 3), "\n")     # ~1.494
+
+## ---- Option B: rbounds on continuous matched-pair differences ----
+# binarysens() takes the count of discordant pairs (mb) and concordant-favoring
+# (m) for the McNemar-style sign test; here all 20 informative pairs, 16 favoring.
+library(rbounds)
+binarysens(x = 16, y = 4, Gamma = 2, GammaInc = 0.1)
+# Sweeps Gamma and prints the upper/lower p-bounds; read off where upper crosses 0.05.
+
+## ---- Option C: sensitivitymv for the (more powerful) signed-rank style test ----
+# Given a matrix of matched sets (here pairs: col 1 = treated, col 2 = control
+# outcome), senmv() returns the worst-case p at a chosen Gamma. Lower HbA1c is
+# better, so we feed treated-minus-control on a "higher = better" scale by
+# negating the HbA1c difference.
+library(sensitivitymv)
+# pairs: each row = c(treated_outcome, control_outcome) on a higher-is-better scale
+senmv(pairs_matrix, gamma = 1.5)$pval   # worst-case p at Gamma = 1.5
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy.stats import binom
+from scipy.optimize import brentq
+
+# ---- Rosenbaum sign-test bound, from first principles ----
+S, T, alpha = 20, 16, 0.05
+
+def p_upper(G):
+    """Worst-case one-sided p at hidden bias G: success prob p+ = G/(1+G)."""
+    p_plus = G / (1 + G)
+    return binom.sf(T - 1, S, p_plus)        # P(Bin(S, p+) >= T)
+
+def p_lower(G):
+    """Best-case bound: success prob p- = 1/(1+G)."""
+    return binom.sf(T - 1, S, 1 / (1 + G))
+
+print(f"Base p (Gamma=1):        {p_upper(1):.4f}")   # 0.0059
+print(f"Worst-case p (Gamma=1.5): {p_upper(1.5):.4f}") # 0.0510
+print(f"Best-case  p (Gamma=1.5): {p_lower(1.5):.4f}") # 0.0003
+
+# ---- Breakpoint: smallest Gamma where worst-case p reaches alpha ----
+gamma_star = brentq(lambda G: p_upper(G) - alpha, 1.0, 8.0)
+print(f"Breakpoint Gamma* = {gamma_star:.3f}")          # ~1.494
+
+# ---- Design sensitivity for this effect size ----
+rho = T / S                                  # true treated-better fraction (proxy)
+print(f"Design sensitivity ~Gamma = rho/(1-rho) = {rho/(1-rho):.2f}")  # 4.00
+
+# ---- Sweep and tabulate the p-value band ----
+for G in [1.0, 1.25, 1.5, 1.75, 2.0]:
+    lo, hi = p_lower(G), p_upper(G)
+    flag = "significant" if hi < alpha else "NOT significant"
+    print(f"Gamma={G:>4}:  p in [{lo:.4f}, {hi:.4f}]  -> {flag}")
+```
+
+:::
+
+Both languages return the base sign-test $p = 0.0059$, a worst-case $p = 0.0510$ at $\Gamma = 1.5$, and a breakpoint $\Gamma^\star \approx 1.494$. For continuous outcomes you would swap the sign test for Wilcoxon's signed-rank or Rosenbaum's $m$-statistics (via `sensitivitymv::senmv` / `rbounds::psens`), which are more powerful and so yield a *larger* breakpoint for the same data --- a free robustness gain from choosing a sharper test statistic.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A vårdcentral in Region Skåne evaluated a *distriktssköterska*-led (district-nurse-led) hypertension follow-up program with a matched design. Among $S = 12$ discordant pairs, the treated patient had the lower systolic blood pressure in $T = 10$.
+
+(a) State the within-pair probability band $[p^-, p^+]$ at $\Gamma = 2$. (b) Write the worst-case one-sided $p$-value at $\Gamma = 1$ (the ordinary sign test) and explain what it tests. (c) Without computing, say whether the breakpoint $\Gamma^\star$ here will be larger or smaller than the diabetes study's $1.49$, and why.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $\Gamma = 2$: $p^- = 1/(1+2) = 1/3 \approx 0.333$ and $p^+ = 2/(1+2) = 2/3 \approx 0.667$. Within a pair, the treated unit's probability of being the better one can lie anywhere in $[0.333, 0.667]$.
+
+**(b)** The sign test is $\overline{p}(1) = \Pr(\text{Bin}(12, \tfrac12) \ge 10) = \sum_{k=10}^{12}\binom{12}{k}2^{-12} = (66 + 12 + 1)/4096 = 79/4096 \approx 0.0193$. It tests Fisher's sharp null that treatment changed no patient's blood pressure, against the alternative that it lowered it, assuming no hidden bias.
+
+**(c)** *Smaller.* The base $p$ ($0.0193$) starts closer to $\alpha = 0.05$ than the diabetes study's ($0.0059$), and there are fewer pairs, so there is less cushion. The worst-case curve reaches $\alpha$ at a lower $\Gamma$. (Numerically $\Gamma^\star \approx 1.28$.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the same study as Exercise 1 ($S = 12$, $T = 10$), the worst-case $p$-value at $\Gamma = 1.5$ is $0.0834$ and at $\Gamma = 2$ is $0.1811$. The analyst writes: "The program significantly lowers blood pressure even allowing for hidden bias up to $\Gamma = 2$." Diagnose the error and state the correct conclusion.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The claim is backwards. The worst-case $p$ at $\Gamma = 2$ is $0.1811 > 0.05$, so the finding is **not** robust to hidden bias of strength $\Gamma = 2$ --- a confounder doubling within-pair enrollment odds could fully account for the result. In fact significance is already lost by $\Gamma = 1.5$ ($p = 0.0834 > 0.05$). The correct statement: "The finding is significant under no hidden bias and remains so only for $\Gamma$ up to about $1.28$; it is sensitive to even modest hidden bias." Reporting the breakpoint $\Gamma^\star \approx 1.28$ --- not a $\Gamma$ at which the result has *already* broken --- is the honest summary.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Two regions evaluate the *same* diabetes program with matched designs that both reject the null at $\Gamma = 1$. Region A has $S = 20$ discordant pairs with $T = 16$ treated-better ($\rho = 0.80$); Region B has $S = 60$ pairs with $T = 40$ treated-better ($\rho = 2/3 \approx 0.67$).
+
+(a) Compute each study's design sensitivity $\tilde\Gamma$. (b) Region B has *three times* as many pairs --- does that make it the more robust study? (c) What does this tell you about how to design a sensitive observational study?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\tilde\Gamma = \rho/(1-\rho)$. Region A: $0.80/0.20 = 4.0$. Region B: $(2/3)/(1/3) = 2.0$.
+
+**(b)** No. Despite three times the pairs, Region B's *effect* is weaker ($67\%$ vs $80\%$ treated-better), so its design-sensitivity ceiling ($\tilde\Gamma = 2.0$) is only half Region A's ($\tilde\Gamma = 4.0$). Region A's finding will withstand much stronger hidden bias in a large sample. The finite-sample breakpoints already favour A: with both significant at $\Gamma=1$ (base $p$ of $0.0059$ for A, $0.0067$ for B), A reaches $\Gamma^\star \approx 1.49$ while B's larger but weaker design reaches only $\Gamma^\star \approx 1.24$. More data did not rescue the weaker effect on *either* metric.
+
+**(c)** Robustness to hidden bias is driven mainly by *effect size relative to the matching*, not raw sample size. Sharper outcomes, larger treatment doses, tighter matches, and more powerful test statistics raise $\tilde\Gamma$. Chasing $n$ alone, with a weak effect, yields a precise estimate that is still easy to dismiss as confounded.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set $S = 20$, $T = 16$, $\alpha = 0.05$ and note $\Gamma^\star \approx 1.49$. (a) Drag $T$ from 16 up to 18 with $S$ fixed; predict and then check what happens to $\Gamma^\star$. (b) Reset $T = 16$ and lower $\alpha$ from $0.05$ to $0.01$; what happens to $\Gamma^\star$ and why? (c) Explain in one sentence why the best-case (slate) curve is almost never the number a researcher reports for a positive finding.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\Gamma^\star$ **rises** (to roughly $2.5$). A stronger observed effect ($18$ of $20$ rather than $16$) starts from a tinier base $p$, so the worst-case curve must climb much further --- admit much more hidden bias --- before reaching $\alpha$.
+
+**(b)** $\Gamma^\star$ **falls** (to roughly $1.09$). A stricter threshold is a *lower* horizontal line, which the rising worst-case curve reaches at a smaller $\Gamma$. Demanding stronger evidence ($\alpha = 0.01$) leaves less room to absorb hidden bias.
+
+**(c)** The best-case bound assumes hidden bias conspires to *strengthen* the apparent effect, which is the optimistic scenario; an honest sensitivity analysis defends a positive finding against the *worst* case (the upper bound), so the slate curve is informative mainly as the other edge of the band, not the reported number.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Matching balances only *observed* covariates; Rosenbaum bounds quantify a matched study's exposure to *unobserved* confounding rather than assuming it away.
+- The sensitivity parameter $\Gamma \ge 1$ bounds how much two matched units' *odds* of treatment may differ due to a hidden confounder; $\Gamma = 1$ is the no-hidden-bias (randomization) benchmark.
+- Under bias $\Gamma$ the within-pair coin is no longer fair but lies in $[\,1/(1+\Gamma),\ \Gamma/(1+\Gamma)\,]$, turning a single $p$-value into a $p$-value *interval* whose worst-case edge is $\Pr(\text{Bin}(S, \tfrac{\Gamma}{1+\Gamma}) \ge T)$.
+- The **breakpoint** $\Gamma^\star$ --- where the worst-case $p$ first reaches $\alpha$ --- is the headline: the larger it is, the more hidden bias the finding can survive.
+- **Design sensitivity** $\tilde\Gamma = \rho/(1-\rho)$ is the breakpoint's large-sample ceiling, a property of the effect size and design; more data raises robustness, not just precision.
+:::
+
+## What Comes Next
+
+Rosenbaum bounds keep a *point estimate and a test* but ask how much hidden bias it would take to overturn the conclusion --- the answer is a single robustness number, $\Gamma^\star$. The [next page, Partial Identification and Bounds](partial-identification.qmd), takes a more radical stance: instead of defending one estimate against confounding, it asks what the data can say when we refuse to make the assumptions that would pin down a single number at all. There the deliverable is not a $p$-value interval but an *identified set* --- a range of treatment effects all equally consistent with the data and a weaker set of assumptions, from Manski's no-assumption bounds inward. Both pages share one honest premise: when identification is in doubt, report the *range* the data permit, not a false point.

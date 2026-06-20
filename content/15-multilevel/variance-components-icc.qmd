@@ -1,0 +1,717 @@
+---
+title: "Variance Components and the ICC"
+subtitle: "How much variation lives at each level"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Decompose the total variance of a clustered outcome into a between-group component $\tau_0^2$ and a within-group component $\sigma^2$
+- Define the intraclass correlation $\text{ICC} = \tau_0^2 / (\tau_0^2 + \sigma^2)$ and read it two ways --- as a variance share and as the correlation between two observations in the same group
+- Compute the design effect $1 + (m-1)\,\text{ICC}$ and translate it into an effective sample size and a standard-error inflation factor
+- Explain why ignoring clustering deflates standard errors, connecting the variance decomposition to Module 5's cluster-robust inference
+- Decide when multilevel modelling actually earns its keep --- and when the ICC is small enough to ignore
+:::
+
+## How Much of the Variation Is the Vårdcentral?
+
+Sweden's 21 *regioner* (regions) run roughly 1,100 *vårdcentraler* (primary care centers), and each center serves thousands of patients. Suppose *Socialstyrelsen* (the National Board of Health and Welfare) pulls the HbA1c reading of every Type 2 diabetes patient in the country and asks a deceptively simple question: **how much of the variation in blood-sugar control is about the patient, and how much is about the clinic they happen to attend?**
+
+Two patients at the same vårdcentral share a *läkare* (physician), a *distriktssköterska* (district nurse), a local recall system, a waiting-time culture, and a catchment population. Two patients at different centers share none of that. So we should expect patients within a center to resemble each other more than patients drawn at random from across the country. The question is *how much* more --- and that single number turns out to govern everything from study design to standard errors.
+
+This is the question of **variance components**. Instead of asking "what is the average HbA1c?" we ask "where does the spread come from?" Some of it is the genuine person-to-person difference between patients at the same clinic --- the **within** component. Some of it is the systematic difference between clinics --- the **between** component. Splitting the total variance into these two pieces, and forming their ratio, is the foundation of every multilevel model in this module.
+
+::: {.glass-card .glass-card--insight}
+The headline number is the **intraclass correlation (ICC)**: the share of total variance that lives *between* groups. An ICC near $0$ means clinics are interchangeable --- knowing a patient's center tells you nothing about their HbA1c. An ICC near $1$ means the center is almost everything --- patients within a clinic are nearly identical and the real variation is across clinics. Real primary-care data usually sit modestly above zero (ICCs of $0.05$ to $0.20$), and even those small numbers have outsized consequences for how much your data actually tell you.
+:::
+
+
+## The Two-Level Variance Decomposition
+
+Index patients by $j$ and the vårdcentral they attend by $i$. Write $y_{ij}$ for the HbA1c of patient $j$ at center $i$. The simplest multilevel model --- the **random-intercept model** from the [previous page](random-intercepts-slopes.qmd) with no predictors, often called the *empty* or *unconditional* model --- splits each observation into three pieces:
+
+$$
+y_{ij} = \gamma_{00} + u_{0i} + \varepsilon_{ij}.
+$$
+
+**Read this aloud as**: "Each patient's HbA1c equals a grand mean $\gamma_{00}$ that holds across all of Sweden, plus a clinic-level bump $u_{0i}$ that shifts every patient at center $i$ up or down together, plus an individual deviation $\varepsilon_{ij}$ that is unique to that patient."
+
+The two random pieces carry the two variances we care about:
+
+$$
+u_{0i} \sim \mathcal{N}(0,\, \tau_0^2), \qquad \varepsilon_{ij} \sim \mathcal{N}(0,\, \sigma^2),
+$$
+
+and crucially $u_{0i}$ and $\varepsilon_{ij}$ are assumed independent of each other.
+
+::: {.glass-card .glass-card--definition}
+The model has exactly two variance components:
+
+- $\tau_0^2$ --- the **between-group variance** (read "*tau-zero-squared*"). It measures how much clinic means scatter around the national grand mean. A large $\tau_0^2$ means some vårdcentraler run systematically higher or lower HbA1c than others.
+- $\sigma^2$ --- the **within-group variance** (read "*sigma-squared*"). It measures how much patients scatter around *their own clinic's* mean. A large $\sigma^2$ means patients within a clinic differ a lot from one another.
+
+Because $u_{0i}$ and $\varepsilon_{ij}$ are independent, the variance of an observation adds up cleanly:
+
+$$
+\operatorname{Var}(y_{ij}) = \tau_0^2 + \sigma^2.
+$$
+
+This is the **total variance**, and the split $\tau_0^2 + \sigma^2$ is the variance decomposition.
+:::
+
+The decomposition is the whole game. Total variation in HbA1c is partitioned into the part attributable to *which clinic you are at* ($\tau_0^2$) and the part attributable to *which patient you are within that clinic* ($\sigma^2$). Everything that follows is a ratio or a function of these two numbers.
+
+
+## The Intraclass Correlation
+
+The ICC is the between-group share of total variance.
+
+::: {.glass-card .glass-card--definition}
+The **intraclass correlation coefficient** is
+
+$$
+\rho = \text{ICC} = \frac{\tau_0^2}{\tau_0^2 + \sigma^2}.
+$$
+
+**Read this as**: "the between-clinic variance divided by the total variance" --- the fraction of all the variation in HbA1c that is *between* vårdcentraler rather than *within* them. It is bounded in $[0, 1]$: it is $0$ when $\tau_0^2 = 0$ (clinics are identical on average) and approaches $1$ as $\tau_0^2$ dominates $\sigma^2$ (patients within a clinic are nearly identical).
+:::
+
+The name "*correlation*" is not a metaphor. The ICC is *literally* the correlation between two patients drawn from the same clinic. Take two patients $j$ and $k$ at the same center $i$. They share the clinic bump $u_{0i}$ but have independent personal deviations $\varepsilon$. Their covariance is therefore exactly $\tau_0^2$ (the only thing they share), while each has total variance $\tau_0^2 + \sigma^2$. The correlation is the covariance over the product of standard deviations:
+
+$$
+\operatorname{Corr}(y_{ij},\, y_{ik}) = \frac{\operatorname{Cov}(y_{ij}, y_{ik})}{\sqrt{\operatorname{Var}(y_{ij})}\sqrt{\operatorname{Var}(y_{ik})}} = \frac{\tau_0^2}{\tau_0^2 + \sigma^2} = \text{ICC}.
+$$
+
+::: {.glass-card .glass-card--insight}
+**Two readings of one number.** The ICC is *both* (i) the share of variance that lives between groups and (ii) the correlation between two observations in the same group. These are the same quantity. That is why it controls clustering: a high within-group correlation is *exactly* a large between-group variance share, and both say the same thing --- observations in the same clinic are not independent draws.
+:::
+
+
+## See It: The ICC Slider
+
+The lab below simulates HbA1c for patients spread across eight vårdcentraler. As you raise the ICC, hold your eye on two things at once: the **dots tighten within each clinic** (points in the same column pull toward their clinic mean), while the **clinic means spread apart** (the columns drift away from the national line). That is the variance decomposition happening in front of you --- variance migrating from the within component into the between component while the total stays fixed.
+
+The readouts on the right turn the picture into the numbers that matter for inference: the between/within split, the **design effect**, the **effective sample size**, and the **standard-error inflation** versus a naive analysis that pretends every patient is an independent draw.
+
+::: {.interactive-container}
+
+#### Variance components, the design effect, and effective n
+
+```{ojs}
+//| echo: false
+
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${mlicc_pal.axis};
+    background: ${mlicc_pal.fill};
+    border-left: 3px solid ${mlicc_pal.between};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> drag <em>ICC</em> from 0 toward 1 and watch the dots
+  in each clinic tighten while the clinic means fan apart. Total variance is held
+  fixed &mdash; variance is just moving from within to between. The numeric panel and
+  full tour are below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlicc_icc = Inputs.range([0, 0.9], {
+  value: 0.10,
+  step: 0.01,
+  label: "ICC (between-group variance share)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlicc_m = Inputs.range([2, 60], {
+  value: 25,
+  step: 1,
+  label: "Cluster size m (patients per vårdcentral)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlicc_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Uppsala-academic palette shared across this page's interactives.
+mlicc_pal = ({
+  between: "#990000",   // focal: the between-group / ICC story (Uppsala red)
+  within:  "#3d5a6c",   // comparison: the within-group spread (slate)
+  good:    "#2e6f40",   // success / on-target (green)
+  ochre:   "#9c7a33",   // highlight / true reference value (ochre)
+  ink:     "#1c1c1a",   // reference lines & ink text
+  axis:    "#555555",   // axis / muted label text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Eight vårdcentraler with short labels that fit the axis without clipping.
+mlicc_clinics = ["VC 1","VC 2","VC 3","VC 4","VC 5","VC 6","VC 7","VC 8"]
+
+// Total variance is held FIXED so the reader sees variance MOVE between the two
+// components rather than appear or vanish. Centred on a realistic HbA1c of 7.5%.
+mlicc_totalVar = 1.0          // sigma^2 + tau0^2  (kept constant)
+mlicc_grandMean = 7.5         // national grand mean HbA1c (%)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Derive the two variance components from the ICC slider, holding total fixed.
+//   tau0^2 = ICC * total ;  sigma^2 = (1 - ICC) * total.
+mlicc_comps = {
+  const tau0sq  = mlicc_icc * mlicc_totalVar;
+  const sigmasq = (1 - mlicc_icc) * mlicc_totalVar;
+  return { tau0sq, sigmasq, tau0: Math.sqrt(tau0sq), sigma: Math.sqrt(sigmasq) };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Generate the data. Referencing mlicc_draw makes the button resample; we never
+// read AND write a mutable, so there is no circular dependency.
+mlicc_data = {
+  mlicc_draw;                                  // dependency: resample on click
+  const rnG = d3.randomNormal(0, mlicc_comps.tau0);    // clinic-level bumps u_0i
+  const rnE = d3.randomNormal(0, mlicc_comps.sigma);   // patient deviations eps_ij
+
+  const rows = [];
+  for (let i = 0; i < mlicc_clinics.length; i++) {
+    const u0 = rnG();                          // one draw per clinic
+    for (let j = 0; j < mlicc_m; j++) {
+      rows.push({
+        clinic: mlicc_clinics[i],
+        clinicIdx: i,
+        u0,
+        y: mlicc_grandMean + u0 + rnE()
+      });
+    }
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Clinic means (the column dots / between-group structure).
+mlicc_clinicMeans = mlicc_clinics.map((c, i) => {
+  const sub = mlicc_data.filter(d => d.clinicIdx === i);
+  return { clinic: c, clinicIdx: i, mean: d3.mean(sub, d => d.y) };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Inference quantities derived purely from the slider values (population truths,
+// not the noisy sample, so the readouts are clean and reproducible).
+mlicc_infer = {
+  const icc   = mlicc_icc;
+  const m     = mlicc_m;
+  const deff  = 1 + (m - 1) * icc;             // design effect (Kish)
+  const nTot  = mlicc_clinics.length * m;      // naive sample size
+  const nEff  = nTot / deff;                   // effective sample size
+  const seInf = Math.sqrt(deff);               // SE inflation vs naive iid OLS
+  return { icc, m, deff, nTot, nEff, seInf };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Strip plot: one column per clinic. Slate dots = patients; red diamonds = clinic
+// means; the ochre dashed rule = national grand mean. As ICC rises the slate dots
+// tighten in each column and the red diamonds fan apart.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 360,
+  marginLeft: 58,
+  marginBottom: 46,
+  marginTop: 28,
+  marginRight: 18,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: {
+    label: "Vårdcentral",
+    domain: mlicc_clinics,
+    tickRotate: 0
+  },
+  y: {
+    label: "HbA1c (%)",
+    domain: [mlicc_grandMean - 3.2, mlicc_grandMean + 3.2],
+    grid: true
+  },
+  marks: [
+    Plot.ruleY([mlicc_grandMean], {
+      stroke: mlicc_pal.ochre, strokeWidth: 1.5, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ x: mlicc_clinics[0], y: mlicc_grandMean }], {
+      x: "x", y: "y",
+      text: () => "national mean",
+      fill: mlicc_pal.ochre, fontSize: 10, fontWeight: "bold",
+      textAnchor: "start", dy: -6, dx: -42,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.dot(mlicc_data, {
+      x: "clinic", y: "y",
+      fill: mlicc_pal.within, fillOpacity: 0.35, r: 2.6,
+      title: d => `${d.clinic}\nHbA1c: ${d.y.toFixed(2)}`
+    }),
+    Plot.dot(mlicc_clinicMeans, {
+      x: "clinic", y: "mean",
+      fill: mlicc_pal.between, r: 5.5, symbol: "diamond",
+      stroke: "white", strokeWidth: 1,
+      title: d => `${d.clinic} mean: ${d.mean.toFixed(2)}`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// On-chart key.
+html`<div style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${mlicc_pal.axis};
+    margin-top: 0.3rem; line-height: 1.4;">
+  <span style="color:${mlicc_pal.within};font-weight:600;">&#9679; patients</span> &nbsp;
+  <span style="color:${mlicc_pal.between};font-weight:600;">&#9670; clinic means</span> &nbsp;
+  <span style="color:${mlicc_pal.ochre};font-weight:600;">- - national mean</span>
+  &mdash; higher ICC pulls patients toward their clinic mean and pushes the clinic means apart.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Variance-split bar: a single stacked bar showing between vs within shares.
+{
+  const { tau0sq, sigmasq } = mlicc_comps;
+  const total = tau0sq + sigmasq;
+  const segs = [
+    { label: "Between (τ₀²)", value: tau0sq,  share: tau0sq / total,  fill: mlicc_pal.between, x1: 0,            x2: tau0sq },
+    { label: "Within (σ²)",   value: sigmasq, share: sigmasq / total, fill: mlicc_pal.within,  x1: tau0sq,       x2: total }
+  ];
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 96,
+    marginLeft: 12, marginRight: 12, marginTop: 30, marginBottom: 28,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Share of total variance →", domain: [0, total], grid: true,
+         tickFormat: d => (d / total).toFixed(1) },
+    y: { axis: null, domain: ["bar"] },
+    marks: [
+      Plot.barX(segs, {
+        x1: "x1", x2: "x2", y: () => "bar",
+        fill: "fill", fillOpacity: 0.9, insetTop: 8, insetBottom: 8,
+        title: d => `${d.label}: ${(d.share * 100).toFixed(0)}% of total`
+      }),
+      Plot.text(segs.filter(d => d.share > 0.14), {
+        x: d => (d.x1 + d.x2) / 2, y: () => "bar",
+        text: d => `${d.label}  ${(d.share * 100).toFixed(0)}%`,
+        fill: "white", fontWeight: "bold", fontSize: 11,
+        stroke: d => d.fill, strokeWidth: 2.5, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live numeric panel: the four inference quantities that the ICC drives.
+{
+  const f = mlicc_infer;
+  const card = (name, value, sub, color) => html`<div style="
+      text-align:center; padding:0.55rem 0.4rem; border-radius:0.5rem;
+      background:${mlicc_pal.fill}; min-height:5rem;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem; font-weight:700;
+        text-transform:uppercase; letter-spacing:0.04em; color:${mlicc_pal.muted};">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.3rem; font-weight:700;
+        color:${color}; line-height:1.2;">${value}</div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem; color:${mlicc_pal.axis};
+        line-height:1.25; margin-top:0.15rem;">${sub}</div>
+  </div>`;
+  return html`<div style="
+      display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem, 1fr));
+      gap:0.5rem; margin-top:0.8rem;">
+    ${card("ICC", f.icc.toFixed(2), "between-group share", mlicc_pal.between)}
+    ${card("Design effect", f.deff.toFixed(2), `1 + (${f.m}−1)·ICC`, mlicc_pal.ink)}
+    ${card("Effective n", Math.round(f.nEff).toString(), `of ${f.nTot} observations`, mlicc_pal.between)}
+    ${card("SE inflation", "×" + f.seInf.toFixed(2), "vs naive iid OLS",
+        f.seInf > 1.5 ? mlicc_pal.between : mlicc_pal.good)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Plain-language verdict that updates with the sliders.
+{
+  const f = mlicc_infer;
+  let msg, color;
+  if (f.icc < 0.02) {
+    msg = `ICC ≈ ${f.icc.toFixed(2)}: clustering is negligible. The design effect is ${f.deff.toFixed(2)}, so your ${f.nTot} patients act like ${Math.round(f.nEff)} independent observations — naive OLS standard errors are roughly honest here.`;
+    color = mlicc_pal.good;
+  } else {
+    msg = `ICC = ${f.icc.toFixed(2)} with ${f.m} patients per clinic gives a design effect of ${f.deff.toFixed(2)}: your ${f.nTot} observations carry only as much information as ${Math.round(f.nEff)} independent ones. Ignoring the clustering would shrink the standard error by a factor of ${f.seInf.toFixed(2)} — manufacturing false precision.`;
+    color = f.seInf > 1.5 ? mlicc_pal.between : mlicc_pal.ink;
+  }
+  return html`<div style="
+      margin-top:0.75rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+      border-left:3px solid ${color}; background:${mlicc_pal.fill};
+      font-family:'Inter',sans-serif; font-size:0.86rem; line-height:1.45;
+      color:${mlicc_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the ICC Lab
+
+Work through the controls in order; each isolates one idea.
+
+**Step 1: Start at the bottom.** Set **ICC** to $0$. Every clinic's red diamond sits on the ochre national line --- the clinics are interchangeable --- and the slate patient dots fill the full vertical range. All the variation is *within* clinics. In the split bar, the slate "Within" segment fills the whole width; the red "Between" segment has vanished. The design effect reads $1.00$ and effective $n$ equals the full sample.
+
+**Step 2: Crank the ICC up.** Drag **ICC** toward $0.5$. Two things happen at once. The slate dots in each column **tighten** toward their clinic's diamond (within variance is shrinking), and the red diamonds **fan apart** from the national line (between variance is growing). The split bar redistributes from slate to red. Total height of the dot cloud barely changes --- the *total* variance is fixed; variance is simply migrating from within to between.
+
+**Step 3: Watch the design effect climb.** As ICC rises, the **Design effect** card grows above $1$, the **Effective n** card collapses well below the true count, and **SE inflation** rises above $\times 1$. With $25$ patients per clinic and an ICC of just $0.10$, the design effect is already $1 + 24 \times 0.10 = 3.4$: your $200$ observations carry the information of only about $59$ independent ones.
+
+**Step 4: Change the cluster size.** Hold ICC fixed and drag **Cluster size $m$**. Bigger clusters *amplify* the damage: the design effect is $1 + (m-1)\,\text{ICC}$, so adding patients to *existing* clinics buys you very little once the ICC is nonzero. This is the design lesson --- to gain real information, recruit more *clinics*, not more patients per clinic.
+
+**Step 5: Resample.** Press **Draw new sample** a few times. The diamonds and dots jump around, but the design effect, effective $n$, and SE inflation do not --- they are functions of the ICC and $m$, not of any one noisy draw.
+
+
+## The Design Effect and Effective Sample Size
+
+The reason the ICC matters for *inference* --- not just description --- is that it determines how much independent information a clustered sample actually contains. Classical statistics assumes every observation is an independent draw. Clustered data violate that: patients in the same vårdcentral are correlated, so each new patient at an existing clinic adds *less* than one fresh observation's worth of information.
+
+::: {.glass-card .glass-card--definition}
+For a balanced design with $m$ observations per group, the **design effect** is
+
+$$
+\text{DEFF} = 1 + (m - 1)\,\text{ICC}.
+$$
+
+**Read this as**: "one, plus the number of *extra* observations per cluster times the within-cluster correlation." It is the factor by which the variance of an estimated mean is inflated relative to a simple random sample of the same size. The **effective sample size** divides the nominal count by this factor:
+
+$$
+n_{\text{eff}} = \frac{n}{\text{DEFF}} = \frac{n}{1 + (m-1)\,\text{ICC}},
+$$
+
+and the **standard error** of the estimated mean is inflated by $\sqrt{\text{DEFF}}$ relative to the naive iid formula.
+:::
+
+Three limiting cases make the formula intuitive, and reading each aloud cements it:
+
+- **ICC $= 0$**: $\text{DEFF} = 1$. Observations are genuinely independent; the clustering is decorative; $n_{\text{eff}} = n$. Naive standard errors are correct.
+- **ICC $= 1$**: $\text{DEFF} = m$, so $n_{\text{eff}} = n/m$ equals the *number of clusters*. Every patient in a clinic is identical, so a clinic of $m$ patients carries exactly one clinic's worth of information --- you effectively have one observation per vårdcentral.
+- **Large $m$, small ICC**: even a tiny ICC bites once clusters are big. With $m = 1000$ and $\text{ICC} = 0.01$, $\text{DEFF} = 1 + 999 \times 0.01 \approx 11$. A thousand patients per clinic collapse to fewer than a hundred effective ones.
+
+::: {.glass-card .glass-card--warning}
+**Ignoring clustering deflates standard errors.** If you run ordinary OLS on clustered data as though every patient were independent, your reported standard error is too small by a factor of $\sqrt{\text{DEFF}}$. With $\text{DEFF} = 3.4$ that is a factor of $1.84$ --- your confidence intervals are nearly half as wide as they should be, your $t$-statistics nearly double, and you will declare effects "significant" that the data do not support. This is the same disease diagnosed in [Module 5's practical-issues page](../05-panel/practical-issues.qmd): there, serial correlation within a *unit over time* inflated the variance; here it is correlation within a *cluster over members*. The design-effect multiplier is identical in spirit, and the cluster-robust standard errors of Module 5 are one honest fix. A multilevel model that *estimates* $\tau_0^2$ and $\sigma^2$ directly is another.
+:::
+
+
+## When Does Multilevel Modelling Actually Matter?
+
+The ICC is the deciding diagnostic. If it is genuinely negligible, the clustering carries no information and a single-level model with cluster-robust standard errors is perfectly adequate --- you do not need the machinery of random intercepts. If it is not negligible, two things are true at once: (i) your naive standard errors are dishonest, and (ii) there is real, structured between-clinic variation worth modelling explicitly.
+
+::: {.glass-card .glass-card--insight}
+A rough working rule for primary-care data: an **ICC below $\sim 0.01$** with small clusters means multilevel modelling adds little; an ICC in the **$0.05$ to $0.20$** range --- typical for clinic-level health outcomes --- means clustering meaningfully reduces your effective sample and a random-intercept model is warranted. But the design effect depends on $m$ as much as on the ICC: large clusters make even a small ICC consequential. Always evaluate $1 + (m-1)\,\text{ICC}$, not the ICC alone.
+:::
+
+The empty model serves two further purposes beyond inference. First, it gives you a **baseline ICC** against which to judge how much between-clinic variation your predictors later explain --- a multilevel analogue of $R^2$. Second, it tells you *where to spend effort*: a high ICC says the action is at the clinic level (staffing, protocols, recall systems) and points you toward clinic-level predictors; a low ICC says the action is at the patient level (age, comorbidity, adherence). The variance decomposition is not just a nuisance correction --- it is the first substantive finding.
+
+
+<details>
+<summary>Math Details: The ICC as a correlation, and the design-effect derivation</summary>
+<div class="details-content">
+
+### The ICC equals the within-cluster correlation
+
+Start from the empty random-intercept model, $y_{ij} = \gamma_{00} + u_{0i} + \varepsilon_{ij}$, with $u_{0i} \sim \mathcal{N}(0, \tau_0^2)$ and $\varepsilon_{ij} \sim \mathcal{N}(0, \sigma^2)$, mutually independent. The variance of a single observation is
+
+$$
+\operatorname{Var}(y_{ij}) = \operatorname{Var}(u_{0i}) + \operatorname{Var}(\varepsilon_{ij}) = \tau_0^2 + \sigma^2,
+$$
+
+since the two random terms are independent (no covariance term). Now take two distinct patients $j \neq k$ in the *same* cluster $i$. They share the **same** $u_{0i}$, but their idiosyncratic terms $\varepsilon_{ij}, \varepsilon_{ik}$ are independent of each other and of $u_{0i}$. Their covariance is
+
+$$
+\operatorname{Cov}(y_{ij}, y_{ik}) = \operatorname{Cov}(u_{0i} + \varepsilon_{ij},\; u_{0i} + \varepsilon_{ik}) = \operatorname{Var}(u_{0i}) = \tau_0^2,
+$$
+
+because every cross-term involving an $\varepsilon$ vanishes. Dividing the covariance by the product of the (equal) standard deviations gives the correlation:
+
+$$
+\rho = \operatorname{Corr}(y_{ij}, y_{ik}) = \frac{\tau_0^2}{\tau_0^2 + \sigma^2} = \text{ICC}. \qquad\checkmark
+$$
+
+So the ICC is simultaneously a variance ratio and a correlation. (For two patients in *different* clusters the shared $u_{0i}$ disappears, the covariance is zero, and they are uncorrelated --- exactly as a clustering structure should imply.)
+
+### The design effect for a cluster mean
+
+Consider estimating the grand mean from $N$ clusters of $m$ observations each, $n = Nm$. The variance of the overall sample mean $\bar{y}$ under the clustered structure is, with all observations weighted equally,
+
+$$
+\operatorname{Var}(\bar{y}) = \frac{\sigma_y^2}{n}\,\big[\,1 + (m-1)\,\rho\,\big],
+$$
+
+where $\sigma_y^2 = \tau_0^2 + \sigma^2$ is the total variance and $\rho$ is the ICC. The bracket is the **design effect**. To see where it comes from, write the cluster total $T_i = \sum_{j=1}^m y_{ij}$. Its variance has $m$ "diagonal" variance terms and $m(m-1)$ "off-diagonal" covariance terms:
+
+$$
+\operatorname{Var}(T_i) = m\,\sigma_y^2 + m(m-1)\,\operatorname{Cov}(y_{ij}, y_{ik}) = m\,\sigma_y^2 + m(m-1)\,\rho\,\sigma_y^2 = m\,\sigma_y^2\,[1 + (m-1)\rho].
+$$
+
+The cluster mean $\bar{y}_i = T_i / m$ therefore has variance $(\sigma_y^2/m)[1 + (m-1)\rho]$, and averaging over $N$ independent clusters divides by $N$:
+
+$$
+\operatorname{Var}(\bar{y}) = \frac{\sigma_y^2}{Nm}\,[1 + (m-1)\rho] = \frac{\sigma_y^2}{n}\,\underbrace{[1 + (m-1)\rho]}_{\text{DEFF}}.
+$$
+
+Under *naive* independence the variance would be just $\sigma_y^2 / n$. The ratio of the true variance to the naive one is precisely $\text{DEFF} = 1 + (m-1)\rho$ (Kish, 1965).
+
+### Effective sample size and SE inflation
+
+Equating the clustered variance to the variance a simple random sample of size $n_{\text{eff}}$ would have, $\sigma_y^2 / n_{\text{eff}} = (\sigma_y^2 / n)\,\text{DEFF}$, gives
+
+$$
+n_{\text{eff}} = \frac{n}{\text{DEFF}} = \frac{n}{1 + (m-1)\rho}.
+$$
+
+Because variance scales with $\text{DEFF}$, the *standard error* --- its square root --- scales with $\sqrt{\text{DEFF}}$. An analyst who ignores clustering reports an SE that is too small by exactly this factor:
+
+$$
+\frac{\text{SE}_{\text{naive}}}{\text{SE}_{\text{clustered}}} = \frac{1}{\sqrt{\text{DEFF}}} = \frac{1}{\sqrt{1 + (m-1)\rho}}.
+$$
+
+This is the algebra behind the warning card: with $m = 25$ and $\rho = 0.10$, $\text{DEFF} = 3.4$ and the naive SE is a factor of $\sqrt{3.4} \approx 1.84$ too small.
+
+</div>
+</details>
+
+
+## Extracting Variance Components from a Fitted Model
+
+In practice you do not assume $\tau_0^2$ and $\sigma^2$ --- you *estimate* them by fitting the empty random-intercept model with REML (restricted maximum likelihood), then read the two variance components off the fit and form the ICC. Both implementations below simulate diabetes patients nested in vårdcentraler with a known ICC, fit the empty model, and recover it.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(lme4)      # mixed models via REML
+library(performance)  # icc() convenience function
+
+# --- Simulate: 40 vårdcentraler, ~25 diabetes patients each ---
+# True components: tau0^2 = 0.30 (between), sigma^2 = 1.20 (within)
+#   => true ICC = 0.30 / (0.30 + 1.20) = 0.20
+set.seed(2024)
+n_clinic <- 40
+m        <- 25
+tau0     <- sqrt(0.30)
+sigma    <- sqrt(1.20)
+grand    <- 7.5                       # national mean HbA1c (%)
+
+u0 <- rnorm(n_clinic, 0, tau0)        # one clinic bump per vårdcentral
+dat <- data.frame(
+  clinic = factor(rep(1:n_clinic, each = m)),
+  hba1c  = grand + rep(u0, each = m) + rnorm(n_clinic * m, 0, sigma)
+)
+
+# --- Fit the empty (unconditional) random-intercept model ---
+m0 <- lmer(hba1c ~ 1 + (1 | clinic), data = dat, REML = TRUE)
+
+# --- Extract the two variance components ---
+vc      <- as.data.frame(VarCorr(m0))
+tau0_sq <- vc$vcov[vc$grp == "clinic"]      # between-group variance
+sigma_sq<- vc$vcov[vc$grp == "Residual"]    # within-group variance
+icc     <- tau0_sq / (tau0_sq + sigma_sq)
+
+cat(sprintf("Between (tau0^2): %.3f\n", tau0_sq))
+cat(sprintf("Within  (sigma^2): %.3f\n", sigma_sq))
+cat(sprintf("ICC: %.3f\n", icc))            # ~0.20
+
+# Design effect and effective n for an average cluster of size m
+deff <- 1 + (m - 1) * icc
+cat(sprintf("Design effect (m=%d): %.2f\n", m, deff))
+cat(sprintf("Effective n: %.0f of %d\n", n_clinic * m / deff, n_clinic * m))
+
+# Convenience: performance::icc() returns the same number
+performance::icc(m0)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# --- Simulate: 40 vårdcentraler, 25 diabetes patients each ---
+# True components: tau0^2 = 0.30 (between), sigma^2 = 1.20 (within)
+#   => true ICC = 0.30 / (0.30 + 1.20) = 0.20
+rng      = np.random.default_rng(2024)
+n_clinic = 40
+m        = 25
+tau0     = np.sqrt(0.30)
+sigma    = np.sqrt(1.20)
+grand    = 7.5                                   # national mean HbA1c (%)
+
+u0  = rng.normal(0, tau0, n_clinic)              # one clinic bump each
+dat = pd.DataFrame({
+    "clinic": np.repeat(np.arange(n_clinic), m),
+    "hba1c":  grand + np.repeat(u0, m) + rng.normal(0, sigma, n_clinic * m),
+})
+
+# --- Fit the empty random-intercept model (REML) ---
+m0 = smf.mixedlm("hba1c ~ 1", data=dat, groups=dat["clinic"]).fit(reml=True)
+
+# --- Extract the two variance components ---
+# MixedLM reports the random-effect (cov_re) and residual (scale) variances.
+tau0_sq  = float(m0.cov_re.iloc[0, 0])           # between-group variance
+sigma_sq = float(m0.scale)                       # within-group variance
+icc      = tau0_sq / (tau0_sq + sigma_sq)
+
+print(f"Between (tau0^2): {tau0_sq:.3f}")
+print(f"Within  (sigma^2): {sigma_sq:.3f}")
+print(f"ICC: {icc:.3f}")                         # ~0.20
+
+# Design effect and effective n for clusters of size m
+deff = 1 + (m - 1) * icc
+print(f"Design effect (m={m}): {deff:.2f}")
+print(f"Effective n: {n_clinic * m / deff:.0f} of {n_clinic * m}")
+```
+
+:::
+
+Both fits recover the planted values --- a between-group variance near $0.30$, a within-group variance near $1.20$, and an ICC near $0.20$ --- because REML estimates exactly the two variance components that the decomposition defines. The design effect for clusters of $25$ is then $1 + 24 \times 0.20 = 5.8$: the $1{,}000$ simulated patients carry the information of roughly $170$ independent ones.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A regional analysis of *väntetider* (waiting times, in days) for a diabetes-nurse appointment fits an empty random-intercept model with patients nested in vårdcentraler. The fit reports a between-clinic variance of $\tau_0^2 = 9$ days$^2$ and a within-clinic variance of $\sigma^2 = 36$ days$^2$.
+
+(a) Compute the ICC and state its two interpretations. (b) With $m = 16$ patients per clinic, compute the design effect and the SE inflation factor. (c) The naive analysis reported a $95\%$ confidence interval of width $\pm 1.0$ day for the mean waiting time. What is the honest width?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\text{ICC} = \dfrac{\tau_0^2}{\tau_0^2 + \sigma^2} = \dfrac{9}{9 + 36} = \dfrac{9}{45} = 0.20$. Interpreted two ways: (i) $20\%$ of the total variation in waiting times is *between* clinics rather than within them; (ii) the correlation between the waiting times of two patients at the *same* clinic is $0.20$.
+
+**(b)** $\text{DEFF} = 1 + (m-1)\,\text{ICC} = 1 + 15 \times 0.20 = 1 + 3 = 4.0$. The SE inflation factor is $\sqrt{\text{DEFF}} = \sqrt{4} = 2.0$.
+
+**(c)** The naive CI is too narrow by the SE-inflation factor, so the honest half-width is $1.0 \times 2.0 = 2.0$ days, i.e. $\pm 2.0$ days --- twice as wide as the naive analysis claimed.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Two study designs are proposed to estimate mean HbA1c, both with a fixed budget of $400$ patient records and a known $\text{ICC} = 0.05$. **Design A**: $20$ vårdcentraler with $20$ patients each. **Design B**: $80$ vårdcentraler with $5$ patients each.
+
+(a) Compute the design effect and effective sample size for each. (b) Which design yields more information, and what is the general principle?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Design A: $\text{DEFF} = 1 + (20-1)\times 0.05 = 1 + 0.95 = 1.95$, so $n_{\text{eff}} = 400 / 1.95 \approx 205$. Design B: $\text{DEFF} = 1 + (5-1)\times 0.05 = 1 + 0.20 = 1.20$, so $n_{\text{eff}} = 400 / 1.20 \approx 333$.
+
+**(b)** Design B yields far more effective information ($\approx 333$ vs $\approx 205$ effective observations) from the *same* number of records. The general principle: because $\text{DEFF} = 1 + (m-1)\,\text{ICC}$ grows with the cluster size $m$, spreading a fixed budget across *more clusters with fewer members each* shrinks the design effect. To buy precision, recruit more vårdcentraler, not more patients per vårdcentral.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+An analyst studying a *fallpreventionsprogram* (fall-prevention program) for elderly patients runs ordinary OLS on $30$ clinics $\times$ $40$ patients $= 1{,}200$ records, ignoring clustering. The true ICC of the fall-risk outcome is $0.03$. They report a coefficient with a $t$-statistic of $3.1$ and declare it significant at the $5\%$ level.
+
+(a) Compute the design effect. (b) By what factor is their reported standard error too small, and what is the *honest* $t$-statistic? (c) At the conventional $|t| > 1.96$ threshold, does the conclusion survive?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\text{DEFF} = 1 + (40-1)\times 0.03 = 1 + 39 \times 0.03 = 1 + 1.17 = 2.17$.
+
+**(b)** The naive SE is too small by $\sqrt{\text{DEFF}} = \sqrt{2.17} \approx 1.47$. The honest $t$-statistic is the naive one divided by that factor: $3.1 / 1.47 \approx 2.11$.
+
+**(c)** Barely. The honest $t \approx 2.11$ still exceeds $1.96$, so the effect survives --- but the comfortable-looking $t = 3.1$ was an illusion produced by treating correlated patients as independent. Even a *small* ICC of $0.03$ nearly halved the apparent margin of significance, because the cluster size $m = 40$ amplified it. With a slightly larger ICC or cluster size, the same naive analysis would have crossed from "clearly significant" to "not significant."
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Two empty random-intercept models are fit to different outcomes measured on the same patients nested in vårdcentraler. Outcome A (HbA1c) yields $\text{ICC} = 0.18$; outcome B (patient-reported satisfaction) yields $\text{ICC} = 0.02$. Both have $m = 30$.
+
+(a) For each outcome, state where the substantive variation lives and what kind of predictor would explain the most variance. (b) For which outcome is a multilevel model most clearly warranted, and why? (c) Compute both design effects to support your answer.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Outcome A ($\text{ICC} = 0.18$): a meaningful $18\%$ of the variation is *between* clinics, so substantial action lives at the clinic level --- *clinic-level* predictors (staffing ratios, recall-system quality, protocol adherence, *läkare* per patient) would explain the most variance. Outcome B ($\text{ICC} = 0.02$): almost all variation ($98\%$) is *within* clinics, so the action is at the patient level --- *patient-level* predictors (age, comorbidity, expectations) matter most; clinics are nearly interchangeable for satisfaction.
+
+**(b)** Outcome A. A nontrivial ICC means both that the naive SEs are seriously dishonest *and* that there is real structured between-clinic variation worth modelling with random intercepts. For outcome B the ICC is small enough that a single-level model (with cluster-robust SEs as a precaution) is largely adequate.
+
+**(c)** Outcome A: $\text{DEFF} = 1 + 29 \times 0.18 = 1 + 5.22 = 6.22$ --- a severe loss of effective information. Outcome B: $\text{DEFF} = 1 + 29 \times 0.02 = 1 + 0.58 = 1.58$ --- modest. The order of magnitude difference in design effects confirms that the multilevel machinery earns its keep for HbA1c far more than for satisfaction.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The empty random-intercept model splits total variance into a between-group component $\tau_0^2$ and a within-group component $\sigma^2$, with $\operatorname{Var}(y_{ij}) = \tau_0^2 + \sigma^2$.
+- The ICC, $\tau_0^2 / (\tau_0^2 + \sigma^2)$, is both the between-group variance share *and* the correlation between two observations in the same group --- one number with two readings.
+- The design effect $1 + (m-1)\,\text{ICC}$ converts the ICC into lost information: effective sample size is $n / \text{DEFF}$ and the honest standard error is $\sqrt{\text{DEFF}}$ times the naive one.
+- Ignoring clustering deflates standard errors by $\sqrt{\text{DEFF}}$, manufacturing false significance --- the same disease as Module 5's serial correlation, with the cluster taking the place of the unit-over-time.
+- Multilevel modelling earns its keep when the ICC is non-negligible *or* clusters are large; always judge $1 + (m-1)\,\text{ICC}$, not the ICC alone.
+:::
+
+## What Comes Next
+
+We have treated the clinic effect $u_{0i}$ as a single random intercept --- a fixed bump shared by every patient at a center, partitioning a single snapshot of variance into between and within. But health outcomes are rarely a single snapshot: we follow the *same* patient's HbA1c across many visits, and what we really want is the **trajectory** --- how fast control improves, and whether some patients improve faster than others. The next page, [Growth Curve Models](growth-models.qmd), extends the variance decomposition into *time*: each patient gets a random intercept *and* a random slope on time, the variance components now describe the spread of starting points and the spread of improvement rates, and the ICC generalizes into a covariance structure over repeated measurements. The two-level split you mastered here becomes the engine of longitudinal causal analysis.

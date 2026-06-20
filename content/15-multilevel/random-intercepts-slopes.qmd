@@ -1,0 +1,694 @@
+---
+title: "Random Intercepts and Random Slopes"
+subtitle: "Letting relationships vary across groups"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write the varying-intercept model $y_{ij} = (\beta_0 + b_{0j}) + \beta_1 x_{ij} + \varepsilon_{ij}$ and read its fixed part (the population-average line) against its random part (the group deviations)
+- Extend it to a varying-slope model in which both the intercept and the slope of the staffing--outcome relationship vary across regioner, governed by a $2\times2$ random-effects covariance matrix
+- Explain why group-specific lines are *partially pooled* toward the population line, and how the amount of pooling depends on the variance components and the group's sample size
+- Decide when a random slope is needed --- when the relationship itself, not just the level, differs across groups
+- Fit the model in R with `lmer(y ~ x + (x | group))` and in Python with `statsmodels` `MixedLM`, and interpret the variance--covariance estimates it returns
+:::
+
+## One Slope for Everyone, or One per Region?
+
+Sweden's 21 *regioner* (regions) each run a network of *vårdcentraler* (primary care centers), and the staffing of those centers varies enormously --- a remote *vårdcentral* in Norrbotten may have one *distriktssköterska* (district nurse) per 1,400 listed patients, while an urban center in Stockholm has one per 700. A natural policy question is whether richer nurse staffing translates into better diabetes control, measured as the share of a center's Type 2 diabetes patients whose HbA1c sits above the control threshold (lower is better).
+
+The crude approach pools every *vårdcentral* in the country into one scatterplot and fits a single line: one intercept, one slope. This **complete-pooling** model assumes the staffing--outcome relationship is *identical* in Norrbotten and Stockholm. The opposite extreme fits a *separate* regression inside each region --- **no pooling** --- and treats the 21 slopes as 21 unrelated numbers, even though a region with only a handful of centers gives a wildly unstable estimate.
+
+The previous page, [Partial Pooling and Shrinkage](partial-pooling-shrinkage.qmd), showed that the honest middle ground is **partial pooling**: borrow strength across regions, pulling each region's estimate toward the national average by an amount that reflects how noisy that region's own data are. This page builds the engine that *does* the partial pooling for both the **level** of the relationship (the intercept) and its **steepness** (the slope). That engine is the **linear mixed model** with random intercepts and random slopes.
+
+::: {.glass-card .glass-card--insight}
+A mixed model splits every group's regression line into two pieces: a **fixed part** shared by all groups (the population-average line) and a **random part** that lets each group deviate from it. The deviations are not free parameters --- they are draws from a distribution whose variance the model estimates. That single act of treating the deviations as draws is what produces partial pooling automatically.
+:::
+
+
+## The Varying-Intercept Model
+
+Index *vårdcentral* $i$ within region $j$. Let $y_{ij}$ be the center's poor-control share (in percentage points) and $x_{ij}$ its nurse staffing (nurses per 1,000 listed patients, centered at the national mean so $x=0$ is an average-staffed center). The **varying-intercept** model is
+
+$$
+y_{ij} = (\beta_0 + b_{0j}) + \beta_1 x_{ij} + \varepsilon_{ij}, \qquad
+b_{0j} \sim \mathcal{N}(0,\,\tau_0^2), \quad
+\varepsilon_{ij} \sim \mathcal{N}(0,\,\sigma^2).
+$$
+
+**Read the mean structure aloud**: "Region $j$'s line has the *same* slope $\beta_1$ as every other region, but its intercept is the population intercept $\beta_0$ shifted up or down by a region-specific bump $b_{0j}$." The bumps $b_{0j}$ are not estimated one by one as free parameters; they are assumed to be **draws from a single normal distribution** centered at zero with variance $\tau_0^2$. A region with a strong baseline care system draws a negative $b_{0j}$ (lower poor-control share at average staffing); a struggling region draws a positive one.
+
+This produces a fan of **parallel lines** --- all sharing slope $\beta_1$, vertically offset by their $b_{0j}$. The quantity $\tau_0$ controls how widely the fan spreads: $\tau_0 = 0$ collapses every region onto the single population line (complete pooling), while a large $\tau_0$ lets the regions sit far apart.
+
+::: {.glass-card .glass-card--definition}
+The model has two kinds of parameters, and keeping them straight is the whole game:
+
+- **Fixed effects** $(\beta_0, \beta_1)$ --- the **population-average** intercept and slope. These describe the *average* *vårdcentral* in the *average* region and are the quantities a national policymaker reports.
+- **Variance components** $(\tau_0^2, \sigma^2)$ --- the spread of the *between-region* intercept deviations and the spread of the *within-region* residuals. These describe how much regions differ and how noisy individual centers are.
+
+The region-specific bumps $b_{0j}$ are **predicted**, not estimated as fixed parameters --- they are the *best linear unbiased predictors* (BLUPs), and they are what get partially pooled.
+:::
+
+
+## Letting the Slope Vary Too
+
+Parallel lines assume the *return to staffing* is the same everywhere: one extra nurse per 1,000 patients buys the same improvement in Norrbotten as in Stockholm. That is often false. In a sparsely populated region, an extra nurse may cover enormous distances and move the needle little; in a dense urban region the same nurse may run many more diabetes follow-ups. When the **relationship itself** varies across groups --- not merely its level --- we need a **random slope**.
+
+$$
+y_{ij} = (\beta_0 + b_{0j}) + (\beta_1 + b_{1j})\,x_{ij} + \varepsilon_{ij}.
+$$
+
+**Read this aloud**: "Region $j$'s line has both its own intercept $(\beta_0 + b_{0j})$ *and* its own slope $(\beta_1 + b_{1j})$." Now the region deviations come in *pairs* --- a level shift $b_{0j}$ and a slope shift $b_{1j}$ --- and these two are generally correlated. A region with an unusually high intercept (poor baseline control) might also have an unusually steep slope (staffing helps it more), or the reverse. We capture this with a **bivariate normal** distribution and a $2\times2$ covariance matrix:
+
+$$
+\begin{pmatrix} b_{0j} \\ b_{1j} \end{pmatrix}
+\sim \mathcal{N}\!\left(
+\begin{pmatrix} 0 \\ 0 \end{pmatrix},\;
+\boldsymbol{\Sigma}_b
+\right),
+\qquad
+\boldsymbol{\Sigma}_b =
+\begin{pmatrix}
+\tau_0^2 & \rho\,\tau_0\tau_1 \\[2pt]
+\rho\,\tau_0\tau_1 & \tau_1^2
+\end{pmatrix}.
+$$
+
+**Read the matrix aloud**: "The intercept deviations have variance $\tau_0^2$, the slope deviations have variance $\tau_1^2$, and the off-diagonal $\rho\,\tau_0\tau_1$ is their covariance --- so $\rho$ is the correlation between a region's level and its steepness." When $\tau_1 = 0$ we are back to parallel lines; as $\tau_1$ grows, the region lines *fan out*, crossing one another, and the sign of $\rho$ decides whether high-intercept regions tilt up or down.
+
+The interactive below lets you grow $\tau_1$ from zero and watch the parallel fan turn into a crossing fan, all while the fixed (population-average) line stays put.
+
+::: {.interactive-container}
+
+#### From Parallel Lines to a Crossing Fan
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls (the full tour is below).
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${mlris_pal.axis};
+    background: ${mlris_pal.fill};
+    border-left: 3px solid ${mlris_pal.fixed};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave the model on <em>Random intercepts only</em>
+  and watch the eight region lines run parallel. Then switch to
+  <em>+ random slopes</em> and drag <em>Slope SD</em> up to make the fan spread.
+  The thick red line never moves &mdash; that is the population-average fit.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlris_model = Inputs.radio(
+  ["Random intercepts only", "Random intercepts + slopes"],
+  { label: "Model", value: "Random intercepts only" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlris_tau0 = Inputs.range([0, 6], {
+  value: 3,
+  step: 0.25,
+  label: "Intercept SD (τ₀): how far region levels spread"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlris_tau1 = Inputs.range([0, 5], {
+  value: 0,
+  step: 0.25,
+  label: "Slope SD (τ₁): how much the staffing return varies"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlris_rho = Inputs.range([-0.9, 0.9], {
+  value: -0.4,
+  step: 0.1,
+  label: "Intercept–slope correlation (ρ)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlris_showPop = Inputs.toggle({
+  label: "Show population-average line (fixed part)",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlris_draw = Inputs.button("Draw new regions", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Uppsala-academic palette shared across this page's interactives. ──
+mlris_pal = ({
+  fixed:  "#990000",   // population-average / fixed line (Uppsala red)
+  group:  "#3d5a6c",   // group (region) lines (slate)
+  good:    "#2e6f40",  // success / on-target (green)
+  ochre:   "#9c7a33",  // highlight / true value / shrinkage path (ochre)
+  ink:     "#1c1c1a",  // ink / reference lines
+  axis:    "#555555",  // axis text
+  hair:    "#e6e3db",  // gridlines / hairlines
+  muted:   "#79766e",  // muted ink / inactive
+  fill:    "#f6f5f1"   // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed (population-average) parameters of the staffing → poor-control line.
+// x is nurse staffing centered at the national mean (units: nurses/1000 pts).
+// Positive β1 would mean MORE staffing → MORE poor control, which is wrong;
+// the true return is negative (more staffing → fewer poorly controlled).
+mlris_beta0 = 22      // poor-control share (%) at average staffing
+mlris_beta1 = -3.2    // each +1 nurse/1000 lowers poor-control share by 3.2 pts
+mlris_xDom = [-3, 3]  // centered staffing range shown on the x-axis
+
+// Number of regions drawn and centers per region (kept small so lines read).
+mlris_J = 8
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Generate the J region-specific (b0j, b1j) draws from the bivariate normal
+// implied by τ0, τ1, ρ. The Cholesky factor of the 2x2 covariance turns two
+// independent standard-normal draws into a correlated pair (see Math Details).
+// mlris_draw is referenced so the "Draw new regions" button resamples; the
+// model toggle zeroes the slope deviations when slopes are switched off.
+mlris_regions = {
+  mlris_draw;                          // dependency: click → fresh draw
+  const useSlopes = mlris_model === "Random intercepts + slopes";
+  const t0 = mlris_tau0;
+  const t1 = useSlopes ? mlris_tau1 : 0;
+  const rho = useSlopes ? mlris_rho : 0;
+
+  // Cholesky of Σ = [[t0², ρ t0 t1],[ρ t0 t1, t1²]]:
+  //   L = [[t0, 0],[ρ t1, t1√(1−ρ²)]],  (b0,b1) = L (z0,z1).
+  const z = d3.randomNormal(0, 1);
+  const out = [];
+  for (let j = 0; j < mlris_J; j++) {
+    const z0 = z(), z1 = z();
+    const b0 = t0 * z0;
+    const b1 = rho * t1 * z0 + t1 * Math.sqrt(1 - rho * rho) * z1;
+    out.push({ region: j + 1, b0, b1 });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Each region's two-point line across the x-domain (enough to draw a segment),
+// plus the fixed population-average line as its own series.
+mlris_lineData = mlris_regions.flatMap(r => {
+  const a = mlris_beta0 + r.b0;
+  const s = mlris_beta1 + r.b1;
+  return [
+    { region: r.region, kind: "region", x: mlris_xDom[0], y: a + s * mlris_xDom[0] },
+    { region: r.region, kind: "region", x: mlris_xDom[1], y: a + s * mlris_xDom[1] }
+  ];
+})
+
+mlris_popData = [
+  { x: mlris_xDom[0], y: mlris_beta0 + mlris_beta1 * mlris_xDom[0] },
+  { x: mlris_xDom[1], y: mlris_beta0 + mlris_beta1 * mlris_xDom[1] }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 360,
+  marginLeft: 58,
+  marginBottom: 46,
+  marginRight: 40,
+  marginTop: 18,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: {
+    label: "Nurse staffing (centered: nurses per 1,000 patients) →",
+    domain: mlris_xDom
+  },
+  y: {
+    label: "↑ Poor HbA1c control (% of patients)",
+    domain: [4, 40]
+  },
+  marks: [
+    // Vertical reference at x = 0 (average staffing): where intercepts live.
+    Plot.ruleX([0], { stroke: mlris_pal.hair, strokeWidth: 1 }),
+
+    // Region lines (slate, semi-transparent so overlap reads).
+    Plot.line(mlris_lineData, {
+      x: "x", y: "y", z: "region",
+      stroke: mlris_pal.group, strokeWidth: 1.6, strokeOpacity: 0.7
+    }),
+
+    // Small region labels at the right end of each line.
+    Plot.text(
+      mlris_lineData.filter(d => d.x === mlris_xDom[1]),
+      {
+        x: "x", y: "y",
+        text: d => `R${d.region}`,
+        dx: 8, textAnchor: "start",
+        fill: mlris_pal.group, fontSize: 9
+      }
+    ),
+
+    // Population-average (fixed) line — thick red, drawn last so it sits on top.
+    mlris_showPop ? Plot.line(mlris_popData, {
+      x: "x", y: "y",
+      stroke: mlris_pal.fixed, strokeWidth: 3.5
+    }) : null,
+    mlris_showPop ? Plot.text([mlris_popData[0]], {
+      x: "x", y: "y",
+      text: ["Population average"],
+      dx: 6, dy: -10, textAnchor: "start",
+      fill: mlris_pal.fixed, fontSize: 11, fontWeight: "bold",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout of the variance components currently in force, plus the spread
+// of the eight realized region slopes so the reader sees τ1 "bite."
+{
+  const useSlopes = mlris_model === "Random intercepts + slopes";
+  const slopes = mlris_regions.map(r => mlris_beta1 + (useSlopes ? r.b1 : 0));
+  const sMin = d3.min(slopes), sMax = d3.max(slopes);
+
+  const item = (label, val, color) => html`<div style="
+      text-align:center; padding:0.5rem 0.25rem; border-radius:0.5rem;
+      background:${mlris_pal.fill}; min-height:3.6rem;">
+    <div style="font-family:Inter,sans-serif; font-size:0.68rem; font-weight:700;
+        text-transform:uppercase; letter-spacing:0.04em; color:${mlris_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.05rem;
+        font-weight:700; color:${color};">${val}</div>
+  </div>`;
+
+  return html`<div style="
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr));
+      gap:0.5rem; margin-top:0.75rem;">
+    ${item("Pop. slope β₁", mlris_beta1.toFixed(1), mlris_pal.fixed)}
+    ${item("τ₀ (intercepts)", mlris_tau0.toFixed(2), mlris_pal.group)}
+    ${item("τ₁ (slopes)", (useSlopes ? mlris_tau1 : 0).toFixed(2), mlris_pal.group)}
+    ${item("Region slope range", `${sMin.toFixed(1)} … ${sMax.toFixed(1)}`, mlris_pal.ink)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Micro-caption tying the visual to the parameters.
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${mlris_pal.axis};
+    margin: 0.35rem 0 0;
+    line-height: 1.45;">
+  <span style="color:${mlris_pal.fixed};font-weight:600;">Red</span> = fixed
+  (population-average) line; <span style="color:${mlris_pal.group};font-weight:600;">slate</span>
+  = the eight region lines (partially pooled toward red). With τ₁ = 0 they are
+  parallel; raise τ₁ and they fan out and cross.
+</p>`
+```
+
+:::
+
+### How to Read the Fan Plot
+
+Work through the controls in order; each isolates one idea.
+
+**Step 1: See the parallel fan.** With the model on **"Random intercepts only"**, the eight slate region lines are all *parallel* --- they share the population slope $\beta_1 = -3.2$ and differ only in height. The thick red line is the population-average fit. Each region line sits above or below it by its own draw $b_{0j}$.
+
+**Step 2: Spread the levels.** Drag **Intercept SD ($\tau_0$)** up and down. At $\tau_0 = 0$ all eight lines collapse onto the red line (complete pooling). As $\tau_0$ grows, the parallel lines spread vertically --- regions disagree about the *level* of poor control at average staffing, but still agree on the *return* to staffing.
+
+**Step 3: Turn on random slopes.** Switch the model to **"Random intercepts + slopes."** The **Slope SD ($\tau_1$)** slider activates. Push it up from zero and the lines stop being parallel: they *fan out* and begin to cross. Now regions disagree about how steeply staffing helps. Notice the readout: the **Region slope range** widens as $\tau_1$ grows, while the population slope $\beta_1$ stays fixed at $-3.2$.
+
+**Step 4: Tilt the fan with $\rho$.** Drag the **Intercept--slope correlation ($\rho$)**. With $\rho < 0$, regions with high intercepts (worse baseline control, sitting above the red line near $x=0$) tend to have *more negative* slopes (steeper improvement) --- the lines pivot so the high-and-struggling regions catch up fastest. Flip $\rho > 0$ and the pattern reverses: the worst regions also gain *least* from staffing. The sign of $\rho$ is a substantive claim about whether staffing is equalizing or compounding.
+
+**Step 5: Watch what never moves.** Through every change, the red **population-average line** stays exactly where it is (toggle it off and on to confirm). The fixed part answers "what does the *average* region look like?"; the random part answers "how much do regions *differ*?" The two are separately estimated and separately interpreted.
+
+**Step 6: Resample.** Click **"Draw new regions"** to draw a fresh set of eight $(b_{0j}, b_{1j})$ pairs from the same covariance matrix. The individual lines jump, but their *spread* is governed by $\tau_0$, $\tau_1$, $\rho$ --- the quantities the mixed model actually estimates.
+
+
+## Partial Pooling: Where the Group Lines Come From
+
+In the plot above we *drew* the region deviations from a known covariance matrix. In a real analysis we do the reverse: we observe noisy data and must *infer* each region's line. This is where partial pooling does its work. A region's predicted line is **not** its own least-squares fit, and it is **not** the population line --- it is a precision-weighted compromise between the two.
+
+::: {.glass-card .glass-card--insight}
+**Partial pooling in one sentence.** Each region's predicted deviation is its own data's estimate, *shrunk* toward zero (the population line) by a factor that grows with the noise in that region and shrinks with the spread $\tau$ between regions.
+
+For the intercept-only model, the predicted region effect is
+
+$$
+\hat{b}_{0j} \;=\; \underbrace{\frac{\tau_0^2}{\tau_0^2 + \sigma^2 / n_j}}_{\text{shrinkage weight } \lambda_j} \;\times\; \big(\bar{y}_j - \hat{\beta}_0 - \hat{\beta}_1 \bar{x}_j\big).
+$$
+
+**Read this aloud**: "Take region $j$'s raw average residual; keep only the fraction $\lambda_j$ of it, and discard the rest by pulling that region toward the population line." A region with many centers ($n_j$ large) or large between-region spread ($\tau_0^2$ large) has $\lambda_j \to 1$ and is barely shrunk; a region with few, noisy centers has $\lambda_j \to 0$ and is pulled almost all the way to the national average.
+:::
+
+This is exactly the [shrinkage](partial-pooling-shrinkage.qmd) you met on the previous page, now applied not to a single mean per group but to a whole *line* per group. With random slopes, the same logic acts on the pair $(b_{0j}, b_{1j})$ jointly through the matrix $\boldsymbol{\Sigma}_b$: regions with little data have both their intercept *and* their slope dragged toward the population values, so a region with two centers cannot post an absurd slope just because its two points happen to line up steeply. The mixed model regularizes the per-group lines for free.
+
+::: {.glass-card .glass-card--assumption}
+**What the random-effects assumptions buy you.** Partial pooling is valid only if the group deviations behave like genuine draws from the assumed distribution. The mixed model assumes (i) $b_{0j}, b_{1j}$ are normal with the covariance $\boldsymbol{\Sigma}_b$, (ii) the residuals $\varepsilon_{ij}$ are normal with constant variance $\sigma^2$, and crucially (iii) the random effects are **uncorrelated with the regressor $x_{ij}$**. Assumption (iii) is the same exogeneity condition that separates random effects from fixed effects: if better-staffed regions also draw systematically better intercepts, the fixed-effect estimate $\hat\beta_1$ is biased, and you should compare against a fixed-effects specification before trusting the mixed model.
+:::
+
+
+## When Do You Need a Random Slope?
+
+Adding a random slope is not free: it spends parameters ($\tau_1$, $\rho$) and small samples often cannot estimate them, producing a *singular fit* in which the model collapses $\tau_1$ to zero. Include a random slope when:
+
+- **Theory says the relationship varies.** If you believe the return to staffing genuinely differs across regions --- because geography, patient mix, or organization differs --- a random slope encodes that belief and, just as importantly, *propagates the extra uncertainty* into the standard error of $\hat\beta_1$. Omitting a needed random slope makes the fixed-effect standard errors **too small** and inferences over-confident.
+- **The grouping variable is also the cluster of treatment.** If staffing is assigned at the region level, a random slope on staffing is the multilevel analogue of cluster-robust inference: it prevents you from treating the centers in one region as independent replicates of the staffing effect.
+- **The data can support it.** You need enough groups (a common rule of thumb is at least 5--8, ideally many more) and enough units per group for $\tau_1$ to be estimable.
+
+Conversely, drop the random slope when the data are too thin, when the variance estimate is essentially zero, or when theory says the slope is structurally common across groups. The interactive's $\tau_1 = 0$ position is exactly the parallel-lines model you fall back to.
+
+
+<details>
+<summary>Math Details: The random-effects covariance matrix and the partially-pooled BLUPs</summary>
+<div class="details-content">
+
+### Stacking the model in matrix form
+
+Collect the $n_j$ observations in region $j$ into a vector $\mathbf{y}_j$. The varying-slope model for that region is
+
+$$
+\mathbf{y}_j = \mathbf{X}_j \boldsymbol\beta + \mathbf{Z}_j \mathbf{b}_j + \boldsymbol\varepsilon_j,
+\qquad
+\mathbf{b}_j \sim \mathcal{N}(\mathbf{0},\,\boldsymbol\Sigma_b),
+\quad
+\boldsymbol\varepsilon_j \sim \mathcal{N}(\mathbf{0},\,\sigma^2 \mathbf{I}).
+$$
+
+Here $\mathbf{X}_j$ and $\mathbf{Z}_j$ are the fixed- and random-effect design matrices. For a model with a random intercept *and* a random slope on $x$, each row of $\mathbf{Z}_j$ is $(1,\;x_{ij})$, and $\mathbf{b}_j = (b_{0j}, b_{1j})'$ with
+
+$$
+\boldsymbol\Sigma_b =
+\begin{pmatrix}
+\tau_0^2 & \rho\,\tau_0\tau_1 \\
+\rho\,\tau_0\tau_1 & \tau_1^2
+\end{pmatrix}.
+$$
+
+### Why the marginal model has correlated errors
+
+Integrating out $\mathbf{b}_j$ gives the **marginal** distribution of the data in region $j$:
+
+$$
+\mathbf{y}_j \sim \mathcal{N}\!\big(\mathbf{X}_j\boldsymbol\beta,\; \mathbf{V}_j\big),
+\qquad
+\mathbf{V}_j = \mathbf{Z}_j \boldsymbol\Sigma_b \mathbf{Z}_j' + \sigma^2 \mathbf{I}.
+$$
+
+**Read $\mathbf{V}_j$ aloud**: "Within a region, two centers are correlated because they share the same random intercept and slope; the matrix $\mathbf{Z}_j\boldsymbol\Sigma_b\mathbf{Z}_j'$ is exactly that shared structure, and $\sigma^2\mathbf{I}$ is the leftover idiosyncratic noise." This is why a mixed model is *not* the same as OLS with extra dummies: the off-diagonal correlations are modeled, not ignored.
+
+### Generating correlated draws (what the interactive does)
+
+To simulate $\mathbf{b}_j$ we use the **Cholesky factor** $\mathbf{L}$ with $\mathbf{L}\mathbf{L}' = \boldsymbol\Sigma_b$:
+
+$$
+\mathbf{L} =
+\begin{pmatrix}
+\tau_0 & 0 \\
+\rho\,\tau_1 & \tau_1\sqrt{1-\rho^2}
+\end{pmatrix},
+\qquad
+\begin{pmatrix} b_{0j} \\ b_{1j} \end{pmatrix} = \mathbf{L} \begin{pmatrix} z_{0j} \\ z_{1j} \end{pmatrix},
+\quad z \sim \mathcal{N}(0,1).
+$$
+
+You can verify $\operatorname{Var}(b_{0j}) = \tau_0^2$, $\operatorname{Var}(b_{1j}) = \rho^2\tau_1^2 + (1-\rho^2)\tau_1^2 = \tau_1^2$, and $\operatorname{Cov}(b_{0j},b_{1j}) = \rho\,\tau_0\tau_1$ --- exactly $\boldsymbol\Sigma_b$. This is the construction used in the fan plot.
+
+### The BLUP is a shrinkage estimator
+
+Given $\boldsymbol\beta$ and the variance components, the best linear unbiased predictor of the random effects is
+
+$$
+\hat{\mathbf{b}}_j = \boldsymbol\Sigma_b \mathbf{Z}_j' \mathbf{V}_j^{-1} (\mathbf{y}_j - \mathbf{X}_j\boldsymbol\beta).
+$$
+
+For the intercept-only case ($\mathbf{Z}_j = \mathbf{1}$, $\boldsymbol\Sigma_b = \tau_0^2$), this collapses to the scalar shrinkage formula in the text:
+
+$$
+\hat{b}_{0j} = \frac{\tau_0^2}{\tau_0^2 + \sigma^2/n_j}\,\bar{r}_j,
+$$
+
+where $\bar{r}_j$ is region $j$'s mean residual. The factor $\lambda_j = \tau_0^2 / (\tau_0^2 + \sigma^2/n_j)$ is the **reliability** of region $j$'s data: it is the fraction of region $j$'s apparent deviation that the model believes is signal rather than noise. As $n_j \to \infty$, $\lambda_j \to 1$ (no pooling); as $n_j \to 0$ or $\tau_0 \to 0$, $\lambda_j \to 0$ (complete pooling toward the population line).
+
+### Estimation
+
+In practice $\boldsymbol\beta$ and the variance components are estimated jointly by **maximum likelihood** or, to remove the downward bias in the variance estimates, **restricted maximum likelihood (REML)** --- the default in `lmer`. The BLUPs are then computed by plugging the estimated variance components into the formula above (technically EBLUPs, "empirical" BLUPs).
+
+</div>
+</details>
+
+
+## Fitting the Mixed Model
+
+Both implementations simulate centers nested in regions, then fit the varying-intercept-and-slope model and read off the fixed effects and the random-effects covariance.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(lme4)
+library(tidyverse)
+
+# --- Simulate 21 regioner, ~12 vårdcentraler each ---
+# x = nurse staffing (centered);  y = poor-control share (%, lower is better).
+# True fixed part: beta0 = 22, beta1 = -3.2.
+# Region random effects: tau0 = 3 (intercepts), tau1 = 1.5 (slopes), rho = -0.4.
+set.seed(2025)
+J  <- 21
+nj <- 12
+
+Sigma <- matrix(c(3^2,            -0.4 * 3 * 1.5,
+                  -0.4 * 3 * 1.5,  1.5^2), nrow = 2)
+b <- MASS::mvrnorm(J, mu = c(0, 0), Sigma = Sigma)   # one (b0, b1) per region
+
+panel <- map_dfr(1:J, function(j) {
+  x <- rnorm(nj, mean = 0, sd = 1.2)                 # centered staffing
+  y <- (22 + b[j, 1]) + (-3.2 + b[j, 2]) * x + rnorm(nj, 0, 2.5)
+  tibble(region = factor(j), x = x, y = y)
+})
+
+# --- Varying intercept AND slope: (x | region) ---
+m_rs <- lmer(y ~ x + (x | region), data = panel)
+summary(m_rs)
+
+# Fixed effects (population-average intercept and slope):
+fixef(m_rs)
+
+# Random-effects covariance: tau0^2, tau1^2 and the intercept-slope correlation:
+VarCorr(m_rs)
+
+# Partially-pooled region lines (BLUPs added to the fixed part):
+coef(m_rs)$region |> head()
+
+# Compare with the random-INTERCEPT-only model (parallel lines):
+m_ri <- lmer(y ~ x + (1 | region), data = panel)
+anova(m_ri, m_rs)   # LRT: does letting the slope vary improve fit?
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# --- Simulate 21 regioner, ~12 vårdcentraler each ---
+rng = np.random.default_rng(2025)
+J, nj = 21, 12
+tau0, tau1, rho = 3.0, 1.5, -0.4
+Sigma = np.array([[tau0**2,        rho * tau0 * tau1],
+                  [rho * tau0 * tau1, tau1**2]])
+b = rng.multivariate_normal([0, 0], Sigma, size=J)   # one (b0, b1) per region
+
+rows = []
+for j in range(J):
+    x = rng.normal(0, 1.2, nj)                        # centered staffing
+    y = (22 + b[j, 0]) + (-3.2 + b[j, 1]) * x + rng.normal(0, 2.5, nj)
+    rows.append(pd.DataFrame({"region": j, "x": x, "y": y}))
+panel = pd.concat(rows, ignore_index=True)
+
+# --- Varying intercept AND slope ---
+# re_formula="~x" adds a random slope on x; the model then estimates the full
+# 2x2 random-effects covariance (intercept var, slope var, their covariance).
+m_rs = smf.mixedlm("y ~ x", data=panel, groups="region",
+                   re_formula="~x").fit(reml=True)
+print(m_rs.summary())
+
+# Fixed effects (population-average intercept and slope):
+print(m_rs.fe_params)
+
+# Random-effects covariance matrix (tau0^2, cov, tau1^2):
+print(m_rs.cov_re)
+
+# Random-intercept-only model for comparison (parallel lines):
+m_ri = smf.mixedlm("y ~ x", data=panel, groups="region").fit(reml=True)
+print(m_ri.cov_re)
+```
+
+:::
+
+In both languages the fitted **fixed effects** recover the population-average line (intercept near 22, slope near $-3.2$), while the **random-effects covariance** recovers the spread of region intercepts ($\tau_0 \approx 3$), the spread of region slopes ($\tau_1 \approx 1.5$), and their negative correlation ($\rho \approx -0.4$). The `coef()` / per-region predictions return the *partially pooled* region lines --- never the raw within-region OLS fits.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A *Folkhälsomyndigheten* (Public Health Agency) analyst fits a varying-intercept model of *vårdcentral* poor-control share on centered nurse staffing and reports $\hat\beta_0 = 22.0$, $\hat\beta_1 = -3.2$, $\hat\tau_0 = 3.0$. Region 7 (a large region with many centers) has predicted intercept deviation $\hat b_{0,7} = +4.5$; Region 18 (a tiny region) has predicted deviation $\hat b_{0,18} = -1.0$.
+
+(a) Write Region 7's predicted regression line. (b) At average staffing ($x=0$), what poor-control share does the model predict for Region 7 versus Region 18? (c) The raw (no-pooling) intercept for Region 18 was $19.0$ (i.e. a raw deviation of $-3.0$). Explain why the model reports only $-1.0$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** In a varying-intercept model every region shares the population slope, so Region 7's line is
+$$
+\hat y = (\hat\beta_0 + \hat b_{0,7}) + \hat\beta_1 x = (22.0 + 4.5) - 3.2\,x = 26.5 - 3.2\,x.
+$$
+
+**(b)** At $x = 0$ the slope term vanishes, so the prediction is just the intercept. Region 7: $26.5\%$. Region 18: $22.0 + (-1.0) = 21.0\%$. Region 7 has a substantially worse baseline.
+
+**(c)** Region 18 is small, so $n_{18}$ is small and the shrinkage weight $\lambda_{18} = \tau_0^2/(\tau_0^2 + \sigma^2/n_{18})$ is well below 1. The model trusts its few noisy centers only partially and pulls the raw deviation of $-3.0$ toward the population line (zero). Here the reported $-1.0$ implies a shrinkage weight of about $\lambda_{18} \approx 1.0/3.0 \approx 0.33$ --- only a third of the raw signal survives. A large region like Region 7 has $\lambda_7 \approx 1$ and is barely shrunk, which is why its sizable $+4.5$ deviation is reported nearly intact.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague estimates a varying-slope model and reports $\hat\tau_0 = 4.0$ (intercept SD), $\hat\tau_1 = 2.0$ (slope SD), and $\hat\rho = -0.6$ (intercept--slope correlation).
+
+(a) Write the estimated $2\times2$ random-effects covariance matrix $\hat{\boldsymbol\Sigma}_b$. (b) Interpret the sign of $\rho$ in plain language about regions. (c) A region with $b_{0j} = +6$ (high baseline poor control) --- what slope deviation would you *expect* for it, and would that be equalizing or compounding?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The covariance is $\rho\,\tau_0\tau_1 = (-0.6)(4.0)(2.0) = -4.8$, so
+$$
+\hat{\boldsymbol\Sigma}_b =
+\begin{pmatrix}
+\tau_0^2 & \rho\tau_0\tau_1 \\
+\rho\tau_0\tau_1 & \tau_1^2
+\end{pmatrix}
+=
+\begin{pmatrix}
+16.0 & -4.8 \\
+-4.8 & 4.0
+\end{pmatrix}.
+$$
+
+**(b)** $\rho = -0.6 < 0$ means regions with *higher* intercepts (worse baseline poor-control share) tend to have *more negative* slopes (a steeper improvement in poor control per extra nurse). The struggling regions get more out of staffing.
+
+**(c)** The conditional expectation of the slope deviation given the intercept deviation is
+$$
+E[b_{1j}\mid b_{0j}] = \frac{\operatorname{Cov}(b_0,b_1)}{\operatorname{Var}(b_0)}\,b_{0j}
+= \frac{-4.8}{16.0}\times 6 = -1.8.
+$$
+So a region $6$ points above average at baseline is expected to have a slope about $1.8$ *more negative* than the population slope --- i.e. staffing helps it more. Because the worst-off regions improve fastest, this pattern is **equalizing**: it narrows the gap between regions as staffing rises.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Using the shrinkage formula $\lambda_j = \tau_0^2 / (\tau_0^2 + \sigma^2/n_j)$ with $\tau_0 = 3$ (so $\tau_0^2 = 9$) and residual variance $\sigma^2 = 25$:
+
+(a) Compute $\lambda_j$ for a region with $n_j = 4$ centers and for one with $n_j = 40$. (b) A region's raw mean residual is $\bar r_j = +6.0$. Give the partially-pooled intercept deviation $\hat b_{0j}$ in each case. (c) What happens to $\lambda_j$ as $\tau_0 \to 0$, and why does that make sense?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** For $n_j = 4$: $\sigma^2/n_j = 25/4 = 6.25$, so $\lambda_j = 9/(9 + 6.25) = 9/15.25 \approx 0.590$. For $n_j = 40$: $\sigma^2/n_j = 25/40 = 0.625$, so $\lambda_j = 9/(9 + 0.625) = 9/9.625 \approx 0.935$.
+
+**(b)** $\hat b_{0j} = \lambda_j \bar r_j$. Small region: $0.590 \times 6.0 \approx 3.54$. Large region: $0.935 \times 6.0 \approx 5.61$. The small, noisy region is pulled much harder toward the population line; the large region keeps most of its raw signal.
+
+**(c)** As $\tau_0 \to 0$, the numerator $\tau_0^2 \to 0$ while the denominator stays positive, so $\lambda_j \to 0$ and every $\hat b_{0j} \to 0$. This is **complete pooling**: if there is no genuine between-region spread, the model concludes that *all* apparent region differences are noise and collapses every region onto the single population line. That is the correct behavior --- with $\tau_0 = 0$ there is nothing to distinguish the regions.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+An analyst fits `lmer(y ~ x + (1 | region))` (random intercept only) and finds the staffing coefficient $\hat\beta_1 = -3.2$ with standard error $0.4$. A reviewer insists the staffing effect plausibly varies across regions and asks for `(x | region)` instead.
+
+(a) Mechanically, what extra parameters does the reviewer's model estimate? (b) Why might the standard error on $\hat\beta_1$ *increase* under the random-slope model even though the point estimate barely moves? (c) Under what circumstance would `lmer` warn of a *singular fit*, and what would you conclude?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The random-slope model `(x | region)` adds two parameters to the variance structure: the slope variance $\tau_1^2$ and the intercept--slope covariance $\rho\,\tau_0\tau_1$ (equivalently $\tau_1$ and $\rho$). The fixed effects $(\beta_0,\beta_1)$ and the existing $\tau_0$, $\sigma^2$ remain.
+
+**(b)** The random-intercept-only model treats every center as an independent observation on the staffing slope, so it acts as if it has far more independent information about $\beta_1$ than it really does --- understating the standard error. Allowing the slope to vary acknowledges that the staffing effect is itself uncertain across regions, and that extra between-region variability is propagated into the standard error of the *average* slope. The point estimate is roughly unbiased either way; the honest model just admits more uncertainty, so the SE rises (often substantially when $\tau_1$ is non-trivial). This is the multilevel analogue of why cluster-robust SEs are larger than naive ones.
+
+**(c)** A **singular fit** occurs when the estimated random-effects covariance is on the boundary --- typically $\hat\tau_1 \approx 0$ or $|\hat\rho| \approx 1$ --- meaning the data cannot support a separate slope variance (too few regions or too few centers per region). The right conclusion is *not* that slopes are truly identical, but that this dataset cannot estimate their spread; you would simplify to the random-intercept model (or a model with uncorrelated random effects) and note the limitation, rather than report unstable boundary estimates.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A mixed model splits each group's line into a **fixed part** (the population-average intercept and slope $\beta_0, \beta_1$) and a **random part** (group deviations $b_{0j}, b_{1j}$ drawn from a distribution) --- describing the *average* relationship and how groups *differ* as two separate questions.
+- The **varying-intercept** model gives a fan of parallel lines (spread set by $\tau_0$); the **varying-slope** model lets the lines fan out and cross, governed by the $2\times2$ covariance matrix $\boldsymbol\Sigma_b$ with entries $\tau_0^2$, $\tau_1^2$, and $\rho\,\tau_0\tau_1$.
+- Group lines are **partially pooled** toward the population line by a shrinkage weight $\lambda_j = \tau_0^2/(\tau_0^2 + \sigma^2/n_j)$: data-rich groups keep their own signal, data-poor groups are dragged toward the average --- regularization for free.
+- Add a **random slope** when the relationship itself varies across groups or when the grouping is the cluster of treatment; omitting a needed one makes the fixed-effect standard error too small. Drop it when the data are too thin and the fit goes singular.
+- Fit with `lmer(y ~ x + (x | group))` in R or `MixedLM(..., re_formula="~x")` in Python; read the fixed effects for the population line and the random-effects covariance for the between-group spread.
+:::
+
+## What Comes Next
+
+We have built the mixed model end to end: the fixed part is the population-average line, the random part lets each region's intercept and slope deviate, and the $2\times2$ covariance matrix $\boldsymbol\Sigma_b$ controls how widely the group lines fan out and how their levels and slopes co-move. We saw that the group lines are partially pooled --- precision-weighted compromises between each region's own fit and the national average.
+
+But we glossed over a deeper question: *how much* of the total variation in poor-control share lives **between** regions versus **within** them? That decomposition --- $\sigma^2$ against $\tau_0^2$ --- is the subject of the next page, [Variance Components and the ICC](variance-components-icc.qmd), which turns the variance components we just estimated into the **intraclass correlation coefficient**, a single number summarizing how much a *vårdcentral*'s outcome is determined by which region it sits in. The ICC is the bridge from "letting relationships vary" to "quantifying how much they vary."

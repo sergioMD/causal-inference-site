@@ -1,0 +1,1374 @@
+---
+title: "Confidence Intervals"
+subtitle: "What they mean, what they do not mean, and how to use them"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Construct a confidence interval as $\hat{\theta} \pm z^* \times \text{SE}$, and choose between $z^*$ and $t^*$ depending on whether $\sigma$ is estimated
+- State the frequentist coverage interpretation of a 95% CI and diagnose the three classic misinterpretations
+- Explain how sample size, confidence level, and data variability each control the width of an interval
+- Use the CI--test duality to read off which null hypotheses the data reject without computing a separate p-value
+- Argue why a confidence interval communicates direction, magnitude, and precision in a way a p-value alone cannot
+:::
+
+## A Number Without Context Is Not an Answer
+
+In 2019, a Swedish region (*Region Dalarna*) evaluated a pilot intervention at several of its *vårdcentraler* (primary care centers) designed to reduce systolic blood pressure among patients with hypertension. Specially trained *distriktssköterskor* (district nurses) delivered structured lifestyle counseling --- covering diet, exercise, and medication adherence --- over six monthly visits. After analyzing data from the region's *kvalitetsregister* (quality registry), the evaluation team reported:
+
+> The estimated average reduction in systolic blood pressure was 4.7 mmHg.
+
+Is this a large effect or a small one? That depends on context. But a more fundamental question comes first: *how much should we trust this number?* The estimate of 4.7 mmHg was computed from a sample of 180 patients. A different sample --- perhaps drawn from vårdcentraler in Region Gävleborg using the same protocol --- would have produced a different estimate. Maybe 3.9. Maybe 5.8. Maybe 2.1. The single number 4.7 tells us nothing about how much the estimate would bounce around across replications.
+
+This is the problem that **confidence intervals** solve. Instead of reporting a point estimate alone, we report an interval that communicates the *precision* of our estimate --- how tightly the data pin down the true parameter. The evaluation team's full report stated:
+
+> The estimated average reduction was 4.7 mmHg (95% CI: 2.3 to 7.1).
+
+The interval [2.3, 7.1] says: the data are consistent with true effects as small as about 2 mmHg and as large as about 7 mmHg. The effect is almost certainly positive (good news for the program), but there is real uncertainty about its magnitude. This is enormously more informative than the point estimate alone.
+
+
+## What Is a Confidence Interval?
+
+The intuition is this. We have a sample from some population, and we compute an estimate $\hat{\theta}$ of an unknown parameter $\theta$ (in our example, $\theta$ is the true average blood pressure reduction). The estimate has sampling variability: it would take a different value in a different sample. A **confidence interval** attaches to the estimate a range of values that reflects this variability.
+
+::: {.glass-card .glass-card--definition}
+**Confidence Interval.** A $(1 - \alpha) \times 100\%$ confidence interval for a parameter $\theta$ is an interval $[\hat{\theta}_L, \hat{\theta}_U]$ constructed from sample data such that, if the study were repeated many times under identical conditions, $(1 - \alpha) \times 100\%$ of the resulting intervals would contain the true value $\theta$.
+
+$$
+P\bigl(\hat{\theta}_L \leq \theta \leq \hat{\theta}_U\bigr) = 1 - \alpha
+$$
+
+**How to read this.** "The probability that the lower bound $\hat{\theta}_L$ is less than or equal to $\theta$ and $\theta$ is less than or equal to the upper bound $\hat{\theta}_U$ equals $1 - \alpha$." The probability here is over repeated sampling --- it refers to the *procedure*, not to the *parameter*. The parameter $\theta$ is a fixed (unknown) number. It is the *endpoints* $\hat{\theta}_L$ and $\hat{\theta}_U$ that are random, because they depend on the sample.
+:::
+
+The most common choice is $\alpha = 0.05$, giving a 95% confidence interval. But 90% and 99% intervals are also routinely used, depending on the application.
+
+
+## Constructing a Confidence Interval
+
+The general recipe for a confidence interval for a population mean (or a difference in means, which is what we care about in causal inference) is:
+
+$$
+\text{CI} = \hat{\theta} \pm z^* \times \text{SE}(\hat{\theta})
+$$
+
+**How to read this.** "The confidence interval equals the point estimate $\hat{\theta}$, plus or minus $z^*$ times the standard error of $\hat{\theta}$." There are three ingredients:
+
+1. **The point estimate $\hat{\theta}$**: the center of the interval. In our blood pressure example, $\hat{\theta} = 4.7$ mmHg.
+
+2. **The standard error $\text{SE}(\hat{\theta})$**: the estimated standard deviation of $\hat{\theta}$ across repeated samples. It measures the precision of the estimate. Smaller SE means more precise.
+
+3. **The critical value $z^*$**: a multiplier that determines how wide the interval extends on each side of $\hat{\theta}$. It depends on the desired confidence level:
+
+| Confidence level | $\alpha$ | $z^*$ |
+|:---:|:---:|:---:|
+| 90% | 0.10 | 1.645 |
+| 95% | 0.05 | 1.960 |
+| 99% | 0.01 | 2.576 |
+
+**How to read these $z^*$ values.** The value $z^* = 1.96$ means: in a standard normal distribution, 95% of the area falls within 1.96 standard deviations of the center. Equivalently, only 5% of the area lies in the two tails beyond $\pm 1.96$. Higher confidence requires a wider interval: to capture 99% of the area, you must go out to $\pm 2.576$ standard deviations.
+
+The figure below shows this directly: a single bell curve with the central 95% shaded and the cutoffs $\pm 1.645$ (90%), $\pm 1.96$ (95%), and $\pm 2.576$ (99%) marked on the axis. Reading outward from the center, each higher confidence level pushes its cutoff farther into the tails --- which is exactly why a more confident interval is a wider one.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standard normal density. PURE: depends only on constants.
+// (p2_ tag = "pass 2" namespace, unique to this page.)
+p2_normPdf = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// A shared, page-local sampling of the bell curve so every CI figure below can
+// reuse the same shape. One definition per cell.
+p2_curve = {
+  const pts = [];
+  for (let x = -3.6; x <= 3.6 + 1e-9; x += 0.04) {
+    pts.push({ x: x, y: p2_normPdf(x) });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Static annotated standard-normal curve: central 95% shaded, all three z*
+// cutoffs marked. A figure, not an interactive.
+Plot.plot({
+  width: Math.min(560, width),
+  height: 260,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 26,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    label: "Standard deviations from the mean (z)",
+    domain: [-3.6, 3.6],
+    ticks: [-2.576, -1.96, -1.645, 0, 1.645, 1.96, 2.576],
+    tickFormat: d => d === 0 ? "0" : d.toFixed(2)
+  },
+  y: { axis: null, domain: [0, 0.45] },
+  marks: [
+    // Central 95% shaded region (between -1.96 and +1.96)
+    Plot.areaY(p2_curve.filter(d => d.x >= -1.96 && d.x <= 1.96), {
+      x: "x",
+      y: "y",
+      fill: "#990000",
+      fillOpacity: 0.12
+    }),
+    // The full density curve
+    Plot.line(p2_curve, { x: "x", y: "y", stroke: "#1c1c1a", strokeWidth: 1.8 }),
+    // Cutoff rules for each confidence level
+    Plot.ruleX([-1.645, 1.645], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "4,3" }),
+    Plot.ruleX([-1.96, 1.96], { stroke: "#990000", strokeWidth: 2 }),
+    Plot.ruleX([-2.576, 2.576], { stroke: "#3d5a6c", strokeWidth: 1.5, strokeDasharray: "2,3" }),
+    // Shaded-area label inside the curve
+    Plot.text([{ x: 0, y: 0.18 }], {
+      x: "x", y: "y", text: ["central 95%"],
+      fill: "#990000", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // z* annotations near the top, color-matched to their rules
+    Plot.text([{ x: 1.645, y: 0.43, t: "90%: 1.645" }], {
+      x: "x", y: "y", text: "t", fill: "#9c7a33", fontWeight: 700, fontSize: 10.5,
+      textAnchor: "start", dx: 3, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: 1.96, y: 0.37, t: "95%: 1.96" }], {
+      x: "x", y: "y", text: "t", fill: "#990000", fontWeight: 700, fontSize: 10.5,
+      textAnchor: "start", dx: 3, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: 2.576, y: 0.31, t: "99%: 2.576" }], {
+      x: "x", y: "y", text: "t", fill: "#3d5a6c", fontWeight: 700, fontSize: 10.5,
+      textAnchor: "start", dx: 3, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+The shaded band is the central 95% of the standard normal. The three vertical cutoffs are the critical values $z^*$: <span style="color:#9c7a33; font-weight:700;">90% (±1.645)</span>, <span style="color:#990000; font-weight:700;">95% (±1.96)</span>, <span style="color:#3d5a6c; font-weight:700;">99% (±2.576)</span>. Higher confidence = cutoffs farther out = wider interval.
+:::
+
+::: {.glass-card .glass-card--definition}
+**$z^*$ or $t^*$? Use $t^*$ whenever $\sigma$ is estimated.** The $z^*$ values above assume the standard error is known exactly. In practice it almost never is: we estimate it from the same sample using the sample standard deviation $s$. That extra estimation adds uncertainty, so the correct multiplier comes from the **$t$-distribution** with $n - 1$ degrees of freedom, $t^*_{n-1,\,\alpha/2}$, not the normal $z^*$.
+
+The $t$ multiplier is always *larger* than the corresponding $z$ multiplier, which makes the interval slightly wider and restores the nominal coverage. The gap matters when $n$ is small and vanishes as $n$ grows:
+
+| $n$ | $t^*$ (95%) | $z^*$ (95%) |
+|:---:|:---:|:---:|
+| 10 | 2.262 | 1.960 |
+| 30 | 2.045 | 1.960 |
+| 100 | 1.984 | 1.960 |
+| $\infty$ | 1.960 | 1.960 |
+
+As $n \to \infty$, $t^* \to z^* = 1.96$. The rule of thumb: with an estimated SD --- which is the usual case --- reach for $t^*$. Using $z^*$ with a small sample produces intervals that are too narrow and **under-cover** (capture $\theta$ less than 95% of the time). The simulation below uses $t^*_{n-1}$ for exactly this reason, and the built-in `t.test()` / `scipy` routines in the code at the end of this page do too (the side-by-side manual $z^*$ calculation is shown only for comparison). The Dalarna example uses $z^* = 1.96$ as a large-sample approximation, valid because $n = 180$ makes $t^*_{179} \approx 1.97$, indistinguishable at this precision.
+:::
+
+### Applying the formula
+
+For the Dalarna blood pressure study with $n = 180$ patients, suppose the standard error of the estimated mean reduction was $\text{SE} = 1.22$ mmHg. Then the 95% CI is:
+
+$$
+4.7 \pm 1.96 \times 1.22 = 4.7 \pm 2.39 = [2.31, \; 7.09]
+$$
+
+This is the interval [2.3, 7.1] that the evaluation team reported.
+
+
+## The Correct Interpretation
+
+The correct interpretation of a 95% confidence interval requires thinking about *the procedure*, not about *this particular interval*:
+
+::: {.glass-card .glass-card--insight}
+**The correct interpretation.** "If we repeated this study many times --- each time drawing a new sample of 180 hypertension patients from Swedish vårdcentraler, computing the mean blood pressure reduction, and constructing a 95% CI --- then 95% of the resulting intervals would contain the true average blood pressure reduction $\theta$. Our observed interval [2.3, 7.1] is one draw from this procedure."
+
+The confidence level is a property of the *method*, not of any single interval. Before we collect data, there is a 95% chance the interval we are about to construct will contain $\theta$. After we collect data and compute [2.3, 7.1], the true $\theta$ either is or is not in this interval --- we just do not know which.
+:::
+
+
+## Common Misinterpretations
+
+::: {.glass-card .glass-card--warning}
+**Three things a 95% CI does NOT mean:**
+
+**1. "There is a 95% probability that $\theta$ is in [2.3, 7.1]."** This is the most common mistake. The parameter $\theta$ is a fixed number --- it does not have a probability distribution (in the frequentist framework). It is either in the interval or it is not. The 95% refers to the long-run frequency with which the *procedure* captures $\theta$, not to the probability that this particular interval contains it.
+
+**2. "95% of the data falls within [2.3, 7.1]."** Confidence intervals are about the *parameter* (the population mean), not about individual data points. Individual blood pressure reductions in the study ranged from $-8$ to $+18$ mmHg. The CI describes where the *average* plausibly lies, not where individual observations fall.
+
+**3. "We are 95% sure the true effect is in this interval."** This sounds similar to interpretation 1, and it is equally wrong. "95% sure" implies a subjective probability statement about $\theta$. Frequentist confidence intervals do not make such statements. (Bayesian *credible intervals* do, but they require a prior distribution and a different conceptual framework.)
+:::
+
+The subtlety is real: in everyday language, "I am 95% confident" and "there is a 95% probability" sound identical. In statistics, they are fundamentally different claims. The first (loosely) describes a reliable procedure; the second makes a probability statement about a fixed quantity.
+
+
+## What Determines CI Width?
+
+The width of a confidence interval is $2 \times z^* \times \text{SE}$. Three factors determine how wide (or narrow) the interval is:
+
+**1. Sample size $n$.** The standard error of a sample mean is $\text{SE} = \sigma / \sqrt{n}$, where $\sigma$ is the population standard deviation. As $n$ increases, $\text{SE}$ shrinks, and the CI narrows. This is the mathematical reason that larger studies produce more precise estimates. Doubling the sample size does *not* halve the width --- it reduces it by a factor of $\sqrt{2} \approx 1.41$. To *halve* the width, you must *quadruple* $n$.
+
+**2. Confidence level.** Higher confidence requires a wider interval. Moving from 95% ($z^* = 1.96$) to 99% ($z^* = 2.576$) increases the width by a factor of $2.576 / 1.96 \approx 1.31$, or about 31%. You pay for greater confidence with reduced precision.
+
+**3. Variability in the data.** If patient-level blood pressure reductions are highly variable (large $\sigma$), the SE is large and the CI is wide. Reducing variability --- for example, by studying a more homogeneous patient population or by adjusting for strong predictors of the outcome --- tightens the interval.
+
+The figure below isolates each driver one at a time. In each row, a single thing changes and the others are held fixed, so you can see its effect on width directly. Notice the gentle payoff of sample size (the top row): going from $n = 25$ to $n = 100$ --- quadrupling --- only *halves* the width, because width shrinks with $\sqrt{n}$, not $n$.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Side-by-side comparison of the three width drivers. PURE: each row is a
+// half-width = z* * sigma / sqrt(n) (or t*-free since this is illustrative),
+// holding the others fixed at a baseline. Centered on an arbitrary estimate
+// of 0 so the bars are comparable. p2_ tag.
+p2_zFor = (lvl) => lvl === 90 ? 1.645 : lvl === 95 ? 1.96 : 2.576
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the nine comparison rows (3 per driver). Each gets a UNIQUE ylab so
+// the shared ordinal y-axis orders them top-to-bottom by driver group with no
+// collisions. One definition per cell.
+p2_widthRows = {
+  const center = 0;
+  const rows = [];
+  const mk = (ylab, group, n, sigma, lvl) => {
+    const hw = p2_zFor(lvl) * sigma / Math.sqrt(n);
+    return { ylab, group, lo: center - hw, hi: center + hw, width: 2 * hw, n, sigma, lvl };
+  };
+  // Group 1 — vary n (sigma=10, 95%)
+  rows.push(mk("n = 25",  "n", 25,  10, 95));
+  rows.push(mk("n = 50 ", "n", 50,  10, 95));   // trailing space keeps ylab unique
+  rows.push(mk("n = 100", "n", 100, 10, 95));
+  // Group 2 — vary confidence (n=50, sigma=10)
+  rows.push(mk("level 90%", "lvl", 50, 10, 90));
+  rows.push(mk("level 95%", "lvl", 50, 10, 95));
+  rows.push(mk("level 99%", "lvl", 50, 10, 99));
+  // Group 3 — vary sigma (n=50, 95%)
+  rows.push(mk("σ = 5",  "sigma", 50, 5,  95));
+  rows.push(mk("σ = 10", "sigma", 50, 10, 95));
+  rows.push(mk("σ = 20", "sigma", 50, 20, 95));
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Compact grouping legend above the plot (avoids in-plot header overlap).
+html`<div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; display:flex; flex-wrap:wrap; gap:0.9rem; margin:0 0 0.3rem 0.2rem;">
+  <span><strong style="color:#990000;">Top 3 rows:</strong> sample size n (σ=10, 95%)</span>
+  <span><strong style="color:#990000;">Middle 3:</strong> confidence level (n=50, σ=10)</span>
+  <span><strong style="color:#990000;">Bottom 3:</strong> data variability σ (n=50, 95%)</span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 360,
+  marginLeft: 150,
+  marginBottom: 46,
+  marginTop: 28,
+  marginRight: 24,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "11px",
+    background: "transparent"
+  },
+  x: { label: "estimate ± half-width", domain: [-9, 9], grid: true },
+  // Single shared ordinal y-axis: all nine rows, grouped by driver via the
+  // panel-prefixed label. Avoids per-facet empty-slot artifacts entirely.
+  y: {
+    label: null,
+    domain: p2_widthRows.map(d => d.ylab)
+  },
+  marks: [
+    Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1, strokeDasharray: "2,3" }),
+    Plot.link(p2_widthRows, {
+      x1: "lo", x2: "hi", y: "ylab",
+      stroke: "#3d5a6c", strokeWidth: 6, strokeOpacity: 0.55, strokeLinecap: "round"
+    }),
+    Plot.dot(p2_widthRows, { x: d => (d.lo + d.hi) / 2, y: "ylab", fill: "#990000", r: 3 }),
+    Plot.text(p2_widthRows, {
+      x: "hi", y: "ylab", text: d => "w=" + d.width.toFixed(1),
+      textAnchor: "start", dx: 7, fill: "#1c1c1a", fontSize: 9.5, fontWeight: 600,
+      stroke: "white", strokeWidth: 2.5, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Each row is a 95% (or stated-level) interval; only the labeled quantity changes within a panel. **w** is the full interval width. Panel 1: quadrupling $n$ (25 → 100) halves the width. Panel 2: more confidence widens it. Panel 3: noisier data ($\sigma$) widens it proportionally.
+:::
+
+In the Swedish healthcare context, this is one reason national *kvalitetsregister* are so valuable: they often cover very large populations (sometimes the entire country), yielding small standard errors and narrow confidence intervals. A registry study of 50,000 patients will produce far more precise estimates than a clinical trial with 200 patients --- though precision is not the same as validity.
+
+
+## See It: Confidence Interval Coverage
+
+The simulation below makes the definition of a confidence interval tangible. You set a sample size and a confidence level. Each time you draw samples, the simulation generates many independent samples, computes a CI from each, and displays the results. Because the standard error is estimated from each sample, the intervals use the $t^*_{n-1}$ multiplier (consistent with the rule above), so coverage stays at the nominal level even at small $n$. Intervals that happen to contain the true $\mu$ are green; those that miss it are red. Over many samples, the proportion of green intervals should be close to the nominal confidence level.
+
+::: {.interactive-container}
+
+#### Confidence Interval Coverage Simulation
+
+**Start here:** pick a sample size and confidence level, then click *Draw 100 samples* and watch the green/red bars pile up.
+
+::: {.callout-note collapse="true"}
+## How to read this
+
+- Each horizontal bar is one study's 95% (or 90%/99%) confidence interval; the dot is that sample's mean.
+- The **ochre dashed line** is the true population mean μ (fixed at 50).
+- **Green** bars contain μ; **red** bars miss it.
+- The stat cards report the running **coverage rate** (should approach the target) and the **average CI width**. Note: changing *n* or the confidence level applies to the **next** draw — click **Reset** to clear and redraw with the new settings.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof ciSampleSize = Inputs.range([10, 200], {
+  value: 30,
+  step: 5,
+  label: "Sample size per study (n)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof confLevel = Inputs.radio(
+  ["90%", "95%", "99%"],
+  {
+    label: "Confidence level",
+    value: "95%"
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof ciDrawButton = Inputs.button([
+  ["Draw 20 samples", value => value + 20],
+  ["Draw 100 samples", value => value + 100],
+  ["Reset", value => 0]
+], { value: 0, label: "Run simulation" })
+```
+
+::: {.aside}
+The two *Draw* buttons **accumulate** samples; **Reset** clears all drawn samples back to zero.
+:::
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// RNG functions
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randn(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// Inverse standard-normal CDF (Acklam's rational approximation)
+function normInv(p) {
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+             1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+             6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+             -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+             3.754408661907416e+00];
+  const plow = 0.02425, phigh = 1 - plow;
+  let q, r;
+  if (p < plow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  } else if (p <= phigh) {
+    q = p - 0.5; r = q * q;
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+           (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+            ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+}
+
+// Two-sided t critical value via Cornish-Fisher expansion (accurate for df >= 5)
+function tCritical(prob, df) {
+  const z = normInv(prob);
+  const z2 = z * z, z3 = z2 * z, z5 = z3 * z2, z7 = z5 * z2, z9 = z7 * z2;
+  const g1 = (z3 + z) / 4;
+  const g2 = (5*z5 + 16*z3 + 3*z) / 96;
+  const g3 = (3*z7 + 19*z5 + 17*z3 - 15*z) / 384;
+  const g4 = (79*z9 + 776*z7 + 1482*z5 - 1920*z3 - 945*z) / 92160;
+  return z + g1/df + g2/(df*df) + g3/(df*df*df) + g4/(df*df*df*df);
+}
+
+// Map confidence level to nominal coverage and tail probability
+nominalLevel = confLevel === "90%" ? 0.90 : confLevel === "95%" ? 0.95 : 0.99
+tailProb = 1 - (1 - nominalLevel) / 2
+
+// Critical multiplier: t* with n-1 df, because the SE is ESTIMATED from each sample
+tStar = tCritical(tailProb, Math.max(ciSampleSize - 1, 1))
+
+// True population mean (fixed) and standard deviation (fixed) --- their values
+// do not affect coverage, so they are constants rather than user controls
+trueMu = 50
+popSD = 10
+
+// Published accumulator that downstream cells read. It is WRITTEN here and in
+// the reactive cell below, but never READ in the same cell that writes it
+// (reading + writing one mutable in a single cell is a circular definition in
+// the OJS runtime). The retained state lives in `ciStore` instead.
+mutable ciSamples = []
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Stable, non-reactive store created once. Because it depends on nothing, the
+// OJS runtime keeps the same object across reactive re-runs, so accumulated
+// samples persist between draws without reading back `mutable ciSamples`.
+ciStore = ({ samples: [] })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// React to draw button. Reads the plain `ciStore` (NOT `mutable ciSamples`),
+// mutates it, then publishes a fresh copy to `mutable ciSamples`. This avoids
+// the read+write-same-mutable cycle that would otherwise crash the cell.
+{
+  const count = ciDrawButton;
+  if (count === 0) {
+    ciStore.samples = [];
+    mutable ciSamples = [];
+  } else {
+    const startIdx = ciStore.samples.length;
+    const newCount = count - startIdx;
+    if (newCount > 0) {
+      // Snapshot the current n / t* so changing the slider only affects the
+      // NEXT draw, as documented (earlier bars keep the settings they were
+      // drawn with).
+      const nDraw = ciSampleSize;
+      const tDraw = tStar;
+      for (let s = 0; s < newCount; s++) {
+        // Use a unique seed per sample for reproducibility within a draw
+        const seed = (startIdx + s + 1) * 97531 + Math.floor(Math.random() * 100000);
+        const rng = mulberry32(seed);
+
+        // Generate sample of size n from N(trueMu, popSD)
+        let sumX = 0;
+        let sumX2 = 0;
+        for (let i = 0; i < nDraw; i++) {
+          const x = trueMu + popSD * randn(rng);
+          sumX += x;
+          sumX2 += x * x;
+        }
+        const xbar = sumX / nDraw;
+        const sampleVar = (sumX2 - nDraw * xbar * xbar) / (nDraw - 1);
+        const se = Math.sqrt(sampleVar / nDraw);
+        const lower = xbar - tDraw * se;
+        const upper = xbar + tDraw * se;
+        const covers = (lower <= trueMu) && (trueMu <= upper);
+
+        ciStore.samples.push({
+          id: startIdx + s + 1,
+          xbar: xbar,
+          se: se,
+          lower: lower,
+          upper: upper,
+          covers: covers
+        });
+      }
+      mutable ciSamples = [...ciStore.samples];
+    }
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Compute coverage rate
+coverageRate = ciSamples.length > 0
+  ? ciSamples.filter(d => d.covers).length / ciSamples.length
+  : null
+
+coversCount = ciSamples.length > 0
+  ? ciSamples.filter(d => d.covers).length
+  : 0
+
+missCount = ciSamples.length > 0
+  ? ciSamples.filter(d => !d.covers).length
+  : 0
+```
+
+```{ojs}
+//| echo: false
+
+{
+  // Color the coverage box by how close empirical coverage is to the nominal
+  // target, rather than always green. Within ~1.5 pts is on target (green);
+  // moderate drift is ochre; large drift (mainly small samples) is red.
+  const gap = coverageRate !== null ? Math.abs(100 * coverageRate - 100 * nominalLevel) : null;
+  const covColor = coverageRate === null ? "#79766e"
+    : gap <= 1.5 ? "#2e6f40"
+    : gap <= 4.0 ? "#9c7a33"
+    : "#b3000b";
+  const covBg = coverageRate === null ? "#f6f5f1"
+    : gap <= 1.5 ? "rgba(46, 111, 64, 0.06)"
+    : gap <= 4.0 ? "rgba(156, 122, 51, 0.08)"
+    : "rgba(179, 0, 11, 0.06)";
+  const covBorder = coverageRate === null ? "#e6e3db"
+    : gap <= 1.5 ? "rgba(46, 111, 64, 0.18)"
+    : gap <= 4.0 ? "rgba(156, 122, 51, 0.22)"
+    : "rgba(179, 0, 11, 0.18)";
+
+  // Average CI width across all drawn samples (key insight: width shrinks with n
+  // while coverage holds). Empty state shows a dash.
+  const avgWidth = ciSamples.length > 0
+    ? (ciSamples.reduce((acc, d) => acc + (d.upper - d.lower), 0) / ciSamples.length)
+    : null;
+
+  return html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-bottom: 0.5rem; font-family: 'Inter', sans-serif; font-size: 0.82rem;">
+  <div style="min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(153, 0, 0, 0.05); border: 1px solid rgba(153, 0, 0, 0.15);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Target</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #990000;">${(100 * nominalLevel).toFixed(0)}%</div>
+  </div>
+  <div style="min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Samples drawn</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #1c1c1a;">${ciSamples.length}</div>
+  </div>
+  <div style="min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: ${covBg}; border: 1px solid ${covBorder};">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Coverage rate</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: ${covColor};">${coverageRate !== null ? (100 * coverageRate).toFixed(1) + "%" : "---"}</div>
+  </div>
+  <div style="min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Avg CI width</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #3d5a6c;">${avgWidth !== null ? avgWidth.toFixed(2) : "---"}</div>
+  </div>
+  <div style="min-height: 3.4rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(179, 0, 11, 0.05); border: 1px solid rgba(179, 0, 11, 0.15);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Missed</div>
+    <div style="font-size: 1.2rem; font-weight: 700; color: #b3000b;">${missCount} / ${ciSamples.length}</div>
+  </div>
+</div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Show the last 100 intervals (most recent), or all if fewer
+ciDisplay = {
+  const maxShow = 100;
+  const data = ciSamples.length <= maxShow
+    ? ciSamples
+    : ciSamples.slice(ciSamples.length - maxShow);
+  // Renumber for vertical positioning
+  return data.map((d, i) => ({ ...d, row: i + 1 }));
+}
+
+ciSamples.length > 0 ? Plot.plot({
+  width: Math.min(640, width),
+  height: 300,
+  marginTop: 22,
+  marginLeft: 64,
+  marginRight: 18,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    label: "Value",
+    grid: true
+  },
+  y: {
+    label: "Sample #",
+    reverse: true
+  },
+  color: {
+    legend: true,
+    domain: [true, false],
+    range: ["#2e6f40", "#b3000b"],
+    tickFormat: d => d ? "Contains μ" : "Misses μ"
+  },
+  marks: [
+    // True mean vertical line
+    Plot.ruleX([trueMu], {
+      stroke: "#9c7a33",
+      strokeWidth: 2.5,
+      strokeDasharray: "6,3"
+    }),
+    // Fixed label for the true-mean line (anchored to the top frame)
+    Plot.text([trueMu], {
+      x: d => d,
+      frameAnchor: "top",
+      dy: -8,
+      text: ["true μ"],
+      fill: "#9c7a33",
+      fontWeight: 700,
+      fontSize: 11,
+      stroke: "white",
+      strokeWidth: 3,
+      paintOrder: "stroke"
+    }),
+    // CI bars
+    Plot.link(ciDisplay, {
+      x1: "lower",
+      x2: "upper",
+      y1: "row",
+      y2: "row",
+      stroke: d => d.covers ? "#2e6f40" : "#b3000b",
+      strokeWidth: 1.5,
+      strokeOpacity: 0.7
+    }),
+    // Sample mean dots
+    Plot.dot(ciDisplay, {
+      x: "xbar",
+      y: "row",
+      fill: d => d.covers ? "#2e6f40" : "#b3000b",
+      r: 2,
+      fillOpacity: 0.8
+    })
+  ]
+}) : html`<div style="text-align: center; color: #79766e; padding: 2rem 0; font-family: 'Inter', sans-serif; font-size: 0.9rem;">Click a button above to begin drawing samples and constructing confidence intervals.</div>`
+```
+
+Each horizontal bar is a confidence interval computed from a fresh random sample. The ochre dashed line marks the true population mean $\mu$. Green intervals contain $\mu$; red intervals miss it. As you draw more samples, the empirical coverage rate converges to the nominal confidence level. (When more than 100 samples have been drawn, only the most recent 100 intervals are plotted; the stat cards above still summarize all of them.)
+
+**Things to try:**
+
+- Draw 100 samples at the 95% level. You should see roughly 5 red intervals out of 100.
+- Switch to 90%. More intervals turn red (about 10 out of 100).
+- Switch to 99%. Almost all intervals are green, but notice they are wider.
+- Increase the sample size from 30 to 200. The intervals become much narrower, but the coverage rate stays the same --- about 95% of them still contain $\mu$.
+
+:::
+
+
+## The Relationship Between CIs and Hypothesis Tests
+
+Confidence intervals and hypothesis tests are two sides of the same coin. Understanding their relationship clarifies both.
+
+Recall from the previous page that a two-sided hypothesis test at significance level $\alpha = 0.05$ rejects $H_0: \theta = \theta_0$ if the test statistic
+
+$$
+z = \frac{\hat{\theta} - \theta_0}{\text{SE}(\hat{\theta})}
+$$
+
+exceeds 1.96 in absolute value. This is *exactly equivalent* to checking whether $\theta_0$ falls outside the 95% confidence interval:
+
+::: {.glass-card .glass-card--definition}
+**CI--test duality.** A value $\theta_0$ is rejected by a two-sided test at level $\alpha$ if and only if $\theta_0$ lies outside the $(1 - \alpha)$ confidence interval. Equivalently:
+
+$$
+\theta_0 \notin \bigl[\hat{\theta} - z^* \cdot \text{SE},\; \hat{\theta} + z^* \cdot \text{SE}\bigr] \quad \Longleftrightarrow \quad |z| > z^*
+$$
+
+**How to read this.** The left side says "$\theta_0$ is not in the confidence interval." The right side says "the test statistic exceeds the critical value." The double arrow ($\Longleftrightarrow$) means these two statements are logically identical --- one is true if and only if the other is.
+:::
+
+In the blood pressure example, the 95% CI was [2.3, 7.1], centered on the estimate $\hat{\theta} = 4.7$. Move the slider to set the null value $\theta_0$ and watch the dashed line and verdict chip update: the verdict flips from "fail to reject" to "reject" at the exact moment $\theta_0$ crosses an interval endpoint. The interval *is* the set of nulls you cannot reject.
+
+::: {.interactive-container}
+
+#### CI--Test Duality: Drag the Null
+
+**Start here:** drag the slider for θ₀ and watch the verdict chip flip exactly as the dashed line crosses an endpoint of the interval.
+
+::: {.callout-note collapse="true"}
+## How to read this
+
+- The thick **red band** is the fixed 95% CI [2.3, 7.1]; the solid dot is the estimate θ̂ = 4.7.
+- The **dashed line + triangle** is the null value θ₀ you set with the slider.
+- **Green** (fail to reject) means θ₀ falls inside the interval; **red** (reject) means it falls outside.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof theta0 = Inputs.range([-1, 10], {
+  value: 0,
+  step: 0.1,
+  label: "Null value θ₀"
+})
+```
+
+```{ojs}
+//| echo: false
+
+dualityCI = ({ lower: 2.3, upper: 7.1, estimate: 4.7 })
+
+dualityReject = theta0 < dualityCI.lower || theta0 > dualityCI.upper
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.5rem; font-family: 'Inter', sans-serif;">
+  <span style="font-size: 0.82rem; color: #1c1c1a;">Two-sided test of <span style="font-style: italic;">H₀: θ = ${theta0.toFixed(1)}</span> at α = 0.05:</span>
+  <span style="display: inline-block; padding: 0.3rem 0.85rem; border-radius: 999px; font-weight: 700; font-size: 0.85rem; letter-spacing: 0.01em;
+    color: #ffffff;
+    background: ${dualityReject ? '#b3000b' : '#2e6f40'};
+    box-shadow: 0 1px 4px ${dualityReject ? 'rgba(179,0,11,0.35)' : 'rgba(46,111,64,0.3)'};">
+    ${dualityReject ? 'Reject H₀' : 'Fail to reject H₀'}
+  </span>
+  <span style="font-size: 0.78rem; color: #79766e;">
+    ${dualityReject ? 'θ₀ is outside [2.3, 7.1]' : 'θ₀ is inside [2.3, 7.1]'}
+  </span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 150,
+  marginTop: 30,
+  marginBottom: 44,
+  marginLeft: 36,
+  marginRight: 36,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    domain: [-1, 10],
+    label: "θ (mmHg)",
+    grid: true,
+    ticks: [-1, 0, 2.3, 7.1, 10]
+  },
+  y: { domain: [0, 1], axis: null },
+  marks: [
+    // The confidence interval band
+    Plot.ruleY([0.45], {
+      x1: dualityCI.lower,
+      x2: dualityCI.upper,
+      stroke: "#990000",
+      strokeWidth: 8,
+      strokeOpacity: 0.22,
+      strokeLinecap: "round"
+    }),
+    // Endpoint ticks
+    Plot.ruleX([dualityCI.lower, dualityCI.upper], {
+      y1: 0.32,
+      y2: 0.58,
+      stroke: "#990000",
+      strokeWidth: 2
+    }),
+    Plot.text([dualityCI.lower, dualityCI.upper], {
+      x: d => d,
+      y: 0.66,
+      text: d => d.toFixed(1),
+      fill: "#990000",
+      fontWeight: 600,
+      fontSize: 12,
+      stroke: "white",
+      strokeWidth: 3,
+      paintOrder: "stroke"
+    }),
+    // Point estimate
+    Plot.dot([dualityCI.estimate], {
+      x: d => d,
+      y: 0.45,
+      r: 5,
+      fill: "#990000"
+    }),
+    Plot.text([dualityCI.estimate], {
+      x: d => d,
+      y: 0.88,
+      text: ["θ̂ = 4.7"],
+      fill: "#990000",
+      fontWeight: 700,
+      fontSize: 12,
+      stroke: "white",
+      strokeWidth: 3,
+      paintOrder: "stroke"
+    }),
+    // The draggable null value
+    Plot.ruleX([theta0], {
+      stroke: dualityReject ? "#b3000b" : "#2e6f40",
+      strokeWidth: 2.5,
+      strokeDasharray: "5,3"
+    }),
+    // Null marker on its own row (y=0.28) and as a triangle so it never
+    // covers the estimate dot when θ₀ is slid to ~4.7
+    Plot.dot([theta0], {
+      x: d => d,
+      y: 0.28,
+      r: 6,
+      symbol: "triangle",
+      fill: dualityReject ? "#b3000b" : "#2e6f40",
+      stroke: "white",
+      strokeWidth: 1.5
+    }),
+    Plot.text([theta0], {
+      x: d => d,
+      y: 0.12,
+      text: d => "θ₀ = " + d.toFixed(1),
+      // Grow the label inward near the domain edges so it never clips the
+      // frame as θ₀ is dragged across its full [-1, 10] range. Beyond ~80% of
+      // the domain anchor to the end (text extends left); below ~20% anchor to
+      // the start (text extends right); otherwise center it.
+      textAnchor: theta0 > 7.2 ? "end" : theta0 < 0.8 ? "start" : "middle",
+      fill: dualityReject ? "#b3000b" : "#2e6f40",
+      fontWeight: 700,
+      fontSize: 11,
+      stroke: "white",
+      strokeWidth: 3,
+      paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+**Try the boundaries:** set $\theta_0 = 0$ (no effect) --- it is outside the interval, so the test **rejects**. Set $\theta_0 = 3$ --- inside, so it **fails to reject**. Slide up to $\theta_0 = 8$ --- outside again, so it **rejects**. The chip flips precisely at $2.3$ and $7.1$, the interval endpoints.
+
+:::
+
+A 95% CI is, in effect, the set of all parameter values that would *not* be rejected by a two-sided test at the 5% level. It tells you which hypotheses the data are consistent with.
+
+
+## Why CIs Are More Informative Than p-Values
+
+A p-value answers a single yes-or-no question: "Can we reject $H_0: \theta = 0$?" A confidence interval answers a richer question: "What values of $\theta$ are consistent with the data?" Specifically, a CI communicates three things that a p-value alone cannot.
+
+The single figure below carries all three at once for the Dalarna interval [2.3, 7.1]: the **direction** (the whole interval sits to the right of zero), the **magnitude** (the dot marks the 4.7 mmHg estimate), and the **precision** (the span of the band, about 4.8 mmHg wide). A p-value would have collapsed all of this into one number.
+
+```{ojs}
+//| echo: false
+
+// Signature "direction / magnitude / precision" diagram of the Dalarna CI.
+// Static figure built on Plot. Reuses the same band styling as the duality
+// plot for visual consistency. p2_ tag.
+Plot.plot({
+  width: Math.min(620, width),
+  height: 180,
+  marginTop: 34,
+  marginBottom: 46,
+  marginLeft: 40,
+  marginRight: 40,
+  style: {
+    fontFamily: "'Inter', sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    domain: [-1, 9],
+    label: "Blood pressure reduction θ (mmHg)  →  positive = treatment works",
+    grid: true,
+    ticks: [-1, 0, 2.3, 4.7, 7.1, 9],
+    tickFormat: d => d.toFixed(1)
+  },
+  y: { domain: [0, 1], axis: null },
+  marks: [
+    // Zero reference (the "direction" anchor)
+    Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1.5, strokeDasharray: "4,3" }),
+    Plot.text([0], {
+      x: d => d, y: 0.93, text: ["no effect"], fill: "#79766e",
+      fontSize: 10.5, fontWeight: 600, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The CI band (precision)
+    Plot.ruleY([0.5], {
+      x1: 2.3, x2: 7.1, stroke: "#990000", strokeWidth: 9,
+      strokeOpacity: 0.22, strokeLinecap: "round"
+    }),
+    // Endpoints
+    Plot.ruleX([2.3, 7.1], { y1: 0.38, y2: 0.62, stroke: "#990000", strokeWidth: 2 }),
+    Plot.text([2.3, 7.1], {
+      x: d => d, y: 0.7, text: d => d.toFixed(1), fill: "#990000",
+      fontWeight: 600, fontSize: 12, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Point estimate (magnitude)
+    Plot.dot([4.7], { x: d => d, y: 0.5, r: 6, fill: "#990000" }),
+    Plot.text([4.7], {
+      x: d => d, y: 0.93, text: ["θ̂ = 4.7 (magnitude)"], fill: "#990000",
+      fontWeight: 700, fontSize: 11.5, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // "direction" annotation: arrow span from 0 into positive territory
+    Plot.text([{ x: 4.7, y: 0.24, t: "DIRECTION: entire interval > 0" }], {
+      x: "x", y: "y", text: "t", fill: "#2e6f40", fontWeight: 700, fontSize: 10.5,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // "precision" annotation under the band
+    Plot.text([{ x: 4.7, y: 0.1, t: "PRECISION: width ≈ 4.8 mmHg" }], {
+      x: "x", y: "y", text: "t", fill: "#3d5a6c", fontWeight: 700, fontSize: 10.5,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+One interval, three readings: <span style="color:#2e6f40; font-weight:700;">direction</span> (clears zero, so the effect is positive), <span style="color:#990000; font-weight:700;">magnitude</span> (centered at 4.7 mmHg), and <span style="color:#3d5a6c; font-weight:700;">precision</span> (width ≈ 4.8 mmHg). A bare p-value reports none of these.
+:::
+
+**1. Direction of the effect.** The interval [2.3, 7.1] is entirely positive, confirming that the intervention reduces blood pressure (recall that the outcome is measured as a reduction, so positive values mean the treatment works).
+
+**2. Magnitude of the effect.** The point estimate is 4.7 mmHg. The interval says the effect could plausibly be as small as 2.3 or as large as 7.1 mmHg. A clinician can judge whether these are *meaningful* reductions --- a 2 mmHg reduction might not justify the program's cost, while a 7 mmHg reduction almost certainly would.
+
+**3. Precision of the estimate.** The interval width (about 4.8 mmHg) tells us how precisely we have estimated the effect. A narrow interval means we know the effect well; a wide interval means more data are needed.
+
+::: {.glass-card .glass-card--insight}
+**Confidence intervals are the language of estimation.** In causal inference, we rarely care *only* about whether an effect is zero. We want to know: is the effect large enough to matter? Is it precise enough to guide policy? A CI communicates both magnitude and uncertainty in a single object. When reporting treatment effects --- from a randomized trial, a registry study, or any quasi-experimental design --- always report the CI alongside the point estimate. The point estimate without a CI is a claim without evidence of its reliability.
+:::
+
+
+## Application to Causal Inference
+
+When we estimate a treatment effect $\hat{\tau}$ and report a 95% CI, we are saying:
+
+> "The data are consistent with true treatment effects in this range. If this study were conducted many times, 95% of the resulting intervals would contain the true effect $\tau$."
+
+In the Swedish healthcare setting, consider a region that has implemented a *fallpreventionsprogram* (fall prevention program) in its elderly care facilities. A registry-based evaluation estimates a reduction of 2.1 falls per 100 patient-months (95% CI: 0.4 to 3.8). What can the region conclude?
+
+- The effect is **statistically significant** at $\alpha = 0.05$ (the CI excludes zero).
+- The effect could be as small as 0.4 falls per 100 patient-months (a modest reduction) or as large as 3.8 (a substantial one).
+- The width of the interval (3.4 units) reflects real uncertainty. The region cannot confidently distinguish between a clinically trivial effect and a clinically important one. More data --- perhaps from additional facilities or a longer follow-up period --- would narrow the interval and sharpen the conclusion.
+
+This is the power of the CI: it gives decision-makers a *range of plausible effects* rather than a binary yes/no verdict.
+
+
+<details>
+<summary>Math Details: Deriving the CI from the Sampling Distribution</summary>
+<div class="details-content">
+
+### From Sampling Distribution to Confidence Interval
+
+Under the Central Limit Theorem, the sampling distribution of the sample mean $\bar{X}$ is approximately normal for large $n$:
+
+$$
+\bar{X} \;\dot{\sim}\; N\!\left(\mu, \; \frac{\sigma^2}{n}\right)
+$$
+
+**How to read this.** "$\bar{X}$ is approximately distributed as a Normal with mean $\mu$ and variance $\sigma^2 / n$." The dot over $\sim$ indicates the approximation becomes exact as $n \to \infty$.
+
+Standardizing:
+
+$$
+Z = \frac{\bar{X} - \mu}{\sigma / \sqrt{n}} \;\dot{\sim}\; N(0, 1)
+$$
+
+For a 95% CI, we need $P(-1.96 \leq Z \leq 1.96) = 0.95$. Substituting the definition of $Z$:
+
+$$
+P\!\left(-1.96 \leq \frac{\bar{X} - \mu}{\sigma / \sqrt{n}} \leq 1.96\right) = 0.95
+$$
+
+Rearranging (multiply through by $\sigma / \sqrt{n}$, then subtract $\bar{X}$, then multiply by $-1$ and flip inequalities):
+
+$$
+P\!\left(\bar{X} - 1.96 \cdot \frac{\sigma}{\sqrt{n}} \leq \mu \leq \bar{X} + 1.96 \cdot \frac{\sigma}{\sqrt{n}}\right) = 0.95
+$$
+
+This is the 95% confidence interval. In practice, $\sigma$ is unknown and is replaced by the sample standard deviation $s$, and the normal critical value $z^* = 1.96$ is replaced by the $t$-distribution critical value $t^*_{n-1, \, \alpha/2}$ when $n$ is small.
+
+The geometry behind the algebra: the *left* panel below shows the central 95% of the standardized statistic $Z$ (which is symmetric around 0). The rearrangement is nothing more than re-centering that same band on the estimate $\bar{X}$ and rescaling it by the standard error $\sigma/\sqrt{n}$ --- which gives the *right* panel, the interval for $\mu$. The "$\pm 1.96$" on the $Z$ axis becomes "$\pm 1.96 \cdot \sigma/\sqrt{n}$" on the $\mu$ axis.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two-panel "flip" baseline: illustrative xbar=50, SE=1 so the right-panel
+// endpoints land at 48.04 / 51.96. Own cell (one definition per cell).
+p2_flipPanels = ({
+  xbar: 50,
+  se: 1
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// One curve, sampled once on the standardized z-axis. Both panels reuse it:
+// the left panel keeps the z labels; the right panel relabels the SAME axis in
+// mu units (mu = xbar + z*se). Plotting both on the shared standardized axis is
+// what lets a single facet x-scale work. One definition per cell.
+p2_flipCurve = {
+  const rows = [];
+  for (let z = -3.6; z <= 3.6 + 1e-9; z += 0.05) {
+    rows.push({ z, y: p2_normPdf(z), inBand: z >= -1.96 && z <= 1.96 });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Left panel: the standardized Z distribution with ±1.96 cutoffs.
+p2_flipZ = Plot.plot({
+  width: Math.min(330, width),
+  height: 210,
+  marginLeft: 18,
+  marginBottom: 46,
+  marginTop: 26,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "11px", background: "transparent" },
+  x: { label: "Z (standardized)", domain: [-3.6, 3.6], ticks: [-1.96, 0, 1.96], tickFormat: d => d.toFixed(2) },
+  y: { axis: null, domain: [0, 0.45] },
+  marks: [
+    Plot.areaY(p2_flipCurve.filter(d => d.inBand), { x: "z", y: "y", fill: "#990000", fillOpacity: 0.12 }),
+    Plot.line(p2_flipCurve, { x: "z", y: "y", stroke: "#1c1c1a", strokeWidth: 1.6 }),
+    Plot.ruleX([-1.96, 1.96], { stroke: "#990000", strokeWidth: 2 }),
+    Plot.text([{ x: 0, y: 0.16, t: "central 95%" }], {
+      x: "x", y: "y", text: "t", fill: "#990000", fontWeight: 700, fontSize: 10.5,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: 0, y: 0.43, t: "0" }], {
+      x: "x", y: "y", text: "t", fill: "#3d5a6c", fontWeight: 700, fontSize: 10,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Right panel: the SAME band re-centered on xbar and rescaled by SE. Built by
+// mapping each z to mu = xbar + z*se, so the curve is identical in shape.
+p2_flipMu = Plot.plot({
+  width: Math.min(330, width),
+  height: 210,
+  marginLeft: 18,
+  marginBottom: 46,
+  marginTop: 26,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "11px", background: "transparent" },
+  x: {
+    label: "μ = X̄ ± z · SE",
+    domain: [p2_flipPanels.xbar - 3.6 * p2_flipPanels.se, p2_flipPanels.xbar + 3.6 * p2_flipPanels.se],
+    ticks: [p2_flipPanels.xbar - 1.96 * p2_flipPanels.se, p2_flipPanels.xbar, p2_flipPanels.xbar + 1.96 * p2_flipPanels.se],
+    tickFormat: d => d.toFixed(1)
+  },
+  y: { axis: null, domain: [0, 0.45] },
+  marks: [
+    Plot.areaY(p2_flipCurve.filter(d => d.inBand), {
+      x: d => p2_flipPanels.xbar + d.z * p2_flipPanels.se, y: "y", fill: "#990000", fillOpacity: 0.12
+    }),
+    Plot.line(p2_flipCurve, {
+      x: d => p2_flipPanels.xbar + d.z * p2_flipPanels.se, y: "y", stroke: "#1c1c1a", strokeWidth: 1.6
+    }),
+    Plot.ruleX([p2_flipPanels.xbar - 1.96 * p2_flipPanels.se, p2_flipPanels.xbar + 1.96 * p2_flipPanels.se], {
+      stroke: "#990000", strokeWidth: 2
+    }),
+    Plot.text([{ x: p2_flipPanels.xbar, y: 0.16, t: "central 95%" }], {
+      x: "x", y: "y", text: "t", fill: "#990000", fontWeight: 700, fontSize: 10.5,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: p2_flipPanels.xbar, y: 0.43, t: "X̄" }], {
+      x: "x", y: "y", text: "t", fill: "#3d5a6c", fontWeight: 700, fontSize: 10,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Compose the two panels side by side with a connecting arrow caption.
+html`<div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:0.4rem;">
+  <div>${p2_flipZ}</div>
+  <div style="font-family:'Inter',sans-serif; font-weight:700; color:#990000; font-size:1.4rem;">→</div>
+  <div>${p2_flipMu}</div>
+</div>`
+```
+
+::: {.aside}
+Both panels show the *same* central-95% band. Left: on the standardized $Z$ scale the cutoffs are $\pm 1.96$. Right: re-centered on the estimate $\bar{X}$ and stretched by the standard error, the cutoffs become $\bar{X} \pm 1.96\,\sigma/\sqrt{n}$ --- the confidence interval for $\mu$. (Illustrative values: $\bar{X}=50$, $\text{SE}=1$, so the endpoints land at 48.0 and 52.0.)
+:::
+
+### CI for a Difference in Means (Treatment Effect)
+
+In causal inference, the parameter of interest is typically a difference: $\tau = \mu_1 - \mu_0$. The estimated treatment effect is:
+
+$$
+\hat{\tau} = \bar{Y}_1 - \bar{Y}_0
+$$
+
+Under independent sampling with sample sizes $n_1$ and $n_0$:
+
+$$
+\text{SE}(\hat{\tau}) = \sqrt{\frac{s_1^2}{n_1} + \frac{s_0^2}{n_0}}
+$$
+
+**How to read this.** "The standard error of $\hat{\tau}$ equals the square root of the sum of the sample variance in the treatment group divided by $n_1$ and the sample variance in the control group divided by $n_0$."
+
+The 95% CI for the treatment effect is then:
+
+$$
+\hat{\tau} \pm 1.96 \times \text{SE}(\hat{\tau})
+$$
+
+This is the interval you will see in virtually every applied causal inference paper.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+The code below simulates a healthcare intervention study and computes the confidence interval for the treatment effect --- both manually and using built-in functions.
+
+One note on the built-in routines: `t.test()` and `scipy.stats.ttest_ind(equal_var=False)` both run **Welch's t-test** (a version of the two-sample $t$-test that does *not* assume the two groups have equal variances). To handle unequal variances it computes a *fractional* degrees-of-freedom (the long Welch--Satterthwaite expression for `df` in the Python code), then takes the critical value from that $t$-distribution. The manual block uses $z^* = 1.96$ for simplicity; for the large samples here ($n = 90$ per group) the Welch $t$-interval and the $z$-interval agree to two decimals, so the small difference you may see between the two outputs is exactly the $t^*$-vs-$z^*$ gap discussed above.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+set.seed(42)
+
+# Simulate a fall prevention program study
+# Control group: standard care at elderly care facilities
+# Treatment group: structured fall prevention program
+n_treat <- 90
+n_ctrl  <- 90
+
+# Outcome: falls per 100 patient-months
+# True treatment effect: -2.0 (reduction in falls)
+y_ctrl  <- rnorm(n_ctrl,  mean = 8.5, sd = 4.2)
+y_treat <- rnorm(n_treat, mean = 6.5, sd = 4.0)
+
+# --- Manual calculation ---
+tau_hat  <- mean(y_treat) - mean(y_ctrl)
+se_hat   <- sqrt(var(y_treat) / n_treat + var(y_ctrl) / n_ctrl)
+z_star   <- 1.96
+ci_lower <- tau_hat - z_star * se_hat
+ci_upper <- tau_hat + z_star * se_hat
+
+cat("=== Manual Calculation ===\n")
+cat("Treatment effect:  ", round(tau_hat, 3), "\n")
+cat("Standard error:    ", round(se_hat, 3), "\n")
+cat("95% CI:            [", round(ci_lower, 3), ",",
+                              round(ci_upper, 3), "]\n\n")
+
+# --- Built-in t-test (Welch's, the default) ---
+t_result <- t.test(y_treat, y_ctrl)
+
+cat("=== t.test() output ===\n")
+cat("Treatment effect:  ", round(diff(t_result$estimate), 3), "\n")
+cat("95% CI:            [", round(t_result$conf.int[1], 3), ",",
+                              round(t_result$conf.int[2], 3), "]\n")
+cat("p-value:           ", format.pval(t_result$p.value, digits = 4), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy import stats
+
+np.random.seed(42)
+
+# Simulate a fall prevention program study
+n_treat = 90
+n_ctrl  = 90
+
+# Outcome: falls per 100 patient-months
+y_ctrl  = np.random.normal(loc=8.5, scale=4.2, size=n_ctrl)
+y_treat = np.random.normal(loc=6.5, scale=4.0, size=n_treat)
+
+# --- Manual calculation ---
+tau_hat  = y_treat.mean() - y_ctrl.mean()
+se_hat   = np.sqrt(y_treat.var(ddof=1) / n_treat +
+                   y_ctrl.var(ddof=1) / n_ctrl)
+z_star   = 1.96
+ci_lower = tau_hat - z_star * se_hat
+ci_upper = tau_hat + z_star * se_hat
+
+print("=== Manual Calculation ===")
+print(f"Treatment effect:  {tau_hat:.3f}")
+print(f"Standard error:    {se_hat:.3f}")
+print(f"95% CI:            [{ci_lower:.3f}, {ci_upper:.3f}]")
+print()
+
+# --- Built-in t-test (Welch's) ---
+t_stat, p_value = stats.ttest_ind(y_treat, y_ctrl, equal_var=False)
+
+# scipy does not return CI directly; compute from t-distribution
+df = ((y_treat.var(ddof=1)/n_treat + y_ctrl.var(ddof=1)/n_ctrl)**2 /
+      ((y_treat.var(ddof=1)/n_treat)**2 / (n_treat - 1) +
+       (y_ctrl.var(ddof=1)/n_ctrl)**2 / (n_ctrl - 1)))
+t_crit = stats.t.ppf(0.975, df)
+ci_lower_t = tau_hat - t_crit * se_hat
+ci_upper_t = tau_hat + t_crit * se_hat
+
+print("=== scipy t-test output ===")
+print(f"Treatment effect:  {tau_hat:.3f}")
+print(f"95% CI (t-based):  [{ci_lower_t:.3f}, {ci_upper_t:.3f}]")
+print(f"p-value:           {p_value:.4f}")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A Swedish *kvalitetsregister* study reports that a new wound care protocol reduced healing time by an average of 3.2 days (95% CI: 1.1 to 5.3) compared to standard care, based on a sample of 120 patients (60 per group). A newspaper headline reads: "New protocol saves between 1 and 5 days for 95% of patients." Explain what is wrong with this headline.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The headline commits two errors:
+
+**Error 1: Confusing the parameter with individual observations.** The CI [1.1, 5.3] is about the *population average* healing time reduction, not about individual patients. Some individual patients may have experienced a 10-day reduction; others may have healed slower under the new protocol. The CI says the *average* effect across the population lies (with 95% confidence) between 1.1 and 5.3 days. It says nothing about the range of individual responses.
+
+**Error 2: Treating the CI as a probability statement about individual outcomes.** The phrase "for 95% of patients" misinterprets the 95% as applying to individual patients rather than to the *procedure*. The correct statement is: "If we repeated this study many times, 95% of the resulting intervals would contain the true average reduction in healing time."
+
+A more accurate headline would be: "Study estimates new wound care protocol reduces average healing time by about 3 days."
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A randomized trial at a Swedish vårdcentral tests whether a digital self-management app reduces HbA1c in Type 2 diabetes patients. The results: treatment group mean = 7.1% ($n_1 = 75$, $s_1 = 1.2$), control group mean = 7.5% ($n_0 = 75$, $s_0 = 1.3$). Compute the 95% confidence interval for the treatment effect by hand. Can the researchers reject $H_0: \tau = 0$ at $\alpha = 0.05$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Step 1: Point estimate.**
+
+$$
+\hat{\tau} = 7.1 - 7.5 = -0.4 \text{ percentage points}
+$$
+
+(Negative means the app group has lower HbA1c, which is beneficial. Note the unit: a *percentage point* is the arithmetic difference between two percentages --- going from 7.5% to 7.1% is a drop of 0.4 percentage points, which is not the same as a 0.4% *relative* change. Because HbA1c is itself measured on a percent scale, treatment effects on it are naturally expressed in percentage points.)
+
+**Step 2: Standard error.**
+
+$$
+\text{SE}(\hat{\tau}) = \sqrt{\frac{s_1^2}{n_1} + \frac{s_0^2}{n_0}} = \sqrt{\frac{1.2^2}{75} + \frac{1.3^2}{75}} = \sqrt{\frac{1.44}{75} + \frac{1.69}{75}} = \sqrt{0.0192 + 0.0225} = \sqrt{0.0417} \approx 0.204
+$$
+
+**Step 3: 95% CI.**
+
+$$
+\hat{\tau} \pm 1.96 \times \text{SE} = -0.4 \pm 1.96 \times 0.204 = -0.4 \pm 0.400 = [-0.800, \; 0.000]
+$$
+
+**Step 4: Hypothesis test.** The value $\theta_0 = 0$ is right at the boundary of the interval. Formally, $z = -0.4 / 0.204 \approx -1.96$, which is exactly at the critical value. In practice, with a slightly more precise calculation (or using the $t$-distribution), zero would be just barely inside or outside the interval. The result is borderline: $p \approx 0.05$.
+
+This exact-boundary landing is a *rounding coincidence*, not a deep fact: it happens because the rounded SE (0.204) and the rounded critical value (1.96) multiply out to almost exactly 0.4, the size of the estimate. The honest conclusion is not "the test is undecidable" but simply "$p \approx 0.05$, so treat the result as inconclusive and report the interval." A knife-edge $p$-value is precisely the situation where the CI is more useful than a reject/fail-to-reject verdict.
+
+The researchers should report the CI and note that the result is suggestive but not conclusive. The CI tells us the true effect could be as large as an 0.8 percentage point reduction (clinically meaningful) or as small as zero. A larger sample is needed to resolve the uncertainty.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Using the interactive simulation above, compare the width of 95% CIs at $n = 10$, $n = 50$, and $n = 200$. Approximately how much narrower are the intervals at $n = 200$ compared to $n = 50$? Does this match the theoretical prediction based on the $\sqrt{n}$ relationship?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+In the simulation (with $\sigma = 10$), the approximate CI half-widths at the 95% level are:
+
+- $n = 10$: half-width $\approx 1.96 \times 10/\sqrt{10} = 1.96 \times 3.16 \approx 6.2$
+- $n = 50$: half-width $\approx 1.96 \times 10/\sqrt{50} = 1.96 \times 1.41 \approx 2.8$
+- $n = 200$: half-width $\approx 1.96 \times 10/\sqrt{200} = 1.96 \times 0.71 \approx 1.4$
+
+The ratio of half-widths at $n = 50$ vs. $n = 200$: $2.8 / 1.4 = 2.0$.
+
+The theoretical prediction: CI width scales as $1/\sqrt{n}$, so the ratio should be $\sqrt{200}/\sqrt{50} = \sqrt{4} = 2.0$. The match is exact.
+
+**Key takeaway**: Quadrupling the sample size halves the CI width. To achieve narrow intervals, you need large samples --- which is precisely why Sweden's national registries, with their tens of thousands of patients, produce much more precise treatment effect estimates than small clinical trials.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Socialstyrelsen (the Swedish National Board of Health and Welfare) publishes guidelines suggesting that a blood pressure reduction of at least 5 mmHg is *clinically meaningful*. A registry study estimates a reduction of 6.2 mmHg (95% CI: 3.8 to 8.6) from a new antihypertensive protocol. A colleague says: "The CI includes values below 5, so we cannot conclude the effect is clinically meaningful." Another colleague says: "The point estimate exceeds 5, so the effect is clinically meaningful." Who is right? How would you use the CI to give a more nuanced answer?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Neither colleague is entirely right.
+
+**Colleague 1** is too strict. The CI [3.8, 8.6] does include values below 5 mmHg, which means the data are *consistent with* an effect that falls short of clinical meaningfulness. But this does not mean we should conclude the effect is *not* meaningful --- the CI also includes values well above 5 mmHg.
+
+**Colleague 2** is too casual. The point estimate of 6.2 mmHg exceeds 5, but the point estimate alone is not sufficient. The CI reveals genuine uncertainty about whether the true effect exceeds 5.
+
+**A nuanced answer:** The data suggest a treatment effect that is *likely* clinically meaningful, but we cannot be confident. Specifically:
+
+- The entire CI lies above zero, so the effect is statistically significant (the treatment does *something*).
+- The point estimate (6.2) exceeds 5, and the upper end of the CI (8.6) far exceeds it.
+- However, the lower bound (3.8) falls below 5, so the data are also consistent with an effect that is real but clinically insufficient.
+
+The formal approach: to test $H_0: \theta \leq 5$ (the effect is not clinically meaningful), construct a one-sided test or check whether 5.0 is inside the 95% CI. Since 5.0 is inside [3.8, 8.6], we cannot reject this null at $\alpha = 0.05$. We would need a larger study to narrow the CI enough to exclude 5.0 on the lower end.
+
+This is precisely where CIs shine: they make explicit that statistical significance (CI excludes 0) and clinical meaningfulness (CI excludes the minimum clinically important threshold) are different questions.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A 95% confidence level is a property of the procedure, not of any single interval: across repeated studies, 95% of constructed intervals capture the fixed true parameter $\theta$.
+- "There is a 95% probability $\theta$ lies in [2.3, 7.1]" is wrong --- once computed, the interval either contains $\theta$ or it does not; the 95% describes long-run coverage.
+- CI width shrinks like $1/\sqrt{n}$, so quadrupling the sample halves the width; it also widens with higher confidence and with noisier data.
+- CI--test duality: a value $\theta_0$ falls outside the 95% CI if and only if a two-sided 5%-level test rejects it, so the interval is the set of nulls the data cannot reject.
+- A CI conveys direction, magnitude, and precision at once, which is why treatment effects should always be reported with an interval, not a point estimate or p-value alone.
+:::
+
+## What Comes Next
+
+A confidence interval quantifies the precision of an estimate, but to use that estimate in practice, you need to know how to read it in context. The numbers you encounter in published research --- coefficients, standard errors, $t$-statistics, $p$-values, and CIs --- all appear together in a regression table. The next page, **Reading Regression Output**, teaches you how to critically interpret every row and column of a standard regression table.

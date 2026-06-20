@@ -1,0 +1,786 @@
+---
+title: "Decompositions: Oaxaca-Blinder and Beyond"
+subtitle: "Explained versus unexplained gaps"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Split a raw mean gap between two groups into an *explained* part (they differ in characteristics $X$) and an *unexplained* part (they differ in returns $\beta$)
+- Write and read the two-fold Oaxaca-Blinder decomposition and identify which term is the "endowments" effect and which is the "coefficients" effect
+- Recognize the *index-number / reference-group problem* and explain why the decomposition depends on whose coefficients you treat as the counterfactual
+- Move between the *aggregate* decomposition (one explained, one unexplained number) and the *detailed* decomposition (per-covariate contributions)
+- Extend a decomposition beyond the mean using recentered influence function (RIF) regression
+:::
+
+## The Question Behind a Gap
+
+Region Uppsala compares two kinds of *vårdcentraler* (primary care centers): urban clinics in the city core and rural clinics in the surrounding *landsbygd*. On the regional diabetes dashboard, the average HbA1c of Type 2 diabetes patients is **57.0 mmol/mol** at rural clinics and **52.0 mmol/mol** at urban clinics --- a raw gap of **5.0 mmol/mol**, with rural patients further from the on-target value (lower is better). The *hälso- och sjukvårdsdirektör* (regional health director) wants to know: **is the gap because rural clinics serve a different patient mix, or because something about rural care itself produces worse control?**
+
+These are two explanations with two different policy responses. If rural patients are simply older, poorer, and longer-diagnosed --- if they differ in *characteristics* $X$ --- the gap is *explained* by composition, and the fix is upstream: social policy, screening, prevention. If instead rural and urban clinics get *different outcomes from identical patients* --- if they differ in their *returns* to those characteristics, the coefficients $\beta$ --- the gap is *unexplained* by composition, and the fix is in the care itself: staffing of *distriktssköterskor* (district nurses), recall systems, *läkare* (physician) continuity.
+
+A **decomposition** separates these two channels. It is the cross-sectional cousin of everything in this Toolkit: like a treatment effect, it isolates "what would the gap be if the only difference were $X$?" from "what if the only difference were $\beta$?" The Oaxaca-Blinder decomposition, born in labor economics to study wage gaps (Oaxaca 1973; Blinder 1973), does exactly this --- and the same machinery decomposes any mean gap between two groups.
+
+## Two Regressions, One Gap
+
+Start with a linear model fit *separately* within each group. For an urban clinic patient,
+
+$$
+Y_i = X_i^{\top}\beta_{\text{U}} + \varepsilon_i, \qquad \text{(urban)}
+$$
+
+and for a rural clinic patient,
+
+$$
+Y_i = X_i^{\top}\beta_{\text{R}} + \varepsilon_i. \qquad \text{(rural)}
+$$
+
+**Read these as**: "a patient's HbA1c equals their characteristics $X_i$ (age, years since diagnosis, an income index) weighted by that *group's* returns $\beta$, plus noise." The two groups share the same characteristics but are allowed *different coefficients* --- urban care might convert one extra year since diagnosis into a smaller HbA1c penalty than rural care does. By the algebra of OLS the fitted regression passes through the group means, so $\bar Y_g = \bar X_g^{\top}\hat\beta_g$ for each group $g$. The raw gap is therefore
+
+$$
+\Delta \;=\; \bar Y_{\text{R}} - \bar Y_{\text{U}} \;=\; \bar X_{\text{R}}^{\top}\hat\beta_{\text{R}} - \bar X_{\text{U}}^{\top}\hat\beta_{\text{U}}.
+$$
+
+**Read this as**: "the observed gap is the rural mean outcome minus the urban mean outcome, and each mean is its group's mean characteristics times its group's returns." Everything that follows is an exercise in adding and subtracting a single clever term inside this expression.
+
+## The Two-Fold Decomposition
+
+Pick a set of **reference coefficients** $\beta^{\*}$ --- the returns that would prevail if neither group were advantaged or disadvantaged in how characteristics convert to outcomes. Add and subtract $\bar X_{\text{R}}^{\top}\beta^{\*}$ and $\bar X_{\text{U}}^{\top}\beta^{\*}$ inside $\Delta$ and regroup:
+
+$$
+\Delta \;=\;
+\underbrace{\big(\bar X_{\text{R}} - \bar X_{\text{U}}\big)^{\top}\beta^{\*}}_{\text{explained (endowments)}}
+\;+\;
+\underbrace{\bar X_{\text{R}}^{\top}\big(\hat\beta_{\text{R}} - \beta^{\*}\big) + \bar X_{\text{U}}^{\top}\big(\beta^{\*} - \hat\beta_{\text{U}}\big)}_{\text{unexplained (coefficients)}}.
+$$
+
+::: {.glass-card .glass-card--definition}
+The **two-fold Oaxaca-Blinder decomposition** splits the mean gap into
+
+$$
+\Delta \;=\; \underbrace{(\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}\beta^{\*}}_{\text{Explained } Q}
+\;+\; \underbrace{(\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}(\hat\beta_{\text{R}} - \beta^{\*}) + \bar X_{\text{U}}^{\top}(\hat\beta_{\text{R}} - \hat\beta_{\text{U}})}_{\text{Unexplained } U},
+$$
+
+(any algebraically equivalent grouping is fine).
+
+- **Explained** $Q = (\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}\beta^{\*}$ --- the part of the gap due to the groups having *different characteristics*, priced at the common returns $\beta^{\*}$. Sometimes called the *endowments* or *composition* effect.
+- **Unexplained** $U$ --- the part due to the groups having *different returns* to the same characteristics. It captures everything the covariates cannot account for: differential treatment, unobserved quality of care, and (in wage settings) discrimination.
+
+**Read the explained term as**: "the difference in average characteristics, valued at the reference price of those characteristics." **Read the unexplained term as**: "what is left of the gap after the characteristic differences are accounted for --- the difference in returns, plus the price of any reference choice."
+:::
+
+The cleanest special case takes $\beta^{\*} = \hat\beta_{\text{U}}$ (urban coefficients as the no-difference benchmark). Then
+
+$$
+\Delta \;=\; \underbrace{(\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}\hat\beta_{\text{U}}}_{\text{Explained}}
+\;+\; \underbrace{\bar X_{\text{R}}^{\top}(\hat\beta_{\text{R}} - \hat\beta_{\text{U}})}_{\text{Unexplained}}.
+$$
+
+**Read this as**: "give rural patients the urban *returns*: the part of the gap that survives is what their *characteristics* alone buy (explained); the rest is the penalty from rural returns being different (unexplained)." This is the counterfactual logic of the whole Toolkit in miniature --- we construct the outcome rural patients *would* have had under urban returns, and compare.
+
+::: {.glass-card .glass-card--insight}
+**The unexplained part is usually the part of interest.** A large *explained* component says "the groups differ because their patients differ" --- often a story about upstream inequality, not about the clinics. A large *unexplained* component says "identical patients get different outcomes depending on which clinic they attend" --- a story about the care process itself. Policymakers almost always want the unexplained slice, because it is the part a clinic can act on directly. But beware: "unexplained" means "unexplained *by the covariates you included*," not "caused by the group label." Omit a relevant characteristic and it silently inflates the unexplained term.
+:::
+
+## See It: Splitting the HbA1c Gap
+
+The interactive below builds the raw HbA1c gap from its two ingredients and splits it live. The **characteristic gaps** (top sliders) move how different rural and urban patients are in age, years-since-diagnosis, and income --- these drive the *explained* bar. The **returns gaps** (bottom sliders) move how differently rural care prices each characteristic --- these drive the *unexplained* bar. The reference-group toggle swaps which coefficients play the role of $\beta^{\*}$, exposing the index-number problem: the total gap never moves, but the *split* shifts.
+
+::: {.interactive-container}
+
+#### Decomposing the rural-urban HbA1c gap
+
+```{ojs}
+//| echo: false
+// Shared Uppsala-academic palette for every mark on this page.
+qroax_pal = ({
+  explained:   "#3d5a6c",   // slate — explained / endowments (composition)
+  unexplained: "#990000",   // Uppsala red — unexplained / coefficients (focal)
+  good:        "#2e6f40",   // green — on-target / near zero
+  ochre:       "#9c7a33",   // highlight / reference / total
+  ink:         "#1c1c1a",   // ink text & reference rules
+  axis:        "#79766e",   // axis text / muted
+  hair:        "#e6e3db",   // gridlines / hairlines
+  muted:       "#79766e",   // muted ink
+  bad:         "#b3000b",   // alarm
+  fill:        "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+html`<p class="start-here"><strong>Start here:</strong> the dark tick is the raw
+HbA1c gap. Drag the <em>characteristic</em> sliders to grow the slate
+(explained) bar; drag the <em>returns</em> sliders to grow the red (unexplained)
+bar. Flip the reference toggle and watch the split move while the total stays
+put. Full tour is below the chart.</p>`
+```
+
+```{ojs}
+//| echo: false
+// Three covariates. xbarU = urban mean characteristics (fixed anchor);
+// the reader sets the rural−urban GAP in each, and the rural mean follows.
+qroax_covs = ["Age (years)", "Years since diagnosis", "Low-income share"]
+```
+
+```{ojs}
+//| echo: false
+viewof qroax_dx_age = Inputs.range([-6, 12], {
+  value: 8, step: 0.5,
+  label: "Characteristic gap: age (rural − urban, years)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof qroax_dx_dur = Inputs.range([-4, 8], {
+  value: 4, step: 0.5,
+  label: "Characteristic gap: years since diagnosis (rural − urban)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof qroax_dx_inc = Inputs.range([-0.2, 0.5], {
+  value: 0.18, step: 0.01,
+  label: "Characteristic gap: low-income share (rural − urban)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof qroax_db_age = Inputs.range([-0.2, 0.3], {
+  value: 0.015, step: 0.005,
+  label: "Returns gap: HbA1c per year of age (rural − urban)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof qroax_db_dur = Inputs.range([-0.3, 0.6], {
+  value: 0.10, step: 0.01,
+  label: "Returns gap: HbA1c per year since diagnosis (rural − urban)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof qroax_db_inc = Inputs.range([-3, 6], {
+  value: 1.6, step: 0.1,
+  label: "Returns gap: HbA1c per unit low-income share (rural − urban)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof qroax_ref = Inputs.radio(
+  ["Urban returns (β* = β_U)", "Rural returns (β* = β_R)"],
+  { label: "Reference coefficients β*", value: "Urban returns (β* = β_U)" }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Fixed urban anchors: mean characteristics and mean returns (β_U) for the
+// urban clinics. These never move — only the rural GAPS (the sliders) do.
+// Units chosen so each covariate contributes a realistic share of an HbA1c gap.
+qroax_xbarU = ({ age: 67, dur: 9, inc: 0.22 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Urban returns β_U: HbA1c (mmol/mol) per unit of each characteristic.
+qroax_betaU = ({ age: 0.03, dur: 0.30, inc: 3.0 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Rural means and rural returns are the urban anchors plus the slider gaps.
+qroax_dx  = ({ age: qroax_dx_age, dur: qroax_dx_dur, inc: qroax_dx_inc })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+qroax_db  = ({ age: qroax_db_age, dur: qroax_db_dur, inc: qroax_db_inc })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+qroax_xbarR = ({
+  age: qroax_xbarU.age + qroax_dx.age,
+  dur: qroax_xbarU.dur + qroax_dx.dur,
+  inc: qroax_xbarU.inc + qroax_dx.inc
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+qroax_betaR = ({
+  age: qroax_betaU.age + qroax_db.age,
+  dur: qroax_betaU.dur + qroax_db.dur,
+  inc: qroax_betaU.inc + qroax_db.inc
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// β* = the reference coefficients: urban or rural returns depending on toggle.
+qroax_betaStar = qroax_ref.startsWith("Urban") ? qroax_betaU : qroax_betaR
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Two-fold decomposition, computed covariate-by-covariate so the DETAILED
+// decomposition is available for free.
+//   explained_k   = (xbarR_k − xbarU_k) · β*_k
+//   unexplained_k = xbarR_k·(βR_k − β*_k) + xbarU_k·(β*_k − βU_k)
+// Summing over k gives the aggregate explained Q and unexplained U; their
+// sum is exactly the raw gap Δ = ȲR − ȲU (an algebraic identity, any β*).
+qroax_detail = {
+  const keys = [
+    { k: "age", name: "Age" },
+    { k: "dur", name: "Diagnosis duration" },
+    { k: "inc", name: "Low-income share" }
+  ];
+  return keys.map(({ k, name }) => {
+    const xR = qroax_xbarR[k], xU = qroax_xbarU[k];
+    const bR = qroax_betaR[k], bU = qroax_betaU[k], bS = qroax_betaStar[k];
+    const explained   = (xR - xU) * bS;
+    const unexplained = xR * (bR - bS) + xU * (bS - bU);
+    return { name, explained, unexplained, total: explained + unexplained };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Aggregate quantities and the raw gap (recomputed directly as a cross-check).
+qroax_agg = {
+  const Q = d3.sum(qroax_detail, d => d.explained);
+  const U = d3.sum(qroax_detail, d => d.unexplained);
+  const YbarR = qroax_xbarR.age * qroax_betaR.age
+              + qroax_xbarR.dur * qroax_betaR.dur
+              + qroax_xbarR.inc * qroax_betaR.inc;
+  const YbarU = qroax_xbarU.age * qroax_betaU.age
+              + qroax_xbarU.dur * qroax_betaU.dur
+              + qroax_xbarU.inc * qroax_betaU.inc;
+  const delta = YbarR - YbarU;
+  return { Q, U, delta, YbarR, YbarU };
+}
+```
+
+```{ojs}
+//| echo: false
+// ── The keystone: the stacked decomposition bar. ──
+// Visualizes  Δ = Explained Q + Unexplained U  as two signed segments stacked
+// head-to-tail from 0; the ochre tick marks the raw gap total. As the returns
+// sliders → 0 the red (unexplained) segment collapses and the bar IS explained.
+{
+  const Q = qroax_agg.Q, U = qroax_agg.U, delta = qroax_agg.delta;
+  const span = Math.max(2, Math.abs(Q) + Math.abs(U), Math.abs(delta)) * 1.18;
+
+  let cursor = 0;
+  const stacked = [
+    { label: "Explained (characteristics)", value: Q, fill: qroax_pal.explained },
+    { label: "Unexplained (returns)",       value: U, fill: qroax_pal.unexplained }
+  ].map(s => {
+    const x1 = cursor; const x2 = cursor + s.value; cursor = x2;
+    return { ...s, x1, x2 };
+  });
+
+  const inThresh = 0.18 * span;
+  const inLabels  = stacked.filter(d => Math.abs(d.value) > inThresh);
+  const outLabels = stacked.filter(d => Math.abs(d.value) > 0.05 && Math.abs(d.value) <= inThresh);
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 175,
+    marginLeft: 60,
+    marginRight: 16,
+    marginTop: 46,
+    marginBottom: 46,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: qroax_pal.axis },
+    x: {
+      label: "Contribution to the HbA1c gap (mmol/mol)  →",
+      domain: [Math.min(0, -0.1 * span), span],
+      grid: true
+    },
+    y: { axis: null, domain: ["bar"] },
+    marks: [
+      Plot.gridX({ stroke: qroax_pal.hair }),
+      Plot.ruleX([0], { stroke: qroax_pal.ink, strokeWidth: 1.5 }),
+      Plot.barX(stacked, {
+        x1: "x1", x2: "x2", y: () => "bar",
+        fill: "fill", fillOpacity: 0.9,
+        insetTop: 20, insetBottom: 20,
+        title: d => `${d.label}: ${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`
+      }),
+      Plot.text(inLabels, {
+        x: d => (d.x1 + d.x2) / 2, y: () => "bar",
+        text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`,
+        fill: "white", fontWeight: 700, fontSize: 13,
+        stroke: qroax_pal.ink, strokeWidth: 2.5, paintOrder: "stroke"
+      }),
+      Plot.text(outLabels, {
+        x: d => (d.x1 + d.x2) / 2, y: () => "bar",
+        text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`,
+        fill: d => d.fill, fontWeight: 700, fontSize: 11,
+        dy: -26, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The raw gap total: ochre tick at the end of the stack; the precise
+      // value rides the rule, the label is pinned to the top band so it never
+      // clips at the frame edge.
+      Plot.ruleX([delta], { stroke: qroax_pal.ochre, strokeWidth: 3 }),
+      Plot.text([`Raw gap Δ = +${delta.toFixed(2)}`], {
+        frameAnchor: "top", text: d => d,
+        fill: qroax_pal.ochre, fontWeight: 700, fontSize: 12,
+        dy: -30, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// Live numeric panel: the two aggregate slices and their share of the gap.
+{
+  const Q = qroax_agg.Q, U = qroax_agg.U, delta = qroax_agg.delta;
+  const shareQ = delta !== 0 ? (100 * Q / delta) : 0;
+  const shareU = delta !== 0 ? (100 * U / delta) : 0;
+  const tile = (label, value, sub, color) => html`<div style="
+      flex:1 1 0; min-width:8rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${qroax_pal.fill}; border:1px solid ${qroax_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${qroax_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.7rem;
+        color:${qroax_pal.muted};">${sub}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Explained Q", "+" + Q.toFixed(2), shareQ.toFixed(0) + "% of gap", qroax_pal.explained)}
+    ${tile("Unexplained U", (U >= 0 ? "+" : "") + U.toFixed(2), shareU.toFixed(0) + "% of gap", qroax_pal.unexplained)}
+    ${tile("Raw gap Δ", "+" + delta.toFixed(2), "rural − urban", qroax_pal.ochre)}
+    ${tile("Check  Q+U", "+" + (Q + U).toFixed(2), Math.abs(Q + U - delta) < 1e-6 ? "= Δ ✓" : "≠ Δ", qroax_pal.good)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// Detailed (per-covariate) decomposition — a grouped bar with explained vs
+// unexplained contributions for each characteristic. Shows where the gap lives.
+{
+  const rows = qroax_detail.flatMap(d => ([
+    { name: d.name, part: "Explained",   value: d.explained },
+    { name: d.name, part: "Unexplained", value: d.unexplained }
+  ]));
+  const mx = d3.max(rows, r => Math.abs(r.value)) || 1;
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 240,
+    marginLeft: 130,
+    marginRight: 18,
+    marginBottom: 46,
+    marginTop: 16,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: qroax_pal.axis },
+    x: { label: "Contribution to gap (mmol/mol)  →", domain: [-mx * 1.15, mx * 1.15], grid: true },
+    y: { label: null, domain: qroax_detail.map(d => d.name) },
+    fy: { label: null, domain: ["Explained", "Unexplained"] },
+    color: {
+      domain: ["Explained", "Unexplained"],
+      range: [qroax_pal.explained, qroax_pal.unexplained],
+      legend: true
+    },
+    marks: [
+      Plot.gridX({ stroke: qroax_pal.hair }),
+      Plot.ruleX([0], { stroke: qroax_pal.ink, strokeWidth: 1 }),
+      Plot.barX(rows, {
+        x: "value", y: "name", fy: "part",
+        fill: "part", fillOpacity: 0.9,
+        title: d => `${d.name} — ${d.part}: ${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`
+      })
+    ]
+  });
+}
+```
+
+:::
+
+### How to Read the Decomposition Bar
+
+Work through these in order; each isolates one moving part.
+
+**Step 1: Read the raw gap.** The ochre tick on the top chart is $\Delta = \bar Y_{\text{R}} - \bar Y_{\text{U}}$, the total HbA1c gap rural minus urban. With the defaults it sits near $+5$ mmol/mol --- rural patients are about five units further from target. This single number is what the decomposition will carve up.
+
+**Step 2: Read the two slices.** The bar stacks head-to-tail from 0: the **slate segment** is the *explained* part $Q$ (rural and urban patients differ in characteristics) and the **red segment** is the *unexplained* part $U$ (rural care prices those characteristics differently). They always sum exactly to the ochre tick --- the "Check Q+U" tile reads $= \Delta\ \checkmark$ because the decomposition is an algebraic identity, not an approximation.
+
+**Step 3: Grow the explained part.** Drag the three **characteristic gap** sliders up (older, longer-diagnosed, poorer rural patients). The slate segment lengthens markedly: more compositional difference, priced at the reference returns, means more of the gap is explained by *who the patients are*. Under the default *urban* reference the red segment also creeps up slightly --- that is the characteristic-by-returns *interaction*, which the two-fold formula tucks into the unexplained term (switch to the rural reference and the red segment stops responding to these sliders entirely). The explained slice is what moves most.
+
+**Step 4: Grow the unexplained part.** Now drag the three **returns gap** sliders. The red segment lengthens: rural care converting the same characteristics into worse control is exactly the unexplained component. Set every returns gap to zero and the red segment *collapses* --- identical returns mean the entire gap is explained by composition.
+
+**Step 5: Flip the reference group.** Switch $\beta^{\*}$ from urban to rural returns. The ochre tick (the total) does **not** move --- the gap is what it is. But the slate/red split shifts: valuing the characteristic gap at rural prices rather than urban prices reassigns mmol/mol between the two slices. This is the index-number problem made visible, and the next section explains why it is unavoidable.
+
+**Step 6: Find where the gap lives.** The lower grouped chart breaks each slice down by covariate (the *detailed* decomposition). Read off which characteristic drives the explained part (often diagnosis duration) and which drives the unexplained part. A clinic cannot change patients' ages, but it *can* change how its care responds to a long diabetes history.
+
+## The Index-Number (Reference-Group) Problem
+
+You may have noticed the decomposition required a *choice*: which returns, $\beta^{\*}$, count as the "no-difference" benchmark? This is not a technicality; it is the deepest conceptual issue in the method.
+
+::: {.glass-card .glass-card--assumption}
+The two-fold decomposition is **exact for any choice of $\beta^{\*}$** --- the explained and unexplained terms always sum to $\Delta$. But the *split between them* depends on $\beta^{\*}$:
+
+- $\beta^{\*} = \hat\beta_{\text{U}}$ (urban returns): asks *"what if rural patients earned urban returns?"* --- the explained part values the characteristic gap at urban prices.
+- $\beta^{\*} = \hat\beta_{\text{R}}$ (rural returns): asks *"what if urban patients earned rural returns?"* --- the explained part uses rural prices.
+- A **pooled** $\hat\beta_{\text{pool}}$ from stacking both groups (Neumark 1988; Oaxaca-Ransom 1994): a common compromise that avoids privileging either group.
+
+There is **no statistical test** that selects $\beta^{\*}$. The choice is an *economic / substantive* statement about what the counterfactual world looks like.
+:::
+
+This is called the **index-number problem** by analogy with price indices, where comparing two bundles requires choosing whose prices to use (Laspeyres vs Paasche). It also appears as the **identification problem of the decomposition**: the threefold version (below) tries to sidestep it but only relocates the ambiguity.
+
+::: {.glass-card .glass-card--warning}
+**Do not over-interpret the unexplained term.** Three traps recur:
+
+1. **Omitted characteristics.** "Unexplained" means *unexplained by your $X$*. Leave out clinic staffing or patient deprivation and that variation pours into the unexplained slice, which then looks like a "care effect" when it is really a missing covariate.
+2. **Reference-group sensitivity.** Report the split under *at least two* choices of $\beta^{\*}$ (e.g. urban, rural, and pooled). If your headline conclusion flips with the benchmark, say so.
+3. **Detailed terms are not invariant to the base category** of categorical covariates (the *identification problem*, Oaxaca-Ransom 1999). The aggregate $Q$ and $U$ are invariant; the per-dummy detailed contributions are not. Use normalized (sum-to-zero) coding before interpreting detailed coefficient effects.
+:::
+
+## Aggregate vs Detailed
+
+The two charts above already showed both levels. The **aggregate decomposition** gives two numbers --- total explained $Q$ and total unexplained $U$ --- answering "how much of the gap is composition versus returns?" The **detailed decomposition** splits each into per-covariate contributions, $Q = \sum_k Q_k$ and $U = \sum_k U_k$, answering "*which* characteristics, and *which* returns, drive the gap?"
+
+For the explained part, the per-covariate term $Q_k = (\bar X_{\text{R},k} - \bar X_{\text{U},k})\,\beta^{\*}_k$ is clean: the gap in covariate $k$, valued at its reference return. The unexplained per-covariate split is the one sensitive to the base category of dummies --- handle with the normalization noted above.
+
+## Beyond the Mean: RIF Regression
+
+Oaxaca-Blinder decomposes a gap in *means*. But the sharpest distributional questions are elsewhere: is the rural-urban HbA1c gap larger at the *poorly controlled tail* (the 90th percentile) than at the *median*? A gap that is small on average but enormous in the tail is a different clinical problem. This connects to the [previous page on distributional treatment effects](distributional-effects.qmd): there a treatment shifts the whole outcome distribution; here a *group gap* varies across that distribution.
+
+The standard tool is **recentered influence function (RIF) regression** (Firpo, Fortin & Lemieux 2009): replace the outcome $Y$ with the recentered influence function of the distributional statistic $\nu$ you care about (a quantile, the variance, the Gini), then run Oaxaca-Blinder on that transformed outcome. Because $E[\mathrm{RIF}(Y;\nu)] = \nu$, an ordinary *mean* decomposition of the RIF is a decomposition of $\nu$ itself.
+
+::: {.glass-card .glass-card--definition}
+For a quantile $q_\tau$, the **recentered influence function** is
+
+$$
+\mathrm{RIF}(y; q_\tau) \;=\; q_\tau + \frac{\tau - \mathbf{1}\{y \le q_\tau\}}{f_Y(q_\tau)},
+$$
+
+where $\mathbf{1}\{\cdot\}$ is the indicator and $f_Y(q_\tau)$ is the outcome density at the quantile.
+
+**Read this as**: "start at the quantile $q_\tau$; add a correction that is positive for observations *above* the quantile and negative for those *below*, scaled by how sparse the data are there ($1/f_Y$)." Regress this constructed variable on $X$ within each group, then apply the ordinary Oaxaca-Blinder formulas. The result decomposes the gap *at quantile $\tau$* into explained and unexplained parts --- a different split at each point of the distribution.
+:::
+
+Running RIF regressions across $\tau \in \{0.1, 0.25, 0.5, 0.75, 0.9\}$ traces how the split changes along the HbA1c distribution. A common finding: composition explains the gap among well-controlled patients, but the *unexplained* (care) component dominates in the poorly controlled tail --- precisely where a region's intervention would matter most.
+
+<details>
+<summary>Math Details: the two-fold decomposition and the reference-coefficient choice</summary>
+<div class="details-content">
+
+### Setting up the identity
+
+Fit OLS separately in each group. A property of OLS with an intercept is that the fitted plane passes through the sample means, so
+
+$$
+\bar Y_g \;=\; \bar X_g^{\top}\hat\beta_g, \qquad g \in \{\text{R}, \text{U}\}.
+$$
+
+The raw gap is then exactly
+
+$$
+\Delta \;=\; \bar Y_{\text{R}} - \bar Y_{\text{U}} \;=\; \bar X_{\text{R}}^{\top}\hat\beta_{\text{R}} - \bar X_{\text{U}}^{\top}\hat\beta_{\text{U}}.
+$$
+
+### Adding and subtracting the reference
+
+Introduce any reference vector $\beta^{\*}$ and add $0 = \bar X_{\text{R}}^{\top}\beta^{\*} - \bar X_{\text{R}}^{\top}\beta^{\*}$ and $0 = \bar X_{\text{U}}^{\top}\beta^{\*} - \bar X_{\text{U}}^{\top}\beta^{\*}$:
+
+$$
+\Delta = \big(\bar X_{\text{R}}^{\top}\beta^{\*} - \bar X_{\text{U}}^{\top}\beta^{\*}\big)
++ \big(\bar X_{\text{R}}^{\top}\hat\beta_{\text{R}} - \bar X_{\text{R}}^{\top}\beta^{\*}\big)
++ \big(\bar X_{\text{U}}^{\top}\beta^{\*} - \bar X_{\text{U}}^{\top}\hat\beta_{\text{U}}\big).
+$$
+
+Group the first parenthesis as the **explained** term and the last two as the **unexplained** term:
+
+$$
+\Delta = \underbrace{(\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}\beta^{\*}}_{Q}
+\;+\; \underbrace{\bar X_{\text{R}}^{\top}(\hat\beta_{\text{R}} - \beta^{\*}) + \bar X_{\text{U}}^{\top}(\beta^{\*} - \hat\beta_{\text{U}})}_{U}.
+$$
+
+This holds as an **identity for every $\beta^{\*}$** --- nothing was assumed, only added and subtracted. That is why "Q + U = $\Delta$" in the interactive is exact to machine precision.
+
+### Why the split depends on $\beta^{\*}$
+
+Take two reference choices, $\beta^{\*}_1$ and $\beta^{\*}_2$. The explained terms differ by
+
+$$
+Q_1 - Q_2 = (\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}(\beta^{\*}_1 - \beta^{\*}_2),
+$$
+
+which is nonzero whenever the groups differ in characteristics *and* the two reference vectors differ. The unexplained terms differ by exactly the negative of this (so the total is preserved). There is no $\beta^{\*}$ that is "correct" --- each encodes a different counterfactual question, which is the index-number problem.
+
+### The threefold alternative
+
+Choosing $\beta^{\*} = \hat\beta_{\text{U}}$ yields the classic **threefold** decomposition,
+
+$$
+\Delta = \underbrace{(\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}\hat\beta_{\text{U}}}_{\text{endowments } E}
++ \underbrace{\bar X_{\text{U}}^{\top}(\hat\beta_{\text{R}} - \hat\beta_{\text{U}})}_{\text{coefficients } C}
++ \underbrace{(\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}(\hat\beta_{\text{R}} - \hat\beta_{\text{U}})}_{\text{interaction } I}.
+$$
+
+The **interaction** term $I$ exists because both characteristics *and* returns differ simultaneously; it must be assigned somewhere. The two-fold decomposition folds $I$ into either the explained or unexplained part via the choice of $\beta^{\*}$. The threefold makes the interaction explicit but inherits the same reference-group ambiguity in interpreting $E$ and $C$.
+
+### Pooled reference (Neumark / Oaxaca-Ransom)
+
+A widely used $\beta^{\*}$ is the coefficient vector $\hat\beta_{\text{pool}}$ from a regression on the *stacked* sample of both groups (optionally with a group dummy). It avoids privileging either group's returns and makes the explained term a pure composition effect priced at the average market return. Its drawback: including a group indicator can transfer part of the unexplained gap into the explained term, so the literature recommends excluding the group dummy from $\beta^{\*}$ (Jann 2008).
+
+</div>
+</details>
+
+## Computing a Decomposition
+
+Both panels fit separate urban/rural regressions on simulated patient-level data, then form the two-fold decomposition. The R panel uses the dedicated `oaxaca` package; the Python panel does it manually with `numpy`/`statsmodels` so every term is visible. Both report the explained and unexplained slices and confirm they sum to the raw gap.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("oaxaca", "quantreg"))
+library(oaxaca)
+
+set.seed(2024)
+n <- 1200
+
+# ── Simulate two groups of vårdcentral patients ──
+# rural = 1 for rural clinics, 0 for urban. Rural patients are older, longer
+# diagnosed, poorer (composition), AND rural returns are steeper (coefficients).
+rural <- rbinom(n, 1, 0.45)
+age   <- 67 + 8  * rural + rnorm(n, 0, 6)        # rural older
+dur   <-  9 + 4  * rural + rnorm(n, 0, 3)        # longer since diagnosis
+inc   <- plogis(-1.3 + 0.9 * rural + rnorm(n, 0, 0.6))  # low-income share
+
+# True returns differ by group (the unexplained channel).
+b_age <- 0.030 + 0.015 * rural
+b_dur <- 0.30  + 0.10  * rural
+b_inc <- 3.0   + 1.6   * rural
+hba1c <- 44 + b_age * age + b_dur * dur + b_inc * inc + rnorm(n, 0, 4)
+
+dat <- data.frame(hba1c, age, dur, inc, rural)
+
+# ── Oaxaca-Blinder via the oaxaca package ──
+# group.weights = 0 -> reference = group coded 0 (urban) returns (β* = β_U).
+ob <- oaxaca(hba1c ~ age + dur + inc | rural, data = dat, R = 200)
+
+# Two-fold decomposition with urban reference (weight 0 on group 1).
+twofold <- ob$twofold$overall
+print(twofold[twofold[, "group.weight"] == 0, ])   # explained & unexplained
+
+cat("Raw gap  =", round(mean(hba1c[rural == 1]) - mean(hba1c[rural == 0]), 3), "\n")
+
+# Detailed (per-covariate) explained contributions, urban reference:
+print(ob$twofold$variables[[1]][, c("group.weight",
+                                    "coef(explained)", "coef(unexplained)")])
+
+# ── Reference-group sensitivity: pooled β* (Neumark, group.weight = -1) ──
+print(ob$twofold$overall[ob$twofold$overall[, "group.weight"] == -1, ])
+
+# ── Beyond the mean: RIF decomposition at the 0.9 quantile (sketch) ──
+# Build the RIF of the 0.90 quantile, then run an OB on the RIF outcome.
+tau <- 0.90
+q   <- quantile(hba1c, tau)
+fhat <- density(hba1c, from = q, to = q, n = 1)$y          # f_Y(q)
+rif <- q + (tau - (hba1c <= q)) / fhat                      # RIF(y; q_tau)
+dat$rif <- rif
+ob90 <- oaxaca(rif ~ age + dur + inc | rural, data = dat, R = 100)
+print(ob90$twofold$overall[ob90$twofold$overall[, "group.weight"] == 0, ])
+```
+
+### Python
+
+```python
+import numpy as np
+import statsmodels.api as sm
+
+rng = np.random.default_rng(2024)
+n = 1200
+
+# ── Simulate two groups of vårdcentral patients ──
+rural = rng.binomial(1, 0.45, n)
+age   = 67 + 8 * rural + rng.normal(0, 6, n)
+dur   =  9 + 4 * rural + rng.normal(0, 3, n)
+inc   = 1 / (1 + np.exp(-(-1.3 + 0.9 * rural + rng.normal(0, 0.6, n))))
+
+b_age = 0.030 + 0.015 * rural
+b_dur = 0.30  + 0.10  * rural
+b_inc = 3.0   + 1.6   * rural
+hba1c = 44 + b_age*age + b_dur*dur + b_inc*inc + rng.normal(0, 4, n)
+
+X = np.column_stack([age, dur, inc])
+def fit(mask):
+    Xc = sm.add_constant(X[mask])
+    return sm.OLS(hba1c[mask], Xc).fit().params, Xc.mean(axis=0)
+
+bR, xbarR = fit(rural == 1)   # rural
+bU, xbarU = fit(rural == 0)   # urban
+
+# ── Two-fold Oaxaca-Blinder, urban returns as reference (β* = β_U) ──
+bstar = bU
+explained   = (xbarR - xbarU) @ bstar
+unexplained = xbarR @ (bR - bstar) + xbarU @ (bstar - bU)
+delta = hba1c[rural == 1].mean() - hba1c[rural == 0].mean()
+
+print(f"Explained   Q = {explained:.3f}")
+print(f"Unexplained U = {unexplained:.3f}")
+print(f"Q + U         = {explained + unexplained:.3f}")
+print(f"Raw gap   Δ   = {delta:.3f}   (Q+U must equal Δ)")
+
+# Detailed explained contributions (drop the intercept column, index 0).
+names = ["age", "dur", "inc"]
+for k, nm in enumerate(names, start=1):
+    print(f"  explained[{nm}] = {(xbarR[k]-xbarU[k]) * bstar[k]:.3f}")
+
+# ── Reference sensitivity: pooled β* from the stacked sample (no group dummy) ──
+bpool, _ = fit(np.ones(n, dtype=bool))
+exp_pool = (xbarR - xbarU) @ bpool
+print(f"\nPooled β*: explained = {exp_pool:.3f}, "
+      f"unexplained = {delta - exp_pool:.3f}")
+
+# ── Beyond the mean: RIF of the 0.90 quantile, then OB on the RIF ──
+from scipy.stats import gaussian_kde
+tau = 0.90
+q = np.quantile(hba1c, tau)
+f_q = gaussian_kde(hba1c)(q)[0]                 # f_Y(q)
+rif = q + (tau - (hba1c <= q).astype(float)) / f_q
+
+def fit_y(y, mask):
+    Xc = sm.add_constant(X[mask])
+    return sm.OLS(y[mask], Xc).fit().params, Xc.mean(axis=0)
+
+bR9, xR9 = fit_y(rif, rural == 1)
+bU9, xU9 = fit_y(rif, rural == 0)
+exp9 = (xR9 - xU9) @ bU9
+print(f"\nRIF q0.90: explained = {exp9:.3f}, "
+      f"unexplained = {(rif[rural==1].mean()-rif[rural==0].mean()) - exp9:.3f}")
+```
+
+:::
+
+Both languages return the same story: an explained slice near $+2$ mmol/mol (rural patients are older, longer-diagnosed, poorer) and an unexplained slice near $+3$ mmol/mol (rural care prices those characteristics more steeply), summing to the raw $\approx +5$ gap. The pooled reference shifts the split modestly; the RIF run at the 0.90 quantile shows the unexplained share rising in the poorly controlled tail.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region compares average HbA1c across two clinic types using a single covariate, years since diagnosis. Urban: $\bar X_{\text{U}} = 9$ years, $\hat\beta_{\text{U}} = 0.50$ mmol/mol per year, intercept $48$. Rural: $\bar X_{\text{R}} = 13$ years, $\hat\beta_{\text{R}} = 0.80$, intercept $48$. (Both intercepts equal, so ignore them.)
+
+(a) Compute the raw gap $\Delta = \bar Y_{\text{R}} - \bar Y_{\text{U}}$. (b) Using urban returns as $\beta^{\*}$, compute the explained and unexplained components and confirm they sum to $\Delta$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\bar Y_{\text{U}} = 48 + 0.50 \times 9 = 52.5$; $\bar Y_{\text{R}} = 48 + 0.80 \times 13 = 58.4$. So $\Delta = 58.4 - 52.5 = 5.9$ mmol/mol.
+
+**(b)** With $\beta^{\*} = \hat\beta_{\text{U}} = 0.50$ (intercepts cancel):
+
+- Explained $Q = (\bar X_{\text{R}} - \bar X_{\text{U}})\,\beta^{\*} = (13 - 9)\times 0.50 = 2.0$.
+- Unexplained $U = \bar X_{\text{R}}(\hat\beta_{\text{R}} - \beta^{\*}) = 13 \times (0.80 - 0.50) = 3.9$.
+- Check: $Q + U = 2.0 + 3.9 = 5.9 = \Delta\ \checkmark$.
+
+About one-third of the gap ($2.0/5.9 \approx 34\%$) is explained by rural patients being diagnosed longer; two-thirds is the steeper rural return to diagnosis duration --- the part the clinic might address.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Redo Exercise 1 part (b) using **rural** returns as the reference, $\beta^{\*} = \hat\beta_{\text{R}} = 0.80$. Compare the explained/unexplained split to the urban-reference answer and explain in one sentence why the total is unchanged but the split moved.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+With $\beta^{\*} = 0.80$:
+
+- Explained $Q = (13 - 9)\times 0.80 = 3.2$.
+- Unexplained $U = \bar X_{\text{U}}(\beta^{\*} - \hat\beta_{\text{U}}) = 9 \times (0.80 - 0.50) = 2.7$.
+- Check: $Q + U = 3.2 + 2.7 = 5.9 = \Delta\ \checkmark$.
+
+The total is unchanged because the decomposition is an exact identity for *any* $\beta^{\*}$. The split moved because the characteristic gap of $4$ years is now valued at the steeper rural price ($0.80$ instead of $0.50$), pushing $4 \times (0.80 - 0.50) = 1.2$ mmol/mol from the unexplained slice into the explained slice. This is the index-number problem: the explained share rose from $34\%$ to $54\%$ purely by switching the reference returns.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague runs an Oaxaca-Blinder decomposition of the rural-urban HbA1c gap, finds a large *unexplained* component, and concludes "rural clinics provide systematically worse diabetes care." Give two distinct reasons this conclusion is not warranted from the decomposition alone.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+1. **Omitted characteristics.** "Unexplained" means unexplained *by the covariates in the model*. If the regression omits patient-level deprivation, comorbidity burden, or distance to the clinic --- variables that genuinely differ between rural and urban populations --- their effect is absorbed into the unexplained term and masquerades as a "care" effect. The unexplained component is a residual, not a measured causal effect of the clinic.
+
+2. **Reference-group sensitivity (index-number problem).** The size of the unexplained component depends on the choice of $\beta^{\*}$. A different (equally defensible) reference --- rural returns, or pooled returns --- can shrink it substantially. A conclusion that hinges on one arbitrary benchmark is not robust; the colleague should report the split under at least two references.
+
+(A third valid answer: the decomposition is descriptive, not causal --- it identifies *associations* between the group label and returns, not the causal effect of attending a rural clinic, which would require the identification strategies in earlier Toolkit modules.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set every **returns gap** slider to zero but keep the characteristic gaps positive. (a) What happens to the unexplained (red) bar, and why? (b) Now set every **characteristic gap** to zero but restore positive returns gaps --- what happens to the explained (slate) bar? (c) What does each extreme tell a policymaker about where to intervene?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The red (unexplained) bar collapses to zero. With identical returns ($\hat\beta_{\text{R}} = \hat\beta_{\text{U}} = \beta^{\*}$), the term $\bar X_{\text{R}}^{\top}(\hat\beta_{\text{R}} - \beta^{\*}) + \bar X_{\text{U}}^{\top}(\beta^{\*} - \hat\beta_{\text{U}})$ is exactly zero, so the *entire* gap is explained by the difference in characteristics. The whole gap is composition.
+
+**(b)** The slate (explained) bar collapses to zero. With identical mean characteristics ($\bar X_{\text{R}} = \bar X_{\text{U}}$), the term $(\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}\beta^{\*}$ is zero, so the entire gap is unexplained --- same patients, different returns.
+
+**(c)** The first extreme (all explained) says the gap reflects *who the patients are*: the lever is upstream --- prevention, screening, social policy that changes the rural patient mix. The second extreme (all unexplained) says identical patients fare worse at rural clinics: the lever is the *care process itself* --- staffing, recall systems, continuity. Real gaps are a mix, which is why the detailed decomposition matters for targeting.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A mean gap between two groups splits exactly into an *explained* part (different characteristics $X$, priced at reference returns $\beta^{\*}$) and an *unexplained* part (different returns $\beta$ to those characteristics).
+- The two-fold Oaxaca-Blinder decomposition $\Delta = (\bar X_{\text{R}} - \bar X_{\text{U}})^{\top}\beta^{\*} + [\text{returns terms}]$ holds as an identity for *any* $\beta^{\*}$; the explained and unexplained slices always sum to the raw gap.
+- The split --- not the total --- depends on the reference coefficients (the index-number problem). Report it under urban, rural, and pooled benchmarks; there is no test that picks one.
+- "Unexplained" means unexplained by the *included covariates*, not "caused by the group label." Omitted characteristics inflate it, and detailed dummy contributions are sensitive to the base category.
+- RIF regression extends the decomposition beyond the mean: decompose the gap at any quantile (or the variance, Gini) by running Oaxaca-Blinder on the recentered influence function of that statistic.
+:::
+
+## What Comes Next
+
+We can now take any mean gap between two groups --- rural versus urban clinics, two regions, public versus private providers --- and say how much of it is *who the patients are* versus *how the care prices their characteristics*, with honest attention to the reference-group choice and to what "unexplained" really hides. RIF regression even carries the split across the whole distribution, tying this page back to the [distributional treatment effects](distributional-effects.qmd) that opened the module. That closes the Quantile and Distributional module --- and with it, this leg of the *Econometrician's Toolkit*. The [book home](../index.qmd) maps the full toolkit, from potential outcomes through difference-in-differences, instrumental variables, and the distributional methods you have just finished; return there to choose where to go next.

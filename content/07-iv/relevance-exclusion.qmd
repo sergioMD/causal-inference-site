@@ -1,0 +1,930 @@
+---
+title: "Relevance and Exclusion"
+subtitle: "What makes an instrument valid"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State the three conditions an instrument must satisfy --- relevance, the exclusion restriction, and independence --- and say which are testable and which are not.
+- Draw and read the directed acyclic graphs (DAGs) that distinguish a *valid* instrument from an *invalid* one.
+- Derive how a direct $Z \to Y$ leak biases the IV estimator, and explain algebraically why that bias *explodes* when the instrument is weak.
+- Defend (or attack) the exclusion restriction for a real Swedish primary-care instrument: distance to the nearest *vårdcentral*.
+:::
+
+## An Instrument for a Question We Cannot Randomize
+
+Sweden's 21 *regioner* (regions) would dearly like to know whether *seeing your GP more often* improves chronic-disease control. Does a Type 2 diabetes patient who visits their *vårdcentral* (primary care center) four times a year end up with lower HbA1c than one who visits twice? The trouble is the one we have met on every page of this book: visit frequency is *chosen*, not assigned. Patients who feel sicker book more appointments, and patients who are health-conscious book more appointments --- and both of those traits also move HbA1c directly. A naive regression of HbA1c on visit count is hopelessly confounded.
+
+We cannot randomize how often a person visits their doctor. But we can look for a lever --- a variable that pushes some patients toward more visits *without itself being entangled in the confounders*. The classic candidate in spatial health economics is **distance to the nearest vårdcentral**. A patient who lives 2 km from a clinic faces a lower time-and-travel cost of visiting than one who lives 25 km away, so distance plausibly shifts visit frequency. If distance is otherwise unrelated to the things that drive HbA1c, it can serve as an **instrumental variable** (IV) for visit frequency.
+
+That little phrase --- *"if distance is otherwise unrelated"* --- is doing enormous work. This page is about unpacking it. An instrument is not a magic wand; it earns its keep only by satisfying three conditions, and one of them can never be checked against the data. Get them right and IV recovers a causal effect from observational data. Get the untestable one wrong and IV can be *more* biased than the naive regression you were trying to fix.
+
+We will use the notation from the [Two-Stage Least Squares](two-stage-least-squares.qmd) page. The instrument is $Z$ (distance, in km), the endogenous treatment is $X$ (annual visits), the outcome is $Y$ (HbA1c, in percentage points), and $U$ collects the unobserved confounders (latent health, conscientiousness). The structural equation of interest is
+
+$$
+Y_i = \beta_0 + \beta\, X_i + U_i,
+$$
+
+where $\beta$ is the causal effect of one extra visit per year on HbA1c, and $X_i$ is correlated with $U_i$ --- that correlation is exactly the endogeneity that makes OLS inconsistent.
+
+## The Three Conditions
+
+An instrument $Z$ is **valid** for estimating $\beta$ when three conditions hold together. Two of them concern how $Z$ relates to $X$ and $U$; the third is a consequence we will treat separately.
+
+::: {.glass-card .glass-card--assumption}
+**The instrument-validity trio.**
+
+**1. Relevance.** $Z$ is correlated with the treatment: $\operatorname{Cov}(Z, X) \neq 0$. Distance must actually move visit frequency. *This is testable* --- it lives entirely in the first-stage regression of $X$ on $Z$, and its strength is summarized by the first-stage $F$-statistic.
+
+**2. Exclusion restriction.** $Z$ affects $Y$ *only through* $X$ --- there is no direct path $Z \to Y$ and no path through any other channel. Formally, holding $X$ fixed, changing $Z$ does not change $Y$. *This is not testable from data alone*; it must be argued from subject knowledge.
+
+**3. Independence (exogeneity).** $Z$ is as-good-as-randomly assigned with respect to the error: $\operatorname{Cov}(Z, U) = 0$. The instrument is uncorrelated with the unobserved confounders. *This is also untestable*, for the same reason any statement about $U$ is untestable --- $U$ is unobserved.
+
+Conditions 2 and 3 are often bundled together as **"$Z$ is exogenous"** and summarized by the single moment condition $\operatorname{Cov}(Z, U) = 0$ in the structural equation. The reason: if there is a direct $Z \to Y$ path, it shows up as a non-zero correlation between $Z$ and the structural error. We keep them separate here because they fail for *different real-world reasons* and are *defended with different arguments*.
+:::
+
+**Read condition 1 as**: "Wiggle the instrument and the treatment must wiggle too." If distance had no effect on how often people visit, it would carry no information about $X$ and could not identify $\beta$. The first stage would be flat.
+
+**Read condition 2 as**: "Once you know how many visits a patient made, knowing their distance tells you nothing more about their HbA1c." Distance is allowed to matter for HbA1c, but *only* by changing visits --- never by any other route.
+
+**Read condition 3 as**: "Patients who happen to live far from a clinic are not systematically sicker or healthier in unobserved ways than patients who live close." This is what would be true automatically if a lottery assigned addresses. In observational data it is an assumption.
+
+::: {.glass-card .glass-card--insight}
+Relevance is the *easy* condition: you can measure it, and a strong first stage is reassuring. Exclusion and independence are the *hard* conditions: they are claims about an unobserved error term, so no regression output can confirm them. This asymmetry is the whole drama of IV. The fight in any credible IV paper is never about the first-stage $F$ --- that is just reported. The fight is about whether the exclusion restriction is believable.
+:::
+
+## Valid versus Invalid: Two DAGs
+
+The cleanest way to see what each condition buys is to draw the causal graph. A directed acyclic graph (DAG) encodes which variables cause which. An instrument works by carving out a path to $X$ that does *not* pass through the confounder $U$ and does *not* sneak around to $Y$.
+
+Before the live version, here is the fixed reference the heading promises: a **valid** instrument on the left and an **invalid** one on the right. They are identical except for the one red arrow --- the direct $Z \to Y$ leak --- that turns a good instrument into a bad one.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG drawing component for this page (p2_*). Pure function of its
+// arguments (depends only on the global d3); builds an SVG with d3.create and
+// returns the node. Coordinates are normalized to [0,1] and padded so nothing
+// clips. Nodes are circles (fill #eef0ee, stroke #1c1c1a); a node listed in
+// `conditioned` is drawn as a rounded SQUARE instead. Edges carry a `kind`:
+//   'causal'        → green  #2e6f40  (a legitimate causal arrow)
+//   'biasing'       → red    #b3000b  (an open biasing / exclusion-leak path)
+//   'blocked'       → grey   #79766e  dashed (a path that is closed)
+// Edges may be drawn as a curved arc (bow ≠ 0) so a leak can visibly bypass a node.
+p2_drawDAG = function ({ nodes, edges, width = 300, height = 230, conditioned = [] }) {
+  const pad = 40, r = 23;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "p2-arr-green" :
+    (k === "biasing" || k === "backdoor-open") ? "p2-arr-red" : "p2-arr-grey";
+
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2-arr-green", "#2e6f40"], ["p2-arr-red", "#b3000b"], ["p2-arr-grey", "#79766e"]]) {
+    defs.append("marker").attr("id", id)
+      .attr("viewBox", "0 -5 10 10").attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7).attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    const col = colorFor(e.kind);
+    const dash = e.kind === "blocked" ? "5,4" : null;
+    if (e.bow) {
+      // Quadratic arc bowing perpendicular to the chord by `bow` px, so a leak
+      // edge visibly goes AROUND any colinear node between its endpoints.
+      const mx = (xa + xb) / 2, my = (ya + yb) / 2;
+      const cx = mx - uy * e.bow, cy = my + ux * e.bow;
+      eg.append("path")
+        .attr("d", `M${xa},${ya} Q${cx},${cy} ${xb},${yb}`)
+        .attr("fill", "none").attr("stroke", col).attr("stroke-width", 3)
+        .attr("stroke-dasharray", dash).attr("marker-end", `url(#${markerId(e.kind)})`);
+    } else {
+      eg.append("line")
+        .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb)
+        .attr("stroke", col).attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+        .attr("stroke-dasharray", dash).attr("marker-end", `url(#${markerId(e.kind)})`);
+    }
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const boxed = condSet.has(n.id);
+    const g = ng.append("g");
+    if (boxed) {
+      g.append("rect").attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r).attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 3.5)
+        .attr("stroke-dasharray", n.dashed ? "4,3" : null);
+    } else {
+      g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2)
+        .attr("stroke-dasharray", n.dashed ? "4,3" : null);
+    }
+    g.append("text").attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a").text(n.label);
+    if (n.caption) {
+      g.append("text").attr("x", cx).attr("y", cy + r + 14)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 10.5).attr("font-weight", 600).attr("fill", "#79766e").text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Static side-by-side reference: a VALID instrument (no Z→Y path) and an
+// INVALID one (same graph plus the red exclusion-leak arc bowing around X).
+p2_validInvalid = {
+  const nodes = [
+    { id: "Z", x: 0.06, y: 0.50, label: "Z", caption: "distance" },
+    { id: "X", x: 0.50, y: 0.50, label: "X", caption: "visits" },
+    { id: "Y", x: 0.94, y: 0.50, label: "Y", caption: "HbA1c" },
+    { id: "U", x: 0.72, y: 0.08, label: "U", caption: "unobserved", dashed: true }
+  ];
+  const baseEdges = [
+    { source: "Z", target: "X", kind: "causal" },
+    { source: "X", target: "Y", kind: "causal" },
+    { source: "U", target: "X", kind: "blocked" },
+    { source: "U", target: "Y", kind: "blocked" }
+  ];
+  const validFig   = p2_drawDAG({ nodes, edges: baseEdges, width: 300, height: 215 });
+  const invalidFig = p2_drawDAG({
+    nodes,
+    edges: [...baseEdges, { source: "Z", target: "Y", kind: "biasing", bow: 64 }],
+    width: 300, height: 215
+  });
+  const panel = (title, sub, fig, color) => html`<figure style="margin:0; flex:1 1 18rem; min-width:15rem;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.72rem; font-weight:700;
+        text-transform:uppercase; letter-spacing:0.05em; color:${color}; text-align:center; margin-bottom:0.1rem;">
+      ${title}</figcaption>
+    <div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; text-align:center; margin-bottom:0.2rem;">${sub}</div>
+    ${fig}</figure>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:1rem 1.5rem; justify-content:center;
+      align-items:flex-start; margin:1.25rem 0 0.4rem;">
+    ${panel("Valid instrument", "no path Z→Y except through X", validFig, "#2e6f40")}
+    ${panel("Invalid instrument", "a direct leak Z→Y bypasses X", invalidFig, "#b3000b")}
+  </div>`;
+}
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = legitimate causal arrow ($Z \to X$ relevance, $X \to Y$ the effect), <span style="color:#b3000b; font-weight:700;">red</span> = the exclusion-leak path $Z \to Y$ that must be absent for validity, <span style="color:#79766e; font-weight:700;">grey dashed</span> = the confounding $U \to X$, $U \to Y$ that IV is meant to neutralise (drawn dashed because $U$ is unobserved). The two graphs differ by exactly one arrow.
+:::
+
+The interactive below draws the IV graph and lets you **open a direct leak from $Z$ to $Y$** --- an exclusion violation --- with a slider. As the leak grows, watch the IV estimate detach from the true effect. A second slider sets the **first-stage strength** (how hard $Z$ pushes $X$); you will discover that the *same* leak does far more damage when the first stage is weak.
+
+The readout reports the **plim** (probability limit) of IV --- the value the estimate settles on as the sample grows huge, the answer IV would give with unlimited data, stripped of random sampling noise. We use the plim rather than a noisy simulated estimate so the pedagogy is exact: any drift you see off the truth is genuine bias, not luck of the draw.
+
+::: {.interactive-container}
+
+#### The Exclusion-Restriction Leak
+
+::: {.start-here}
+**Start here:** keep the leak γ at 0 and the IV estimate sits on the truth (green). Now drag the **exclusion leak γ** up and watch a red arrow bypass X and the IV estimate drift off target. Then drop the **first-stage strength π** to see the same leak do far more damage.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof ivrel_leak = Inputs.range([0, 0.30], {
+  value: 0,
+  step: 0.01,
+  label: "Exclusion leak γ (direct Z→Y)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivrel_firstStage = Inputs.range([0.05, 0.9], {
+  value: 0.55,
+  step: 0.01,
+  label: "First-stage strength π (Z→X)"
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e;
+    margin:-0.2rem 0 0.2rem 0;">π changes the estimate only when the leak γ &gt; 0 — it is the denominator that amplifies a leak.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivrel_trueBeta = Inputs.range([-0.5, 0], {
+  value: -0.25,
+  step: 0.01,
+  label: "True effect β (visit → HbA1c)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Population (plim) IV algebra. No sampling needed: we work directly with
+// the probability limit so the pedagogy is exact and reproducible. ──
+//
+// Structural model (Z = standardized instrument, X = visits/yr, Y = HbA1c %).
+// We use the SAME sign convention as the Math Details, ratio view, exercises,
+// and the R/Python code below: a positive first-stage coefficient π.
+//   X = π₀ + π · Z + V               (first stage; π = first-stage strength > 0)
+//   Y = β · X + γ · Z + U            (γ is the EXCLUSION LEAK: direct Z→Y)
+//
+// We make Z exogenous (independence holds: Cov(Z,U)=0, Cov(Z,V)=0) so the ONLY
+// thing that can break IV here is the leak γ. With Z exogenous, the standard
+// IV (Wald / ratio) estimand is
+//
+//   plim β_IV = Cov(Z,Y) / Cov(Z,X).
+//
+// With Var(Z)=σ²_Z and the model above:
+//   Cov(Z,X) = π · σ²_Z
+//   Cov(Z,Y) = β·Cov(Z,X) + γ·σ²_Z = (β·π + γ) · σ²_Z
+// so
+//   plim β_IV = (β·π + γ)/π = β + γ/π.
+//
+// => The asymptotic bias of IV is exactly  +γ/π : the leak divided by the
+//    first stage. Weak first stage (small π) AMPLIFIES the same leak.
+ivrel_calc = {
+  const beta = ivrel_trueBeta;   // true causal effect (≤ 0)
+  const pi   = ivrel_firstStage; // first-stage strength (>0)
+  const gam  = ivrel_leak;       // exclusion leak (≥ 0)
+
+  const bias  = gam / pi;        // plim β_IV − β
+  const ivEst = beta + bias;     // plim β_IV = β + γ/π
+  return { beta, pi, gam, bias, ivEst };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The DAG. Three nodes (Z, X, Y) plus the unobserved confounder U drawn as
+// a dashed node. Arrow Z→X is the first stage (thickness ∝ π). Arrow X→Y is the
+// causal effect. The U→X and U→Y arrows are the endogeneity that motivates IV.
+// The Z→Y arrow is the LEAK: it appears (Uppsala red, thickening) only when γ>0
+// and is ROUTED AS A CURVED ARC below the node row so it visibly bypasses X.
+{
+  // Uppsala-academic palette, by semantic role.
+  const C = {
+    first:    "#3d5a6c",  // first stage Z→X (slate, secondary series)
+    causal:   "#1c1c1a",  // causal X→Y (ink)
+    confound: "#79766e",  // confounding U (muted)
+    leak:     "#990000",  // exclusion leak Z→Y (Uppsala red, the violation)
+    sub:      "#79766e"
+  };
+
+  const W = 560, H = 300;
+  const pos = {
+    Z: { x: 80,  y: 150 },
+    X: { x: 280, y: 150 },
+    Y: { x: 480, y: 150 },
+    U: { x: 380, y: 40  }
+  };
+  const r = 26;
+
+  // Helper: a straight arrow from node a to node b, trimmed to the circle borders.
+  const edge = (a, b, opts = {}) => {
+    const p = pos[a], q = pos[b];
+    const dx = q.x - p.x, dy = q.y - p.y;
+    const L = Math.hypot(dx, dy);
+    const ux = dx / L, uy = dy / L;
+    return {
+      x1: p.x + ux * r, y1: p.y + uy * r,
+      x2: q.x - ux * (r + 6), y2: q.y - uy * (r + 6),
+      ...opts
+    };
+  };
+
+  const leakOn = ivrel_calc.gam > 1e-9;
+
+  const edges = [
+    edge("Z", "X", { stroke: C.first,    w: 1.5 + 7 * ivrel_firstStage, kind: "first" }),
+    edge("X", "Y", { stroke: C.causal,   w: 3, kind: "causal" }),
+    edge("U", "X", { stroke: C.confound, w: 2, kind: "confound" }),
+    edge("U", "Y", { stroke: C.confound, w: 2, kind: "confound" })
+  ];
+
+  // The leak Z→Y is drawn as a curved arc bowing BELOW the node row so it does
+  // not overlap the colinear Z→X / X→Y edges and visibly goes AROUND X. We sample
+  // a quadratic Bézier into points and feed them to Plot.line (with a smooth
+  // curve), so everything stays in Plot's own scale space and resizes cleanly.
+  const leakW = Math.min(9, 1 + 26 * ivrel_calc.gam);   // capped width budget
+  const arcY = 250;                                     // belly of the arc
+  const leakStart = { x: pos.Z.x + 8,  y: pos.Z.y + r - 4 };
+  const leakEnd   = { x: pos.Y.x - 8,  y: pos.Y.y + r - 4 };
+  const leakCtrl  = { x: (pos.Z.x + pos.Y.x) / 2, y: arcY };
+  const bez = (a, c, b, t) => {
+    const mt = 1 - t;
+    return {
+      x: mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x,
+      y: mt * mt * a.y + 2 * mt * t * c.y + t * t * b.y
+    };
+  };
+  const leakPts = Array.from({ length: 33 }, (_, i) => bez(leakStart, leakCtrl, leakEnd, i / 32));
+  // Short final segment used to draw an arrowhead pointing up into Y.
+  const leakTail = [bez(leakStart, leakCtrl, leakEnd, 0.92), leakEnd];
+
+  const nodes = [
+    { id: "Z", label: "Z", sub: "distance",   ...pos.Z, fill: C.first  },
+    { id: "X", label: "X", sub: "visits",     ...pos.X, fill: C.causal },
+    { id: "Y", label: "Y", sub: "HbA1c",      ...pos.Y, fill: C.causal },
+    { id: "U", label: "U", sub: "unobserved", ...pos.U, fill: C.confound, dashed: true }
+  ];
+
+  const fig = Plot.plot({
+    width: Math.min(W, width),
+    height: H,
+    marginLeft: 0, marginRight: 0, marginTop: 10, marginBottom: 16,
+    style: { fontFamily: "Inter, sans-serif", maxWidth: "100%", height: "auto" },
+    x: { domain: [0, W], axis: null },
+    y: { domain: [H, 0], axis: null },
+    marks: [
+      // Straight edges (first stage, causal, confounding), each at its own width.
+      ...edges.map(e => Plot.arrow([e], {
+        x1: "x1", y1: "y1", x2: "x2", y2: "y2",
+        stroke: e.stroke, strokeWidth: e.w, headLength: 9
+      })),
+      // Curved exclusion-leak arc Z→Y, bowing below the node row (only when γ>0).
+      leakOn ? Plot.line(leakPts, {
+        x: "x", y: "y", stroke: C.leak, strokeWidth: leakW,
+        curve: "catmull-rom", strokeLinecap: "round"
+      }) : null,
+      leakOn ? Plot.arrow(leakTail, {
+        x: "x", y: "y", stroke: C.leak, strokeWidth: leakW,
+        headLength: 9 + leakW
+      }) : null,
+      // Leak label, anchored on the arc's belly with a white halo.
+      leakOn ? Plot.text([{ x: leakCtrl.x, y: arcY + 12, t: `leak γ = ${ivrel_calc.gam.toFixed(2)}` }],
+        { x: "x", y: "y", text: "t", fill: C.leak, fontWeight: 700, fontSize: 12,
+          stroke: "white", strokeWidth: 3, paintOrder: "stroke" }) : null,
+      // First-stage label (anchored near its own edge, with a white halo).
+      Plot.text([{
+        x: (pos.Z.x + pos.X.x) / 2, y: 128, t: `π = ${ivrel_firstStage.toFixed(2)}`
+      }], { x: "x", y: "y", text: "t", fill: C.first, fontWeight: 700, fontSize: 12,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      // Causal label.
+      Plot.text([{
+        x: (pos.X.x + pos.Y.x) / 2, y: 128, t: `β = ${ivrel_trueBeta.toFixed(2)}`
+      }], { x: "x", y: "y", text: "t", fill: C.causal, fontWeight: 700, fontSize: 12,
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      // Confounder label.
+      Plot.text([{ x: 300, y: 70, t: "confounding" }],
+        { x: "x", y: "y", text: "t", fill: C.confound, fontStyle: "italic", fontSize: 11,
+          stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      // Nodes.
+      Plot.dot(nodes, {
+        x: "x", y: "y", r: 26, fill: "white",
+        stroke: d => d.fill, strokeWidth: 2.5,
+        strokeDasharray: d => d.dashed ? "4,3" : null
+      }),
+      Plot.text(nodes, { x: "x", y: "y", text: "label", fontWeight: 800, fontSize: 16, fill: d => d.fill, dy: -2 }),
+      Plot.text(nodes, { x: "x", y: d => d.y + 40, text: "sub", fontSize: 10.5, fill: C.sub })
+    ]
+  });
+
+  return fig;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Color key for the DAG arrows (paired with line style for color-blind safety). ──
+{
+  const sw = (color, dash) => html`<svg width="26" height="10" style="vertical-align:middle;">
+    <line x1="1" y1="5" x2="25" y2="5" stroke="${color}" stroke-width="3"
+      stroke-dasharray="${dash || ""}" stroke-linecap="round"></line></svg>`;
+  const item = (color, dash, label) => html`<span style="
+      display:inline-flex; align-items:center; gap:0.35rem; margin-right:1rem;
+      font-family:'Inter',sans-serif; font-size:0.78rem; color:#1c1c1a;">
+    ${sw(color, dash)} ${label}</span>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.25rem 0;
+      margin-top:0.4rem; padding-top:0.5rem; border-top:1px solid #e6e3db;">
+    ${item("#3d5a6c", null, "first stage Z→X")}
+    ${item("#1c1c1a", null, "causal X→Y")}
+    ${item("#79766e", "4,3", "confounding U")}
+    ${item("#990000", null, "exclusion leak Z→Y")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The payoff readout: true β vs plim of IV, with the bias decomposition. ──
+{
+  const c = ivrel_calc;
+  const valid = c.gam < 1e-9;
+  const off = Math.abs(c.ivEst - c.beta);
+
+  const tile = (name, value, color, bg) => html`<div style="
+      text-align: center; min-height: 4.4rem;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem; min-height:2rem;
+        display:flex; align-items:center; justify-content:center;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#79766e;">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.25rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem, 1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${tile("True effect β", fmt(c.beta), "#1c1c1a", "#f6f5f1")}
+      ${tile("plim of IV", fmt(c.ivEst),
+          valid ? "#2e6f40" : "#990000",
+          valid ? "rgba(46,111,64,0.10)" : "rgba(153,0,0,0.07)")}
+      ${tile("Bias (γ/π)", fmt(c.bias),
+          valid ? "#2e6f40" : "#990000",
+          valid ? "rgba(46,111,64,0.10)" : "rgba(153,0,0,0.07)")}
+    </div>
+    <div style="margin-top:0.6rem; padding:0.55rem 0.85rem; border-radius:0.5rem;
+        border-left:3px solid ${valid ? "#2e6f40" : "#990000"};
+        background:#f6f5f1; font-family:'Inter',sans-serif;
+        font-size:0.85rem; line-height:1.45; color:#1c1c1a;">
+      ${valid
+        ? "No leak (γ = 0): the exclusion restriction holds, so IV is consistent — its probability limit sits exactly on the true β."
+        : `Leak γ = ${c.gam.toFixed(2)} divided by first stage π = ${c.pi.toFixed(2)} gives a bias of ${fmt(c.bias)}. IV reports ${fmt(c.ivEst)} for a true effect of ${fmt(c.beta)} — off by ${off.toFixed(3)}. Halve the first stage and the same leak does twice the damage.`}
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the DAG and the Leak
+
+Work through the steps in order; each isolates one of the three conditions.
+
+**Step 1: Read the valid graph.** Start with every slider at its default and the **leak γ at 0**. The slate arrow $Z \to X$ is *relevance* (the first stage); the black arrow $X \to Y$ is the causal effect $\beta$ you want. The muted arrows $U \to X$ and $U \to Y$ are the confounding that makes $X$ endogenous --- they are *why* you reached for an instrument. Crucially, with the leak off, there is **no path from $Z$ to $Y$ except through $X$**. That is the exclusion restriction, drawn. The readout confirms the plim of IV lands exactly on the true $\beta$, in green.
+
+**Step 2: Confirm relevance is what powers the estimate.** Drag **first-stage strength π** up and down with the leak still at 0. The slate arrow thickens and thins, but the IV estimate does not move off the truth --- a *strong, valid* instrument and a *weak, valid* instrument both estimate the right number in the limit (they differ only in variance, the topic of the next page). Relevance is necessary, but on its own it does not bias anything.
+
+**Step 3: Open the leak.** Now push **exclusion leak γ** above 0. A red arrow $Z \to Y$ appears and thickens. This is an exclusion violation: distance now affects HbA1c by *some other route* than visits. Watch the "plim of IV" tile slide off the true $\beta$ and turn red. The bias tile shows exactly $+\gamma/\pi$. IV is no longer estimating the causal effect --- it is estimating the causal effect *plus* a contaminating term.
+
+**Step 4: Discover the amplification.** Keep the leak fixed at, say, $\gamma = 0.10$. Now drag **first-stage strength π** down toward 0.05. The red arrow does not change --- the violation is the same size --- but the bias *blows up*. At $\pi = 0.50$ a leak of $0.10$ biases IV by $+0.20$; at $\pi = 0.10$ the *same* leak biases it by $+1.00$, five times worse. This is the single most important practical lesson about IV: **a weak instrument magnifies every exclusion violation**. The bias is the leak *divided by* the first stage, so a small first stage in the denominator is a magnifying glass for any flaw.
+
+**Step 5: Tie it back to the policy question.** The default true effect is $\beta = -0.25$: each extra annual visit lowers HbA1c by a quarter of a percentage point. With a credible, strong instrument and no leak, IV recovers that. With a plausible-sounding but leaky instrument and a weak first stage, IV could report a number with the *wrong sign* --- telling a region that more visits *raise* HbA1c. That is how a careless IV analysis can be worse than no analysis at all.
+
+## Why a Direct Path Biases IV: the Ratio View
+
+The interactive computes the IV estimator as a *ratio*, and that ratio is the clearest place to see where the bias comes from. With a single instrument, the IV (or **Wald**) estimator is the **reduced-form effect divided by the first-stage effect**:
+
+$$
+\hat{\beta}_{\text{IV}} = \frac{\operatorname{\widehat{Cov}}(Z, Y)}{\operatorname{\widehat{Cov}}(Z, X)} = \frac{\text{effect of } Z \text{ on } Y}{\text{effect of } Z \text{ on } X}.
+$$
+
+**Read this as**: "How much does the outcome move per unit of instrument, divided by how much the treatment moves per unit of instrument." If distance shifts HbA1c by $0.05$ per km (the numerator, the *reduced form* --- the direct regression of the outcome $Y$ on the instrument $Z$, skipping $X$ entirely) and shifts visits by $0.20$ per km (the denominator, the *first stage* --- the regression of the treatment $X$ on the instrument $Z$), then the implied effect of one visit on HbA1c is $0.05 / 0.20 = 0.25$. IV scales the total $Z \to Y$ association up by however weakly $Z$ moves $X$.
+
+Now suppose the exclusion restriction fails and $Z$ has a *direct* effect $\gamma$ on $Y$. Then the reduced form contains two pieces: the part of $Z$'s effect on $Y$ that legitimately runs through $X$ (which is $\beta \times \pi$), *plus* the illegitimate direct part $\gamma$. The ratio cannot tell them apart --- it divides the *whole* numerator by the first stage:
+
+$$
+\operatorname{plim} \hat{\beta}_{\text{IV}} = \frac{\beta \pi + \gamma}{\pi} = \beta + \frac{\gamma}{\pi}.
+$$
+
+**Read this as**: "What IV converges to equals the true effect, *plus* the direct leak divided by the first stage." The contaminating term $\gamma / \pi$ is the asymptotic bias.
+
+The figure below makes the numerator-splitting concrete. The reduced-form association $\operatorname{Cov}(Z,Y)$ is one observed bar made of two parts the data cannot separate: the *legitimate* piece $\beta\pi$ (effect routed $Z \to X \to Y$) and the *illegitimate* piece $\gamma$ (the direct leak). IV divides the **whole** bar by the first stage $\pi$, so the leak survives as $\gamma/\pi$.
+
+```{ojs}
+//| echo: false
+
+// Static decomposition of the reduced form Cov(Z,Y)/Var(Z) = βπ + γ into its
+// legitimate (βπ) and illegitimate (γ) parts, then ÷π → β + γ/π. Uses the same
+// numbers as the page's worked ratio example (β=−0.25, π=0.20, γ=0.05 → leak
+// shown positive for legibility; magnitudes only, so bars read as lengths).
+p2_ratioSplit = {
+  const pi = 0.20, betaMag = 0.25, gam = 0.05;   // |β|; reduced-form pieces below
+  const legit = betaMag * pi;                      // |β|·π = 0.05
+  const leak  = gam;                               // γ      = 0.05
+  // Two stacked horizontal bars: (1) the reduced form Cov(Z,Y); (2) ÷π result.
+  const rf = [
+    { row: "Reduced form\nCov(Z,Y)", part: "legitimate βπ", x0: 0,     x1: legit,        v: legit },
+    { row: "Reduced form\nCov(Z,Y)", part: "leak γ",         x0: legit, x1: legit + leak, v: leak }
+  ];
+  const dv = [
+    { row: "÷ first stage π\n= β + γ/π", part: "legitimate βπ", x0: 0,            x1: legit / pi,            v: legit / pi },
+    { row: "÷ first stage π\n= β + γ/π", part: "leak γ",         x0: legit / pi,   x1: (legit + leak) / pi,   v: leak / pi }
+  ];
+  const data = [...rf, ...dv];
+  const color = p => p === "leak γ" ? "#b3000b" : "#2e6f40";
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 210,
+    marginLeft: 130, marginRight: 20, marginTop: 28, marginBottom: 46,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+    x: { label: "magnitude →", grid: true, nice: true },
+    y: { label: null, domain: ["Reduced form\nCov(Z,Y)", "÷ first stage π\n= β + γ/π"] },
+    color: { domain: ["legitimate βπ", "leak γ"], range: ["#2e6f40", "#b3000b"], legend: true },
+    marks: [
+      Plot.barX(data, { y: "row", x1: "x0", x2: "x1", fill: "part", fillOpacity: 0.85 }),
+      Plot.text(data, {
+        y: "row", x: d => (d.x0 + d.x1) / 2,
+        text: d => d.v.toFixed(2), fill: "white", fontWeight: 700, fontSize: 11,
+        stroke: d => color(d.part), strokeWidth: 2, paintOrder: "stroke"
+      }),
+      Plot.ruleX([0])
+    ]
+  });
+}
+```
+
+::: {.aside}
+Worked with $\beta = -0.25$, $\pi = 0.20$, $\gamma = 0.05$ (magnitudes shown as bar lengths). The reduced form is $\beta\pi + \gamma = 0.05 + 0.05$; the green piece is the real effect routed through visits, the red piece is the leak. Dividing the whole bar by $\pi = 0.20$ *quintuples both pieces*: the legitimate part returns to $|\beta| = 0.25$, but the leak inflates to $\gamma/\pi = 0.25$ --- the bias. A larger $\pi$ would shrink the bottom bar; a tiny $\pi$ would blow it up.
+:::
+
+Two features deserve emphasis:
+
+1. **A direct path biases IV even when independence holds.** We assumed $Z$ is uncorrelated with the confounder $U$ --- the instrument is perfectly exogenous in that sense --- and IV is *still* inconsistent. Exclusion and independence are genuinely separate requirements; satisfying one does not rescue you from violating the other.
+
+2. **Weakness amplifies the leak.** The first-stage coefficient $\pi$ sits in the *denominator*. A strong instrument ($\pi$ large) divides the leak down to something small; a weak instrument ($\pi$ near zero) blows it up without bound. This is why "the instrument is weak" and "the instrument might violate exclusion" are not two independent worries --- they compound. A weak-but-clean instrument is merely imprecise; a weak-and-slightly-dirty instrument can be catastrophically biased. The next page is devoted entirely to this denominator.
+
+## The Swedish Case: Distance as an Instrument
+
+Let us hold our candidate instrument --- distance to the nearest vårdcentral --- up to all three conditions, the way a referee would.
+
+::: {.glass-card .glass-card--definition}
+**The proposed design.** For each diabetes patient $i$:
+
+- $Z_i$ = road-network distance (km) from the patient's home to the nearest vårdcentral.
+- $X_i$ = number of primary-care visits in the year.
+- $Y_i$ = end-of-year HbA1c (%).
+
+The first stage regresses visits on distance; the second stage uses the distance-predicted variation in visits to estimate the effect on HbA1c. (The mechanics are the [Two-Stage Least Squares](two-stage-least-squares.qmd) page; here we audit *validity*.)
+:::
+
+**Relevance --- plausible, and checkable.** Travel cost is a real determinant of utilization. Patients farther from a clinic visit less, especially for the discretionary follow-up appointments that chronic-disease management relies on. We can *test* this: regress visits on distance and inspect the first-stage $F$. If $F$ is comfortably large (the rule of thumb is $F > 10$, but see the next page), relevance is satisfied. In Swedish register data the first stage for distance is usually present but *modest* --- which, given the amplification result above, should already make us nervous.
+
+**Independence --- arguable, with caveats.** Is distance as-good-as-randomly assigned with respect to unobserved health? Not exactly. People do not draw their addresses from a lottery. Wealthier, healthier households may sort into central urban locations near clinics; sicker or older patients may remain in rural areas. If that sorting is on *observed* characteristics (age, income, education) we can condition on them. The danger is sorting on *unobserved* health, which would put a back-door path between $Z$ and $U$ and break independence.
+
+::: {.glass-card .glass-card--warning}
+**The exclusion restriction is where this design lives or dies.** Distance must affect HbA1c *only* by changing visit frequency. But distance is also a near-perfect proxy for **rurality**, and rurality plausibly affects health through *many* channels that have nothing to do with primary-care visits:
+
+- **Diet, physical activity, and built environment** differ between remote and central areas.
+- **Air quality, occupation mix** (farming vs. office work), and **social isolation** track distance from town centers.
+- **Access to other services** --- pharmacies, specialist hospitals, grocery stores with fresh produce, gyms --- also declines with distance.
+
+Every one of these is a candidate direct path $Z \to Y$ that does *not* pass through GP visits. If living far from a clinic worsens HbA1c through worse diet or fewer specialists, then $\gamma \neq 0$, the exclusion restriction fails, and --- because the distance first stage is only modest --- the bias $\gamma/\pi$ is *amplified*. This is precisely the configuration the interactive warns about: a leaky instrument with a weak first stage.
+:::
+
+The picture below draws the danger. The single green path is the one IV *assumes* is the only route from distance to HbA1c. Every red path is a competing channel through which rurality could touch HbA1c without going through visits --- each one a separate contribution to the leak $\gamma$.
+
+```{ojs}
+//| echo: false
+
+// The Swedish design as a DAG: the ONE legitimate path (green, distance →
+// visits → HbA1c) versus the FAN of competing leak paths (red) by which
+// rurality reaches HbA1c without passing through GP visits.
+p2_swedishDAG = {
+  const nodes = [
+    { id: "Z", x: 0.04, y: 0.50, label: "Z", caption: "distance" },
+    { id: "X", x: 0.40, y: 0.50, label: "X", caption: "visits" },
+    { id: "Y", x: 0.96, y: 0.50, label: "Y", caption: "HbA1c" },
+    { id: "D", x: 0.52, y: 0.04, label: "diet" },
+    { id: "P", x: 0.66, y: 0.20, label: "pharm." },
+    { id: "S", x: 0.66, y: 0.84, label: "spec." }
+  ];
+  const edges = [
+    // The single legitimate route IV relies on.
+    { source: "Z", target: "X", kind: "causal" },
+    { source: "X", target: "Y", kind: "causal" },
+    // The fan of exclusion-leak channels: distance → rural channel → HbA1c.
+    { source: "Z", target: "D", kind: "biasing" },
+    { source: "D", target: "Y", kind: "biasing" },
+    { source: "Z", target: "P", kind: "biasing" },
+    { source: "P", target: "Y", kind: "biasing" },
+    { source: "Z", target: "S", kind: "biasing" },
+    { source: "S", target: "Y", kind: "biasing" }
+  ];
+  return html`<div style="display:flex; justify-content:center; margin:1rem 0 0.3rem;">
+    ${p2_drawDAG({ nodes, edges, width: 560, height: 270 })}</div>`;
+}
+```
+
+::: {.aside}
+<span style="color:#2e6f40; font-weight:700;">Green</span> = the single path IV trusts ($Z \to X \to Y$: distance changes visits, visits change HbA1c). <span style="color:#b3000b; font-weight:700;">Red</span> = competing leak channels by which rurality reaches HbA1c *around* visits --- worse diet, thinner pharmacy access, fewer specialists. Each red fan-out is a piece of $\gamma$; the more of them are real, the larger the bias $\gamma/\pi$, and the modest first stage $\pi$ magnifies it.
+:::
+
+**How exclusion is defended in practice.** Because exclusion cannot be tested directly, credible IV papers defend it with a portfolio of arguments and partial checks:
+
+- **Conditioning out the obvious channels.** Include rich controls for urbanicity, income, and access to *other* services, so that the residual variation in distance is plausibly orthogonal to the alternative paths. (This narrows, but never closes, the gap.)
+- **Placebo / falsification outcomes.** Find an outcome that visits *should not* affect but that the alternative channel *would* --- e.g., an injury rate driven by rural occupation. If distance "predicts" that placebo, exclusion is in trouble.
+- **Overidentification tests** when more than one instrument is available (e.g., distance *and* a clinic-opening shock): the Sargan--Hansen $J$-test checks whether the instruments agree on $\beta$. Agreement is necessary, not sufficient --- instruments can share the *same* violation.
+- **Bounding.** Rather than claim $\gamma = 0$ exactly, posit a plausible range for $\gamma$ and report the resulting interval for $\beta$ (a sensitivity / partial-identification analysis).
+
+### Classic Instruments and Their Exclusion Arguments
+
+The same audit lens explains why famous instruments are famous --- and why each has critics:
+
+| Instrument | Treatment | Exclusion argument | The worry |
+|:---|:---|:---|:---|
+| Quarter of birth (Angrist--Krueger) | Years of schooling | Birth date is essentially random | Season of birth may affect ability/health directly |
+| Distance to college | College attendance | Where you grow up is "given" | Distance proxies local labor markets, family wealth |
+| Vietnam draft lottery (Angrist) | Military service | Lottery number is literally random | Draft avoidance (extra schooling) is a second channel |
+| Judge leniency | Incarceration | Cases randomly assigned to judges | Judges differ on dimensions beyond leniency |
+| Rainfall | Local income (conflict studies) | Weather is exogenous | Rain affects outcomes through many non-income paths |
+
+In every row, *independence* is the strong part (often guaranteed by literal randomization) and *exclusion* is the contested part. Distance-to-clinic sits squarely in this tradition: the design rises or falls on whether you believe distance touches health by any route other than the one you instrumented.
+
+<details>
+<summary>Math Details: The plim of the IV estimator and weak-instrument amplification</summary>
+<div class="details-content">
+
+### Setup
+
+Take the structural and first-stage equations with a single instrument:
+
+$$
+Y_i = \beta_0 + \beta\, X_i + \gamma\, Z_i + U_i, \qquad
+X_i = \pi_0 + \pi\, Z_i + V_i,
+$$
+
+where $\gamma$ is the **direct effect of the instrument on the outcome** (the exclusion leak; $\gamma = 0$ means exclusion holds). We assume **independence**: $\operatorname{Cov}(Z, U) = 0$ and $\operatorname{Cov}(Z, V) = 0$. The only thing that can be wrong is $\gamma$.
+
+### The IV (Wald) estimator
+
+With one instrument and one endogenous regressor, the IV estimator solves the sample moment condition $\operatorname{\widehat{Cov}}(Z, Y - \beta X) = 0$, giving the ratio
+
+$$
+\hat{\beta}_{\text{IV}} = \frac{\operatorname{\widehat{Cov}}(Z, Y)}{\operatorname{\widehat{Cov}}(Z, X)}.
+$$
+
+By the law of large numbers, the sample covariances converge to their population counterparts, so $\operatorname{plim}\hat{\beta}_{\text{IV}} = \operatorname{Cov}(Z, Y) / \operatorname{Cov}(Z, X)$.
+
+### Compute the two covariances
+
+**Denominator (first stage).** From $X = \pi_0 + \pi Z + V$ and $\operatorname{Cov}(Z, V) = 0$:
+
+$$
+\operatorname{Cov}(Z, X) = \pi \operatorname{Var}(Z).
+$$
+
+**Numerator (reduced form).** Substitute the structural equation, using linearity of covariance and $\operatorname{Cov}(Z, U) = 0$:
+
+$$
+\operatorname{Cov}(Z, Y) = \beta \operatorname{Cov}(Z, X) + \gamma \operatorname{Var}(Z) + \operatorname{Cov}(Z, U)
+= \beta \pi \operatorname{Var}(Z) + \gamma \operatorname{Var}(Z).
+$$
+
+The first term is the *legitimate* path ($Z \to X \to Y$, magnitude $\beta\pi$); the second is the *illegitimate* direct path ($Z \to Y$, magnitude $\gamma$).
+
+### The ratio
+
+Divide, and $\operatorname{Var}(Z)$ cancels:
+
+$$
+\operatorname{plim} \hat{\beta}_{\text{IV}}
+= \frac{\beta \pi \operatorname{Var}(Z) + \gamma \operatorname{Var}(Z)}{\pi \operatorname{Var}(Z)}
+= \frac{\beta \pi + \gamma}{\pi}
+= \boxed{\;\beta + \frac{\gamma}{\pi}\;}.
+$$
+
+**Read the boxed result as**: "IV converges to the true effect plus the exclusion leak divided by the first-stage coefficient." Three corollaries:
+
+1. **Consistency under exclusion.** If $\gamma = 0$, the bias term vanishes and $\operatorname{plim}\hat{\beta}_{\text{IV}} = \beta$. Exclusion (plus independence) is exactly what IV needs.
+
+2. **Independence does not save you.** We *assumed* $\operatorname{Cov}(Z, U) = 0$ throughout, and IV is still biased whenever $\gamma \neq 0$. A perfectly exogenous-but-non-excludable instrument is invalid.
+
+3. **Weak-instrument amplification.** The bias $\gamma/\pi$ is a *ratio* with the first stage in the denominator. Treat $\gamma$ as fixed and let $\pi \to 0$: the bias diverges, $|\gamma/\pi| \to \infty$. Formally, the elasticity of the bias with respect to the first-stage strength is $\partial(\gamma/\pi)/\partial\pi = -\gamma/\pi^2$, so near a weak first stage a tiny worsening of $\pi$ produces a large worsening of the bias. A small violation that would be harmless with a strong instrument becomes ruinous with a weak one.
+
+### Comparison with OLS bias
+
+For contrast, the OLS estimator of $\beta$ in the structural equation (omitting $Z$ as a regressor and ignoring its direct effect) has the familiar bias
+
+$$
+\operatorname{plim}\hat{\beta}_{\text{OLS}} = \beta + \frac{\operatorname{Cov}(X, U)}{\operatorname{Var}(X)},
+$$
+
+driven by the endogeneity $\operatorname{Cov}(X, U) \neq 0$. IV trades this OLS bias for the term $\gamma/\pi$. IV is the better choice **only when** $|\gamma/\pi| < |\operatorname{Cov}(X,U)/\operatorname{Var}(X)|$ --- a clean, strong instrument. A dirty, weak instrument can land you *farther* from the truth than the OLS you were trying to improve on.
+
+</div>
+</details>
+
+## Reproducing the Bias in Code
+
+The simulation below builds a population in which the instrument is **exogenous but leaky** ($\gamma \neq 0$), confirms numerically that IV converges to $\beta + \gamma/\pi$, and shows the amplification by halving the first stage. Both implementations use idiomatic IV packages.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(AER)        # ivreg()
+library(tidyverse)
+
+set.seed(2024)
+n   <- 200000       # large n so estimates ≈ plim
+beta <- -0.25       # true effect of a visit on HbA1c
+pi_z <- 0.55        # first-stage strength (Z -> X)
+gamma <- 0.10       # EXCLUSION LEAK: direct Z -> Y
+
+sim_iv <- function(pi_z, gamma) {
+  Z <- rnorm(n)                          # exogenous instrument (distance, std.)
+  U <- rnorm(n)                          # unobserved confounder
+  V <- rnorm(n)
+  X <- 0.5 + pi_z * Z + 0.8 * U + V      # first stage + endogeneity via U
+  Y <- 7.0 + beta * X + gamma * Z + 0.8 * U  # structural eq with leak gamma
+  d <- tibble(Y, X, Z)
+
+  iv  <- ivreg(Y ~ X | Z, data = d)      # 2SLS with single instrument
+  ols <- lm(Y ~ X, data = d)
+  c(IV  = unname(coef(iv)["X"]),
+    OLS = unname(coef(ols)["X"]),
+    predicted_plim = beta + gamma / pi_z)
+}
+
+# Strong first stage: modest amplification
+sim_iv(pi_z = 0.55, gamma = 0.10)
+#>            IV           OLS predicted_plim
+#>      -0.0682        ~0.16       -0.0682     (β + γ/π = -0.25 + 0.10/0.55)
+
+# Weak first stage: SAME leak, ~5x the bias
+sim_iv(pi_z = 0.11, gamma = 0.10)
+#>            IV           OLS predicted_plim
+#>       0.659         ~0.23        0.659      (β + γ/π = -0.25 + 0.10/0.11)
+# The weak instrument flips the sign: a beneficial visit now looks harmful.
+# (OLS plim = β + Cov(X,U)/Var(X) = -0.25 + 0.8/(π² + 1.64); both runs are
+#  biased upward, but OLS — though dirty — beats the weak-instrument IV here.)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from linearmodels.iv import IV2SLS
+import statsmodels.formula.api as smf
+
+rng  = np.random.default_rng(2024)
+n    = 200_000          # large n so estimates ≈ plim
+beta = -0.25            # true effect of a visit on HbA1c
+
+def sim_iv(pi_z, gamma):
+    Z = rng.standard_normal(n)                 # exogenous instrument (distance)
+    U = rng.standard_normal(n)                 # unobserved confounder
+    V = rng.standard_normal(n)
+    X = 0.5 + pi_z * Z + 0.8 * U + V           # first stage + endogeneity
+    Y = 7.0 + beta * X + gamma * Z + 0.8 * U   # structural eq with leak gamma
+    df = pd.DataFrame({"Y": Y, "X": X, "Z": Z})
+
+    iv  = IV2SLS.from_formula("Y ~ 1 + [X ~ Z]", df).fit()
+    ols = smf.ols("Y ~ X", df).fit()
+    return {
+        "IV":  iv.params["X"],
+        "OLS": ols.params["X"],
+        "predicted_plim": beta + gamma / pi_z,
+    }
+
+# Strong first stage: modest amplification
+print(sim_iv(pi_z=0.55, gamma=0.10))
+# {'IV': -0.068..., 'OLS': ~0.16, 'predicted_plim': -0.0682}
+
+# Weak first stage: SAME leak, ~5x the bias (and a sign flip)
+print(sim_iv(pi_z=0.11, gamma=0.10))
+# {'IV': 0.659..., 'OLS': ~0.23, 'predicted_plim': 0.659}
+# OLS plim = β + Cov(X,U)/Var(X) = -0.25 + 0.8/(π² + 1.64): biased upward in
+# both runs, yet still closer to the truth than the weak-instrument IV.
+```
+
+:::
+
+Both languages confirm the algebra: with a strong first stage ($\pi = 0.55$) the leak $\gamma = 0.10$ shifts the IV estimate to $-0.25 + 0.10/0.55 \approx -0.07$; with a weak first stage ($\pi = 0.11$) the *same* leak shifts it to $-0.25 + 0.10/0.11 \approx +0.66$ --- not just a bigger error but a sign flip, making a beneficial program look harmful.
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A valid instrument satisfies three conditions: **relevance** ($Z$ moves $X$, testable via the first-stage $F$), the **exclusion restriction** ($Z$ affects $Y$ only through $X$, untestable), and **independence** ($Z$ uncorrelated with the unobserved error, untestable).
+- Relevance is the easy condition --- you can measure it. The credibility of any IV study turns on the *untestable* exclusion restriction, which must be defended by argument, controls, placebo outcomes, overidentification tests, and bounding.
+- A direct $Z \to Y$ path biases IV by exactly $\gamma/\pi$ --- the leak divided by the first stage --- **even when independence holds**. Exclusion and independence are separate requirements.
+- Because the first stage sits in the *denominator*, a **weak instrument amplifies every exclusion violation**: a small leak that is harmless with a strong instrument can flip the sign with a weak one.
+- Distance to the nearest vårdcentral has a plausible (if modest) first stage but a *debatable* exclusion restriction, because distance proxies rurality, which affects health through many non-visit channels.
+:::
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+An analyst uses distance to the nearest vårdcentral as an instrument for annual visits, estimating the effect on HbA1c. The first stage has strength $\pi = 0.40$ (distance moves visits by 0.40 per km in magnitude --- we follow the page's convention of a positive $\pi$ measuring first-stage strength), and the true effect of a visit is $\beta = -0.25$. Suppose, unknown to the analyst, distance has a direct effect on HbA1c of $\gamma = +0.06$ (rural patients have worse diets, raising HbA1c, independent of visits).
+
+(a) Compute the probability limit of the IV estimator. (b) State the asymptotic bias. (c) Now suppose a colleague's instrument has the same leak $\gamma = 0.06$ but a first stage of only $\pi = 0.12$. Recompute the plim and bias. (d) Which estimate is closer to the truth, and what is the one-sentence lesson?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\operatorname{plim}\hat{\beta}_{\text{IV}} = \beta + \gamma/\pi = -0.25 + 0.06/0.40 = -0.25 + 0.15 = -0.10$.
+
+**(b)** Bias $= \gamma/\pi = +0.15$. IV reports $-0.10$ for a true effect of $-0.25$ --- it understates the benefit by 60%.
+
+**(c)** With $\pi = 0.12$: $\operatorname{plim}\hat{\beta}_{\text{IV}} = -0.25 + 0.06/0.12 = -0.25 + 0.50 = +0.25$. Bias $= +0.50$. The estimate now has the **wrong sign**: it claims visits *raise* HbA1c.
+
+**(d)** The strong-instrument estimate ($-0.10$, off by $0.15$) is far closer than the weak-instrument estimate ($+0.25$, off by $0.50$). **Lesson**: the *same* exclusion violation does over three times the damage when the first stage is one-third the size --- weakness amplifies the leak because $\pi$ sits in the denominator of $\gamma/\pi$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+For each scenario, state which of the three conditions (relevance, exclusion, independence) is threatened, and explain why in one sentence.
+
+(a) Distance to the nearest vårdcentral barely predicts visit frequency because most patients in the sample live in dense urban areas where every clinic is within 1 km.
+
+(b) Patients living far from clinics are systematically older and frailer in ways the analyst cannot observe.
+
+(c) Living far from a clinic also means living far from the nearest pharmacy, and poor medication access raises HbA1c directly.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Relevance.** If distance barely moves visits, $\operatorname{Cov}(Z, X) \approx 0$, the first stage is flat (the $F$-statistic is tiny), and there is no instrument-driven variation in $X$ to exploit. This is a *weak instrument* problem (next page) --- and recall it also amplifies any other flaw.
+
+**(b) Independence.** Unobserved frailty correlated with distance means $\operatorname{Cov}(Z, U) \neq 0$: the instrument is no longer as-good-as-random with respect to the error. Distant patients differ in unobserved health, opening a back-door path.
+
+**(c) Exclusion.** Distance affects HbA1c through a *second channel* (pharmacy access / medication adherence) that does not run through GP visits, so $\gamma \neq 0$ and the exclusion restriction fails --- distance is no longer "only through $X$."
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A health economist has an instrument with first stage $\pi = 0.30$ and is worried about an exclusion leak. From domain knowledge she is confident the leak satisfies $|\gamma| \le 0.03$. The point IV estimate is $\hat{\beta}_{\text{IV}} = -0.20$.
+
+(a) Using $\operatorname{plim}\hat{\beta}_{\text{IV}} = \beta + \gamma/\pi$, construct a bounding interval for the true $\beta$ implied by her assumption on $\gamma$. (b) Does the interval include zero? Interpret. (c) How would the interval change if her first stage were $\pi = 0.10$ instead?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Rearrange: $\beta = \operatorname{plim}\hat{\beta}_{\text{IV}} - \gamma/\pi$. Treating the estimate as the plim, the bias term $\gamma/\pi$ ranges over $[-0.03/0.30,\, +0.03/0.30] = [-0.10,\, +0.10]$. So $\beta$ lies in $-0.20 - [-0.10, +0.10] = [-0.20 - 0.10,\; -0.20 + 0.10] = [-0.30,\, -0.10]$.
+
+**(b)** The interval $[-0.30, -0.10]$ does **not** include zero, so even under the worst-case leak within her assumed range, the effect remains negative (beneficial). The conclusion "more visits lower HbA1c" is robust to the exclusion violation she is willing to entertain.
+
+**(c)** With $\pi = 0.10$, the bias term ranges over $[-0.03/0.10, +0.03/0.10] = [-0.30, +0.30]$, so $\beta \in [-0.20 - 0.30,\ -0.20 + 0.30] = [-0.50,\, +0.10]$. This interval *does* include zero --- with a weak first stage, the *same* leak assumption can no longer rule out a null (or even harmful) effect. The amplification factor $1/\pi$ widens the bound exactly threefold.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Recall the OLS comparison: $\operatorname{plim}\hat{\beta}_{\text{OLS}} = \beta + \operatorname{Cov}(X,U)/\operatorname{Var}(X)$. In our visit-frequency setting, sicker patients both visit more and have higher HbA1c, so $\operatorname{Cov}(X, U) > 0$; suppose the OLS bias is $+0.45$ and the true effect is $\beta = -0.25$. An IV with first stage $\pi = 0.50$ has an exclusion leak $\gamma = +0.10$.
+
+(a) Compute the plim of OLS and of IV. (b) Which is closer to the truth? (c) Now suppose the IV's first stage collapses to $\pi = 0.05$. Recompute IV's plim and re-answer (b). (d) What is the general condition under which IV beats OLS here?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\operatorname{plim}\hat{\beta}_{\text{OLS}} = -0.25 + 0.45 = +0.20$. $\operatorname{plim}\hat{\beta}_{\text{IV}} = -0.25 + 0.10/0.50 = -0.25 + 0.20 = -0.05$.
+
+**(b)** IV ($-0.05$, off by $0.20$) is closer to the truth than OLS ($+0.20$, off by $0.45$). Here the clean-ish, reasonably strong instrument earns its keep.
+
+**(c)** With $\pi = 0.05$: $\operatorname{plim}\hat{\beta}_{\text{IV}} = -0.25 + 0.10/0.05 = -0.25 + 2.00 = +1.75$, off by $2.00$. Now OLS ($+0.20$, off by $0.45$) is *dramatically* closer --- the weak instrument has made IV far worse than the OLS it was meant to fix.
+
+**(d)** IV beats OLS exactly when its bias is smaller in magnitude: $\left|\gamma/\pi\right| < \left|\operatorname{Cov}(X,U)/\operatorname{Var}(X)\right|$. With $\gamma = 0.10$ and OLS bias $0.45$, this requires $0.10/\pi < 0.45$, i.e. $\pi > 0.10/0.45 \approx 0.22$. Below that first-stage strength, the "cure" is worse than the disease --- a quantitative statement of why weak instruments are dangerous even when only mildly dirty.
+
+</div>
+</details>
+:::
+
+## What Comes Next
+
+We have separated the three conditions that make an instrument valid, drawn the valid and invalid DAGs, and derived the master identity $\operatorname{plim}\hat{\beta}_{\text{IV}} = \beta + \gamma/\pi$. That formula made one thing unmistakable: the first-stage coefficient $\pi$ sits in the *denominator* of every IV bias, so when $\pi$ is small, everything --- exclusion leaks, finite-sample noise, even rounding --- is magnified. The next page, [Weak Instruments](weak-instruments.qmd), takes the denominator seriously on its own terms: it shows how a weak first stage inflates variance and produces finite-sample bias *even when the instrument is perfectly valid*, explains the first-stage $F$-statistic and the $F > 10$ rule of thumb (and why modern work demands much more), and introduces weak-instrument-robust inference such as the Anderson--Rubin test.

@@ -1,0 +1,743 @@
+---
+title: "Overdispersion and the Negative Binomial"
+subtitle: "When the variance exceeds the mean"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define overdispersion and explain why it violates the Poisson model's equidispersion restriction $\operatorname{Var}(y\mid x) = E[y\mid x]$
+- Trace overdispersion to unobserved heterogeneity and show why it leaves the Poisson coefficients consistent but the Poisson standard errors badly too small
+- Write the Negative Binomial as a Poisson--gamma mixture with variance function $\operatorname{Var}(y\mid x) = \mu + \alpha\mu^2$ and read off the dispersion parameter $\alpha$
+- Choose among three remedies --- the Negative Binomial model, quasi-Poisson / robust (sandwich) standard errors, and a formal overdispersion test --- and say what each fixes
+- Fit and compare the models in R (`MASS::glm.nb`, `AER::dispersiontest`) and Python (`statsmodels`)
+:::
+
+## The Question Behind the Counts
+
+The *vårdcentraler* (primary care centers) of Region Uppsala are scored each year on a simple operational metric: the number of *unplanned return visits* a chronic-disease patient makes in the twelve months after enrolment in a diabetes-coordination program. A patient who is well controlled returns rarely; a fragile patient returns again and again. The *verksamhetschef* (clinic manager) wants to know whether an extra hour of *distriktssköterska* (district nurse) follow-up per quarter reduces these return visits, and --- crucially --- whether the estimated reduction is **statistically distinguishable from noise**.
+
+The natural starting point is [Poisson regression](poisson-regression.qmd): visit counts are non-negative integers, so we model $E[\text{visits}\mid x] = \exp(x'\beta)$. But the Poisson model carries a hidden, rigid promise. It insists that the *variance* of the counts equals their *mean*, observation by observation. Real patient counts almost never honour that promise. Two patients with identical recorded characteristics --- same age, same HbA1c, same medication list --- still differ in a hundred unrecorded ways (social support, health literacy, an unlisted comorbidity). That extra, unmodelled variation inflates the spread of the counts beyond what Poisson allows. The counts are **overdispersed**.
+
+This page is about what overdispersion does to your conclusions. The short version: it leaves the *point estimates* roughly correct but makes the Poisson *standard errors* far too small, so coefficients look far more significant than the data warrant. We will see why, quantify it, and fix it three ways.
+
+## Equidispersion: The Promise Poisson Cannot Keep
+
+Recall the defining feature of the Poisson distribution. If $y \mid x \sim \text{Poisson}(\mu)$ with $\mu = \exp(x'\beta)$, then
+
+$$
+E[y \mid x] = \mu \qquad\text{and}\qquad \operatorname{Var}(y \mid x) = \mu .
+$$
+
+**Read this as**: "given the covariates, both the expected count and its variance equal the same single number $\mu$." The mean and the variance are not two free quantities --- they are *locked together*. This is **equidispersion**, and it is not an assumption you add to Poisson; it is baked into the distribution itself. One parameter $\mu$ governs both the centre and the spread.
+
+::: {.glass-card .glass-card--definition}
+**Overdispersion** is the condition in which the conditional variance of the outcome exceeds its conditional mean:
+
+$$
+\operatorname{Var}(y \mid x) \;>\; E[y \mid x].
+$$
+
+The ratio $\phi = \operatorname{Var}(y\mid x) / E[y\mid x]$ is the **dispersion**. Equidispersion is $\phi = 1$ (the Poisson case); overdispersion is $\phi > 1$; underdispersion ($\phi < 1$) is rarer in health data but possible. **Read $\phi$ as**: "how many times larger the spread is than the Poisson model would permit at the same mean."
+:::
+
+Where does the extra spread come from? Almost always from **unobserved heterogeneity**. Suppose each patient really is Poisson, but with their *own* rate $\mu_i = \mu \cdot \nu_i$, where $\nu_i$ is an unobserved multiplier (a fragile patient has $\nu_i > 1$, a robust one $\nu_i < 1$) with $E[\nu_i] = 1$ and $\operatorname{Var}(\nu_i) = \alpha$. Within a patient the count is Poisson; *across* patients the rate itself varies. By the law of total variance the marginal variance picks up an extra term, and equidispersion breaks. The Math Details below carry out the algebra; the punchline is that mixing a Poisson over a varying rate produces exactly the variance function of the Negative Binomial.
+
+## Why Ignoring It Deflates Your Standard Errors
+
+Here is the subtle part, and the reason overdispersion is dangerous rather than merely untidy. The Poisson **mean** model $E[y\mid x] = \exp(x'\beta)$ can be *correct* even when the **variance** model is wrong. The Poisson maximum-likelihood estimator is a member of the quasi-MLE family: as long as the conditional mean is correctly specified, $\hat\beta_{\text{Poisson}}$ stays **consistent** for $\beta$ regardless of the true variance. Your *coefficients* are fine.
+
+The damage lands on the *uncertainty*. The Poisson MLE computes its standard errors from the model-implied information matrix, which assumes $\operatorname{Var}(y\mid x) = \mu$. If the true variance is $\phi\mu$ with $\phi > 1$, the reported variance of $\hat\beta$ is too small by roughly a factor of $\phi$ --- so the standard errors are too small by a factor of about $\sqrt{\phi}$.
+
+::: {.glass-card .glass-card--warning}
+**Spurious significance.** With dispersion $\phi$, naive Poisson standard errors are deflated by about $\sqrt{\phi}$, so the $z$-statistics are *inflated* by about $\sqrt{\phi}$. At $\phi = 4$ --- not unusual for visit counts --- every $z$-statistic is roughly doubled, a true $z = 1.4$ (not significant) is reported as $z \approx 2.8$ ($p < 0.01$), and $p$-values collapse toward zero. You will declare a nursing intervention "highly significant" when the honest standard error says you cannot tell it apart from zero. The point estimate is right; the *confidence* in it is fabricated.
+:::
+
+This is the worst kind of error in applied work: not a wrong number, but unwarranted certainty about a right one. Three fixes follow.
+
+## Fix 1: The Negative Binomial Model
+
+The cleanest remedy models the overdispersion directly. Start from the heterogeneity story: let each patient's rate be $\mu_i \nu_i$ with $\nu_i$ drawn from a gamma distribution with mean 1 and variance $\alpha$. A Poisson count whose rate is itself gamma-distributed is, after integrating out the unobserved $\nu_i$, distributed as **Negative Binomial** (specifically the NB2 form used in econometrics).
+
+::: {.glass-card .glass-card--definition}
+The **Negative Binomial (NB2)** model keeps the Poisson mean but adds a dispersion parameter $\alpha \ge 0$ that lets the variance grow *quadratically* with the mean:
+
+$$
+E[y \mid x] = \mu = \exp(x'\beta), \qquad
+\boxed{\;\operatorname{Var}(y \mid x) = \mu + \alpha\,\mu^2\;}.
+$$
+
+**Read the variance function as**: "the Poisson variance $\mu$, plus an extra term $\alpha\mu^2$ that captures unobserved heterogeneity." The dispersion parameter $\alpha$ is the variance of the unobserved rate multiplier. When $\alpha = 0$ the extra term vanishes and the model collapses **exactly** to Poisson --- so Poisson is the special, nested case $\alpha = 0$.
+:::
+
+The quadratic term $\alpha\mu^2$ is the workhorse. Because it scales with $\mu^2$, the gap between the NB variance and the Poisson identity line $\operatorname{Var} = \mu$ *widens* as the mean grows: heavy-visiting patient groups are exactly where Poisson most badly underestimates the spread. The NB log-likelihood is maximised by the same machinery as any other [maximum-likelihood model](../11-mle-gmm/likelihood.qmd) --- $\beta$ and $\alpha$ are estimated jointly --- and because NB nests Poisson at $\alpha = 0$, a likelihood-ratio test of $H_0\!: \alpha = 0$ is a direct test for overdispersion.
+
+## See It: Overdispersion Climbing Above the Poisson Line
+
+The lab below simulates return-visit counts for a cohort of diabetes patients. You control the **mean** number of visits and the **dispersion** through unobserved heterogeneity. Watch two things at once: the empirical variance climbing above the Poisson identity line on the left, and the confidence interval for the nursing-effect coefficient widening under NB versus Poisson on the right.
+
+::: {.interactive-container}
+
+#### Overdispersion lab: the variance--mean relationship and the price of ignoring it
+
+```{ojs}
+//| echo: false
+html`<p style="
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 0.85rem;
+    color: #79766e;
+    background: #f6f5f1;
+    border-left: 3px solid #990000;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.9rem;">
+  <strong style="color:#990000;">Start here:</strong> leave dispersion &alpha; at 0
+  and confirm the cloud of points hugs the dashed Poisson line. Then drag
+  <em>dispersion &alpha;</em> upward and watch the points lift off the line while
+  the Negative-Binomial interval (slate) grows far wider than the
+  over-confident Poisson interval (red). Full tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof ctnb_meanVisits = Inputs.range([0.5, 8], {
+  value: 3,
+  step: 0.1,
+  label: "Average return visits per patient (baseline mean μ̄)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof ctnb_alpha = Inputs.range([0, 1.5], {
+  value: 0.5,
+  step: 0.01,
+  label: "Dispersion α (unobserved heterogeneity; 0 = Poisson)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof ctnb_nGroups = Inputs.range([12, 80], {
+  value: 40,
+  step: 1,
+  label: "Number of patient subgroups plotted"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof ctnb_draw = Inputs.button("Draw a new cohort", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Shared Uppsala-academic palette for every mark and tile on this page.
+ctnb_pal = ({
+  focal:  "#990000",   // Negative Binomial / focal series (Uppsala red)
+  slate:  "#3d5a6c",   // comparison series (slate)
+  good:   "#2e6f40",   // on-target / equidispersion
+  ochre:  "#9c7a33",   // true value / highlight
+  ink:    "#1c1c1a",   // ink text & reference lines
+  axis:   "#79766e",   // axis text (muted Uppsala token)
+  hair:   "#e6e3db",   // gridlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Gamma(shape=k, scale=θ) sampler via the Marsaglia–Tsang method, built on
+// d3.randomNormal / Math.random so randomness is library-driven (no own PRNG).
+// Used to draw the unobserved rate multiplier ν ~ Gamma(mean 1, var α).
+ctnb_randNorm = d3.randomNormal(0, 1)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+ctnb_gammaSample = function (shape) {
+  // Marsaglia & Tsang (2000). Returns a draw from Gamma(shape, scale=1).
+  if (shape < 1) {
+    // Boost: Gamma(shape) = Gamma(shape+1) * U^(1/shape).
+    const u = Math.random();
+    return ctnb_gammaSample(shape + 1) * Math.pow(u, 1 / shape);
+  }
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  while (true) {
+    let x, v;
+    do {
+      x = ctnb_randNorm();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Draw one Poisson count by inversion (Knuth) — fine for the modest means here.
+ctnb_poissonSample = function (lambda) {
+  const L = Math.exp(-lambda);
+  let k = 0, p = 1;
+  do { k++; p *= Math.random(); } while (p > L);
+  return k - 1;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Build the simulated cohort. Reading ctnb_draw forces a fresh resample on the
+// button press (no mutable state). Each subgroup gets a baseline mean spread
+// around μ̄; within a subgroup we draw many patients whose rate is μ·ν with
+// ν ~ Gamma(mean 1, var α). We then report the subgroup's empirical mean and
+// variance so the cloud traces the variance–mean curve.
+ctnb_cohort = {
+  ctnb_draw; // dependency: re-run on button press
+  const G = ctnb_nGroups;
+  const perGroup = 60;
+  const alpha = ctnb_alpha;
+  const rows = [];
+  for (let g = 0; g < G; g++) {
+    // Subgroup baseline mean: spread multiplicatively around μ̄.
+    const mu = ctnb_meanVisits * Math.exp(ctnb_randNorm() * 0.45);
+    const counts = [];
+    for (let i = 0; i < perGroup; i++) {
+      let lam = mu;
+      if (alpha > 0) {
+        // ν ~ Gamma(shape=1/α, scale=α) ⇒ E[ν]=1, Var[ν]=α.
+        const nu = ctnb_gammaSample(1 / alpha) * alpha;
+        lam = mu * nu;
+      }
+      counts.push(ctnb_poissonSample(lam));
+    }
+    const m = d3.mean(counts);
+    const v = d3.variance(counts);
+    rows.push({ group: g, mean: m, varc: v });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Reference curves over the observed mean range: the Poisson identity
+// Var = μ and the theoretical NB curve Var = μ + α μ².
+ctnb_muMax = Math.max(1, d3.max(ctnb_cohort, d => d.mean) * 1.05)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+ctnb_refCurve = d3.range(0, ctnb_muMax, ctnb_muMax / 80).map(mu => ({
+  mu,
+  poisson: mu,
+  nb: mu + ctnb_alpha * mu * mu
+}))
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(640, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: ctnb_pal.axis
+  },
+  x: {
+    label: "Subgroup mean count  μ  →",
+    domain: [0, ctnb_muMax],
+    grid: false
+  },
+  y: {
+    label: "↑ Subgroup variance",
+    domain: [0, Math.max(d3.max(ctnb_cohort, d => d.varc) * 1.05,
+                         ctnb_muMax + ctnb_alpha * ctnb_muMax * ctnb_muMax)],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: ctnb_pal.hair }),
+    // Theoretical NB variance curve (focal — Uppsala red).
+    Plot.line(ctnb_refCurve, {
+      x: "mu", y: "nb", stroke: ctnb_pal.focal, strokeWidth: 2.5
+    }),
+    // Poisson identity line Var = μ (green dashed — the equidispersion promise).
+    Plot.line(ctnb_refCurve, {
+      x: "mu", y: "poisson", stroke: ctnb_pal.good,
+      strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    // Empirical subgroup points (slate hollow).
+    Plot.dot(ctnb_cohort, {
+      x: "mean", y: "varc",
+      fill: "white", stroke: ctnb_pal.slate, strokeWidth: 1.6, r: 4
+    }),
+    // Labels via Plot.text with a white halo (ruleX/line carry no text channel).
+    Plot.text([{ mu: ctnb_muMax * 0.72,
+                 v: ctnb_muMax * 0.72 + ctnb_alpha * (ctnb_muMax * 0.72) ** 2 }], {
+      x: "mu", y: "v",
+      text: ["Var = μ + αμ²  (NB)"],
+      fill: ctnb_pal.focal, fontWeight: 700, fontSize: 12,
+      dx: -6, dy: -10, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ mu: ctnb_muMax * 0.82, v: ctnb_muMax * 0.82 }], {
+      x: "mu", y: "v",
+      text: ["Var = μ  (Poisson)"],
+      fill: ctnb_pal.good, fontWeight: 700, fontSize: 12,
+      dy: 16, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Empirical dispersion φ̂ = mean(variance)/mean(mean) across subgroups, and the
+// standard-error inflation factor √φ̂ that Poisson would miss.
+ctnb_phiHat = {
+  const mBar = d3.mean(ctnb_cohort, d => d.mean);
+  const vBar = d3.mean(ctnb_cohort, d => d.varc);
+  return mBar > 0 ? vBar / mBar : 1;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A stylised nursing-effect coefficient (log-rate effect of +1 nurse-hour).
+// One definition per cell so OJS does not see two top-level assignments.
+ctnb_betaHat = -0.18
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The standard error the Poisson model would report for that coefficient.
+ctnb_sePoisson = 0.055
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+ctnb_seNB = ctnb_sePoisson * Math.sqrt(Math.max(1, ctnb_phiHat))
+```
+
+```{ojs}
+//| echo: false
+// Side-by-side confidence intervals for the nursing effect: the over-confident
+// Poisson interval vs. the dispersion-corrected NB / robust interval.
+{
+  const z = 1.96;
+  const rows = [
+    { model: "Poisson (naïve SE)", lo: ctnb_betaHat - z * ctnb_sePoisson,
+      hi: ctnb_betaHat + z * ctnb_sePoisson, color: ctnb_pal.focal },
+    { model: "Neg. Binomial (corrected)", lo: ctnb_betaHat - z * ctnb_seNB,
+      hi: ctnb_betaHat + z * ctnb_seNB, color: ctnb_pal.slate }
+  ];
+  const span = Math.max(0.02, ctnb_betaHat + z * ctnb_seNB + 0.05,
+                        -(ctnb_betaHat - z * ctnb_seNB) + 0.05);
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 200,
+    marginLeft: 165,
+    marginBottom: 48,
+    marginTop: 28,
+    style: {
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontSize: "12px",
+      color: ctnb_pal.axis
+    },
+    x: {
+      label: "95% CI for nursing-effect coefficient  β (log rate)  →",
+      domain: [-span, span],
+      grid: true
+    },
+    y: { label: null, domain: rows.map(d => d.model) },
+    marks: [
+      Plot.gridX({ stroke: ctnb_pal.hair }),
+      // Zero reference (no effect).
+      Plot.ruleX([0], { stroke: ctnb_pal.ink, strokeWidth: 1.5 }),
+      Plot.text([{ x: 0 }], {
+        x: "x", frameAnchor: "top", text: ["β = 0  (no effect)"],
+        fill: ctnb_pal.ink, fontSize: 10.5, fontWeight: 600,
+        dy: -10, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // Interval bars.
+      Plot.ruleY(rows, {
+        y: "model", x1: "lo", x2: "hi",
+        stroke: d => d.color, strokeWidth: 7, strokeLinecap: "round"
+      }),
+      Plot.dot(rows, { y: "model", x: d => ctnb_betaHat, fill: ctnb_pal.ink, r: 4 })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// Live readout. Built inside an ojs html`` cell so reactive values interpolate
+// (a markdown ${...} would render literally in Quarto prose).
+{
+  const phi = ctnb_phiHat;
+  const infl = Math.sqrt(Math.max(1, phi));
+  const zPois = Math.abs(ctnb_betaHat) / ctnb_sePoisson;
+  const zNB = Math.abs(ctnb_betaHat) / ctnb_seNB;
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7.2rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${ctnb_pal.fill}; border: 1px solid ${ctnb_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${ctnb_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("Empirical φ̂ = Var/Mean", phi.toFixed(2),
+        phi < 1.15 ? ctnb_pal.good : ctnb_pal.focal)}
+    ${tile("SE inflation √φ̂", infl.toFixed(2) + "×", ctnb_pal.ochre)}
+    ${tile("Poisson z (over-confident)", zPois.toFixed(2), ctnb_pal.focal)}
+    ${tile("Corrected z (honest)", zNB.toFixed(2),
+        zNB > 1.96 ? ctnb_pal.good : ctnb_pal.slate)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Overdispersion Lab
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Establish the Poisson baseline.** Set **dispersion $\alpha$** to 0. Every subgroup is pure Poisson, so the empirical variance equals the mean: the slate points scatter tightly along the green dashed identity line $\operatorname{Var} = \mu$. The "Empirical $\hat\phi$" tile reads near $1.0$ and turns green. This is equidispersion --- the promise Poisson keeps only when $\alpha = 0$.
+
+**Step 2: Inject heterogeneity.** Drag **dispersion $\alpha$** upward. The points lift *off* the green line and rise toward the red NB curve $\operatorname{Var} = \mu + \alpha\mu^2$. The lift-off grows with the mean: at small $\mu$ the two curves nearly coincide, but at large $\mu$ the quadratic term $\alpha\mu^2$ pulls the variance far above the mean. The $\hat\phi$ tile climbs past 1 and turns red.
+
+**Step 3: Watch the standard error inflate.** As $\hat\phi$ rises, read the "SE inflation $\sqrt{\hat\phi}$" tile. This is the factor by which honest standard errors exceed the naive Poisson ones. At $\hat\phi = 4$ it reads $2.0\times$ --- the Poisson SEs are half their correct size.
+
+**Step 4: See the confidence intervals diverge.** On the interval panel, the red bar is the Poisson 95% interval and the slate bar is the dispersion-corrected (NB / robust) interval. With $\alpha = 0$ they coincide. As $\alpha$ rises, the slate interval grows visibly wider while the point estimate (black dot) stays put --- the *estimate* is stable, the *uncertainty* is what was being understated.
+
+**Step 5: Catch the spurious significance.** Compare the "Poisson $z$" and "Corrected $z$" tiles. For moderate $\alpha$ the Poisson $z$ can sit comfortably above 1.96 (apparently significant) while the corrected $z$ drops below it (honestly *not* significant). That gap is the false confidence overdispersion manufactures. Press **Draw a new cohort** to confirm the pattern is structural, not a fluke of one draw.
+
+## Fix 2: Quasi-Poisson and Robust (Sandwich) Standard Errors
+
+The Negative Binomial changes the *likelihood*. Sometimes you would rather keep the Poisson mean model --- which you trust --- and simply repair the standard errors. Two closely related options do this.
+
+The **quasi-Poisson** estimator keeps the Poisson score equations (so the point estimates are identical to Poisson) but estimates a single dispersion scalar $\phi$ from the data and multiplies every variance by it. Operationally, it computes $\hat\phi$ from the Pearson residuals and rescales the Poisson covariance matrix by $\hat\phi$, inflating each standard error by $\sqrt{\hat\phi}$. It assumes the variance is $\phi\mu$ --- proportional to the mean (a *linear* variance function), which differs from NB's *quadratic* $\mu + \alpha\mu^2$.
+
+The **robust (Huber--White "sandwich") standard error** goes further and assumes nothing about the variance function's form. It estimates $\operatorname{Var}(\hat\beta)$ from the empirical outer product of the score contributions, so it is valid under *any* form of overdispersion (or clustering, with the cluster-robust version) as long as the mean is correctly specified.
+
+::: {.glass-card .glass-card--insight}
+**The mean model is the load-bearing assumption.** All three fixes --- NB, quasi-Poisson, and robust SEs --- rely on $E[y\mid x] = \exp(x'\beta)$ being correct; they differ only in how they model the *variance*. NB assumes a quadratic variance and re-estimates the likelihood (most efficient *if* the NB form is right); quasi-Poisson assumes a linear variance and rescales; robust SEs assume nothing about the variance and are the most agnostic (and the safest default when you are unsure). When the mean model itself is wrong, none of them save you.
+:::
+
+## Fix 3: Testing for Overdispersion
+
+Before reaching for a remedy, test whether you need one. The cleanest test sits inside the NB nesting. Because Poisson is NB with $\alpha = 0$, the null hypothesis $H_0\!: \alpha = 0$ *is* "no overdispersion."
+
+Cameron and Trivedi's regression-based test makes this operational without even fitting the NB. Fit Poisson, form the auxiliary variable
+
+$$
+z_i = \frac{(y_i - \hat\mu_i)^2 - y_i}{\hat\mu_i},
+$$
+
+and regress $z_i$ on a function of $\hat\mu_i$ (just $\hat\mu_i$ for the NB1/linear alternative, or $\hat\mu_i^2/\hat\mu_i = \hat\mu_i$ scaled for NB2). **Read $z_i$ as**: "the squared Poisson residual, debiased by the count itself and standardised by the fitted mean." Under equidispersion $E[z_i] = 0$; under overdispersion it is positive. A one-sided $t$-test on the slope is the overdispersion test, and `AER::dispersiontest` in R implements it directly. The likelihood-ratio test comparing the fitted Poisson and NB log-likelihoods is the other standard route (with the technicality that $\alpha = 0$ lies on the boundary of the parameter space, so the LR statistic is a $\tfrac12\chi^2_0 + \tfrac12\chi^2_1$ mixture --- in practice, halve the naive $p$-value).
+
+::: {.glass-card .glass-card--assumption}
+**What the overdispersion test assumes:**
+
+1. **The conditional mean is correctly specified**, $E[y\mid x] = \exp(x'\beta)$. The test detects variance--mean mismatch *given* a right mean; a wrong mean (omitted covariate, wrong link) can masquerade as overdispersion.
+2. **The alternative has the assumed variance form.** `dispersiontest` targets $\operatorname{Var} = \mu + \alpha\, g(\mu)$ for a chosen $g$; the test is most powerful against that direction. Excess *zeros* specifically are a different failure --- handled on the [next page](zero-inflation.qmd) --- and may show up here as apparent overdispersion.
+:::
+
+<details>
+<summary>Math Details: The Poisson--gamma mixture and why naive SEs deflate</summary>
+<div class="details-content">
+
+### The variance function from a Poisson--gamma mixture
+
+Let the conditional count be Poisson with a *random* rate $\lambda_i = \mu_i \nu_i$, where $\mu_i = \exp(x_i'\beta)$ is the systematic part and $\nu_i$ is an unobserved multiplier with $E[\nu_i] = 1$ and $\operatorname{Var}(\nu_i) = \alpha$. Conditional on $\nu_i$,
+
+$$
+E[y_i \mid x_i, \nu_i] = \mu_i \nu_i, \qquad \operatorname{Var}(y_i \mid x_i, \nu_i) = \mu_i \nu_i .
+$$
+
+Apply the **law of total expectation** over $\nu_i$:
+
+$$
+E[y_i \mid x_i] = E_{\nu}\!\left[\mu_i \nu_i\right] = \mu_i\, E[\nu_i] = \mu_i .
+$$
+
+The mean is *unchanged* --- this is why the Poisson coefficients stay consistent. Now apply the **law of total variance**:
+
+$$
+\operatorname{Var}(y_i \mid x_i)
+= \underbrace{E_\nu\!\left[\operatorname{Var}(y_i\mid \nu_i)\right]}_{\text{within}}
++ \underbrace{\operatorname{Var}_\nu\!\left(E[y_i\mid \nu_i]\right)}_{\text{between}} .
+$$
+
+The first term is $E_\nu[\mu_i\nu_i] = \mu_i$. The second is $\operatorname{Var}_\nu(\mu_i\nu_i) = \mu_i^2\,\operatorname{Var}(\nu_i) = \alpha\,\mu_i^2$. Adding,
+
+$$
+\boxed{\;\operatorname{Var}(y_i\mid x_i) = \mu_i + \alpha\,\mu_i^2\;}.
+$$
+
+This is exactly the NB2 variance function. If $\nu_i \sim \text{Gamma}(\text{shape}=1/\alpha,\ \text{scale}=\alpha)$ (so $E[\nu]=1$, $\operatorname{Var}[\nu]=\alpha$), integrating the Poisson over this gamma gives the Negative Binomial probability mass function in closed form:
+
+$$
+\Pr(y_i = k \mid x_i)
+= \frac{\Gamma(k + 1/\alpha)}{\Gamma(1/\alpha)\,k!}
+\left(\frac{1/\alpha}{1/\alpha + \mu_i}\right)^{1/\alpha}
+\left(\frac{\mu_i}{1/\alpha + \mu_i}\right)^{k}.
+$$
+
+As $\alpha \to 0$ this converges to the Poisson PMF $e^{-\mu_i}\mu_i^k/k!$ --- the nesting made explicit.
+
+### Why the naive standard errors are too small
+
+The Poisson MLE solves the score equations $\sum_i (y_i - \mu_i)\,x_i = 0$. By the standard sandwich (robust) variance for an estimating equation, the true variance of $\hat\beta$ is
+
+$$
+\operatorname{Var}(\hat\beta) = A^{-1} B\, A^{-1},
+\qquad
+A = \sum_i \mu_i x_i x_i', \qquad
+B = \sum_i \operatorname{Var}(y_i\mid x_i)\, x_i x_i' .
+$$
+
+The Poisson MLE *assumes* $\operatorname{Var}(y_i\mid x_i) = \mu_i$, which makes $B = A$ and collapses the sandwich to the naive $A^{-1}$. But under overdispersion $\operatorname{Var}(y_i\mid x_i) = \phi\mu_i$ (taking the linear case for clarity), so $B = \phi A$ and
+
+$$
+\operatorname{Var}(\hat\beta)_{\text{true}} = A^{-1}(\phi A)A^{-1} = \phi\, A^{-1}
+= \phi \cdot \operatorname{Var}(\hat\beta)_{\text{naive}} .
+$$
+
+The true variance is $\phi$ times the reported one. Standard errors --- the square roots of the diagonal --- are therefore too small by a factor of $\sqrt{\phi}$, and every $z = \hat\beta / \widehat{\operatorname{se}}$ is inflated by $\sqrt{\phi}$. With $\phi = 4$, a genuine $z = 1.4$ is reported as $2.8$. The quasi-Poisson fix multiplies $A^{-1}$ by $\hat\phi$; the robust fix estimates $B$ directly from $\sum_i (y_i-\hat\mu_i)^2 x_i x_i'$, valid for *any* variance form.
+
+</div>
+</details>
+
+## Fitting It: R and Python
+
+Both panels simulate overdispersed return-visit counts for a diabetes cohort (a nurse-hours covariate plus a baseline-HbA1c covariate), then (1) fit Poisson, (2) test for overdispersion, (3) fit the Negative Binomial, and (4) recompute robust standard errors. Watch the nurse-hours standard error grow as you move from naive Poisson to the corrected models.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("MASS", "AER", "sandwich", "lmtest"))
+library(MASS)      # glm.nb
+library(AER)       # dispersiontest
+library(sandwich)  # robust (sandwich) covariance
+library(lmtest)    # coeftest
+
+set.seed(2024)
+n <- 1200
+nurse_hours <- round(runif(n, 0, 6), 1)          # extra nurse-hours / quarter
+hba1c_z     <- rnorm(n)                            # standardised baseline HbA1c
+
+# True log-rate: more nurse-hours -> fewer return visits; worse HbA1c -> more.
+mu <- exp(1.1 - 0.18 * nurse_hours + 0.35 * hba1c_z)
+
+# Overdispersion via a gamma rate multiplier nu ~ Gamma(mean 1, var = alpha).
+alpha_true <- 0.5
+nu      <- rgamma(n, shape = 1 / alpha_true, scale = alpha_true)
+visits  <- rpois(n, lambda = mu * nu)             # Poisson-gamma => NB counts
+
+df <- data.frame(visits, nurse_hours, hba1c_z)
+
+## 1. Poisson — point estimates are fine, the SEs are not -------------------
+m_pois <- glm(visits ~ nurse_hours + hba1c_z, family = poisson, data = df)
+
+## 2. Test for overdispersion (Cameron–Trivedi). H0: equidispersion --------
+dispersiontest(m_pois, trafo = 2)   # trafo=2 targets Var = mu + alpha*mu^2
+# -> estimated alpha ~0.5 (recovering the truth) and a tiny p-value: reject
+#    equidispersion. (Omit trafo for the raw dispersion ratio phi > 1 instead.)
+
+## 3. Negative Binomial — models the dispersion directly -------------------
+m_nb <- glm.nb(visits ~ nurse_hours + hba1c_z, data = df)
+summary(m_nb)                       # theta = 1/alpha; SEs are wider than Poisson
+cat("Estimated alpha = ", 1 / m_nb$theta, "\n")   # ~ 0.5, recovering the truth
+
+## 4. Robust (sandwich) SEs on the Poisson fit — assumption-free repair ----
+coeftest(m_pois, vcov = sandwich)   # same betas as Poisson, honest SEs
+
+# Compare the nurse_hours SE across the three: naive Poisson is far too small.
+se_pois   <- summary(m_pois)$coefficients["nurse_hours", "Std. Error"]
+se_robust <- sqrt(diag(sandwich(m_pois)))["nurse_hours"]
+se_nb     <- summary(m_nb)$coefficients["nurse_hours", "Std. Error"]
+cat(sprintf("SE(nurse_hours): Poisson=%.4f  Robust=%.4f  NB=%.4f\n",
+            se_pois, se_robust, se_nb))
+```
+
+### Python
+
+```python
+# pip install numpy pandas statsmodels
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(2024)
+n = 1200
+nurse_hours = np.round(rng.uniform(0, 6, n), 1)   # extra nurse-hours / quarter
+hba1c_z     = rng.standard_normal(n)               # standardised baseline HbA1c
+
+# True log-rate: nurse-hours lower visits; worse HbA1c raises them.
+mu = np.exp(1.1 - 0.18 * nurse_hours + 0.35 * hba1c_z)
+
+# Overdispersion via a gamma rate multiplier nu ~ Gamma(mean 1, var = alpha).
+alpha_true = 0.5
+nu     = rng.gamma(shape=1 / alpha_true, scale=alpha_true, size=n)
+visits = rng.poisson(mu * nu)                      # Poisson-gamma => NB counts
+
+df = pd.DataFrame({"visits": visits,
+                   "nurse_hours": nurse_hours,
+                   "hba1c_z": hba1c_z})
+
+# 1. Poisson — consistent betas, but SEs assume equidispersion --------------
+m_pois = smf.glm("visits ~ nurse_hours + hba1c_z",
+                 data=df, family=sm.families.Poisson()).fit()
+
+# 2. Quick overdispersion check: Pearson chi2 / df should be ~1 under Poisson.
+phi_hat = m_pois.pearson_chi2 / m_pois.df_resid
+print(f"Pearson dispersion phi_hat = {phi_hat:.3f}")   # >1 => overdispersed
+
+# 3. Negative Binomial (NB2) — estimates alpha jointly with beta ------------
+m_nb = smf.glm("visits ~ nurse_hours + hba1c_z",
+               data=df,
+               family=sm.families.NegativeBinomial(alpha=alpha_true)).fit()
+# For alpha estimated by ML, use the discrete model:
+m_nb_ml = sm.NegativeBinomial.from_formula(
+    "visits ~ nurse_hours + hba1c_z", data=df).fit(disp=0)
+print(f"Estimated alpha = {m_nb_ml.params['alpha']:.3f}")  # ~0.5, recovered
+
+# 4. Robust (sandwich) SEs on the Poisson fit — assumption-free repair ------
+m_pois_robust = smf.glm("visits ~ nurse_hours + hba1c_z",
+                        data=df, family=sm.families.Poisson()).fit(cov_type="HC0")
+
+print("SE(nurse_hours):",
+      f"Poisson={m_pois.bse['nurse_hours']:.4f}",
+      f"Robust={m_pois_robust.bse['nurse_hours']:.4f}",
+      f"NB={m_nb_ml.bse['nurse_hours']:.4f}")
+# Naive Poisson SE is the smallest; robust and NB are markedly wider.
+```
+
+:::
+
+In both languages the three approaches agree on the *coefficient* (about $-0.18$ per nurse-hour) but disagree sharply on its *standard error*: the naive Poisson SE is the smallest, and the robust and NB SEs are roughly $\sqrt{\hat\phi}$ times larger. The dispersion test confirms the inflation is real, and the recovered $\hat\alpha \approx 0.5$ matches the value we simulated.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A Region Uppsala study of post-discharge readmissions fits a Poisson model and reports a nurse-hours coefficient $\hat\beta = -0.18$ with Poisson standard error $\widehat{\operatorname{se}}_{\text{Pois}} = 0.05$. The Pearson dispersion is $\hat\phi = 4$.
+
+(a) What is the Poisson $z$-statistic? (b) What is the dispersion-corrected standard error and the corrected $z$? (c) At the 5% two-sided level, does the conclusion change?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $z_{\text{Pois}} = |{-0.18}| / 0.05 = 3.60$ --- comfortably "significant."
+
+**(b)** The corrected SE inflates by $\sqrt{\hat\phi} = \sqrt{4} = 2$: $\widehat{\operatorname{se}}_{\text{corr}} = 0.05 \times 2 = 0.10$. The corrected $z = 0.18/0.10 = 1.80$.
+
+**(c)** Yes, the conclusion flips. The Poisson $z = 3.60$ exceeds the critical $1.96$ (reject $H_0$, "significant"); the corrected $z = 1.80$ falls *below* $1.96$ (fail to reject, *not* significant at 5%). The overdispersion had manufactured the significance --- the honest analysis cannot distinguish the nursing effect from zero.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain in your own words why overdispersion leaves the Poisson *coefficients* consistent but ruins the Poisson *standard errors*. Reference the law of total variance.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Write the count as Poisson with a random rate $\mu\nu$, where $\nu$ is an unobserved multiplier with mean 1 and variance $\alpha$. By the **law of total expectation**, $E[y\mid x] = E_\nu[\mu\nu] = \mu\,E[\nu] = \mu$ --- averaging over the heterogeneity leaves the mean exactly $\mu = \exp(x'\beta)$. Since the Poisson estimating equations only require a correct mean, $\hat\beta$ stays consistent.
+
+By the **law of total variance**, the variance gains an extra "between" term: $\operatorname{Var}(y\mid x) = E_\nu[\mu\nu] + \operatorname{Var}_\nu(\mu\nu) = \mu + \alpha\mu^2 > \mu$. The Poisson likelihood computes its standard errors as if the variance were $\mu$, so it underestimates the true variance of $\hat\beta$ by roughly a factor of $\phi$ --- standard errors come out too small by $\sqrt{\phi}$. The mean is right; the variance the model *assumes* for inference is wrong.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+For the NB2 variance function $\operatorname{Var}(y\mid x) = \mu + \alpha\mu^2$ with $\alpha = 0.5$, compute the dispersion ratio $\phi = \operatorname{Var}/\mu$ at $\mu = 2$ and at $\mu = 8$ return visits. What does the comparison reveal about *where* Poisson fails worst, and what happens as $\alpha \to 0$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The dispersion ratio is $\phi = \operatorname{Var}/\mu = (\mu + \alpha\mu^2)/\mu = 1 + \alpha\mu$.
+
+- At $\mu = 2$: $\phi = 1 + 0.5 \times 2 = 2.0$ (variance twice the mean; SE inflation $\sqrt{2} \approx 1.41$).
+- At $\mu = 8$: $\phi = 1 + 0.5 \times 8 = 5.0$ (variance five times the mean; SE inflation $\sqrt{5} \approx 2.24$).
+
+Because $\phi = 1 + \alpha\mu$ grows *linearly* in $\mu$, overdispersion bites hardest at **high means** --- the heavy-visiting patient subgroups, exactly where the policy stakes are largest. This matches the lab, where the points peeled off the Poisson line most dramatically at the right end of the $x$-axis.
+
+As $\alpha \to 0$, $\phi = 1 + \alpha\mu \to 1$ for every $\mu$: the NB variance collapses to the Poisson identity and equidispersion is restored. Poisson is the $\alpha = 0$ special case.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A colleague fits Poisson, gets a tiny $p$-value on a *läkare*-continuity covariate, and declares the effect "robust." You suspect overdispersion. (a) Name two diagnostics you would run before trusting the $p$-value. (b) Your robust-SE and quasi-Poisson fixes give nearly identical, wide standard errors, but the NB SE is *noticeably smaller* than both. What does that pattern suggest, and which SE should you report?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** (i) Compute the **Pearson dispersion** $\hat\phi = \text{Pearson }\chi^2 / \text{df}$; values well above 1 signal overdispersion. (ii) Run a formal **overdispersion test** --- `AER::dispersiontest` (Cameron--Trivedi regression test of $H_0\!: \alpha = 0$) or a likelihood-ratio test comparing the Poisson and NB fits. A small $p$ on either says the equidispersion-based Poisson SEs are not trustworthy.
+
+**(b)** If the NB SE is meaningfully smaller than the agnostic robust/quasi-Poisson SEs, the NB *variance assumption* ($\operatorname{Var} = \mu + \alpha\mu^2$) is doing real work --- it is more *efficient* precisely because it imposes a parametric variance form. That efficiency is only a free lunch **if that form is correct**. The robust SE makes no such assumption, so when you are not confident the NB2 variance function is right (e.g., the true variance might be linear, or there could be excess zeros), the safer report is the **robust (sandwich) SE**, accepting a small efficiency loss for protection against a misspecified variance. If diagnostics confirm the NB2 form fits well (e.g., NB residual checks, comparable AIC), reporting the more efficient NB SE is defensible.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Poisson regression forces **equidispersion**, $\operatorname{Var}(y\mid x) = E[y\mid x]$; real counts are usually **overdispersed** ($\operatorname{Var} > E$), almost always because of unobserved heterogeneity.
+- Overdispersion leaves the Poisson **coefficients consistent** but deflates the **standard errors** by about $\sqrt{\phi}$, inflating $z$-statistics and manufacturing **spurious significance**.
+- The **Negative Binomial (NB2)** adds a dispersion parameter $\alpha$ with variance $\operatorname{Var} = \mu + \alpha\mu^2$; it nests Poisson at $\alpha = 0$, so a test of $\alpha = 0$ is a test for overdispersion.
+- **Quasi-Poisson** rescales the Poisson covariance by $\hat\phi$ (linear variance); **robust (sandwich) SEs** assume no variance form at all (safest default) --- all three rely on a correct *mean* model.
+- Always **test** (Cameron--Trivedi `dispersiontest` or an NB-vs-Poisson LR test) and report dispersion-aware standard errors; the point estimate is rarely the problem, the confidence in it is.
+:::
+
+## What Comes Next
+
+Overdispersion is the most common way count data break the Poisson mould, but it is not the only one. Frequently the *zeros* misbehave on their own: far more patients make **zero** return visits than any Poisson or Negative Binomial model predicts, often because two distinct processes are at work --- some patients are structurally "never-returners" (discharged, relocated, or simply never at risk), while the rest follow a count process. The next page, [Excess Zeros: Hurdle and Zero-Inflated Models](zero-inflation.qmd), separates the decision to return *at all* from the *number* of returns, building hurdle and zero-inflated models that pair a binary stage with the Poisson or Negative Binomial count stage you now understand.

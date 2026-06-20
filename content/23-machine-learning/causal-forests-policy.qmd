@@ -1,0 +1,742 @@
+---
+title: "Heterogeneous Effects and Policy Learning"
+subtitle: "Who benefits, and what should we do?"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define the conditional average treatment effect $\tau(x) = E[Y_i(1) - Y_i(0) \mid X_i = x]$ and explain why it is the quantity a *targeting* decision needs
+- Describe how a **causal forest** (Wager & Athey, 2018) splits on effect heterogeneity and uses *honesty* to deliver valid confidence intervals for $\tau(x)$
+- Summarise heterogeneity with the best-linear-predictor and GATES (sorted group effects), and run a formal test for the presence of heterogeneity
+- Turn estimated CATEs into a **treatment-assignment policy** $\pi(x)$ that treats where the gain exceeds the cost, and read off how the policy boundary moves with cost
+- Define the **policy value** and **regret**, and explain why a learned policy is only as good as the CATEs and costs it is built from
+:::
+
+## From "Does It Work?" to "For Whom, and What Then?"
+
+Every page in this book so far has chased a single number: the average treatment effect, or one of its cousins (ATT, LATE). A Swedish *region* asks "did the structured Type 2 diabetes program lower HbA1c on average?" and we answer with one estimate. But that average hides a decision the *verksamhetschef* (clinic manager) actually faces. The program is expensive --- a dedicated *diabetessjuksköterska* (diabetes nurse), digital monitoring, longer visits --- and the budget covers perhaps a third of eligible patients. The real question is not "does it work on average?" but **"which patients gain the most, and whom should we enroll?"**
+
+That is a question about *variation* in the treatment effect, and then about *acting* on that variation. This page is in two movements. First, **estimation**: how does the treatment effect $\tau$ change with patient characteristics $x$ --- age, baseline HbA1c, comorbidity, *socioekonomisk* index? The object we want is the conditional average treatment effect, $\tau(x)$, and the workhorse estimator is the **causal forest**. Second, **action**: given an estimated $\hat\tau(x)$ and the cost of treating, which patients should we enroll? That is **policy learning** --- and we will measure how good a learned policy is by its **value** and its **regret**.
+
+The previous page, [Double and Debiased Machine Learning](double-ml.qmd), used machine learning to estimate a single, well-behaved *average* effect while removing the bias that flexible nuisance models introduce. Here we let the effect itself be the flexible object. The two ideas combine: the causal forest is, at heart, a forest of locally-debiased estimates of $\tau(x)$.
+
+## The Object We Want: the CATE
+
+Recall the potential outcomes $Y_i(1)$ and $Y_i(0)$ and the individual effect $\tau_i = Y_i(1) - Y_i(0)$, which is never observed for any single patient. The ATE averages $\tau_i$ over everyone. The CATE averages it over everyone *who looks like* $x$.
+
+::: {.glass-card .glass-card--definition}
+The **conditional average treatment effect** (CATE) is the average treatment effect among units with covariates equal to $x$:
+
+$$
+\tau(x) \;=\; E\big[\,Y_i(1) - Y_i(0) \;\big|\; X_i = x\,\big].
+$$
+
+**Read this as**: "tau of $x$ equals the expected difference between the treated and untreated potential outcomes, *given* that the covariates $X_i$ take the value $x$." It is a *function* of $x$: a whole surface over the covariate space, not a single number. The ATE is its average, $\text{ATE} = E[\tau(X_i)]$.
+:::
+
+Why condition on $x$ rather than chase the truly individual $\tau_i$? Because $\tau_i$ is hopeless --- it needs both potential outcomes for the same person. But $\tau(x)$ is identified under the same unconfoundedness assumption that powers matching and regression: once we control for enough covariates, treatment is as good as random *within* each value of $x$.
+
+::: {.glass-card .glass-card--assumption}
+**The CATE is identified when:**
+
+1. **Unconfoundedness (conditional ignorability).** Given the covariates, treatment is independent of the potential outcomes: $\{Y_i(1), Y_i(0)\} \perp D_i \mid X_i$. Inside a thin slice of covariate space, who got the program is unrelated to how much they would benefit.
+
+2. **Overlap (positivity).** Every covariate profile has a genuine chance of being treated *and* untreated: $0 < e(x) = P(D_i = 1 \mid X_i = x) < 1$. If a profile is always treated, there are no controls to compare against, and $\tau(x)$ there is an extrapolation, not an estimate.
+:::
+
+These are exactly the assumptions of [Module 9 on matching](../09-matching/propensity-scores.qmd) --- the causal forest does not weaken them. What it changes is *flexibility*: instead of assuming $\tau(x)$ is constant or linear, it lets the data carve $x$-space into regions with different effects.
+
+## The Causal Forest: Trees That Hunt for Heterogeneity
+
+A regression forest predicts an *outcome* by averaging many decision trees, each of which splits the covariate space to make the outcome as homogeneous as possible within each leaf. A **causal forest** keeps the ensemble idea but changes the target of the splits: it splits to make the *treatment effect* as different as possible *across* the two child leaves.
+
+::: {.glass-card .glass-card--insight}
+**The one-sentence idea.** A regression tree asks "which split makes the *outcome* most predictable?"; a causal tree asks "which split separates patients who *respond differently* to treatment?" Averaging many such trees, each grown on a different subsample with different split points, yields a smooth, adaptive estimate $\hat\tau(x)$ --- essentially a data-driven, locally-weighted matching estimator that puts more weight on training units that are "similar" to $x$ in the way that matters for the *effect*.
+:::
+
+Two design choices make the causal forest trustworthy rather than merely flexible.
+
+**Honesty.** A standard tree uses the same data to *choose the splits* and to *estimate the effect* in each leaf. That double-use makes the leaf estimates optimistically biased --- the tree found the split *because* it made the effect look large there. An **honest** tree splits the training subsample in two: one half (the *splitting* sample) decides where the cuts go; the other half (the *estimation* sample) fills in the effect within each leaf. Because the estimation data did not influence the boundaries, the within-leaf estimate is (approximately) unbiased, and this is what lets the forest deliver **valid confidence intervals** for $\tau(x)$ --- a rarity among machine-learning predictors.
+
+**Local centering (the "R-learner" / orthogonalised splits).** Just as double machine learning partials out the propensity score and the outcome model, modern causal forests (the `grf` implementation) fit the splits on *residualised* outcomes and treatments: $\tilde Y_i = Y_i - \hat m(X_i)$ and $\tilde D_i = D_i - \hat e(X_i)$, where $\hat m$ is an estimate of $E[Y\mid X]$ and $\hat e$ the propensity score. This makes the splitting criterion robust to confounding and to nuisance-model error --- the same Neyman-orthogonality logic from the previous page, now applied tree by tree.
+
+The splitting criterion itself --- the precise objective each node maximises --- is in the Math Details below. For now, the picture: **honest, orthogonalised trees vote on $\hat\tau(x)$, and the spread of their votes gives a standard error.**
+
+## See It: A Heterogeneous Effect Surface and the Policy It Implies
+
+The interactive below puts the whole page on one screen. The setting: each dot is an eligible diabetes patient, placed by two covariates --- **baseline HbA1c** (how poorly controlled, $x_1$) on the horizontal axis and a **socioeconomic need index** ($x_2$, higher = more deprived) on the vertical. The *true* CATE surface (how many mmol/mol the program lowers HbA1c) is largest for sicker, more-deprived patients. The left panel shows the **estimated** $\hat\tau(x)$ map; the right panel shows the **treat / don't-treat policy** the estimate implies, given a per-patient **treatment cost** you control. Move the cost slider and watch the policy boundary sweep across the map, with a live readout of the policy's **value** and **regret**.
+
+::: {.interactive-container}
+
+#### Estimated CATE map and the policy it implies
+
+```{ojs}
+//| echo: false
+mlcf_pal = ({
+  focal:   "#990000",   // focal / treated series (Uppsala red)
+  slate:   "#3d5a6c",   // comparison / control
+  good:    "#2e6f40",   // on-target / treat region
+  ochre:   "#9c7a33",   // highlight / true value / boundary
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis text
+  hair:    "#e6e3db",   // gridlines
+  muted:   "#79766e",   // muted ink
+  bad:     "#b3000b",   // alarm / regret
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+// The TRUE CATE surface (mmol/mol of HbA1c REDUCTION the program delivers).
+// Both covariates are on a 0–1 scale: x1 = standardized baseline severity,
+// x2 = standardized socioeconomic need. Sicker AND more-deprived patients
+// benefit most; there is a saturating interaction so the surface is non-linear
+// (a flat plane would make the heterogeneity story trivial). Returns a POSITIVE
+// number = how much HbA1c falls (a benefit), in mmol/mol.
+mlcf_trueTau = function (x1, x2) {
+  const base = 2.0;                       // baseline benefit for the mildest case
+  const sev  = 7.5 * x1;                  // severity drives most of the gain
+  const need = 3.0 * x2;                  // deprivation adds a smaller boost
+  const interact = 4.0 * x1 * x2;         // sickest-and-poorest gain super-additively
+  return base + sev + need + interact;    // ranges ~2 (mild) to ~16.5 (worst case)
+}
+```
+
+```{ojs}
+//| echo: false
+// A reproducible pseudo-random patient sample on the covariate square. We use a
+// small LCG so the picture is identical on every render (no flicker between the
+// map and the policy panel), rather than d3.randomNormal which would reshuffle.
+mlcf_patients = {
+  let s = 20240617;                       // fixed seed
+  const rnd = () => { s = (1103515245 * s + 12345) % 2147483648; return s / 2147483648; };
+  const N = 240;
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const x1 = rnd();
+    const x2 = rnd();
+    const tau = mlcf_trueTau(x1, x2);
+    // Estimation noise: the forest sees tau through a noisy lens. SD grows a
+    // touch with the magnitude so the map is plausibly imperfect, never exact.
+    const noise = (rnd() - 0.5) * (1.6 + 0.10 * tau);
+    out.push({ id: i, x1, x2, tau, tauHat: Math.max(0, tau + noise) });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+viewof mlcf_cost = Inputs.range([1, 16], {
+  value: 6,
+  step: 0.5,
+  label: "Treatment cost c (mmol/mol-equivalent per patient)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof mlcf_useTruth = Inputs.toggle({
+  label: "Color by TRUE τ(x) instead of estimated τ̂(x)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Color scale shared by both panels: a sequential ramp from the subtle fill
+// (small benefit) up to focal Uppsala red (large benefit). Built by hand so we
+// use ONLY the approved palette — no default Plot scheme (which would be blue).
+mlcf_tauColor = function (t) {
+  const lo = 2, hi = 16.5;               // empirical range of the true surface
+  const u = Math.max(0, Math.min(1, (t - lo) / (hi - lo)));
+  // Interpolate through approved tokens only: panel fill (#f6f5f1) -> hairline
+  // (#e6e3db) -> ochre (#9c7a33) -> focal red (#990000). The control points are
+  // all Uppsala tokens; interpolateRgbBasis fills the gradient between them.
+  return d3.interpolateRgbBasis(["#f6f5f1", "#e6e3db", "#9c7a33", "#990000"])(u);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The learned POLICY: treat a patient iff their estimated benefit exceeds the
+// cost, π(x) = 1{ τ̂(x) > c }. This is the optimal rule under a linear-utility
+// objective when τ̂ is the true CATE; with an estimated τ̂ it is the *plug-in*
+// policy whose regret we read off below.
+mlcf_policy = mlcf_patients.map(p => ({
+  ...p,
+  treat: p.tauHat > mlcf_cost,            // the policy's decision
+  treatTrue: p.tau > mlcf_cost           // the ORACLE decision (knows true τ)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Policy VALUE and REGRET, in mmol/mol of HbA1c per eligible patient.
+// Value of a policy π = average over patients of  π(xᵢ) · (τ(xᵢ) − c).
+//   • Treating someone with true benefit τ at cost c yields net (τ − c).
+//   • Not treating yields 0.
+// The ORACLE value uses the policy that treats iff TRUE τ > c (the best
+// attainable). REGRET = oracle value − learned value ≥ 0; it is the price of
+// estimating τ with error instead of knowing it.
+mlcf_eval = {
+  const c = mlcf_cost;
+  const n = mlcf_policy.length;
+  const netIf = p => p.tau - c;                 // true net benefit of treating p
+  // Learned policy: treat where τ̂ > c.
+  const vLearned = d3.sum(mlcf_policy, p => p.treat ? netIf(p) : 0) / n;
+  // Oracle policy: treat where TRUE τ > c.
+  const vOracle  = d3.sum(mlcf_policy, p => (p.tau > c) ? netIf(p) : 0) / n;
+  // Treat-all and treat-none baselines, for context.
+  const vAll  = d3.sum(mlcf_policy, p => netIf(p)) / n;
+  const vNone = 0;
+  const regret = vOracle - vLearned;            // ≥ 0 by construction
+  const share = d3.mean(mlcf_policy, p => p.treat ? 1 : 0);   // fraction treated
+  return { vLearned, vOracle, vAll, vNone, regret, share, c };
+}
+```
+
+```{ojs}
+//| echo: false
+// LEFT PANEL — the estimated (or true) CATE map. Each patient is a dot colored
+// by benefit; the ochre contour is the policy boundary τ = c (where benefit
+// exactly equals cost). Shorten everything so nothing clips at marginLeft 60.
+mlcf_mapPlot = {
+  const w = Math.min(620, width);
+  return Plot.plot({
+    width: w,
+    height: 380,
+    marginLeft: 62,
+    marginBottom: 46,
+    marginTop: 30,
+    marginRight: 16,
+    style: {
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontSize: "12px",
+      background: "transparent",
+      color: mlcf_pal.axis
+    },
+    x: { label: "Baseline severity  x₁  →", domain: [0, 1], grid: false },
+    y: { label: "↑ Socioeconomic need  x₂", domain: [0, 1], grid: false },
+    marks: [
+      Plot.gridX({ stroke: mlcf_pal.hair }),
+      Plot.gridY({ stroke: mlcf_pal.hair }),
+      // Patients colored by (estimated or true) benefit.
+      Plot.dot(mlcf_policy, {
+        x: "x1", y: "x2",
+        fill: d => mlcf_tauColor(mlcf_useTruth ? d.tau : d.tauHat),
+        r: 5, stroke: mlcf_pal.ink, strokeWidth: 0.4,
+        title: d => `severity ${d.x1.toFixed(2)}, need ${d.x2.toFixed(2)}\n` +
+                    `true τ = ${d.tau.toFixed(1)}  |  est τ̂ = ${d.tauHat.toFixed(1)}`
+      }),
+      // The policy boundary τ(x) = c, drawn from the TRUE surface for clarity:
+      // the curve where benefit exactly equals the current cost. Patients to the
+      // upper-right of it are the ones worth treating. Plot.contour computes the
+      // level set from the `value` function (NOT `f`); a single threshold at the
+      // cost yields one ochre line, drawn with a constant stroke (no fill scale).
+      Plot.contour({
+        fill: "none",
+        x1: 0, x2: 1, y1: 0, y2: 1,
+        value: (x, y) => mlcf_trueTau(x, y),
+        thresholds: [mlcf_cost],
+        stroke: mlcf_pal.ochre, strokeWidth: 2.5
+      }),
+      Plot.text([{ x: 0.5, y: 0.97 }], {
+        x: "x", y: "y",
+        text: () => `policy boundary: τ = c = ${mlcf_cost.toFixed(1)}`,
+        fill: mlcf_pal.ochre, fontWeight: 700, fontSize: 11,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// RIGHT PANEL — the treat / don't-treat policy. Same axes; dots are colored by
+// the policy DECISION (green = treat, slate = don't), so the reader sees the
+// covariate region the learned rule carves out. The ochre boundary is repeated.
+mlcf_policyPlot = {
+  const w = Math.min(620, width);
+  return Plot.plot({
+    width: w,
+    height: 380,
+    marginLeft: 62,
+    marginBottom: 46,
+    marginTop: 30,
+    marginRight: 16,
+    style: {
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontSize: "12px",
+      background: "transparent",
+      color: mlcf_pal.axis
+    },
+    x: { label: "Baseline severity  x₁  →", domain: [0, 1], grid: false },
+    y: { label: "↑ Socioeconomic need  x₂", domain: [0, 1], grid: false },
+    color: {
+      domain: ["Treat", "Don't treat"],
+      range: [mlcf_pal.good, mlcf_pal.slate],
+      legend: true
+    },
+    marks: [
+      Plot.gridX({ stroke: mlcf_pal.hair }),
+      Plot.gridY({ stroke: mlcf_pal.hair }),
+      // Base layer: every patient, filled by the policy DECISION (categorical
+      // fill drives the color scale). A thin, faint ink ring keeps dots crisp.
+      Plot.dot(mlcf_policy, {
+        x: "x1", y: "x2",
+        fill: d => d.treat ? "Treat" : "Don't treat",
+        r: 5, stroke: mlcf_pal.ink, strokeWidth: 0.4, strokeOpacity: 0.35
+      }),
+      // Overlay: a RED RING on MISTAKES only — patients where the learned policy
+      // disagrees with the oracle (treats someone it shouldn't, or skips someone
+      // it should). Drawn as a separate stroke-only mark with a CONSTANT stroke
+      // so it never enters the categorical color scale used by the fill above.
+      Plot.dot(mlcf_policy.filter(d => d.treat !== d.treatTrue), {
+        x: "x1", y: "x2",
+        r: 5.5, fill: "none",
+        stroke: mlcf_pal.bad, strokeWidth: 1.8
+      }),
+      Plot.contour({
+        fill: "none",
+        x1: 0, x2: 1, y1: 0, y2: 1,
+        value: (x, y) => mlcf_trueTau(x, y),
+        thresholds: [mlcf_cost],
+        stroke: mlcf_pal.ochre, strokeWidth: 2.5
+      }),
+      Plot.text([{ x: 0.5, y: 0.97 }], {
+        x: "x", y: "y",
+        text: () => "green = enroll · slate = standard care",
+        fill: mlcf_pal.ink, fontWeight: 600, fontSize: 11,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// Lay the two panels side by side (they stack on narrow screens), each labelled.
+html`<div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-start;">
+  <div style="flex:1 1 300px; min-width:300px;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.72rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${mlcf_pal.muted}; margin-bottom:0.25rem;">
+      1 · Estimated effect map  τ̂(x)</div>
+    ${mlcf_mapPlot}
+  </div>
+  <div style="flex:1 1 300px; min-width:300px;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.72rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${mlcf_pal.muted}; margin-bottom:0.25rem;">
+      2 · Derived policy  π(x) = 1{τ̂(x) &gt; c}</div>
+    ${mlcf_policyPlot}
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+// Live readout: how many we treat, the value the policy delivers, and the regret
+// versus the oracle. Built in an html`` cell so the reactive values interpolate.
+{
+  const e = mlcf_eval;
+  const tile = (label, value, color, sub) => html`<div style="
+      flex:1 1 0; min-width:8rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${mlcf_pal.fill}; border:1px solid ${mlcf_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${mlcf_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.62rem;
+        color:${mlcf_pal.muted};">${sub}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.85rem;">
+    ${tile("Share treated", (100 * e.share).toFixed(0) + "%",
+        mlcf_pal.good, "of eligible patients")}
+    ${tile("Policy value", "+" + e.vLearned.toFixed(2),
+        mlcf_pal.ink, "mmol/mol per patient")}
+    ${tile("Oracle value", "+" + e.vOracle.toFixed(2),
+        mlcf_pal.slate, "best attainable")}
+    ${tile("Regret", "−" + e.regret.toFixed(2),
+        e.regret < 0.05 ? mlcf_pal.good : mlcf_pal.bad,
+        "value lost to estimation error")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the CATE Map and the Policy
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the effect map (left).** Every dot is an eligible patient, placed by baseline severity ($x_1$, right = sicker) and socioeconomic need ($x_2$, up = more deprived). The colour is the estimated benefit $\hat\tau(x)$: pale fill means a small HbA1c reduction, deep red means a large one. The benefit climbs toward the upper-right --- the sickest, most-deprived patients gain most. This is treatment-effect heterogeneity made visible.
+
+**Step 2: Find the policy boundary.** The ochre curve is the set of patients for whom benefit exactly equals cost, $\tau(x) = c$. Patients on its upper-right side are worth enrolling (gain exceeds cost); those on the lower-left are not. The boundary is the frontier of a rational targeting decision.
+
+**Step 3: Read the policy (right).** The right panel recolours the same patients by the *decision* the rule makes: green = enroll, slate = standard care. The learned rule treats where the *estimated* benefit clears the cost, $\hat\tau(x) > c$, so the green cloud roughly --- but not exactly --- fills the region above the ochre boundary $\tau(x) = c$ (which is drawn from the *true* surface). The two disagree only near the boundary, and a red ring around a dot flags exactly such a *mistake* --- a patient the learned policy treats but the oracle would not, or vice versa, because the noisy estimate $\hat\tau$ landed on the wrong side of $c$.
+
+**Step 4: Move the cost.** Drag **treatment cost $c$**. As the program gets cheaper (small $c$), the ochre boundary sweeps down-left and the green region expands --- we can afford to treat milder cases. As it gets more expensive (large $c$), the boundary retreats up-right and only the sickest, most-deprived patients clear the bar. The "Share treated" tile tracks this directly.
+
+**Step 5: Watch value and regret.** The **Policy value** tile is the average net HbA1c gain per eligible patient the rule delivers; the **Oracle value** is the most any rule could deliver if it knew the true $\tau(x)$. **Regret** is the gap --- the price of acting on an *estimate* rather than the truth. Notice regret is largest when many patients sit *near* the boundary (where small estimation errors flip the decision) and shrinks when the cost pushes the boundary into a sparsely-populated corner.
+
+**Step 6: Toggle truth vs. estimate.** Flip **Color by TRUE τ(x)**. The left map now shows the noiseless surface. Comparing the two reveals where the forest's estimate is noisiest --- typically the deep-red high-benefit region, where the readout's regret is also born.
+
+## Summarising and Testing Heterogeneity
+
+A full CATE surface is rich but hard to report to a policy board. Two summaries, both from Chernozhukov, Demirer, Duflo & Fernández-Val (2018), compress it honestly.
+
+**The best linear predictor (BLP) of the CATE.** Regress the (debiased) individual effect on the *estimated* CATE: fit $\tau_i \approx \beta_0 + \beta_1\,\hat\tau(X_i)$. Two coefficients tell the whole story. $\beta_0$ recovers the ATE; $\beta_1$ is the **calibration slope**. If the forest's ranking of who-benefits-most is informative, $\beta_1 \approx 1$ and is significantly positive. If $\beta_1 \approx 0$, the estimated heterogeneity is noise --- the forest cannot tell high responders from low.
+
+**GATES --- sorted group average treatment effects.** Rank patients by $\hat\tau(X_i)$, cut them into quantile groups (say quintiles), and estimate the *actual* ATE within each group. If heterogeneity is real, the top group's effect should be much larger than the bottom group's, and the bars should march upward. GATES is the bar chart a *regionchef* (regional director) can read in five seconds.
+
+::: {.glass-card .glass-card--insight}
+**Testing for heterogeneity is a real test, not eyeballing.** The cleanest formal test asks whether the top and bottom GATES groups differ: $H_0:\ \text{GATES}_{\text{top}} = \text{GATES}_{\text{bottom}}$. Equivalently, test $\beta_1 = 0$ in the BLP. Reject and you have evidence that targeting can beat treating everyone identically; fail to reject and the honest conclusion is "treat all or treat none" --- there is no reliable signal to target on. The causal forest provides the valid standard errors that make this test legitimate.
+:::
+
+## From Estimate to Action: Policy Learning
+
+We now have $\hat\tau(x)$ and evidence that it carries signal. The decision is which patients to enroll. Formally, a **policy** is a rule $\pi: x \mapsto \{0,1\}$ that maps each patient's covariates to treat ($1$) or not ($0$). Treating a patient with true effect $\tau(x)$ costs $c$ and yields gross benefit $\tau(x)$, so the **net** benefit of treating is $\tau(x) - c$.
+
+::: {.glass-card .glass-card--definition}
+The **value** of a policy $\pi$ is the expected net benefit it delivers per eligible unit:
+
+$$
+V(\pi) \;=\; E\big[\,\pi(X_i)\,\big(\tau(X_i) - c\big)\,\big].
+$$
+
+**Read this as**: "the value of policy $\pi$ is the average, over the population, of the policy's decision $\pi(X_i)$ times the net benefit $\tau(X_i) - c$ of treating that unit." Treating ($\pi = 1$) contributes $\tau(x) - c$; not treating ($\pi = 0$) contributes $0$. Value is measured in the outcome's own units --- here, mmol/mol of HbA1c saved per eligible patient.
+:::
+
+When can we do no better? The value is maximised, term by term, by treating exactly those units whose net benefit is positive. This gives the **optimal threshold policy**.
+
+::: {.glass-card .glass-card--definition}
+The **optimal policy** treats wherever the conditional benefit exceeds the cost:
+
+$$
+\pi^\star(x) \;=\; \mathbf{1}\{\,\tau(x) > c\,\}.
+$$
+
+**Read this as**: "treat unit $x$ if and only if its conditional effect $\tau(x)$ is greater than the cost $c$." Since each unit contributes $\pi(x)(\tau(x)-c)$ independently, we maximise the sum by switching $\pi(x)$ to $1$ exactly when the bracket is positive. The boundary $\tau(x) = c$ is the ochre curve in the interactive.
+:::
+
+We do not know $\tau(x)$; we have $\hat\tau(x)$. The **plug-in policy** $\hat\pi(x) = \mathbf{1}\{\hat\tau(x) > c\}$ substitutes the estimate. It is no longer guaranteed optimal, and how far short it falls is its regret.
+
+::: {.glass-card .glass-card--definition}
+The **regret** of a learned policy $\hat\pi$ is the value it forgoes relative to the optimal policy:
+
+$$
+R(\hat\pi) \;=\; V(\pi^\star) - V(\hat\pi) \;\ge\; 0.
+$$
+
+**Read this as**: "regret equals the value of the best possible policy minus the value of the policy we actually used." It is non-negative because $\pi^\star$ maximises value by construction. Regret is the currency of policy learning: a good targeting rule is one whose regret shrinks toward zero as the sample grows.
+:::
+
+Regret arises only from decisions made *near the boundary*, where $\hat\tau$ and $\tau$ straddle $c$. Far from the boundary --- patients who obviously do or obviously do not benefit --- estimation error is harmless, because it does not flip the decision. This is why policy learning can succeed even when $\hat\tau$ is a noisy estimate of $\tau$: getting the *ranking* and the *boundary crossing* right matters far more than getting every $\hat\tau$ exactly right.
+
+::: {.glass-card .glass-card--warning}
+**A learned policy inherits every flaw of its inputs.** Three traps. (1) **Confounding**: if unconfoundedness fails, $\hat\tau(x)$ is biased and the policy targets the wrong people --- with confidence. (2) **The cost is rarely a single number**: treating a frail elderly patient may carry side-effect risk a young patient does not, so $c$ may itself depend on $x$; if so, threshold on $\tau(x) - c(x)$. (3) **Fairness and overlap**: a policy that concentrates treatment in one region or *socioekonomisk* group may be politically or ethically unacceptable, and in thin-overlap regions the "estimate" is extrapolation. Optimising value blindly can encode the data's inequities into the rule.
+:::
+
+**Policy trees for interpretable rules.** The plug-in threshold policy can have a wiggly, hard-to-explain boundary. When the rule must be *defensible* to a board --- "we enroll patients with HbA1c above 62 mmol/mol **or** with both moderate severity and high need" --- we instead learn a shallow **policy tree** (Athey & Wager, 2021): a depth-2 or depth-3 decision tree fit directly to maximise estimated policy value. It trades a little value for a rule a human can read, audit, and justify. The `policytree` package (R) and `econml`'s `PolicyTree` (Python) implement exactly this.
+
+<details>
+<summary>Math Details: The causal-forest splitting criterion and the policy objective</summary>
+<div class="details-content">
+
+### The causal tree splitting criterion
+
+A causal tree partitions $x$-space into leaves $\ell$. Within a leaf, the effect is estimated by the difference in mean outcomes between treated and control units in that leaf:
+
+$$
+\hat\tau_\ell = \frac{1}{n_{\ell,1}}\sum_{i \in \ell, D_i=1} Y_i \;-\; \frac{1}{n_{\ell,0}}\sum_{i \in \ell, D_i=0} Y_i,
+$$
+
+where $n_{\ell,1}, n_{\ell,0}$ count treated and control units in leaf $\ell$. A regression tree chooses splits to minimise within-leaf outcome variance. A *causal* tree instead chooses splits to **maximise the variance of the estimated effect across leaves** --- equivalently, to maximise the heterogeneity it can detect. Athey & Imbens (2016) show this is captured by maximising
+
+$$
+\widehat{\text{EMSE}}_\tau \;\propto\; \sum_{\ell} n_\ell\,\hat\tau_\ell^{\,2} \;-\; (\text{penalty for within-leaf variance of }\hat\tau_\ell).
+$$
+
+**Read this as**: "reward splits that produce leaves with large, well-separated effect estimates $\hat\tau_\ell$, but penalise splits that produce leaves whose effect estimates are too noisy to trust." The first term grows when child leaves have very different effects; the penalty (the estimated variance of each leaf's $\hat\tau_\ell$) discourages slicing the data so thin that the effect estimates become unstable. The split that maximises this objective is the one that best separates differential responders.
+
+The modern `grf` forest replaces the raw outcomes with **residualised** outcomes and treatments, $\tilde Y_i = Y_i - \hat m(X_i)$ and $\tilde D_i = D_i - \hat e(X_i)$, and chooses each split by a **gradient-based** approximation to this criterion (Athey, Tibshirani & Wager, 2019). The forest's prediction is then a weighted average,
+
+$$
+\hat\tau(x) \;=\; \frac{\sum_{i} \alpha_i(x)\,\tilde Y_i \tilde D_i}{\sum_{i} \alpha_i(x)\,\tilde D_i^2},
+$$
+
+where the **forest weights** $\alpha_i(x)$ count how often training unit $i$ lands in the same leaf as the query point $x$ across all trees. This is a *local* version of the residual-on-residual (R-learner) estimator: a data-driven kernel that weights neighbours by relevance to the *effect* at $x$.
+
+### Honesty and valid inference
+
+Honesty splits each subsample $\mathcal{S}$ into $\mathcal{S}^{\text{split}}$ (chooses the partition) and $\mathcal{S}^{\text{est}}$ (fills in $\hat\tau_\ell$). Because $\mathcal{S}^{\text{est}}$ did not influence where the cuts went, $E[\hat\tau_\ell] \approx \tau_\ell$ within each leaf --- the adaptive-overfitting bias is removed. Wager & Athey (2018) prove that, under honesty and regularity conditions, the forest estimate is asymptotically Gaussian and centred on the truth:
+
+$$
+\frac{\hat\tau(x) - \tau(x)}{\hat\sigma(x)} \;\xrightarrow{d}\; \mathcal{N}(0,1),
+$$
+
+so $\hat\tau(x) \pm 1.96\,\hat\sigma(x)$ is a valid 95% confidence interval --- the property that distinguishes a causal forest from a black-box predictor.
+
+### The policy value and regret objective
+
+Write the net benefit of treating as $g(x) = \tau(x) - c$. The value of policy $\pi$ is $V(\pi) = E[\pi(X)\,g(X)]$. Because $\pi(x) \in \{0,1\}$ enters linearly and each unit's contribution is separable, the value is maximised pointwise:
+
+$$
+\pi^\star(x) = \arg\max_{a \in \{0,1\}} a\,g(x) = \mathbf{1}\{g(x) > 0\} = \mathbf{1}\{\tau(x) > c\}.
+$$
+
+For the plug-in policy $\hat\pi(x) = \mathbf{1}\{\hat\tau(x) > c\}$, the regret decomposes into contributions only from units where the estimate flips the decision:
+
+$$
+R(\hat\pi) = E\big[(\pi^\star(X) - \hat\pi(X))\,g(X)\big] = E\Big[\,|\tau(X)-c|\cdot\mathbf{1}\{\hat\pi(X)\ne\pi^\star(X)\}\Big].
+$$
+
+**Read this as**: "regret accumulates the true net benefit $|\tau(x)-c|$ over exactly those units where the learned and optimal decisions disagree." A misclassified unit deep in the treat-region (large $|\tau - c|$) costs a lot; a misclassified unit *at* the boundary (where $\tau \approx c$) costs almost nothing, because there it barely mattered which way we chose. This is why **the boundary region dominates regret**, and why consistent estimation of $\tau$ near the threshold $c$ is what policy learning truly demands. Athey & Wager (2021) show that, for a policy class of bounded complexity, the regret of an empirically-optimal policy shrinks at the $n^{-1/2}$ rate.
+
+</div>
+</details>
+
+## Estimating CATEs and Learning a Policy in Code
+
+Both panels below fit a causal forest to simulated Swedish diabetes data, summarise the heterogeneity, then learn a threshold and a tree-based policy. The data-generating process matches the interactive: benefit rises with baseline severity and socioeconomic need.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("grf", "policytree"))
+library(grf)
+library(policytree)
+
+set.seed(2024)
+n <- 2000
+
+# Covariates: x1 = baseline severity, x2 = socioeconomic need (both ~U[0,1]),
+# plus two noise covariates the forest must learn to ignore.
+X <- cbind(
+  severity = runif(n),
+  need     = runif(n),
+  noise1   = rnorm(n),
+  noise2   = rnorm(n)
+)
+
+# True heterogeneous effect (mmol/mol HbA1c reduction), matching the interactive.
+tau <- 2.0 + 7.5 * X[, "severity"] + 3.0 * X[, "need"] +
+       4.0 * X[, "severity"] * X[, "need"]
+
+# Treatment assignment with mild confounding (sicker patients slightly more
+# likely to be enrolled), so honesty + orthogonalization actually matter.
+e  <- plogis(-0.5 + 1.2 * X[, "severity"])
+W  <- rbinom(n, 1, e)                       # treatment indicator
+mu <- 55 - 6 * X[, "severity"]             # baseline outcome model
+Y  <- mu - tau * W + rnorm(n, 0, 2)         # lower HbA1c = better
+
+# ---- Causal forest: honest, orthogonalized trees ----
+cf <- causal_forest(X, Y, W, num.trees = 2000)
+
+# Point estimates of tau(x) with valid standard errors (the honesty payoff).
+tau_hat <- predict(cf, estimate.variance = TRUE)
+head(data.frame(est = tau_hat$predictions,
+                se  = sqrt(tau_hat$variance.estimates)))
+
+# Sign note: Y falls under treatment, so grf's tau_hat is NEGATIVE; the BENEFIT
+# is -tau_hat. Flip when you compare to the positive "benefit" in the text.
+
+# ---- Test for heterogeneity: best linear predictor (calibration) ----
+# A significant 'differential.forest.prediction' slope => real heterogeneity.
+test_calibration(cf)
+
+# ---- Average effect and its standard error ----
+average_treatment_effect(cf, target.sample = "all")
+
+# ---- Policy learning: threshold rule treat iff benefit > cost ----
+cost      <- 6                              # mmol/mol-equivalent per patient
+benefit   <- -tau_hat$predictions           # positive benefit
+treat_thr <- as.integer(benefit > cost)
+mean(treat_thr)                             # share the rule would enroll
+
+# ---- Interpretable depth-2 policy tree (policytree) ----
+# Doubly-robust scores Gamma: reward for treating vs not, per unit.
+dr   <- double_robust_scores(cf)            # n x 2 reward matrix
+tree <- policy_tree(X[, c("severity", "need")], dr, depth = 2)
+print(tree)                                 # human-readable enroll/standard rule
+pol  <- predict(tree, X[, c("severity", "need")])  # 1 = control arm, 2 = treat
+```
+
+### Python
+
+```python
+# pip install econml scikit-learn numpy
+import numpy as np
+from econml.grf import CausalForest
+from econml.policy import PolicyTree
+from scipy.special import expit
+
+rng = np.random.default_rng(2024)
+n = 2000
+
+# Covariates: severity, need (U[0,1]) + two noise columns to be ignored.
+severity = rng.uniform(size=n)
+need     = rng.uniform(size=n)
+X = np.column_stack([severity, need, rng.normal(size=n), rng.normal(size=n)])
+
+# True heterogeneous benefit (mmol/mol), matching the interactive surface.
+tau = 2.0 + 7.5 * severity + 3.0 * need + 4.0 * severity * need
+
+# Mild confounding: sicker patients enroll more often.
+e  = expit(-0.5 + 1.2 * severity)
+W  = rng.binomial(1, e)
+mu = 55 - 6 * severity                       # baseline HbA1c
+Y  = mu - tau * W + rng.normal(0, 2, size=n) # lower = better
+
+# ---- Causal forest ----
+cf = CausalForest(n_estimators=2000, random_state=0)
+cf.fit(X, W, Y)
+
+# Estimated effect on Y; benefit = -effect because lower HbA1c is better.
+effect = cf.predict(X).ravel()
+benefit = -effect
+
+# Valid inference: econml returns intervals from the honest forest.
+lb, ub = cf.predict_interval(X, alpha=0.05)
+print("first 5 benefits:", np.round(benefit[:5], 2))
+
+# ---- Summarise heterogeneity: GATES by quintile of estimated benefit ----
+groups = np.digitize(benefit, np.quantile(benefit, [0.2, 0.4, 0.6, 0.8]))
+gates  = [tau[groups == g].mean() for g in range(5)]
+print("GATES (true ATE within est-benefit quintiles):",
+      np.round(gates, 2))   # should march upward if heterogeneity is real
+
+# ---- Threshold policy: treat iff benefit > cost ----
+cost = 6.0
+treat = (benefit > cost).astype(int)
+print(f"Share enrolled by threshold rule: {treat.mean():.0%}")
+
+# Policy value & regret (oracle uses TRUE tau).
+net_true   = tau - cost
+v_learned  = np.mean(treat * net_true)
+v_oracle   = np.mean((tau > cost) * net_true)
+print(f"Value={v_learned:.2f}  Oracle={v_oracle:.2f}  "
+      f"Regret={v_oracle - v_learned:.3f}")
+
+# ---- Interpretable depth-2 policy tree ----
+# Reward matrix [don't-treat, treat]; treating yields benefit - cost.
+rewards = np.column_stack([np.zeros(n), benefit - cost])
+ptree = PolicyTree(max_depth=2, random_state=0)
+ptree.fit(X[:, :2], rewards)
+assign = ptree.predict(X[:, :2])             # 1 = enroll
+print(f"Share enrolled by policy tree:   {assign.mean():.0%}")
+```
+
+:::
+
+In both languages the forest recovers a $\hat\tau$ whose quintile GATES march upward (real heterogeneity), the calibration / BLP test rejects the no-heterogeneity null, and the threshold and policy-tree rules enroll the high-benefit corner of covariate space --- the sickest, most-deprived patients --- exactly the region the interactive paints deep red.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A *region* runs a *fysioterapi* (physiotherapy) program for chronic back pain. The estimated CATE (reduction in monthly *sjukfrånvaro*, sick-leave days) for four patient profiles is: A $= 1.2$, B $= 3.8$, C $= 0.4$, D $= 2.5$. The program costs the equivalent of $c = 2.0$ sick-leave days per patient.
+
+(a) Which patients does the optimal threshold policy treat? (b) If the budget covers only **one** patient, which one, and what objective are you now maximising? (c) Suppose the true CATEs are A $= 1.2$, B $= 1.5$, C $= 0.4$, D $= 2.5$ (B was over-estimated). Compute the regret of the policy from part (a) relative to the oracle.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Treat where $\hat\tau > c = 2.0$: patients **B ($3.8$) and D ($2.5$)**. A ($1.2$) and C ($0.4$) fall below the cost and are not enrolled.
+
+**(b)** With a one-patient budget, the threshold rule is no longer the objective --- you now maximise net benefit subject to a *capacity* constraint, so you **rank** by net benefit and take the top one: B has the largest net benefit ($3.8 - 2.0 = 1.8$), so enroll **B**. (This is a *budgeted* policy: rank-and-fill, not threshold.)
+
+**(c)** Net benefits under the **true** CATEs (minus cost $2.0$): A $=-0.8$, B $=-0.5$, C $=-1.6$, D $=+0.5$. The **oracle** treats only where true net benefit $>0$: only **D**, giving oracle value contribution $+0.5$ (averaging over 4 patients, $V(\pi^\star) = 0.5/4 = 0.125$). The **learned** policy treats B and D: value $= (\text{true net of B}) + (\text{true net of D}) = -0.5 + 0.5 = 0$, so $V(\hat\pi) = 0/4 = 0$. **Regret** $= 0.125 - 0 = 0.125$ sick-leave days per eligible patient. All the regret comes from enrolling B, whose benefit was over-estimated across the cost boundary.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain why an *honest* causal forest can provide valid confidence intervals for $\tau(x)$ while a standard regression tree fit to the same data generally cannot. What exactly does honesty give up to buy this property?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+A standard tree uses the *same* observations to (i) choose where to split and (ii) estimate the effect within each leaf. Because the split was chosen *because* it made the effect look large in that leaf, the within-leaf estimate is optimistically biased --- it has been fit to noise it then reports as signal. Standard errors computed as if the partition were fixed are therefore too small and the intervals under-cover.
+
+An **honest** tree splits the data into a *splitting* sample (decides the partition) and a disjoint *estimation* sample (fills in $\hat\tau_\ell$). Since the estimation data played no role in choosing the boundaries, the leaf estimate is (approximately) unbiased *conditional on the partition*, and its sampling variability can be quantified correctly. Wager & Athey (2018) show the resulting forest estimate is asymptotically normal, so $\hat\tau(x) \pm 1.96\,\hat\sigma(x)$ is a valid interval.
+
+**What it gives up:** statistical efficiency. Each tree now estimates effects from only half its data, so for a fixed sample the honest estimate is noisier than a (biased) adaptive one. Honesty trades a little variance-efficiency for unbiasedness and valid inference --- usually a good trade when the estimate will drive a decision.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the interactive, set the cost to $c = 3$ and note the share treated and the regret; then raise the cost to $c = 12$. (a) Why does the share treated fall? (b) Regret typically *shrinks* as the cost moves to an extreme. Explain why, in terms of where the policy boundary sits relative to the patients. (c) Give one real-world reason a *region* might deliberately choose a policy with **higher** regret than the value-maximising rule.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The policy treats where $\tau(x) > c$. Raising $c$ from 3 to 12 lifts the bar a patient's benefit must clear, so the boundary retreats toward the upper-right (sickest, most-deprived) corner and fewer patients qualify --- the green region shrinks.
+
+**(b)** Regret accumulates only from patients *near the boundary*, where estimation error in $\hat\tau$ can flip the decision and where the cost of a wrong decision $|\tau - c|$ is small. When $c$ is pushed to an extreme, the boundary moves into a sparsely-populated corner of covariate space, so few patients sit near it and few decisions can be flipped --- regret falls. At a moderate cost the boundary cuts through the dense middle of the cloud, maximising the number of error-prone, near-boundary decisions.
+
+**(c)** Several legitimate reasons: **fairness** (a value-maximising rule might enroll almost no patients from a low-severity but high-need group, which is politically or ethically unacceptable); **interpretability** (a simple, auditable policy-tree rule may be preferred over a wiggly optimal boundary even though it leaves value on the table); **robustness** (if unconfoundedness or overlap is shaky in the high-benefit corner, a more conservative rule hedges against a biased $\hat\tau$); or **capacity smoothing** (treating a steady number of patients each month rather than chasing the exact optimum).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A colleague fits a causal forest, sees that $\hat\tau(X_i)$ ranges from $1$ to $9$ mmol/mol, and concludes "there is strong heterogeneity --- we should target." What single diagnostic would you run before agreeing, and how would you interpret each possible result?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Run a **test for heterogeneity** --- the best-linear-predictor / calibration test (`test_calibration` in `grf`), or equivalently compare the top and bottom GATES groups. A *wide range* of $\hat\tau$ values is **not** evidence of real heterogeneity: a forest fit to pure noise will still produce a spread of predictions, because it overfits idiosyncratic patterns. The question is whether that spread *predicts the actual effect*.
+
+- **If the calibration slope $\beta_1$ is significantly positive (near 1):** the forest's ranking is informative --- patients it flags as high responders really do respond more. Heterogeneity is real and targeting is justified.
+- **If $\beta_1 \approx 0$ (not significant):** the spread in $\hat\tau$ is noise. The forest cannot tell high from low responders, so a targeting policy would chase phantom heterogeneity; the honest recommendation is "treat all or treat none" based on the ATE alone.
+- **GATES version:** if the top-quintile actual ATE significantly exceeds the bottom-quintile actual ATE, targeting helps; if the quintile bars are flat within noise, it does not.
+
+The wide range of predictions alone tells you nothing without this validity check.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The CATE $\tau(x) = E[Y_i(1)-Y_i(0)\mid X_i=x]$ is the object a *targeting* decision needs; it is identified under the same unconfoundedness and overlap assumptions as matching, no weaker.
+- A causal forest splits on *effect heterogeneity* (not outcome variance), uses *honesty* to remove adaptive bias, and *orthogonalises* outcomes and treatments --- delivering $\hat\tau(x)$ with valid confidence intervals.
+- Report heterogeneity with the best-linear-predictor (calibration slope) and GATES, and *test* it formally: a wide spread of $\hat\tau$ is not evidence of real heterogeneity.
+- The optimal policy treats where $\tau(x) > c$; the plug-in rule substitutes $\hat\tau$, and its *regret* $V(\pi^\star)-V(\hat\pi)\ge 0$ is driven entirely by near-boundary decisions.
+- A learned policy inherits the biases of its CATE estimate and cost specification; interpretable policy trees, fairness, and overlap constraints often justify accepting some regret for a defensible rule.
+:::
+
+## What Comes Next
+
+We have moved from a single average effect to a whole *function* of effects, and then from estimation to a defensible decision: who to treat, and how much value (and regret) that decision carries. Every estimate on this page came with a frequentist confidence interval --- a statement about what would happen across repeated samples. But a policy board often wants a different kind of statement: *given the data we actually have, how probable is it that this patient group benefits?* That is a question about a probability distribution *over* the unknown effect itself. The next module, [Bayesian Econometrics](../24-bayesian/bayes-basics.qmd), develops exactly that language --- priors, posteriors, and credible intervals --- and shows how it reframes estimation, uncertainty, and decision-making under a single coherent calculus.

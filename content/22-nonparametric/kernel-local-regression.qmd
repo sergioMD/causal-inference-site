@@ -1,0 +1,819 @@
+---
+title: "Kernel and Local Polynomial Regression"
+subtitle: "Letting the data choose the curve"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Estimate a conditional mean $E[y \mid x]$ as a *locally weighted average* without committing to a global functional form
+- Write the Nadaraya--Watson kernel estimator and read its weights as a kernel-defined neighbourhood around the evaluation point
+- Explain why *local linear* regression cuts the boundary bias that plagues the kernel average, and why it is the engine behind RDD and LOESS
+- Trade bias against variance by choosing the bandwidth $h$, and recognise undersmoothing (wiggly) versus oversmoothing (flat) curves
+- Anticipate the *curse of dimensionality*: why local averaging collapses as the number of covariates grows
+:::
+
+## The Question Behind a Curve You Cannot Name
+
+A *verksamhetschef* (clinic manager) in Region Uppsala suspects that the relationship between a vårdcentral's **physician staffing** and its patients' **mean HbA1c** is not a straight line. With very few doctors per thousand listed patients, blood-sugar control is poor and worsens fast as caseloads climb; past a comfortable staffing level, adding more doctors barely moves the needle. The curve bends --- but *how* it bends is exactly what the manager does not know.
+
+A linear regression forces the answer into a single slope. A quadratic forces it into a parabola. A log term forces a particular curvature. Each of these is a *guess about the shape* dressed up as an estimate. What if we let the **data** decide the shape instead?
+
+That is the promise of **nonparametric regression**: estimate the conditional mean function
+
+$$
+m(x) = E[y \mid x]
+$$
+
+directly, point by point, without assuming it is a line, a polynomial, or any other named family. **Read this as**: "$m$ of $x$ is the expected value of the outcome $y$ given that the covariate equals $x$" --- the average outcome among units whose $x$ sits at that value. We will estimate $m(x)$ by *borrowing* information from nearby observations and letting distant ones fade away. The trick is deciding how big "nearby" is, and that single decision --- the **bandwidth** --- recreates the bias--variance tradeoff we first met in [Kernel Density Estimation](kernel-density.qmd), now for a regression curve.
+
+## The Idea: A Moving, Weighted Average
+
+Suppose we want $m(x_0)$, the mean HbA1c at a specific staffing level $x_0 = 1.4$ doctors per thousand listed patients. The crudest sensible estimate is: *average the HbA1c of the clinics whose staffing is close to $1.4$*. Clinics at exactly $1.4$ should count fully; clinics at $1.3$ or $1.5$ should count a little less; a clinic at $4.0$ should count for almost nothing.
+
+A **kernel** $K(\cdot)$ formalises "close." It is a small bump centred at zero --- the same Gaussian or Epanechnikov bump from the density chapter --- that we slide over to sit on $x_0$. Each observation $x_i$ gets a weight that depends on its scaled distance $(x_i - x_0)/h$ from the evaluation point, where the **bandwidth** $h$ sets the width of the bump.
+
+::: {.glass-card .glass-card--definition}
+The **Nadaraya--Watson kernel regression estimator** of $m(x_0) = E[y \mid x = x_0]$ is the kernel-weighted average of the outcomes:
+
+$$
+\hat m_{\text{NW}}(x_0) \;=\; \frac{\displaystyle\sum_{i=1}^{n} K\!\left(\dfrac{x_i - x_0}{h}\right) y_i}{\displaystyle\sum_{i=1}^{n} K\!\left(\dfrac{x_i - x_0}{h}\right)}.
+$$
+
+**Read this as**: "the estimated mean at $x_0$ equals a sum of each clinic's HbA1c, each multiplied by its kernel weight, all divided by the sum of those weights." The denominator just renormalises the weights so they add to one --- so $\hat m_{\text{NW}}(x_0)$ is a genuine *weighted average* of the $y_i$, with weights largest for clinics nearest $x_0$ and shrinking smoothly to zero for distant ones.
+:::
+
+Define the per-observation weight $w_i(x_0) = K((x_i - x_0)/h) \big/ \sum_j K((x_j - x_0)/h)$. Then $\hat m_{\text{NW}}(x_0) = \sum_i w_i(x_0)\, y_i$ with $\sum_i w_i(x_0) = 1$. The weights move as $x_0$ moves: at every evaluation point we fit a *different* local average. Sweep $x_0$ across the whole range of staffing and the connected estimates trace out a smooth curve --- the data's own answer to "what shape?"
+
+::: {.glass-card .glass-card--insight}
+Nadaraya--Watson is just **OLS with no slope, fit in a moving window**. At each $x_0$ it solves $\min_a \sum_i K((x_i-x_0)/h)\,(y_i - a)^2$; the minimiser is the weighted mean $\hat a = \hat m_{\text{NW}}(x_0)$. Fitting a *local constant* is why the estimator flattens and bends toward the data --- and, as we will see, why it is biased near the edges where the data live on only one side.
+:::
+
+## See It: The Local Window and the Fitted Curve
+
+The interactive below puts the whole machine on one screen. The dots are 60 Swedish vårdcentraler: the horizontal axis is physician staffing (doctors per 1{,}000 listed patients), the vertical axis is the clinic's mean HbA1c (mmol/mol). A dashed ochre line shows the **true** mean function $m(x)$ that generated the data, so you can judge how well each estimate recovers it.
+
+Drag the **evaluation point** $x_0$ and watch the kernel window slide: shaded dots are the clinics currently *inside* the window (they carry weight), and the slate segment is the **local line fitted in that window** --- its height at $x_0$ is the local-linear estimate. Then drag the **bandwidth** $h$ and watch the full fitted curve go from jagged (tiny $h$, high variance) to a nearly flat over-smoothed line (huge $h$, high bias). Toggle between the **Nadaraya--Watson** local-constant fit and the **local-linear** fit to see the edges straighten out.
+
+::: {.interactive-container}
+
+#### The local window, the local line, and the bandwidth dial
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+nploc_pal = ({
+  focal:   "#990000",   // focal series / fitted curve (Uppsala red)
+  slate:   "#3d5a6c",   // secondary: the local line / comparison
+  good:    "#2e6f40",   // on-target / good
+  ochre:   "#9c7a33",   // highlight / TRUE function
+  bad:     "#b3000b",   // alarm / oversmoothing flag
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+// Fixed font style object reused by every Plot on the page.
+nploc_font = ({
+  fontFamily: "'Inter', system-ui, sans-serif",
+  fontSize: "12px",
+  background: "transparent",
+  color: "#79766e"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The TRUE conditional-mean function m(x): a saturating curve. Staffing on
+// [0.4, 4.0] doctors per 1000 listed patients; HbA1c in mmol/mol. Poor control
+// (high HbA1c) at low staffing, improving and then flattening — exactly the
+// "bends but we don't know how" shape from the prose.
+nploc_trueM = x => 44 + 16 * Math.exp(-1.15 * (x - 0.4))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// 60 vårdcentraler generated ONCE (fixed seed via d3.randomNormal.source) so the
+// scatter never reshuffles when sliders move — only the fit reacts.
+nploc_data = {
+  const rng = d3.randomLcg(42);                 // deterministic stream in [0,1)
+  const noise = d3.randomNormal.source(rng)(0, 2.4);
+  const xs = d3.range(60).map(() => 0.4 + 3.6 * rng());
+  return xs
+    .map((x, i) => ({ id: i + 1, x, y: nploc_trueM(x) + noise() }))
+    .sort((a, b) => a.x - b.x);
+}
+```
+
+```{ojs}
+//| echo: false
+viewof nploc_h = Inputs.range([0.08, 1.6], {
+  value: 0.45,
+  step: 0.01,
+  label: "Bandwidth h (window width)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof nploc_x0 = Inputs.range([0.5, 3.9], {
+  value: 1.4,
+  step: 0.02,
+  label: "Evaluation point x₀ (staffing level)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof nploc_method = Inputs.radio(["Local linear", "Nadaraya–Watson (local constant)"], {
+  value: "Local linear",
+  label: "Estimator"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Gaussian kernel on the SCALED distance u = (x - x0)/h.
+nploc_kernel = u => Math.exp(-0.5 * u * u)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Local-LINEAR estimate at one point x0 (degree-1 weighted least squares):
+// solve min_{a,b} Σ K((xi-x0)/h)(yi - a - b(xi-x0))² and return the intercept a,
+// which is the fitted value AT x0. Returns {a, b} so we can also draw the line.
+nploc_localFit = function (x0, h) {
+  let s0 = 0, s1 = 0, s2 = 0, t0 = 0, t1 = 0;
+  for (const d of nploc_data) {
+    const dx = d.x - x0;
+    const w = nploc_kernel(dx / h);
+    s0 += w;            s1 += w * dx;       s2 += w * dx * dx;
+    t0 += w * d.y;      t1 += w * dx * d.y;
+  }
+  const det = s0 * s2 - s1 * s1;
+  if (Math.abs(det) < 1e-9) {                 // window too empty: fall back to NW
+    return { a: s0 > 0 ? t0 / s0 : NaN, b: 0 };
+  }
+  const a = (t0 * s2 - t1 * s1) / det;        // intercept = fitted value at x0
+  const b = (s0 * t1 - s1 * t0) / det;        // local slope
+  return { a, b };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Nadaraya–Watson (local-constant) estimate at one point.
+nploc_nwFit = function (x0, h) {
+  let num = 0, den = 0;
+  for (const d of nploc_data) {
+    const w = nploc_kernel((d.x - x0) / h);
+    num += w * d.y; den += w;
+  }
+  return den > 0 ? num / den : NaN;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// One generic point estimate that respects the chosen estimator.
+nploc_estimateAt = function (x0, h) {
+  return nploc_method === "Local linear" ? nploc_localFit(x0, h).a : nploc_nwFit(x0, h);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The fitted curve, evaluated on a fine grid across the staffing range.
+nploc_curve = d3.range(0.5, 3.901, 0.03).map(x => ({ x, yhat: nploc_estimateAt(x, nploc_h) }))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The TRUE curve, for the ochre dashed reference line.
+nploc_trueCurve = d3.range(0.5, 3.901, 0.03).map(x => ({ x, y: nploc_trueM(x) }))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Per-point data tagged with whether it currently sits "inside" the window
+// (within ~2.5 bandwidths of x0, i.e. non-negligible Gaussian weight) and its
+// weight, for shading. Also carries the fitted value at x0 for the marker.
+nploc_windowData = nploc_data.map(d => {
+  const u = (d.x - nploc_x0) / nploc_h;
+  return { ...d, w: nploc_kernel(u), inWindow: Math.abs(u) <= 2.5 };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The local line segment to draw in the window (local-linear only): from
+// x0 - 1.5h to x0 + 1.5h, using the local intercept/slope at x0.
+nploc_localLine = {
+  const fit = nploc_localFit(nploc_x0, nploc_h);
+  const x1 = Math.max(0.5, nploc_x0 - 1.5 * nploc_h);
+  const x2 = Math.min(3.9, nploc_x0 + 1.5 * nploc_h);
+  return [
+    { x: x1, y: fit.a + fit.b * (x1 - nploc_x0) },
+    { x: x2, y: fit.a + fit.b * (x2 - nploc_x0) }
+  ];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The estimate AT x0 (single value), and the truth there, for the readout.
+nploc_yhat0 = nploc_estimateAt(nploc_x0, nploc_h)
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(700, width),
+  height: 420,
+  marginLeft: 62,
+  marginBottom: 48,
+  marginTop: 28,
+  style: nploc_font,
+  x: {
+    label: "Physician staffing  (doctors per 1,000 listed patients)  →",
+    domain: [0.4, 4.0],
+    grid: false
+  },
+  y: {
+    label: "↑ Mean HbA1c  (mmol/mol)",
+    domain: [42, 66],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: nploc_pal.hair }),
+
+    // Kernel window band: x0 ± 1.5h, the visible "neighbourhood".
+    Plot.rectX([{}], {
+      x1: Math.max(0.4, nploc_x0 - 1.5 * nploc_h),
+      x2: Math.min(4.0, nploc_x0 + 1.5 * nploc_h),
+      y1: 42, y2: 66,
+      fill: nploc_pal.slate, fillOpacity: 0.06
+    }),
+
+    // Out-of-window clinics: faint.
+    Plot.dot(nploc_windowData.filter(d => !d.inWindow), {
+      x: "x", y: "y", r: 3.5, fill: nploc_pal.muted, fillOpacity: 0.25
+    }),
+    // In-window clinics: opacity scales with kernel weight (closest = boldest).
+    Plot.dot(nploc_windowData.filter(d => d.inWindow), {
+      x: "x", y: "y", r: 4.5, fill: nploc_pal.slate,
+      fillOpacity: d => 0.30 + 0.6 * d.w,
+      title: d => `Staffing ${d.x.toFixed(2)}\nHbA1c ${d.y.toFixed(1)}\nweight ${d.w.toFixed(2)}`
+    }),
+
+    // TRUE function (ochre dashed) — the target we hope to recover.
+    Plot.line(nploc_trueCurve, {
+      x: "x", y: "y", stroke: nploc_pal.ochre, strokeWidth: 2, strokeDasharray: "6,4"
+    }),
+
+    // The full fitted curve (focal red).
+    Plot.line(nploc_curve, {
+      x: "x", y: "yhat", stroke: nploc_pal.focal, strokeWidth: 2.5, curve: "catmull-rom"
+    }),
+
+    // The local line in the window (only for local-linear).
+    nploc_method === "Local linear"
+      ? Plot.line(nploc_localLine, { x: "x", y: "y", stroke: nploc_pal.ink, strokeWidth: 2.5 })
+      : null,
+
+    // Vertical guide at x0.
+    Plot.ruleX([nploc_x0], { stroke: nploc_pal.ink, strokeWidth: 1, strokeDasharray: "3,3" }),
+
+    // The estimate marker at (x0, yhat0).
+    Plot.dot([{ x: nploc_x0, y: nploc_yhat0 }], {
+      x: "x", y: "y", r: 6, fill: nploc_pal.focal, stroke: "white", strokeWidth: 1.5
+    }),
+    // Label the estimate (Plot.dot has no text channel — print it explicitly,
+    // pinned to the top frame band so it never clips at the edge).
+    Plot.text([{ x: nploc_x0 }], {
+      x: "x", frameAnchor: "top",
+      text: () => `m̂(x₀) = ${nploc_yhat0.toFixed(1)}`,
+      fill: nploc_pal.focal, fontWeight: 700, fontSize: 12,
+      dy: -8, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// On-chart colour key + live numeric readout. Built in an html`` cell so the
+// reactive values interpolate (markdown ${...} would render literally).
+{
+  const truth = nploc_trueM(nploc_x0);
+  const err = nploc_yhat0 - truth;
+  const nIn = nploc_windowData.filter(d => d.inWindow).length;
+  const verdict =
+    nploc_h < 0.18 ? { t: "Undersmoothed — few points per window, high variance", c: nploc_pal.bad }
+    : nploc_h > 1.05 ? { t: "Oversmoothed — window too wide, the curve flattens (bias)", c: nploc_pal.bad }
+    : { t: "Reasonable bandwidth — bias and variance roughly balanced", c: nploc_pal.good };
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${nploc_pal.fill}; border:1px solid ${nploc_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${nploc_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.78rem;
+        color:${nploc_pal.axis}; line-height:1.5; margin:0.4rem 0 0.6rem;">
+      <span style="color:${nploc_pal.focal};font-weight:600;">— fitted m̂(x)</span> &nbsp;
+      <span style="color:${nploc_pal.ochre};font-weight:600;">- - true m(x)</span> &nbsp;
+      <span style="color:${nploc_pal.slate};font-weight:600;">● weighted clinics</span> &nbsp;
+      <span style="color:${nploc_pal.ink};font-weight:600;">— local line</span>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+      ${tile("Estimate m̂(x₀)", nploc_yhat0.toFixed(1), nploc_pal.focal)}
+      ${tile("Truth m(x₀)", truth.toFixed(1), nploc_pal.ochre)}
+      ${tile("Error", (err >= 0 ? "+" : "") + err.toFixed(1), Math.abs(err) < 1 ? nploc_pal.good : nploc_pal.bad)}
+      ${tile("Clinics in window", nIn, nploc_pal.slate)}
+    </div>
+    <div style="margin-top:0.6rem; padding:0.5rem 0.8rem; border-radius:0.35rem;
+        border-left:3px solid ${verdict.c}; background:${nploc_pal.fill};
+        font-family:'Inter',system-ui,sans-serif; font-size:0.82rem; color:${nploc_pal.ink};">
+      ${verdict.t}
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Local-Regression Explorer
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the scene.** Sixty dots are vårdcentraler. The ochre dashed line is the *true* mean-HbA1c-versus-staffing curve $m(x)$ --- the answer we are pretending not to know. The red line is our nonparametric estimate $\hat m(x)$. They will rarely coincide perfectly; how close they sit is the whole game.
+
+**Step 2: Watch the window slide.** Drag **evaluation point $x_0$**. The shaded vertical band marks the core kernel neighbourhood $x_0 \pm 1.5h$; every clinic carrying non-negligible weight (out to about $\pm 2.5h$, where the Gaussian kernel has all but vanished) darkens in proportion to that weight --- clinics dead-on $x_0$ are boldest, those near the edge are faint. The estimate $\hat m(x_0)$ is read off the red marker. Notice the "Clinics in window" tile: the estimate is only as trustworthy as the number of clinics it can borrow from.
+
+**Step 3: See the local line.** With **Local linear** selected, a short black segment is the line fitted *inside the current window*; its height at $x_0$ is the estimate. Where the true curve is steep (low staffing), the tilted local line tracks the slope; a flat local average would have lagged behind. This is the boundary-bias fix in miniature.
+
+**Step 4: Turn the bandwidth dial.** Drag **bandwidth $h$** toward its minimum. The red curve becomes jagged --- each window holds only a handful of clinics, so noise leaks straight into the estimate (*high variance, undersmoothing*). Now drag $h$ toward its maximum: the red curve straightens into a nearly flat line that ignores the real bend (*high bias, oversmoothing*). The status banner flags both extremes; somewhere in between, the red and ochre curves nearly overlap.
+
+**Step 5: Compare the two estimators at the edge.** Park $x_0$ near the far-right edge (around $3.8$) and toggle between **Local linear** and **Nadaraya--Watson**. At the boundary, where clinics sit on only *one* side of $x_0$, the local-constant Nadaraya--Watson fit is pulled toward the interior and sits *above* the truth; the local-linear fit, by tilting, stays closer to the ochre line. That gap is **boundary bias**, the subject of the next section.
+
+## Why Local Linear Beats the Kernel Average at the Edges
+
+The Nadaraya--Watson average has a quiet flaw. Consider $x_0$ near the *left* edge of the staffing range, where the true curve is steeply *decreasing*. Almost all the clinics with non-negligible weight lie to the *right* of $x_0$ --- there simply are no clinics further left. Because the true curve is falling, those right-hand neighbours have *lower* HbA1c than $m(x_0)$. The local average is therefore dragged *down*: it systematically misestimates the curve wherever the data are one-sided or the slope is steep. This is **boundary bias**, and it is worst exactly where it hurts policy most --- at the extremes.
+
+**Local polynomial regression** fixes this by fitting not a flat line but a small *tilted* line (or a low-degree polynomial) inside each window. Instead of solving $\min_a \sum_i K(\cdot)(y_i - a)^2$, we solve a weighted least-squares problem with a slope:
+
+::: {.glass-card .glass-card--definition}
+The **local linear estimator** of $m(x_0)$ is the intercept $\hat a$ from the weighted least-squares fit
+
+$$
+(\hat a, \hat b) \;=\; \arg\min_{a,\,b} \;\sum_{i=1}^{n} K\!\left(\frac{x_i - x_0}{h}\right)\bigl[\,y_i - a - b\,(x_i - x_0)\,\bigr]^2,
+\qquad \hat m_{\text{LL}}(x_0) = \hat a.
+$$
+
+**Read this as**: "choose an intercept $a$ and a slope $b$ to minimise the kernel-weighted sum of squared residuals around $x_0$; the estimate of the mean at $x_0$ is the fitted intercept $\hat a$." Because the regression is recentred at $x_0$ (the regressor is $x_i - x_0$), the intercept *is* the fitted value at $x_0$, and the slope $\hat b$ lets the fit *tilt* to follow a trend instead of flattening against it.
+:::
+
+The payoff is a famous result: at an interior point both estimators have bias of order $h^2$, but at the **boundary** the Nadaraya--Watson bias is of the larger order $h$, while the local-linear bias *stays* at order $h^2$. Local linear is "boundary-bias-adaptive" --- it does not need to know it is near an edge. This is precisely why **regression discontinuity designs** (Module 8) estimate the jump at the cutoff with local *linear* regression on each side: an RDD lives entirely at a boundary, so the order-$h$ bias of a local average would be fatal. The same machine, run with a tricube kernel and a robustness pass, is R's `loess`/`lowess` scatterplot smoother.
+
+::: {.glass-card .glass-card--assumption}
+**What local regression needs to work:**
+
+1. **Smoothness.** $m(x)$ must have enough derivatives (typically two) for the local polynomial Taylor approximation to be accurate within a window. Kinks and jumps are estimated poorly unless you stop the window at them --- which is exactly what RDD does on purpose.
+
+2. **Enough local data.** Every estimate $\hat m(x_0)$ borrows only from clinics near $x_0$. Where data are sparse (the tails, or a thinly served rural region), the *effective sample size* in the window collapses and the estimate becomes unstable, no matter how clever the polynomial.
+
+3. **A sensible bandwidth.** The estimate is meaningless without a choice of $h$. Too small and you fit noise; too large and you erase the signal. Cross-validation or a plug-in rule (e.g. `KernSmooth::dpill`) is not optional decoration --- it is part of the estimator.
+:::
+
+## The Bias--Variance Tradeoff, Again
+
+The bandwidth $h$ is the same dial as in kernel density estimation, and it pushes the same two error sources in opposite directions.
+
+- **Small $h$ (narrow window).** Few clinics per window, so the estimate hugs the local data --- *low bias* but *high variance*. The curve wiggles, chasing noise. In the limit $h \to 0$ the estimate interpolates the data points and tells you nothing about the smooth trend.
+
+- **Large $h$ (wide window).** Many clinics per window, so the estimate is stable --- *low variance* but *high bias*. The curve flattens toward the global mean and erases real structure. In the limit $h \to \infty$ the local-constant fit becomes a single horizontal line at $\bar y$.
+
+The mean integrated squared error decomposes, as always, into a (squared) bias term that *grows* with $h$ and a variance term that *shrinks* with $h$:
+
+$$
+\text{MISE}(h) \;\approx\; \underbrace{C_1\, h^4}_{\text{squared bias}} \;+\; \underbrace{\frac{C_2}{n\,h}}_{\text{variance}},
+$$
+
+for local-linear regression with constants $C_1, C_2$ that depend on the kernel, the curvature of $m$, and the noise variance. **Read this as**: "expected squared error is a bias piece that climbs like $h^4$ plus a variance piece that falls like $1/(nh)$." Minimising over $h$ gives the optimal rate $h^\* \propto n^{-1/5}$, at which the error itself shrinks like $n^{-4/5}$ --- slower than the parametric $n^{-1}$, the price we pay for not assuming a functional form.
+
+::: {.glass-card .glass-card--warning}
+**Never trust a nonparametric fit in the sparse tails.** The estimate $\hat m(x_0)$ borrows *only* from clinics inside the window at $x_0$. Where the staffing data thin out --- the very high and very low extremes, or a thinly served rural region --- a window may hold two or three clinics, so the curve there is driven by a handful of noisy points and can swing wildly with one outlier. Worse, `loess`/`locpoly` will happily draw a line *beyond* the range of the data; that is pure extrapolation with no local support and should never be read as evidence. Always plot the design density (or a rug) alongside the curve, and treat $\hat m$ where the rug is bare as undefined, not merely uncertain.
+:::
+
+## See It: How Fast Does the Error Fall? (The Curse of Dimensionality)
+
+Nonparametric regression is generous in one covariate and miserly in many. With $d$ covariates, "near $x_0$" means near in *every* dimension at once, and high-dimensional space is almost all empty: a fixed fraction of the data spread across $d$ axes leaves any given window nearly vacant. The optimal *mean-squared-error* rate degrades from $n^{-4/5}$ in one dimension to $n^{-4/(4+d)}$ in $d$ dimensions --- equivalently the *root-mean-square* (typical absolute) error falls only like $n^{-2/(4+d)}$, the form the interactive and Exercise 4 below use --- so to hold accuracy fixed as $d$ grows, the required sample size explodes. This is the **curse of dimensionality**, and it is the reason we eventually turn to series/spline methods and to additive or semiparametric structure.
+
+The interactive below makes the curse visceral. Pick a target accuracy and see how many clinics you would need to achieve it as the number of covariates climbs.
+
+::: {.interactive-container}
+
+#### How sample size must explode to keep accuracy as dimensions grow
+
+```{ojs}
+//| echo: false
+viewof nploc_d = Inputs.range([1, 8], {
+  value: 1,
+  step: 1,
+  label: "Number of covariates d"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof nploc_accuracy = Inputs.range([0.05, 0.40], {
+  value: 0.15,
+  step: 0.01,
+  label: "Target error (smaller = stricter)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Nonparametric optimal error rate: error ≈ C · n^{-2/(4+d)} for local-linear
+// (smoothness order p=2). Illustrative of the RATE, not a calibrated formula.
+nploc_rateExp = d => 2 / (4 + d)               // error ∝ n^{-rateExp}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Anchor constant C from d=1: at n0=200, error0=0.15 ⇒ C = error0 * n0^{rate(1)}.
+nploc_C = 0.15 * Math.pow(200, nploc_rateExp(1))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sample size needed to reach target error at dimension d:
+//   target = C · n^{-rate}  ⇒  n = (C / target)^{1/rate}.
+nploc_nRequired = function (d, target) {
+  const rate = nploc_rateExp(d);
+  return Math.pow(nploc_C / target, 1 / rate);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Curve of required n vs d at the chosen target (log-scaled y in the plot).
+nploc_curseCurve = d3.range(1, 9).map(d => ({
+  d,
+  n: nploc_nRequired(d, nploc_accuracy)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The single highlighted point at the user's chosen d.
+nploc_cursePoint = ({ d: nploc_d, n: nploc_nRequired(nploc_d, nploc_accuracy) })
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(700, width),
+  height: 360,
+  marginLeft: 78,
+  marginBottom: 48,
+  marginTop: 24,
+  style: nploc_font,
+  x: {
+    label: "Number of covariates  d  →",
+    domain: [0.5, 8.5],
+    ticks: d3.range(1, 9),
+    grid: false
+  },
+  y: {
+    type: "log",
+    label: "↑ Clinics needed for target accuracy (log scale)",
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: nploc_pal.hair }),
+    Plot.line(nploc_curseCurve, {
+      x: "d", y: "n", stroke: nploc_pal.focal, strokeWidth: 2.5
+    }),
+    Plot.dot(nploc_curseCurve, {
+      x: "d", y: "n", r: 4, fill: nploc_pal.focal,
+      title: d => `d = ${d.d}: need ≈ ${d3.format(",.0f")(d.n)} clinics`
+    }),
+    // Highlight the chosen d.
+    Plot.dot([nploc_cursePoint], {
+      x: "d", y: "n", r: 8, fill: "none", stroke: nploc_pal.ink, strokeWidth: 2
+    }),
+    Plot.text([nploc_cursePoint], {
+      x: "d", y: "n", frameAnchor: "top",
+      text: d => `d = ${d.d}: ≈ ${d3.format(",.0f")(d.n)} clinics`,
+      fill: nploc_pal.ink, fontWeight: 700, fontSize: 12,
+      dy: -10, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+{
+  const n1 = nploc_nRequired(1, nploc_accuracy);
+  const nd = nploc_nRequired(nploc_d, nploc_accuracy);
+  const factor = nd / n1;
+  return html`<div style="margin-top:0.5rem; padding:0.6rem 0.9rem; border-radius:0.35rem;
+      border-left:3px solid ${nploc_pal.ochre}; background:${nploc_pal.fill};
+      font-family:'Inter',system-ui,sans-serif; font-size:0.84rem; line-height:1.5;
+      color:${nploc_pal.ink};">
+    To reach the same accuracy as <strong>${d3.format(",.0f")(n1)}</strong> clinics in
+    <strong>1 dimension</strong>, you would need about
+    <strong style="color:${nploc_pal.focal};">${d3.format(",.0f")(nd)}</strong> clinics in
+    <strong>${nploc_d} dimension${nploc_d > 1 ? "s" : ""}</strong> —
+    a <strong style="color:${nploc_pal.bad};">${factor < 1.05 ? "1×" : d3.format(",.0f")(factor) + "×"}</strong>
+    blow-up. Local averaging runs out of neighbours fast.
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Curse-of-Dimensionality Chart
+
+**Step 1.** Start at **$d = 1$** with the default target. The y-axis (log-scaled) reads the number of clinics needed to estimate $m(x)$ at the chosen accuracy with one covariate, say staffing alone.
+
+**Step 2.** Drag **$d$** to 2, 3, 4 --- adding covariates such as listed-patient count, deprivation index, and rurality. The required sample size climbs steeply (a straight line on the log axis is exponential growth). By $d = 6$ the demand is wildly beyond any real registry.
+
+**Step 3.** Tighten the **target error**. Watch the entire curve lift: stricter accuracy is affordable in low dimensions but ruinous in high ones. The banner spells out the multiplicative blow-up relative to the one-dimensional case.
+
+**The lesson.** Pure local methods are a *one- or two-dimensional* tool. With many covariates we must impose structure --- additivity, splines with a fixed basis, or semiparametric forms --- which is exactly where the [next page](series-splines.qmd) goes.
+
+<details>
+<summary>Math Details: The Nadaraya--Watson weights and the local-linear estimator</summary>
+<div class="details-content">
+
+### Nadaraya--Watson as a local constant
+
+At a point $x_0$, fit a single constant $a$ by kernel-weighted least squares:
+
+$$
+\hat a = \arg\min_a \sum_{i=1}^n K\!\left(\frac{x_i-x_0}{h}\right)(y_i - a)^2.
+$$
+
+Differentiate with respect to $a$ and set the derivative to zero:
+
+$$
+-2\sum_i K\!\left(\frac{x_i-x_0}{h}\right)(y_i - \hat a) = 0
+\;\Longrightarrow\;
+\hat a = \frac{\sum_i K\!\left(\frac{x_i-x_0}{h}\right) y_i}{\sum_i K\!\left(\frac{x_i-x_0}{h}\right)} = \hat m_{\text{NW}}(x_0).
+$$
+
+So Nadaraya--Watson *is* the local-constant least-squares fit, and the weights $w_i(x_0) = K_i / \sum_j K_j$ are non-negative and sum to one --- a bona fide weighted average.
+
+### Local linear in matrix form
+
+Recentre the regressor at $x_0$ and stack the design. Let
+
+$$
+\mathbf{X}_{x_0} = \begin{pmatrix} 1 & x_1 - x_0 \\ \vdots & \vdots \\ 1 & x_n - x_0 \end{pmatrix},
+\qquad
+\mathbf{W}_{x_0} = \operatorname{diag}\!\left(K\!\left(\frac{x_i - x_0}{h}\right)\right),
+\qquad
+\mathbf{y} = \begin{pmatrix} y_1 \\ \vdots \\ y_n \end{pmatrix}.
+$$
+
+Weighted least squares gives the coefficient vector
+
+$$
+\begin{pmatrix} \hat a \\ \hat b \end{pmatrix}
+= \left(\mathbf{X}_{x_0}^{\top}\mathbf{W}_{x_0}\mathbf{X}_{x_0}\right)^{-1}\mathbf{X}_{x_0}^{\top}\mathbf{W}_{x_0}\,\mathbf{y},
+$$
+
+and the estimate is the intercept, $\hat m_{\text{LL}}(x_0) = \hat a = \mathbf{e}_1^{\top}(\mathbf{X}_{x_0}^{\top}\mathbf{W}_{x_0}\mathbf{X}_{x_0})^{-1}\mathbf{X}_{x_0}^{\top}\mathbf{W}_{x_0}\,\mathbf{y}$, where $\mathbf{e}_1 = (1, 0)^{\top}$ picks off the intercept. Writing $S_k = \sum_i K_i (x_i - x_0)^k$ and $T_k = \sum_i K_i (x_i - x_0)^k y_i$, the $2\times2$ system solves in closed form to
+
+$$
+\hat a = \frac{S_2\,T_0 - S_1\,T_1}{S_0 S_2 - S_1^2},
+$$
+
+which is exactly the formula implemented in the interactive above. Note that when the design is *symmetric* about $x_0$ (an interior point with data on both sides), $S_1 \approx 0$ and $\hat a \approx T_0/S_0 = \hat m_{\text{NW}}(x_0)$: the two estimators *agree in the interior*. They diverge only where $S_1 \neq 0$ --- at boundaries and over steep regions --- which is precisely where the local slope $\hat b$ earns its keep.
+
+### Why the boundary bias differs
+
+A Taylor expansion of the leading bias term gives, for an interior point,
+
+$$
+\operatorname{Bias}\!\left(\hat m_{\text{LL}}(x_0)\right) \approx \tfrac{1}{2}\,h^2 \mu_2(K)\, m''(x_0),
+$$
+
+where $\mu_2(K) = \int u^2 K(u)\,du$. The bias depends on the *curvature* $m''$ and is of order $h^2$. For Nadaraya--Watson the interior bias carries an extra term involving $m'(x_0)\,f'(x_0)/f(x_0)$ (the design density $f$), which does not vanish at a boundary where the one-sided kernel has a non-zero first moment --- pushing the NW boundary bias up to order $h$. Local linear's recentred design forces the relevant first moment to zero by construction, holding its bias at order $h^2$ even at the edge. This order-$h$-versus-$h^2$ gap is the entire mathematical case for using local *linear* (not local constant) regression in RDD.
+
+</div>
+</details>
+
+## Computing It in Practice
+
+Both panels fit the staffing-versus-HbA1c curve nonparametrically, choose a data-driven bandwidth, and predict $\hat m(x_0)$ at $x_0 = 1.4$. We use idiomatic nonparametric tooling: `KernSmooth`, `np`, and `loess` in R; `statsmodels` LOWESS and a scikit-learn local-linear/kernel pipeline in Python.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("KernSmooth", "np"))   # if needed
+library(KernSmooth)
+
+## ---- Simulate 60 vårdcentraler: staffing vs mean HbA1c ----
+set.seed(42)
+n  <- 60
+x  <- runif(n, 0.4, 4.0)                     # doctors per 1,000 listed patients
+m  <- function(x) 44 + 16 * exp(-1.15 * (x - 0.4))   # true mean function
+y  <- m(x) + rnorm(n, 0, 2.4)                # mean HbA1c (mmol/mol)
+
+## ---- Local LINEAR regression with a plug-in bandwidth ----
+h  <- dpill(x, y)                            # Ruppert-Sheather-Wand plug-in h
+fit <- locpoly(x, y, degree = 1, bandwidth = h,
+               gridsize = 401, range.x = c(0.5, 3.9))
+
+# Predict m(1.4) by interpolating the fitted grid
+mhat_14 <- approx(fit$x, fit$y, xout = 1.4)$y
+cat(sprintf("Plug-in bandwidth h = %.3f\n", h))
+cat(sprintf("Local-linear  m_hat(1.4) = %.2f  (truth = %.2f)\n",
+            mhat_14, m(1.4)))
+
+## ---- loess: the everyday scatterplot smoother (tricube kernel) ----
+lo <- loess(y ~ x, span = 0.5, degree = 1)   # degree=1 -> local linear
+cat(sprintf("loess         m_hat(1.4) = %.2f\n",
+            predict(lo, newdata = data.frame(x = 1.4))))
+
+## ---- np: cross-validated bandwidth + Nadaraya-Watson (local constant) ----
+# library(np)
+# bw  <- npregbw(y ~ x, regtype = "lc", bwmethod = "cv.ls")  # local constant
+# nw  <- npreg(bw)
+# predict(nw, newdata = data.frame(x = 1.4))
+```
+
+### Python
+
+```python
+import numpy as np
+import statsmodels.api as sm
+from sklearn.linear_model import LinearRegression
+
+# ---- Simulate 60 vårdcentraler: staffing vs mean HbA1c ----
+rng = np.random.default_rng(42)
+n = 60
+x = rng.uniform(0.4, 4.0, n)                  # doctors per 1,000 listed patients
+m = lambda x: 44 + 16 * np.exp(-1.15 * (x - 0.4))   # true mean function
+y = m(x) + rng.normal(0, 2.4, n)              # mean HbA1c (mmol/mol)
+
+# ---- statsmodels LOWESS: robust local-linear scatterplot smoother ----
+sm_fit = sm.nonparametric.lowess(y, x, frac=0.5, return_sorted=True)
+mhat_14_lowess = np.interp(1.4, sm_fit[:, 0], sm_fit[:, 1])
+print(f"LOWESS       m_hat(1.4) = {mhat_14_lowess:.2f}  (truth = {m(1.4):.2f})")
+
+# ---- Local LINEAR by hand: weighted least squares in a Gaussian window ----
+def local_linear(x0, x, y, h):
+    w  = np.exp(-0.5 * ((x - x0) / h) ** 2)   # Gaussian kernel weights
+    X  = np.column_stack([np.ones_like(x), x - x0])   # recentre at x0
+    WX = X * w[:, None]
+    beta = np.linalg.solve(WX.T @ X, WX.T @ y)        # WLS normal equations
+    return beta[0]                            # intercept = fitted value at x0
+
+# Silverman-style rule-of-thumb bandwidth for the regressor
+h = 1.06 * x.std(ddof=1) * n ** (-1 / 5)
+print(f"Bandwidth h  = {h:.3f}")
+print(f"Local-linear m_hat(1.4) = {local_linear(1.4, x, y, h):.2f}")
+
+# scikit-learn note: KernelRidge / KNeighborsRegressor give related local fits;
+# for a principled bandwidth, cross-validate `frac` (LOWESS) or `h` above.
+```
+
+:::
+
+In both languages the plug-in / cross-validated bandwidth lands the local-linear estimate near the truth $m(1.4) \approx 49.1$ mmol/mol, with `loess`/`lowess` giving a near-identical curve. Swap `degree = 1` for `degree = 0` (R) or the local-linear solve for a weighted mean (Python) to recover Nadaraya--Watson --- and watch the boundary predictions drift.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region has five vårdcentraler with staffing $x = (1.0, 1.2, 1.4, 1.6, 1.8)$ and mean HbA1c $y = (60, 58, 57, 54, 52)$. Using a *boxcar* (uniform) kernel of bandwidth $h = 0.25$ --- which gives weight 1 to every clinic with $|x_i - x_0| \le 0.25$ and 0 otherwise --- compute the Nadaraya--Watson estimate $\hat m_{\text{NW}}(1.4)$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+With $x_0 = 1.4$ and $h = 0.25$, a clinic is in the window if $|x_i - 1.4| \le 0.25$, i.e. $x_i \in [1.15, 1.65]$. That includes $x = 1.2, 1.4, 1.6$ (distances $0.2, 0.0, 0.2$) and excludes $1.0$ and $1.8$ (distance $0.4 > 0.25$).
+
+The boxcar kernel gives each in-window clinic weight 1, so the estimate is the plain average of their HbA1c:
+
+$$
+\hat m_{\text{NW}}(1.4) = \frac{58 + 57 + 54}{3} = \frac{169}{3} \approx 56.3 \text{ mmol/mol}.
+$$
+
+The clinics at the edges of the data ($x = 1.0, 1.8$) contribute nothing at this evaluation point --- the kernel has localised the average to three neighbours.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain, in your own words, why Nadaraya--Watson is biased at the boundary of the staffing range while local linear is not, when the true curve is steeply sloped there. Tie your answer to the role of the local slope $\hat b$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+At a boundary point $x_0$, the clinics with non-negligible kernel weight all lie on *one* side of $x_0$, because there are no data on the other side. Nadaraya--Watson estimates $m(x_0)$ by *averaging* those one-sided neighbours. If the true curve is sloping --- say, decreasing --- the neighbours on the interior side systematically have lower $y$ values than $m(x_0)$, so the average is pulled toward the interior and away from the true boundary value. The estimator has no mechanism to correct for the fact that its neighbours are not centred on $x_0$.
+
+Local linear adds a slope term $\hat b$. By fitting a *tilted* line through the window rather than a flat level, it extrapolates the local trend back to $x_0$: the intercept $\hat a$ is the line's height *at $x_0$*, not the average height of the (off-centre) neighbours. The slope absorbs exactly the systematic tilt that biases the local average. Formally, recentring the design at $x_0$ forces the relevant first moment of the weights to zero, dropping the boundary bias from order $h$ to order $h^2$. This is why RDD --- which is *all* boundary --- uses local linear, never a local average.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the bandwidth interactive, drive $h$ to its smallest value and then to its largest. (a) Describe what happens to the fitted curve's shape and to the "Error" tile at each extreme. (b) Name the dominant error source at each extreme. (c) The optimal bandwidth scales as $h^\* \propto n^{-1/5}$. If a region grows its sample of clinics from $n = 60$ to $n = 600$, by what factor should the optimal bandwidth change, and does it grow or shrink?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At the **smallest $h$** the curve is jagged and wiggly: each window contains only a few clinics, so the fit tracks individual noisy points and the error at any given $x_0$ jumps around as you move $x_0$. At the **largest $h$** the curve flattens toward a near-horizontal line that ignores the real bend; the error is large and systematic wherever the true curve is steep, because the over-wide window blends very different staffing levels together.
+
+**(b)** Small $h$: **variance** dominates (undersmoothing). Large $h$: **bias** dominates (oversmoothing).
+
+**(c)** With $h^\* \propto n^{-1/5}$, going from $n = 60$ to $n = 600$ multiplies $n$ by 10, so $h^\*$ changes by a factor of $10^{-1/5} = 10^{-0.2} \approx 0.63$. The optimal bandwidth **shrinks** to about 63% of its previous value: more data lets you use a narrower window (lower bias) while keeping variance in check, which is why nonparametric estimates sharpen as samples grow --- just more slowly than parametric ones.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A health-economics team wants to estimate mean HbA1c as a flexible function of *four* covariates --- staffing, listed-patient count, an area deprivation index, and rurality --- using local regression. (a) Using the rate $\text{error} \propto n^{-2/(4+d)}$ for local-linear smoothing, find the exponent on $n$ for $d = 1$ and $d = 4$. (b) If $n = 500$ clinics gives an acceptable error in $d = 1$, roughly how many would be needed in $d = 4$ to match it? (c) What practical strategy from the next page sidesteps this explosion?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The exponent is $-2/(4+d)$. For $d = 1$ it is $-2/5 = -0.40$; for $d = 4$ it is $-2/8 = -0.25$. The error falls more slowly with $n$ in higher dimensions --- each additional clinic buys less accuracy.
+
+**(b)** Hold the error constant: $C\, n_1^{-2/5} = C\, n_4^{-2/8}$. So $n_4^{1/4} = n_1^{2/5}$, giving $n_4 = n_1^{(2/5)\cdot 4} = n_1^{1.6}$. With $n_1 = 500$:
+
+$$
+n_4 = 500^{1.6} \approx 10^{1.6 \cdot \log_{10} 500} = 10^{1.6 \cdot 2.699} \approx 10^{4.32} \approx 21{,}000.
+$$
+
+About **21,000 clinics** --- roughly 40 times the one-dimensional requirement, and far more clinics than exist in all of Sweden. This is the curse of dimensionality in numbers.
+
+**(c)** Impose **structure**. An *additive model* $m(x) = \beta_0 + g_1(x_1) + \cdots + g_d(x_d)$ estimates one smooth function per covariate (each a one-dimensional problem) instead of one smooth surface over all four, restoring the fast $n^{-2/5}$-type rate at the cost of ruling out interactions. **Splines** with a fixed, modest basis (the next page) achieve flexibility with a parametric number of coefficients, and semiparametric/partially-linear models keep the nonparametric part low-dimensional.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Nonparametric regression estimates $m(x) = E[y \mid x]$ point by point, letting the data choose the shape instead of assuming a line or polynomial.
+- Nadaraya--Watson is a *locally weighted average* --- equivalently, a local-constant least-squares fit --- with kernel weights $w_i(x_0) = K_i / \sum_j K_j$ that sum to one.
+- Local *linear* regression fits a tilted line in each window; its slope cuts the order-$h$ boundary bias of the local average down to order $h^2$, which is why RDD and `loess` use it.
+- The bandwidth $h$ governs the bias--variance tradeoff: small $h$ wiggles (variance), large $h$ flattens (bias); the optimum scales as $h^\* \propto n^{-1/5}$ with error rate $n^{-4/5}$.
+- The curse of dimensionality (squared-error rate $n^{-4/(4+d)}$, i.e. root-error $n^{-2/(4+d)}$) makes pure local methods a low-dimensional tool, motivating series, splines, and additive structure.
+:::
+
+## What Comes Next
+
+Local regression gives us flexibility one or two dimensions at a time, but it pays for it in two coins: a *slow* error rate that worsens with every added covariate, and an estimate that must be recomputed locally at every evaluation point. The next page, [Series and Spline Methods](series-splines.qmd), takes the opposite route to the same goal of "letting the data choose the curve": instead of a moving local window, it expands $m(x)$ in a fixed *basis* --- polynomials, splines, or other building blocks --- and fits the basis coefficients with ordinary least squares. That turns nonparametric regression back into a familiar linear-algebra problem, makes additive multi-covariate models tractable, and connects directly to the penalised splines and regularisation that tame the curse of dimensionality we just watched bite.

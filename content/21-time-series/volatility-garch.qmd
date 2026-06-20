@@ -1,0 +1,719 @@
+---
+title: "Volatility: ARCH and GARCH"
+subtitle: "Modeling time-varying variance"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Recognize *volatility clustering* --- the bunching of calm and turbulent periods --- and explain why it means the conditional variance is predictable even when the mean is not
+- Write the ARCH($q$) model, in which today's variance depends on recent squared shocks, and read its equation aloud
+- Generalize to the GARCH($p,q$) model, where variance also depends on its own lags, and interpret the GARCH(1,1) recursion term by term
+- Compute the persistence $\alpha + \beta$ and the unconditional variance $\omega/(1-\alpha-\beta)$, and state the stationarity condition $\alpha + \beta < 1$
+- Use a fitted GARCH model to forecast next-period risk and trace the multi-step variance forecast back to the long-run level
+:::
+
+## The Question Behind a Risk Forecast
+
+A regional health authority --- *Region Stockholm* --- tracks the **week-over-week percentage change in unplanned acute primary-care visits** to its *vårdcentraler* (primary care centers). Most weeks the change is small and unremarkable: a quiet winter week looks much like the one before it. But when an influenza wave breaks, or a heat wave hits, or a new respiratory virus circulates, the series erupts: several consecutive weeks of large swings, up and down, before settling back to calm. The *average* weekly change is essentially zero and stubbornly unpredictable --- you cannot forecast next week's *direction*. Yet something else is plainly forecastable: **how turbulent next week will be.** After a violent week, another violent week is likely; after a placid stretch, calm tends to persist.
+
+This is *volatility clustering*, and it is everywhere: in financial returns (Engle's original 1982 motivation), in inflation and unemployment by region, in *sjukfrånvaro* (sickness absence) rates, and in health-utilisation shocks like the one above. A model that assumes constant variance --- the workhorse assumption behind ordinary least squares and the [VAR](var-impulse-response.qmd) of the previous page --- gets the *level* of risk badly wrong: it understates risk in turbulent periods and overstates it in calm ones. The ARCH and GARCH models fix this by letting the **conditional variance** evolve over time, driven by the size of recent shocks and by its own recent history.
+
+This page builds that machinery from the ground up. The payoff is a model whose *mean* may be pure noise but whose *variance* is genuinely predictable --- and a one-step recursion you can iterate forward to forecast risk.
+
+## What a Constant-Variance Model Misses
+
+Write the series of interest --- the demeaned weekly change --- as $r_t$. A standard model decomposes it into a predictable mean $\mu_t$ plus an unpredictable shock $\varepsilon_t$:
+
+$$
+r_t = \mu_t + \varepsilon_t, \qquad \varepsilon_t = \sigma_t \, z_t, \qquad z_t \overset{\text{iid}}{\sim} (0, 1).
+$$
+
+**Read this as**: "the observation at time $t$ equals its conditional mean $\mu_t$ plus a shock $\varepsilon_t$; the shock is a time-varying *scale* $\sigma_t$ multiplied by a standardized innovation $z_t$ that has mean zero and variance one." The innovations $z_t$ (often standard Normal) carry no memory --- they are i.i.d. white noise. *All* of the predictable structure in the size of the shocks is loaded into $\sigma_t$, the **conditional standard deviation** (the *conditional volatility*), with $\sigma_t^2$ the **conditional variance**.
+
+A constant-variance model sets $\sigma_t^2 = \sigma^2$, the same number every week. That is exactly what volatility clustering violates. Below, two series share the *same* unconditional variance and the *same* zero mean, but one has constant variance and the other is GARCH. Watch where the turbulence lives.
+
+::: {.glass-card .glass-card--insight}
+**The mean can be noise while the variance is signal.** It is entirely possible --- and typical in finance and in health-utilisation shocks --- that $\mu_t$ is unforecastable (next week's *direction* is a coin flip) while $\sigma_t^2$ is highly forecastable (next week's *turbulence* is predictable from this week's). Volatility modeling is the art of extracting that second, second-moment signal. It does not help you predict the sign of the next move; it helps you size the risk around it.
+:::
+
+## ARCH: Variance Built from Recent Shocks
+
+Robert Engle's insight (1982, Nobel 2003) was to let the conditional variance respond to the *squared* recent shocks. A big shock last week --- in either direction --- raises the variance this week.
+
+::: {.glass-card .glass-card--definition}
+The **ARCH($q$)** model (*AutoRegressive Conditional Heteroskedasticity*) specifies the conditional variance as a constant plus a weighted sum of the $q$ most recent squared shocks:
+
+$$
+\sigma_t^2 \;=\; \omega \;+\; \alpha_1 \varepsilon_{t-1}^2 \;+\; \alpha_2 \varepsilon_{t-2}^2 \;+\; \cdots \;+\; \alpha_q \varepsilon_{t-q}^2,
+$$
+
+with $\omega > 0$ and $\alpha_j \ge 0$ to keep the variance positive.
+
+**Read this as**: "the variance at time $t$ equals a baseline $\omega$ plus $\alpha_1$ times last period's squared shock, plus $\alpha_2$ times the squared shock two periods ago, and so on." Because shocks enter *squared*, a large move of either sign --- a spike *or* a plunge in acute visits --- pushes next period's variance up. The variance is "conditional" because it depends on the recently observed shocks; it is "heteroskedastic" because it changes over time.
+:::
+
+The squaring is what produces clustering: one large $\varepsilon_{t-1}$ inflates $\sigma_t^2$, which makes a large $\varepsilon_t$ more likely, which inflates $\sigma_{t+1}^2$, and so on --- turbulence begets turbulence until the squared shocks happen to come in small and the variance decays back toward $\omega$.
+
+The practical snag is that capturing the *long*, slow persistence seen in real data requires many lags $q$ --- a long, fiddly ARCH(8) or ARCH(12) with many parameters to estimate. The GARCH generalization gets the same persistence with far fewer parameters.
+
+## GARCH: Variance with a Memory of Itself
+
+Tim Bollerslev's GARCH (1986) adds lagged *variance* terms. The variance now remembers not just recent shocks but its own recent level --- a parsimonious way to encode long memory.
+
+::: {.glass-card .glass-card--definition}
+The **GARCH($p,q$)** model (*Generalized ARCH*) adds $p$ lags of the conditional variance to the ARCH($q$) terms:
+
+$$
+\sigma_t^2 \;=\; \omega \;+\; \sum_{j=1}^{q} \alpha_j \,\varepsilon_{t-j}^2 \;+\; \sum_{k=1}^{p} \beta_k \,\sigma_{t-k}^2,
+$$
+
+with $\omega > 0$, $\alpha_j \ge 0$, $\beta_k \ge 0$.
+
+**Read this as**: "today's variance equals a baseline $\omega$, plus a weighted sum of recent *squared shocks* (the ARCH part), plus a weighted sum of recent *variances* (the GARCH part)." The $\alpha$ terms inject fresh news; the $\beta$ terms carry old variance forward.
+:::
+
+By far the most-used member is **GARCH(1,1)** --- one lag of each:
+
+$$
+\boxed{\;\sigma_t^2 \;=\; \omega \;+\; \alpha\,\varepsilon_{t-1}^2 \;+\; \beta\,\sigma_{t-1}^2\;}
+$$
+
+**Read this aloud as**: "the conditional variance today equals a constant baseline $\omega$, plus $\alpha$ times *last period's squared shock*, plus $\beta$ times *last period's variance*." Three forces, three plain meanings:
+
+- $\omega$ (omega) is the **baseline** --- the floor the variance is pulled toward in quiet times.
+- $\alpha$ (alpha) is the **shock impact** (the *news* or *reaction* coefficient) --- how violently the variance jumps in response to a fresh surprise $\varepsilon_{t-1}^2$.
+- $\beta$ (beta) is the **persistence** (the *memory* coefficient) --- how much of yesterday's variance carries into today regardless of today's news.
+
+A model with high $\beta$ has a long memory: a shock's effect on variance fades slowly over many periods. A model with high $\alpha$ reacts sharply but, if $\beta$ is low, forgets quickly. Real financial and health-utilisation series almost always show **high persistence**: $\alpha + \beta$ close to 1, with $\beta$ much larger than $\alpha$ (a typical daily-returns fit is $\alpha \approx 0.08$, $\beta \approx 0.90$).
+
+::: {.glass-card .glass-card--warning}
+**GARCH models the variance, not the mean --- fit the mean first.** GARCH assumes the shocks $\varepsilon_t$ are *serially uncorrelated* in their *level*; the clustering is purely in their *size*. If the series still has predictable mean structure (trend, seasonality in acute visits, day-of-week effects, an AR/MA component), you must remove it --- fit an ARMA mean model, or demean and deseasonalize --- *before* fitting GARCH to the residuals. Feeding raw, autocorrelated levels into GARCH contaminates the squared-residual inputs and produces persistence estimates that reflect leftover mean dynamics rather than genuine volatility clustering. Always test the residuals (an ARCH-LM test) for remaining ARCH effects after fitting, and the standardized residuals for remaining autocorrelation.
+:::
+
+## Persistence and the Long-Run Variance
+
+The single most important quantity you read off a GARCH(1,1) fit is the **persistence**, $\alpha + \beta$. It governs both the long-run (unconditional) variance and how fast shocks die out.
+
+::: {.glass-card .glass-card--definition}
+For a GARCH(1,1) model with $\alpha + \beta < 1$, the **unconditional (long-run) variance** --- the average variance the process reverts to --- is
+
+$$
+\bar{\sigma}^2 \;=\; \frac{\omega}{1 - \alpha - \beta}.
+$$
+
+**Read this as**: "the long-run variance equals the baseline $\omega$ divided by one minus the persistence." The closer $\alpha + \beta$ is to 1, the larger the denominator's amplification: a small baseline $\omega$ is divided by a tiny number, producing a large average variance and shocks that take a very long time to decay.
+:::
+
+This formula makes the GARCH(1,1) recursion easy to interpret as **mean reversion in variance**. Subtracting $\bar\sigma^2$ from both sides of the recursion (derivation in the Math Details) gives
+
+$$
+\sigma_t^2 - \bar\sigma^2 \;=\; \alpha\,(\varepsilon_{t-1}^2 - \bar\sigma^2) \;+\; \beta\,(\sigma_{t-1}^2 - \bar\sigma^2).
+$$
+
+**Read this as**: "today's *deviation* of variance from its long-run level is a weighted blend ($\alpha$ and $\beta$) of last period's squared-shock deviation and last period's variance deviation." Whatever pushes the variance above $\bar\sigma^2$ decays at rate $\alpha + \beta$ per period --- the variance always drifts home, just slowly when persistence is high.
+
+::: {.glass-card .glass-card--assumption}
+**Covariance stationarity requires $\alpha + \beta < 1$.** Only then does a finite unconditional variance $\bar\sigma^2 = \omega/(1-\alpha-\beta)$ exist and the process revert to it. The boundary cases are diagnostic, not decorative:
+
+- $\alpha + \beta = 1$ is the **IGARCH** (integrated GARCH) knife-edge: shocks to variance are *permanent* (an analogue of a unit root in the mean), $\bar\sigma^2$ is undefined, and the variance wanders without a long-run anchor.
+- $\alpha + \beta > 1$ is **explosive**: the conditional variance diverges, which is economically nonsensical for a return or a utilisation rate.
+
+Estimated persistence of, say, $0.985$ is normal and stationary; an estimate that pins against $1$ is a warning that the long-run variance is barely identified.
+:::
+
+## See It: Simulate a GARCH(1,1) Series
+
+The lab below simulates a GARCH(1,1) path so you can *watch* volatility clustering form. Drag $\alpha$ (shock impact) and $\beta$ (persistence) and observe two things at once: the **series** of weekly changes (top), where turbulence visibly bunches, and the **conditional-volatility band** $\pm 2\sigma_t$ (the shaded ribbon), which fans *wide* right after a large shock and slowly contracts during calm. The persistence readout $\alpha + \beta$ turns red as you approach the non-stationary boundary at 1.
+
+::: {.interactive-container}
+
+#### A live GARCH(1,1) path: shocks, the volatility band, and persistence
+
+```{ojs}
+//| echo: false
+html`<p style="
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.85rem;
+    color: #1c1c1a;
+    background: #f6f5f1;
+    border-left: 3px solid #990000;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave &alpha; and &beta; at their defaults and look at
+  the shaded band &mdash; it bulges wide just after each large weekly change and
+  narrows during calm. Then push &beta; toward 1 and watch the calm and turbulent
+  stretches grow longer. Full guided tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof tsgarch_alpha = Inputs.range([0, 0.6], {
+  value: 0.10,
+  step: 0.01,
+  label: "α  (shock impact — reaction to fresh news)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof tsgarch_beta = Inputs.range([0, 0.99], {
+  value: 0.85,
+  step: 0.01,
+  label: "β  (persistence — memory of past variance)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof tsgarch_redraw = Inputs.button("Draw a new random path", {
+  value: 0,
+  reduce: v => v + 1
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Uppsala-academic palette tokens, shared across every chart on this page.
+tsgarch_pal = ({
+  focal:  "#990000",   // focal series (Uppsala red)
+  slate:  "#3d5a6c",   // secondary / comparison
+  good:   "#2e6f40",   // on-target / stationary
+  ochre:  "#9c7a33",   // highlight / true value
+  ink:    "#1c1c1a",   // neutral ink
+  axis:   "#79766e",   // axis text
+  hair:   "#e6e3db",   // gridlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1",   // subtle tile fill
+  alarm:  "#b3000b"    // alarm / non-stationary
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// We PIN the long-run variance to a constant target so the BAND height is
+// comparable across slider settings, and let ω float to honour it (see the ω
+// cell below). With targetVar = 0.0009 the long-run weekly volatility is
+// √0.0009 = 0.03 = 3% — a plausible scale for weekly acute-visit changes.
+tsgarch_targetVar = 0.0009   // long-run variance ⇒ long-run vol = 3% per week
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Persistence α + β governs reversion speed and whether a long-run variance exists.
+tsgarch_persistence = tsgarch_alpha + tsgarch_beta
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Implied baseline ω. We hold the LONG-RUN variance fixed at tsgarch_targetVar and
+// back out ω = (1 − α − β) · targetVar, so the average band width stays comparable
+// as the reader moves the sliders — what changes is the CLUSTERING, not the overall
+// scale. When α + β ≥ 1 the long-run variance is undefined; we floor ω at a small
+// positive number so the simulation still runs (and the readout flags it as
+// non-stationary).
+tsgarch_omega = Math.max(1e-7, (1 - tsgarch_persistence) * tsgarch_targetVar)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Simulate one GARCH(1,1) path of n weeks. Reading tsgarch_redraw makes the
+// path resample on each button press WITHOUT reading+writing a mutable in the
+// same cell (the button is a reduce-counter; we just reference its value).
+tsgarch_sim = {
+  tsgarch_redraw;                       // dependency: redraw on button press
+  const n = 160;
+  const omega = tsgarch_omega;
+  const a = tsgarch_alpha;
+  const b = tsgarch_beta;
+  const Z = d3.randomNormal.source(d3.randomLcg(42 + tsgarch_redraw))(0, 1);
+
+  // Initialize at the long-run variance when it exists, else at the baseline.
+  const var0 = tsgarch_persistence < 1 ? tsgarch_targetVar : omega / 0.02;
+  let sig2 = var0;
+  let eps = Math.sqrt(sig2) * Z();
+
+  const rows = [];
+  for (let t = 0; t < n; t++) {
+    // GARCH(1,1) recursion: σ²_t = ω + α ε²_{t-1} + β σ²_{t-1}
+    sig2 = omega + a * eps * eps + b * sig2;
+    const sig = Math.sqrt(sig2);
+    eps = sig * Z();                    // this week's shock
+    rows.push({
+      t,
+      r: eps,                           // demeaned weekly % change
+      sigma: sig,
+      upper: 2 * sig,                   // ±2σ conditional band
+      lower: -2 * sig,
+      sig2
+    });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Long-run volatility band (±2 σ̄), drawn as flat reference lines for contrast
+// against the time-varying band. Undefined when non-stationary.
+tsgarch_lrVol = tsgarch_persistence < 1 ? Math.sqrt(tsgarch_targetVar) : null
+```
+
+```{ojs}
+//| echo: false
+// TOP CHART: the series itself, with the ±2σ_t conditional-volatility ribbon.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 290,
+  marginLeft: 60,
+  marginBottom: 45,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: tsgarch_pal.axis
+  },
+  x: { label: "Week  →", grid: false },
+  y: {
+    label: "↑ Weekly change in acute visits (demeaned)",
+    grid: true,
+    domain: [-0.16, 0.16],
+    tickFormat: d => (d * 100).toFixed(0) + "%"
+  },
+  marks: [
+    Plot.gridY({ stroke: tsgarch_pal.hair }),
+    // The conditional ±2σ band (slate ribbon) — fans wide after big shocks.
+    Plot.areaY(tsgarch_sim, {
+      x: "t", y1: "lower", y2: "upper",
+      fill: tsgarch_pal.slate, fillOpacity: 0.14
+    }),
+    Plot.line(tsgarch_sim, {
+      x: "t", y: "upper", stroke: tsgarch_pal.slate,
+      strokeWidth: 1, strokeOpacity: 0.55
+    }),
+    Plot.line(tsgarch_sim, {
+      x: "t", y: "lower", stroke: tsgarch_pal.slate,
+      strokeWidth: 1, strokeOpacity: 0.55
+    }),
+    // Long-run ±2σ̄ reference (ochre dashed) when stationary.
+    tsgarch_lrVol != null ? Plot.ruleY([2 * tsgarch_lrVol, -2 * tsgarch_lrVol], {
+      stroke: tsgarch_pal.ochre, strokeWidth: 1.25, strokeDasharray: "4,4"
+    }) : null,
+    // The series (focal red).
+    Plot.ruleY([0], { stroke: tsgarch_pal.hair }),
+    Plot.line(tsgarch_sim, {
+      x: "t", y: "r", stroke: tsgarch_pal.focal, strokeWidth: 1.4
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// BOTTOM CHART: the conditional volatility σ_t itself, so the clustering is
+// unmistakable as a wave that rises and decays.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 170,
+  marginLeft: 60,
+  marginBottom: 45,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: tsgarch_pal.axis
+  },
+  x: { label: "Week  →", grid: false },
+  y: {
+    label: "↑ Conditional volatility σ_t",
+    grid: true,
+    tickFormat: d => (d * 100).toFixed(1) + "%"
+  },
+  marks: [
+    Plot.gridY({ stroke: tsgarch_pal.hair }),
+    tsgarch_lrVol != null ? Plot.ruleY([tsgarch_lrVol], {
+      stroke: tsgarch_pal.ochre, strokeWidth: 1.5, strokeDasharray: "4,4"
+    }) : null,
+    tsgarch_lrVol != null ? Plot.text([{ t: 4, v: tsgarch_lrVol }], {
+      x: "t", y: "v",
+      text: () => "long-run σ̄",
+      fill: tsgarch_pal.ochre, fontSize: 11, fontWeight: 600,
+      dy: -8, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+    Plot.areaY(tsgarch_sim, {
+      x: "t", y: "sigma",
+      fill: tsgarch_pal.focal, fillOpacity: 0.10
+    }),
+    Plot.line(tsgarch_sim, {
+      x: "t", y: "sigma", stroke: tsgarch_pal.focal, strokeWidth: 1.6
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout: persistence, half-life, long-run vol, and a stationarity flag.
+{
+  const p = tsgarch_persistence;
+  const stationary = p < 1;
+  // Half-life of a variance shock: periods for the deviation to halve at rate p.
+  const halfLife = (stationary && p > 0) ? Math.log(0.5) / Math.log(p) : Infinity;
+  const lrVolPct = stationary ? (Math.sqrt(tsgarch_targetVar) * 100).toFixed(2) + "%" : "—";
+
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7.5rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.85rem;">
+    ${tile("α + β  (persistence)", p.toFixed(2),
+        stationary ? (p > 0.97 ? tsgarch_pal.ochre : tsgarch_pal.good) : tsgarch_pal.alarm)}
+    ${tile("Shock half-life", stationary ? halfLife.toFixed(1) + " wk" : "∞", tsgarch_pal.ink)}
+    ${tile("Long-run σ̄", lrVolPct, tsgarch_pal.slate)}
+    ${tile("Status",
+        stationary ? "stationary" : "non-stationary",
+        stationary ? tsgarch_pal.good : tsgarch_pal.alarm)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// Plain-language verdict that updates with the sliders.
+{
+  const p = tsgarch_persistence;
+  let msg, color;
+  if (p >= 1) {
+    msg = "α + β ≥ 1: the process is non-stationary. Variance shocks never fully die out — there is no long-run level for the band to revert to. The simulation still runs, but the unconditional variance ω/(1−α−β) is undefined.";
+    color = tsgarch_pal.alarm;
+  } else if (p > 0.97) {
+    msg = "Very high persistence (α + β just below 1): calm and turbulent regimes last a long time and the band reverts to its long-run width only slowly. This is the near-IGARCH region typical of daily financial returns.";
+    color = tsgarch_pal.ochre;
+  } else if (tsgarch_alpha > 0.30) {
+    msg = "Large α: the band reacts sharply to each fresh shock (spiky, jumpy volatility) but, with modest β, forgets quickly — short, violent bursts rather than long smooth waves.";
+    color = tsgarch_pal.slate;
+  } else {
+    msg = "Moderate, stationary GARCH(1,1): shocks raise the band, which then decays smoothly back to the long-run σ̄ (ochre dashed line). Turbulence visibly clusters, then fades.";
+    color = tsgarch_pal.good;
+  }
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${color}; background: #f6f5f1;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 0.86rem; line-height: 1.45; color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the GARCH Simulation
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the two charts.** The top chart is the simulated **series** (red) --- the weekly demeaned change in acute visits --- with the shaded **$\pm 2\sigma_t$ conditional band** behind it. The bottom chart plots the **conditional volatility $\sigma_t$** directly. The ochre dashed lines mark the long-run level $\bar\sigma$ to which everything reverts. Notice immediately: the red series rarely pierces its own band, because the band *is* the current scale of the shocks.
+
+**Step 2: Spot the clustering.** Find a week with an unusually large change in the top chart. The band *widens* there and stays wide for several weeks afterward before tapering --- and the bottom chart shows a matching wave in $\sigma_t$. Calm stretches show a thin band and a low, flat $\sigma_t$. That alternation of wide and thin regions *is* volatility clustering.
+
+**Step 3: Crank up persistence $\beta$.** Drag $\beta$ from $0.85$ toward $0.98$. The clusters grow *longer*: a single shock now keeps the band wide for many weeks, because each period carries forward $98\%$ of the previous variance. Watch the "Shock half-life" tile climb --- it is how many weeks a variance shock takes to half-decay.
+
+**Step 4: Crank up shock impact $\alpha$.** Return $\beta$ to $0.85$ and push $\alpha$ toward $0.4$. Now the band becomes *spiky*: it jumps violently the instant a large shock lands, but (with modest $\beta$) snaps back fast. High $\alpha$ buys reactivity; high $\beta$ buys memory. Real data usually wants a little of the first and a lot of the second.
+
+**Step 5: Approach the boundary.** Increase $\beta$ (or $\alpha$) until the persistence readout $\alpha + \beta$ turns **red** at $1$. The "Long-run $\bar\sigma$" tile reads "$-$" and the status flips to *non-stationary*: there is no fixed level for the band to revert to, and the variance wanders. This is the IGARCH knife-edge from the Assumption card.
+
+**Step 6: Resample.** Press **Draw a new random path** to see a fresh realization at the same $\alpha, \beta$. The *specific* shocks change, but the *character* --- how long clusters last, how wide the band gets --- is governed entirely by your two sliders. That is the whole point: GARCH parameters shape the *distribution* of turbulence, not any one week.
+
+## Forecasting Risk
+
+Once $\alpha$, $\beta$, $\omega$ are estimated, the GARCH(1,1) recursion *is* the forecast. Standing at time $T$ with the realized shock $\varepsilon_T$ and variance $\sigma_T^2$ in hand, the one-step-ahead variance forecast is simply the recursion evaluated forward:
+
+$$
+\hat\sigma^2_{T+1} \;=\; \omega \;+\; \alpha\,\varepsilon_{T}^2 \;+\; \beta\,\sigma_{T}^2 .
+$$
+
+For horizons beyond one step we no longer know the future shocks, but their *expectation* is the variance itself ($E[\varepsilon_{T+h}^2] = \sigma_{T+h}^2$), so the multi-step forecast collapses to a clean geometric-decay formula (derived in the Math Details):
+
+$$
+\boxed{\;\hat\sigma^2_{T+h} \;=\; \bar\sigma^2 \;+\; (\alpha+\beta)^{\,h-1}\bigl(\hat\sigma^2_{T+1} - \bar\sigma^2\bigr)\;}
+$$
+
+**Read this as**: "the variance forecast $h$ steps out equals the long-run variance $\bar\sigma^2$ plus the current deviation from it, shrunk by the persistence raised to the power $h-1$." Whatever the current turbulence, the forecast *decays geometrically back to the long-run level* at rate $\alpha + \beta$ per step. High persistence ⇒ slow reversion ⇒ today's turbulence matters far into the future. This term-structure of variance is exactly what risk managers and capacity planners want: *how long will elevated risk last?*
+
+## Estimating GARCH in Practice
+
+GARCH parameters are estimated by maximum likelihood (the [MLE](../11-mle-gmm/likelihood.qmd) machinery from Module 11), assuming a distribution for the standardized innovations $z_t$ --- Normal, or a fatter-tailed Student-$t$ to match the heavy tails of real shocks. Both panels fit a GARCH(1,1) to a return-like series, report $\hat\omega, \hat\alpha, \hat\beta$, the implied persistence, and a one-step variance forecast.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("rugarch")
+library(rugarch)
+
+set.seed(2024)
+
+## ---- Simulate a GARCH(1,1) series to fit (e.g. weekly acute-visit shocks) ----
+true_spec <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model     = list(armaOrder = c(0, 0), include.mean = FALSE),
+  fixed.pars     = list(omega = 2e-5, alpha1 = 0.08, beta1 = 0.90)
+)
+sim <- ugarchpath(true_spec, n.sim = 1500)
+r   <- as.numeric(fitted(sim))            # the simulated series
+
+## ---- Fit GARCH(1,1) by maximum likelihood ----
+fit_spec <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model     = list(armaOrder = c(0, 0), include.mean = FALSE),
+  distribution.model = "norm"             # try "std" for Student-t tails
+)
+fit <- ugarchfit(fit_spec, data = r)
+
+cp <- coef(fit)
+cat(sprintf("omega = %.2e  alpha = %.3f  beta = %.3f\n",
+            cp["omega"], cp["alpha1"], cp["beta1"]))
+
+persistence <- cp["alpha1"] + cp["beta1"]
+uncond_var  <- cp["omega"] / (1 - persistence)
+cat(sprintf("persistence alpha+beta = %.3f\n", persistence))
+cat(sprintf("long-run variance       = %.2e  (vol = %.3f)\n",
+            uncond_var, sqrt(uncond_var)))
+
+## ---- Forecast conditional variance 10 steps ahead ----
+fc <- ugarchforecast(fit, n.ahead = 10)
+print(sigma(fc)^2)                        # variance forecasts; reverts to long-run
+```
+
+### Python
+
+```python
+# pip install arch
+import numpy as np
+from arch import arch_model
+from arch.univariate import GARCH, ConstantMean, Normal
+
+rng = np.random.default_rng(2024)
+
+# ---- Simulate a GARCH(1,1) series (e.g. weekly acute-visit shocks) ----
+omega, alpha, beta = 2e-5, 0.08, 0.90
+n = 1500
+eps = np.zeros(n)
+sig2 = omega / (1 - alpha - beta)         # start at the long-run variance
+for t in range(1, n):
+    sig2 = omega + alpha * eps[t-1]**2 + beta * sig2
+    eps[t] = np.sqrt(sig2) * rng.standard_normal()
+r = eps * 100                             # scale to "percent" — helps the optimizer
+
+# ---- Fit GARCH(1,1) by maximum likelihood ----
+am = arch_model(r, mean="Zero", vol="GARCH", p=1, q=1, dist="normal")
+res = am.fit(disp="off")
+print(res.params[["omega", "alpha[1]", "beta[1]"]])
+
+a, b = res.params["alpha[1]"], res.params["beta[1]"]
+persistence = a + b
+uncond_var = res.params["omega"] / (1 - persistence)
+print(f"persistence alpha+beta = {persistence:.3f}")
+print(f"long-run variance       = {uncond_var:.4f}  (vol = {np.sqrt(uncond_var):.3f})")
+
+# ---- Forecast conditional variance 10 steps ahead ----
+fc = res.forecast(horizon=10, reindex=False)
+print(fc.variance.iloc[-1].values)        # 10-step variance path -> long-run level
+```
+
+:::
+
+Both fits recover parameters close to the truth ($\hat\alpha \approx 0.08$, $\hat\beta \approx 0.90$, persistence $\approx 0.98$) and a 10-step variance forecast that decays geometrically toward the long-run level $\bar\sigma^2 = \omega/(1-\alpha-\beta)$. When you fit your own series, *always* read off the persistence first: it is the one number that tells you whether the model is sensible (below 1) and how sticky the volatility is.
+
+<details>
+<summary>Math Details: The unconditional variance, mean-reversion form, and multi-step forecast</summary>
+<div class="details-content">
+
+### Unconditional variance
+
+Start from the GARCH(1,1) recursion and take unconditional expectations of both sides. Write $\bar\sigma^2 = E[\sigma_t^2]$ for the (assumed constant) unconditional variance. A key fact links the squared shock to the variance: since $\varepsilon_t = \sigma_t z_t$ with $E[z_t^2] = 1$ and $z_t$ independent of $\sigma_t$,
+
+$$
+E[\varepsilon_t^2] = E[\sigma_t^2 z_t^2] = E[\sigma_t^2]\,E[z_t^2] = \bar\sigma^2 .
+$$
+
+Now take expectations of $\sigma_t^2 = \omega + \alpha\varepsilon_{t-1}^2 + \beta\sigma_{t-1}^2$:
+
+$$
+\bar\sigma^2 = \omega + \alpha\,\bar\sigma^2 + \beta\,\bar\sigma^2
+= \omega + (\alpha+\beta)\,\bar\sigma^2 .
+$$
+
+Solve for $\bar\sigma^2$:
+
+$$
+\bar\sigma^2 (1 - \alpha - \beta) = \omega
+\;\Longrightarrow\;
+\bar\sigma^2 = \frac{\omega}{1-\alpha-\beta}.
+$$
+
+This is finite and positive **iff** $\alpha + \beta < 1$ (with $\omega > 0$). If $\alpha + \beta \ge 1$ the geometric series implicit in repeatedly substituting the recursion does not converge, and no finite unconditional variance exists --- the stationarity condition. $\checkmark$
+
+### Mean-reversion form
+
+Substitute $\omega = \bar\sigma^2(1-\alpha-\beta)$ back into the recursion:
+
+$$
+\sigma_t^2 = \bar\sigma^2(1-\alpha-\beta) + \alpha\varepsilon_{t-1}^2 + \beta\sigma_{t-1}^2.
+$$
+
+Subtract $\bar\sigma^2$ from both sides and group:
+
+$$
+\sigma_t^2 - \bar\sigma^2
+= \alpha(\varepsilon_{t-1}^2 - \bar\sigma^2) + \beta(\sigma_{t-1}^2 - \bar\sigma^2).
+$$
+
+The variance's *deviation* from its long-run level is a weighted combination of last period's squared-shock deviation and variance deviation --- mean reversion at rate $\alpha + \beta$.
+
+### Multi-step variance forecast
+
+Condition on information at time $T$. For one step, the shock $\varepsilon_T$ and variance $\sigma_T^2$ are known, so
+
+$$
+\hat\sigma^2_{T+1} = E_T[\sigma^2_{T+1}] = \omega + \alpha\varepsilon_T^2 + \beta\sigma_T^2 .
+$$
+
+For two steps, $\varepsilon_{T+1}$ is *not* known, but $E_T[\varepsilon_{T+1}^2] = E_T[\sigma_{T+1}^2 z_{T+1}^2] = \hat\sigma^2_{T+1}$. Hence
+
+$$
+\hat\sigma^2_{T+2} = \omega + \alpha\,\hat\sigma^2_{T+1} + \beta\,\hat\sigma^2_{T+1}
+= \omega + (\alpha+\beta)\,\hat\sigma^2_{T+1}.
+$$
+
+In general, for $h \ge 2$, $\hat\sigma^2_{T+h} = \omega + (\alpha+\beta)\hat\sigma^2_{T+h-1}$. Subtract the fixed point $\bar\sigma^2 = \omega/(1-\alpha-\beta)$ from both sides to linearize the recursion:
+
+$$
+\hat\sigma^2_{T+h} - \bar\sigma^2 = (\alpha+\beta)\bigl(\hat\sigma^2_{T+h-1} - \bar\sigma^2\bigr).
+$$
+
+This is a first-order geometric recursion in the deviation; iterating it down to $h=1$ gives the closed form
+
+$$
+\hat\sigma^2_{T+h} = \bar\sigma^2 + (\alpha+\beta)^{\,h-1}\bigl(\hat\sigma^2_{T+1} - \bar\sigma^2\bigr).
+$$
+
+As $h \to \infty$ and with $\alpha+\beta < 1$, $(\alpha+\beta)^{h-1} \to 0$, so $\hat\sigma^2_{T+h} \to \bar\sigma^2$: the forecast reverts to the long-run variance, the faster the lower the persistence. $\checkmark$
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A GARCH(1,1) model fitted to monthly regional *sjukfrånvaro* (sickness-absence) shocks gives $\hat\omega = 0.0004$, $\hat\alpha = 0.07$, $\hat\beta = 0.88$.
+
+(a) Compute the persistence. (b) Compute the unconditional variance and the long-run volatility. (c) Is the process covariance-stationary? Justify.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Persistence $= \hat\alpha + \hat\beta = 0.07 + 0.88 = 0.95$.
+
+**(b)** Unconditional variance $\bar\sigma^2 = \dfrac{\hat\omega}{1-\hat\alpha-\hat\beta} = \dfrac{0.0004}{1-0.95} = \dfrac{0.0004}{0.05} = 0.008$. Long-run volatility $\bar\sigma = \sqrt{0.008} \approx 0.0894$, i.e. about $8.9\%$ per month.
+
+**(c)** Yes. Covariance stationarity requires $\alpha + \beta < 1$, and $0.95 < 1$, so a finite long-run variance exists and the process reverts to it. The persistence is high but safely below the boundary.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain, in your own words, *why squaring the shocks* in the ARCH/GARCH variance equation is what produces volatility clustering, and why this would fail if shocks entered linearly (un-squared).
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The conditional variance must be a measure of the *size* of recent shocks, irrespective of sign --- a big plunge in acute visits is just as much "turbulence" as a big spike. Squaring (or taking absolute values) treats $+0.10$ and $-0.10$ identically: both contribute $0.01$ to next period's variance, so any large move of either sign raises future variance. That positive feedback --- large $\varepsilon_{t-1}^2 \Rightarrow$ large $\sigma_t^2 \Rightarrow$ a large $\varepsilon_t$ is more likely $\Rightarrow$ large $\sigma_{t+1}^2$ --- is precisely the bunching of turbulent periods.
+
+If shocks entered *linearly* ($\sigma_t^2 = \omega + \alpha\varepsilon_{t-1}$), then a large *negative* shock would *lower* the variance, possibly making it negative (which is impossible for a variance), and positive and negative shocks would cancel on average rather than accumulate. The model would describe the *level* of the series, not the *size* of its swings, and could not generate clustering.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Using the same fit as Exercise 1 ($\bar\sigma^2 = 0.008$, $\alpha+\beta = 0.95$), suppose the current one-step-ahead variance forecast is $\hat\sigma^2_{T+1} = 0.020$ (the region is in a turbulent stretch, well above the long-run level).
+
+(a) Forecast the variance 3 steps ahead. (b) Roughly how many steps until the forecast has reverted halfway back to $\bar\sigma^2$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Use $\hat\sigma^2_{T+h} = \bar\sigma^2 + (\alpha+\beta)^{h-1}(\hat\sigma^2_{T+1} - \bar\sigma^2)$ with $h=3$:
+
+$$
+\hat\sigma^2_{T+3} = 0.008 + (0.95)^{2}\,(0.020 - 0.008)
+= 0.008 + 0.9025 \times 0.012 = 0.008 + 0.01083 = 0.01883.
+$$
+
+So about $0.0188$ --- still elevated, having decayed only modestly from $0.020$ toward $0.008$.
+
+**(b)** The deviation from $\bar\sigma^2$ shrinks by the factor $(\alpha+\beta)$ each step. The half-life solves $(0.95)^{m} = 0.5$, i.e. $m = \dfrac{\ln 0.5}{\ln 0.95} = \dfrac{-0.6931}{-0.0513} \approx 13.5$ steps. With persistence $0.95$, turbulence takes roughly $13$--$14$ months to half-fade --- a long, sticky shock, exactly what high persistence means.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the simulation, set $\alpha = 0.10$, $\beta = 0.85$ and note the persistence and the length of the volatility clusters. Then raise $\beta$ to $0.97$. (a) What happens to the persistence readout and the "Shock half-life" tile? (b) What happens to the *length* of the calm/turbulent stretches in the chart, and why? (c) Push $\beta$ to $0.92$ with $\alpha$ at $0.08$ and explain what the status flag would show if you nudged $\beta$ to $0.93$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $\alpha=0.10$, $\beta=0.85$ the persistence is $0.95$ and the half-life is $\ln(0.5)/\ln(0.95)\approx 13.5$ weeks. Raising $\beta$ to $0.97$ lifts persistence to $\alpha+\beta = 0.10+0.97 = 1.07$ --- *above 1* --- so the readout turns red and the status flips to non-stationary; the half-life tile reads $\infty$ because variance shocks no longer decay.
+
+**(b)** Even just *below* the boundary (say $\beta = 0.88$, persistence $0.98$), the calm and turbulent stretches grow markedly *longer*: each period carries forward $98\%$ of the previous variance, so a shock keeps the band wide for many weeks before reverting. Higher persistence = longer, smoother clusters.
+
+**(c)** At $\alpha=0.08$, $\beta=0.92$ the persistence is exactly $1.00$ --- the IGARCH knife-edge --- so the status flag reads *non-stationary* and the long-run $\bar\sigma$ tile shows "$-$". Nudging $\beta$ to $0.93$ gives persistence $1.01 > 1$, firmly non-stationary (explosive): the long-run variance $\omega/(1-\alpha-\beta)$ is undefined.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Many series --- financial returns, inflation, *sjukfrånvaro*, health-utilisation shocks --- show *volatility clustering*: calm and turbulent periods bunch, so the conditional variance is time-varying and predictable even when the mean is not.
+- ARCH($q$) makes the variance a constant plus a weighted sum of recent *squared* shocks; GARCH($p,q$) adds lagged *variances*, capturing long persistence with few parameters.
+- The GARCH(1,1) recursion $\sigma_t^2 = \omega + \alpha\varepsilon_{t-1}^2 + \beta\sigma_{t-1}^2$ has three readable parts: baseline $\omega$, shock impact $\alpha$, and persistence $\beta$.
+- Persistence $\alpha+\beta$ governs everything: the unconditional variance $\bar\sigma^2 = \omega/(1-\alpha-\beta)$ exists only when $\alpha+\beta<1$ (covariance stationarity), and shocks decay at rate $\alpha+\beta$ per step.
+- Forecasts iterate the recursion forward, decaying geometrically to the long-run variance: $\hat\sigma^2_{T+h} = \bar\sigma^2 + (\alpha+\beta)^{h-1}(\hat\sigma^2_{T+1} - \bar\sigma^2)$.
+:::
+
+## What Comes Next
+
+We have now let the *variance* of a series move and be forecast, completing the time-series toolkit: the [VAR](var-impulse-response.qmd) handled the conditional *mean* and how shocks propagate across variables, and GARCH handles the conditional *variance* and how turbulence clusters and decays. Both still leaned on parametric forms --- a linear VAR, a Normal-or-$t$ GARCH likelihood. The next module steps away from rigid functional forms entirely. [Nonparametric Methods](../22-nonparametric/kernel-density.qmd) begins with *kernel density estimation*, asking how to recover the full shape of a distribution --- the fat tails and asymmetries that GARCH's innovation assumption only approximated --- directly from the data, letting the sample, not a formula, dictate the curve.

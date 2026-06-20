@@ -1,0 +1,770 @@
+---
+title: "Selection Bias"
+subtitle: "Why comparing treated and untreated groups often gives the wrong answer"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define selection bias as the part of the naive difference that reflects baseline differences between treated and untreated units rather than the treatment effect
+- Derive the decomposition $\text{Naive} = \text{ATT} + \text{Selection bias}$ from the switching equation
+- State the mean-independence condition $E[Y(0)\mid D=1] = E[Y(0)\mid D=0]$ under which the naive difference identifies the ATT
+- Sign the direction of bias from the selection pattern, explaining why positive selection overstates and negative selection understates the effect
+- Recognize that a bivariate OLS coefficient on $D$ is identical to the naive difference, so regression repackages selection bias rather than removing it
+:::
+
+## The Problem with Naive Comparisons
+
+Sweden's 21 *regioner* (regions) are responsible for organizing healthcare within their territories. Suppose some regions adopted a *digital vårdtjänst* (digital health service) --- a remote monitoring platform for heart failure patients that tracks daily weight, blood pressure, and symptoms. Of the 21 regions, 9 adopted the platform early; 12 did not. The obvious estimator --- compare 30-day hospital readmission rates in adopting regions to those in non-adopting regions --- is almost certainly biased.
+
+The reason is *selection*. Regions that adopted the platform differ systematically from those that did not, and these differences are correlated with the outcome. Wealthier regions with strong IT infrastructure may have both better baseline outcomes and greater capacity to deploy digital tools. Conversely, regions with the worst readmission rates may have adopted precisely because they were desperate for improvement. In either case, the treated and untreated groups are not exchangeable, and the naive difference conflates the causal effect with pre-existing differences between groups.
+
+This is **selection bias**: the component of the naive difference in means that reflects baseline differences between treated and untreated units, rather than the effect of treatment.
+
+The picture below shows *why* this happens as a small causal diagram. A common cause --- baseline severity / wealth --- feeds **both** the decision to adopt ($D$) **and** the outcome ($Y$). That shared origin opens a non-causal "back-door" route (drawn in red) from $D$ to $Y$ alongside the genuine causal effect (green). The naive comparison cannot tell the two routes apart.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG drawing component for this page (pure function of d3). ──
+// Builds an SVG with d3.create and RETURNS the node. Nodes use normalized
+// x,y in [0,1]; `conditioned` ids draw as a rounded box instead of a circle.
+// edge.kind: 'causal' green, 'biasing'/'backdoor-open' red, 'blocked' gray dashed.
+p2_drawDAG = function ({ nodes, edges, width = 440, height = 200, conditioned = [] }) {
+  const pad = 48;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerFor = k =>
+    k === "causal" ? "p2-arrow-green" :
+    (k === "biasing" || k === "backdoor-open") ? "p2-arrow-red" : "p2-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["p2-arrow-green", "#2e6f40"],
+    ["p2-arrow-red", "#b3000b"],
+    ["p2-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya)
+      .attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerFor(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-direction:column; align-items:center; margin:0.5rem 0 0.25rem;">
+  ${p2_drawDAG({
+    width: Math.min(440, width),
+    height: 200,
+    nodes: [
+      { id: "U", x: 0.5,  y: 0.12, label: "U", caption: "Baseline severity / wealth" },
+      { id: "D", x: 0.10, y: 0.82, label: "D", caption: "Adoption" },
+      { id: "Y", x: 0.90, y: 0.82, label: "Y", caption: "Readmission" }
+    ],
+    edges: [
+      { source: "U", target: "D", kind: "biasing" },
+      { source: "U", target: "Y", kind: "biasing" },
+      { source: "D", target: "Y", kind: "causal" }
+    ]
+  })}
+  <div style="display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:center; font-family:'Inter',sans-serif; font-size:0.68rem; color:#79766e; margin-top:0.35rem;">
+    <span style="color:#2e6f40; font-weight:700; white-space:nowrap;">&#9472; causal effect we want (D &rarr; Y)</span>
+    <span style="color:#b3000b; font-weight:700; white-space:nowrap;">&#9472; back-door path that creates selection bias (D &larr; U &rarr; Y)</span>
+  </div>
+</div>`
+```
+
+
+## Decomposing the Naive Estimator
+
+Let $D_i \in \{0, 1\}$ indicate adoption. As a reminder of the potential-outcomes notation: $Y_i(1)$ is unit $i$'s outcome *if treated*, $Y_i(0)$ its outcome *if untreated*, and $D_i$ the treatment indicator. The conditional mean $E[Y_i(0)\mid D_i=1]$ then reads as "the readmission rate the adopting regions **would** have had if they had **not** adopted" --- a counterfactual quantity. The naive comparison estimates:
+
+$$
+\underbrace{E[Y_i | D_i = 1] - E[Y_i | D_i = 0]}_{\text{Naive difference}} = \underbrace{E[Y_i(1) - Y_i(0) | D_i = 1]}_{\text{ATT}} + \underbrace{E[Y_i(0) | D_i = 1] - E[Y_i(0) | D_i = 0]}_{\text{Selection bias}}
+$$
+
+The naive difference equals the ATT *only* when the selection bias term is zero. That term measures the difference in *untreated* potential outcomes between the two groups --- how different the adopting regions would have performed even absent the platform. When selection into treatment is correlated with the baseline outcome, this term is non-zero and the naive comparison is biased.
+
+::: {.glass-card .glass-card--assumption}
+The naive difference in means identifies the ATT if and only if $E[Y_i(0) | D_i = 1] = E[Y_i(0) | D_i = 0]$. This is the **mean independence** condition. It requires that treatment assignment carries no information about baseline potential outcomes --- a condition that is violated whenever selection is endogenous.
+
+It only asks the *average* untreated outcome to match across the two groups --- a weaker demand than full statistical independence (which would require their entire distributions to match). The naive difference needs nothing more than this single equality of means to be valid.
+:::
+
+
+## See It: Selection in Action
+
+To make the statistics stable, the simulation expands the motivating example into a larger synthetic population of 300 units (think of them as regions pooled across many years) rather than just the 21 *regioner*. Use the slider to control the **Selection Strength**, which governs both how many units adopt the program and how strongly adoption depends on baseline severity.
+
+- At **0**, treatment is assigned randomly. The treated and untreated groups are identical at baseline.
+- As you move to the **right**, "healthier" regions (higher $Y(0)$) are more likely to adopt.
+- As you move to the **left**, "sicker" regions are more likely to adopt.
+
+::: {.glass-card .glass-card--warning}
+**This is an X-ray view, not a real analysis.** The "Selection bias" and "Recovered ATT" readouts below are computed from the simulator's *hidden* counterfactual --- the $Y(0)$ of treated regions, i.e. how they *would* have done without the platform. A real analyst never sees that column; it is exactly what the missing data make impossible to observe. The figure shows you the bias so you can learn to recognize it --- not a recipe for removing it. (Removing it is what randomization and the later quasi-experimental designs are for.)
+:::
+
+::: {.interactive-container}
+
+#### The Anatomy of Bias
+
+```{ojs}
+//| echo: false
+html`<p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #79766e;"><strong style="color:#1c1c1a;">Start here:</strong> drag the slider below. Right = healthier regions adopt (positive selection); left = sicker regions adopt; centre (0) = random assignment. Watch how the cards and the three panels react.</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof selectionStrength = Inputs.range([-3, 3], {
+  value: 0,
+  step: 0.1,
+  label: "Selection strength (\u03B3)"
+})
+```
+
+```{ojs}
+//| echo: false
+html`<p style="margin: 0.25rem 0 0.5rem 0; font-size: 0.85rem; color: #1c1c1a;">${
+  selectionStrength > 0.05
+    ? `&gamma; = +${selectionStrength.toFixed(1)} &rarr; healthier regions adopt (<span style="color:#b3000b;font-weight:700;">positive selection &mdash; naive overstates</span>)`
+    : selectionStrength < -0.05
+      ? `&gamma; = ${selectionStrength.toFixed(1)} &rarr; sicker regions adopt (<span style="color:#3d5a6c;font-weight:700;">negative selection &mdash; naive understates</span>)`
+      : `&gamma; = ${selectionStrength.toFixed(1)} &rarr; random assignment (<span style="color:#2e6f40;font-weight:700;">no selection &mdash; naive is unbiased</span>)`
+}</p>`
+```
+
+```{ojs}
+//| echo: false
+
+// --- DATA GENERATION ---
+n = 300
+trueATE = 4.0
+seed = 42
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randn(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+data = {
+  const rng = mulberry32(seed);
+  const obs = [];
+  for (let i = 0; i < n; i++) {
+    const y0 = 50 + 10 * randn(rng);
+    const y1 = y0 + trueATE + 2 * randn(rng);
+    // Selection mechanism: probability of D depends on y0
+    const propensity = 1 / (1 + Math.exp(-(selectionStrength * (y0 - 50) / 10)));
+    const treated = rng() < propensity ? 1 : 0;
+    const yObs = treated === 1 ? y1 : y0;
+    obs.push({
+      id: i, y0: y0, y1: y1, treated: treated,
+      yObs: yObs, group: treated === 1 ? "Treated" : "Untreated"
+    });
+  }
+  return obs;
+}
+
+// --- CALCULATIONS ---
+stats = {
+  const tr = data.filter(d => d.treated === 1);
+  const un = data.filter(d => d.treated === 0);
+  
+  const mean_y_tr = d3.mean(tr, d => d.yObs) || 0;
+  const mean_y_un = d3.mean(un, d => d.yObs) || 0;
+  
+  // Selection Bias = E[Y(0)|D=1] - E[Y(0)|D=0]
+  const mean_y0_tr = d3.mean(tr, d => d.y0) || 50;
+  const mean_y0_un = d3.mean(un, d => d.y0) || 50;
+  
+  const naive = mean_y_tr - mean_y_un;
+  const bias = mean_y0_tr - mean_y0_un;
+  const att = naive - bias; // Because Naive = ATT + Bias
+
+  return {
+    naive, bias, att, 
+    trCount: tr.length, 
+    unCount: un.length,
+    mean_y_tr, mean_y_un
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.2rem; border-left: 4px solid #9c7a33;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">True effect</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #9c7a33;">${trueATE.toFixed(2)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.2rem; border-left: 4px solid #2e6f40;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Recovered ATT</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #1c1c1a;">${stats.att.toFixed(2)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.2rem; border-left: 4px solid ${Math.abs(stats.bias) > 1 ? '#b3000b' : '#2e6f40'};">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Selection bias</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: ${Math.abs(stats.bias) > 1 ? '#b3000b' : '#2e6f40'};">
+      ${stats.bias >= 0 ? '+' : ''}${stats.bias.toFixed(2)}
+    </div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.2rem; border-left: 4px solid #990000; background: #f6f5f1;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Naive estimate</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #990000;">${stats.naive.toFixed(2)}</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// --- PLOTS ---
+
+layout = html`<div style="display: flex; flex-direction: column; gap: 0.75rem;">
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; font-size: 0.72rem; color: #1c1c1a;">
+    <span><span style="display:inline-block;width:0.7rem;height:0.7rem;border-radius:50%;background:#990000;margin-right:0.35rem;vertical-align:middle;"></span>Treated</span>
+    <span><span style="display:inline-block;width:0.7rem;height:0.7rem;border-radius:50%;background:#3d5a6c;margin-right:0.35rem;vertical-align:middle;"></span>Untreated</span>
+    <span style="color:#79766e;">(same colours across all three panels)</span>
+  </div>
+  <div style="display: grid; grid-template-columns: 1.8fr 1fr; gap: 0.75rem;">
+    <div style="background: #ffffff; padding: 0.75rem; border-radius: 0.75rem; border: 1px solid #e6e3db;">
+      <div style="font-family: 'Inter'; font-weight: 700; font-size: 0.75rem; margin-bottom: 0.5rem; color: #990000; text-transform: uppercase;">1. The observed outcome gap</div>
+      ${Plot.plot({
+        width: Math.min(420, width),
+        height: 260,
+        marginLeft: 50,
+        marginRight: 16,
+        marginBottom: 35,
+        style: { fontFamily: "Inter" },
+        x: { label: "Baseline health Y(0)", grid: true },
+        y: { label: "Observed outcome Y", grid: true },
+        color: { domain: ["Treated", "Untreated"], range: ["#990000", "#3d5a6c"], legend: false },
+        marks: [
+          Plot.gridY({stroke: "#e6e3db"}),
+          Plot.dot(data, {x: "y0", y: "yObs", fill: "group", fillOpacity: 0.4, r: 2.5}),
+          Plot.ruleY([stats.mean_y_tr], {stroke: "#990000", strokeWidth: 2, strokeDasharray: "4,2"}),
+          Plot.ruleY([stats.mean_y_un], {stroke: "#3d5a6c", strokeWidth: 2, strokeDasharray: "4,2"}),
+          Plot.text([`Naive gap: ${stats.naive.toFixed(1)}`], {
+            frameAnchor: "top-right", dx: -6, dy: 6, fontWeight: 700, fontSize: 11,
+            fill: "#1c1c1a", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+          })
+        ]
+      })}
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+      <div style="background: #ffffff; padding: 0.75rem; border-radius: 0.75rem; border: 1px solid #e6e3db; flex: 1;">
+        <div style="font-family: 'Inter'; font-weight: 700; font-size: 0.75rem; margin-bottom: 0.25rem; color: #990000; text-transform: uppercase;">2. Bias source</div>
+        ${Plot.plot({
+          width: Math.min(240, width),
+          height: 120,
+          marginLeft: 25,
+          marginTop: 16,
+          marginBottom: 30,
+          style: { fontFamily: "Inter" },
+          x: {label: "Baseline Y(0)", ticks: 4},
+          y: {axis: null},
+          color: { domain: ["Treated", "Untreated"], range: ["#990000", "#3d5a6c"], legend: false },
+          marks: [
+            Plot.rectY(data, Plot.binX({y: "count"}, {x: "y0", fill: "group", fillOpacity: 0.3, thresholds: 12})),
+            Plot.ruleX([d3.mean(data.filter(d=>d.treated===1), d=>d.y0)], {stroke: "#990000", strokeWidth: 2.5}),
+            Plot.ruleX([d3.mean(data.filter(d=>d.treated===0), d=>d.y0)], {stroke: "#3d5a6c", strokeWidth: 2.5}),
+            Plot.text([{x: d3.mean(data.filter(d=>d.treated===1), d=>d.y0)}], {
+              x: "x", frameAnchor: "top", dy: -2, text: () => "Treated", fontSize: 9, fill: "#990000",
+              stroke: "white", strokeWidth: 2.5, paintOrder: "stroke", textAnchor: "end", dx: -2
+            }),
+            Plot.text([{x: d3.mean(data.filter(d=>d.treated===0), d=>d.y0)}], {
+              x: "x", frameAnchor: "top", dy: -2, text: () => "Untreated", fontSize: 9, fill: "#3d5a6c",
+              stroke: "white", strokeWidth: 2.5, paintOrder: "stroke", textAnchor: "start", dx: 2
+            })
+          ]
+        })}
+        <p style="font-size: 0.7rem; color: #79766e; margin: 0;">Gap between the two mean lines = selection bias</p>
+      </div>
+
+      <div style="background: #ffffff; padding: 0.75rem; border-radius: 0.75rem; border: 1px solid #e6e3db; flex: 1;">
+        <div style="font-family: 'Inter'; font-weight: 700; font-size: 0.75rem; margin-bottom: 0.25rem; color: #1c1c1a; text-transform: uppercase;">3. Decomposition</div>
+        ${Plot.plot({
+          width: Math.min(240, width),
+          height: 120,
+          marginLeft: 35,
+          marginBottom: 25,
+          style: { fontFamily: "Inter" },
+          x: {domain: ["Naive", "Decomposed"], padding: 0.4, label: null},
+          y: {label: null, grid: true},
+          color: { domain: ["ATT", "Bias"], range: ["#2e6f40", "#b3000b"], legend: false },
+          marks: [
+            Plot.ruleY([0], {stroke: "#1c1c1a", strokeWidth: 1}),
+            Plot.barY([{type: "Naive", val: stats.naive}], {x: "type", y: "val", fill: "#990000"}),
+            Plot.barY([
+              {type: "Decomposed", part: "Bias", y1: 0, y2: stats.bias},
+              {type: "Decomposed", part: "ATT", y1: stats.bias, y2: stats.bias + stats.att}
+            ], {x: "type", y1: "y1", y2: "y2", fill: "part"})
+          ]
+        })}
+      </div>
+    </div>
+  </div>
+</div>`
+```
+
+:::
+
+
+### How to Read This
+
+1.  **The Observed Outcome Gap:** This is what the world looks like to a naive researcher. They see a gap between the red (treated) and slate (untreated) averages.
+2.  **The Bias Source:** This looks *only* at the baseline ($Y(0)$) before treatment happened. If the red and slate lines aren't perfectly aligned, your groups were different from the start.
+3.  **The Decomposition:** This illustrates the exact identity **Naive = ATT + Bias**. The decomposed bar stacks the **Bias** segment from zero and the **recovered ATT** ($\text{ATT} = \text{Naive} - \text{Bias}$) on top of it, so its net top always lines up with the solid **Naive** bar --- even when the bias is negative and the ATT segment pulls the total back up.
+
+When selection is positive (healthy people join), the bias is positive and the Naive estimate makes the program look "better" than it really is. When selection is negative (sick people join), the bias is negative and can even make a successful program look like a failure!
+
+
+
+::: {.glass-card .glass-card--insight}
+Selection bias is not a statistical nuisance that can be fixed by collecting more data. It is a structural feature of the data-generating process. Increasing the sample size makes the naive estimate more *precise*, but it does not make it less *biased*. The bias converges to a non-zero constant. Eliminating selection bias requires a change in research design, not a larger dataset.
+:::
+
+
+### The Whole Picture: Bias Across Every $\gamma$
+
+The slider lets you sample one value of $\gamma$ at a time. The figure below instead draws the *entire* relationship at once: for each selection strength along the horizontal axis, it plots the population **selection bias** and the resulting **naive estimate**, with the true effect ($+4.0$) as a flat reference line. (These are population expectations under the same data-generating process, computed by fine numerical integration --- so they are the smooth limit the slider's noisy single-sample readout fluctuates around.)
+
+Two things to read off it: the naive curve crosses the true-effect line only at $\gamma = 0$ (the one unbiased point), and it dips **below zero** --- flipping the sign of an effective program --- once negative selection is strong enough. That crossing is the scenario Exercise 2 sends you to find.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Population bias as a function of gamma, by numerical integration over the
+// standard-normal baseline z = (y0-50)/10. Independent of the live slider DGP:
+// this is the smooth EXPECTATION the single-draw readout fluctuates around.
+// E[Y0|D=1], E[Y0|D=0] are probability-weighted means with weight p(z), 1-p(z).
+p2_biasCurve = {
+  const grid = [];
+  const zs = d3.range(-50, 51).map(k => k * 0.1);      // z from -5 to 5
+  const phi = z => Math.exp(-0.5 * z * z);             // unnormalized N(0,1) density
+  for (let g = -3; g <= 3.0001; g += 0.1) {
+    let wT = 0, wU = 0, sT = 0, sU = 0;
+    for (const z of zs) {
+      const y0 = 50 + 10 * z;
+      const p = 1 / (1 + Math.exp(-(g * z)));          // matches sim: gamma*(y0-50)/10 = gamma*z
+      const dens = phi(z);
+      wT += p * dens;        sT += p * dens * y0;
+      wU += (1 - p) * dens;  sU += (1 - p) * dens * y0;
+    }
+    const eY0_T = wT > 0 ? sT / wT : 50;
+    const eY0_U = wU > 0 ? sU / wU : 50;
+    const bias = eY0_T - eY0_U;
+    grid.push({ gamma: g, bias, naive: 4.0 + bias });
+  }
+  return grid;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// First gamma (scanning from 0 downward) where the naive estimate turns negative.
+p2_crossGamma = {
+  const neg = p2_biasCurve.filter(d => d.gamma < 0 && d.naive <= 0);
+  return neg.length ? d3.max(neg, d => d.gamma) : null;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Robust nearest-grid lookup so label anchors never read off an undefined row.
+p2_at = g => p2_biasCurve.reduce((best, d) =>
+  Math.abs(d.gamma - g) < Math.abs(best.gamma - g) ? d : best, p2_biasCurve[0])
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="background:#fff; padding:0.85rem; border-radius:0.75rem; border:1px solid #e6e3db;">
+  <div style="font-family:'Inter',sans-serif; font-weight:700; font-size:0.75rem; margin-bottom:0.4rem; color:#1c1c1a; text-transform:uppercase;">Selection bias and the naive estimate vs. selection strength &gamma;</div>
+  ${Plot.plot({
+    width: Math.min(640, width),
+    height: 320,
+    marginLeft: 60,
+    marginBottom: 48,
+    marginRight: 16,
+    style: { fontFamily: "Inter" },
+    x: { label: "Selection strength γ  (← sicker adopt   ·   healthier adopt →)", grid: true },
+    y: { label: "Estimate / bias", grid: true },
+    marks: [
+      Plot.gridY({ stroke: "#e6e3db" }),
+      Plot.ruleY([0], { stroke: "#1c1c1a", strokeWidth: 1 }),
+      // true-effect reference
+      Plot.ruleY([4.0], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+      Plot.text([{ x: 3, y: 4.0 }], {
+        x: "x", y: "y", text: () => "true effect = 4.0", textAnchor: "end", dy: -6,
+        fontSize: 11, fontWeight: 700, fill: "#9c7a33",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // selection bias curve
+      Plot.line(p2_biasCurve, { x: "gamma", y: "bias", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+      Plot.text([{ x: 2.0, y: p2_at(2.0).bias }], {
+        x: "x", y: "y", text: () => "selection bias", textAnchor: "end", dx: -4, dy: 14,
+        fontSize: 11, fontWeight: 700, fill: "#3d5a6c",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // naive estimate curve
+      Plot.line(p2_biasCurve, { x: "gamma", y: "naive", stroke: "#990000", strokeWidth: 2.5 }),
+      Plot.text([{ x: 1.4, y: p2_at(1.4).naive }], {
+        x: "x", y: "y", text: () => "naive estimate", textAnchor: "end", dx: -4, dy: -8,
+        fontSize: 11, fontWeight: 700, fill: "#990000",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // mark the unbiased point at gamma = 0
+      Plot.dot([{ x: 0, y: 4.0 }], { x: "x", y: "y", r: 4, fill: "#2e6f40", stroke: "white", strokeWidth: 1.5 }),
+      Plot.text([{ x: 0, y: 4.0 }], {
+        x: "x", y: "y", text: () => "unbiased at γ = 0", textAnchor: "middle", dy: -12,
+        fontSize: 10.5, fontWeight: 700, fill: "#2e6f40",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // mark the sign-flip crossover, when it exists in range
+      p2_crossGamma != null
+        ? Plot.dot([{ x: p2_crossGamma, y: 0 }], { x: "x", y: "y", r: 4, fill: "#b3000b", stroke: "white", strokeWidth: 1.5 })
+        : null,
+      p2_crossGamma != null
+        ? Plot.text([{ x: p2_crossGamma, y: 0 }], {
+            x: "x", y: "y", text: () => `naive turns negative near γ ≈ ${p2_crossGamma.toFixed(1)}`,
+            textAnchor: "start", dx: 6, dy: 14, fontSize: 10.5, fontWeight: 700, fill: "#b3000b",
+            stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+          })
+        : null
+    ]
+  })}
+  <p style="font-family:'Inter',sans-serif; font-size:0.7rem; color:#79766e; margin:0.4rem 0 0;">The bias (slate) is added to the true effect to give the naive estimate (red). Where the red curve dips under zero, a genuinely helpful program looks harmful.</p>
+</div>`
+```
+
+
+## Direction of Bias
+
+In practice, we rarely know the exact magnitude of the selection bias. But we can often reason about its *direction*. The sign of the selection bias depends on the sign of $E[Y(0)|D=1] - E[Y(0)|D=0]$: whether treated units have higher or lower baseline outcomes than untreated units.
+
+| Selection pattern | $\gamma$ | Bias direction | Naive estimate |
+|:---|:---:|:---:|:---|
+| Healthier regions adopt | $> 0$ | Positive | Overstates effect |
+| Sicker regions adopt | $< 0$ | Negative | Understates effect |
+| Adoption unrelated to baseline | $= 0$ | Zero | Unbiased |
+
+This kind of qualitative reasoning is a core skill in applied work. Even when we cannot sign the bias precisely, knowing its likely direction disciplines how we interpret naive comparisons and motivates the identification strategies developed in subsequent modules.
+
+
+<details>
+<summary>Math Details: Formal Decomposition</summary>
+<div class="details-content">
+
+### The Selection Bias Decomposition
+
+Start with the naive difference in means:
+
+$$
+\Delta_{\text{naive}} = E[Y_i | D_i = 1] - E[Y_i | D_i = 0]
+$$
+
+By the switching equation $Y_i = D_i \cdot Y_i(1) + (1 - D_i) \cdot Y_i(0)$, this becomes:
+
+$$
+\Delta_{\text{naive}} = E[Y_i(1) | D_i = 1] - E[Y_i(0) | D_i = 0]
+$$
+
+Add and subtract $E[Y_i(0) | D_i = 1]$:
+
+$$
+\Delta_{\text{naive}} = \underbrace{E[Y_i(1) | D_i = 1] - E[Y_i(0) | D_i = 1]}_{\text{ATT}} + \underbrace{E[Y_i(0) | D_i = 1] - E[Y_i(0) | D_i = 0]}_{\text{Selection Bias}}
+$$
+
+### Alternative decomposition targeting the ATE
+
+We can also decompose the naive difference relative to the ATE by adding and subtracting both $E[Y_i(0)|D_i=1]$ and $E[Y_i(1)|D_i=0]$:
+
+$$
+\Delta_{\text{naive}} = \text{ATE} + \underbrace{E[Y_i(0)|D_i=1] - E[Y_i(0)|D_i=0]}_{\text{Selection bias}} + (1 - P(D=1)) \cdot \underbrace{(E[\tau_i|D_i=1] - E[\tau_i|D_i=0])}_{\text{Differential treatment effect bias}}
+$$
+
+This makes clear that even if baseline outcomes are balanced ($E[Y(0)|D=1] = E[Y(0)|D=0]$), the naive estimator can still be biased for the ATE if treatment effects differ between groups.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+::: {.aside}
+The snippets below use their own illustrative constants (`true_ate = 3.0`, `gamma = 1.0`, `n = 500`) rather than the live figure's defaults (true effect $4.0$, $\gamma$ from the slider, $n = 300$). The mechanism is identical --- change the two constants to match the figure if you want to reproduce its numbers exactly.
+:::
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+set.seed(42)
+n <- 500
+true_ate <- 3.0
+gamma <- 1.0
+
+df <- tibble(
+  id = 1:n,
+  y0 = rnorm(n, mean = 50, sd = 10)
+) |>
+  mutate(
+    propensity = plogis(gamma * (y0 - 50) / 10),
+    treated    = rbinom(n, 1, propensity),
+    y1         = y0 + true_ate + rnorm(n, 0, 2),
+    y_obs      = if_else(treated == 1, y1, y0)
+  )
+
+# Naive comparison
+naive <- mean(df$y_obs[df$treated == 1]) - mean(df$y_obs[df$treated == 0])
+
+# Regression (biased — same problem, different packaging)
+model <- lm(y_obs ~ treated, data = df)
+
+cat("True ATE:             ", true_ate, "\n")
+cat("Naive diff-in-means:  ", round(naive, 2), "\n")
+cat("OLS coefficient:      ", round(coef(model)["treated"], 2), "\n")
+cat("Selection bias:       ", round(naive - true_ate, 2), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+np.random.seed(42)
+n = 500
+true_ate = 3.0
+gamma = 1.0
+
+y0 = np.random.normal(50, 10, n)
+propensity = 1 / (1 + np.exp(-gamma * (y0 - 50) / 10))
+treated = np.random.binomial(1, propensity, n)
+y1 = y0 + true_ate + np.random.normal(0, 2, n)
+y_obs = np.where(treated == 1, y1, y0)
+
+df = pd.DataFrame({"y_obs": y_obs, "treated": treated})
+
+# Naive comparison
+naive = df.loc[df.treated == 1, "y_obs"].mean() - \
+        df.loc[df.treated == 0, "y_obs"].mean()
+
+# Regression (biased — same problem, different packaging)
+model = smf.ols("y_obs ~ treated", data=df).fit()
+
+print(f"True ATE:             {true_ate:.2f}")
+print(f"Naive diff-in-means:  {naive:.2f}")
+print(f"OLS coefficient:      {model.params['treated']:.2f}")
+print(f"Selection bias:       {naive - true_ate:.2f}")
+```
+
+:::
+
+::: {.glass-card .glass-card--warning}
+Running a bivariate regression of $Y$ on $D$ does not solve the selection problem. The OLS coefficient on $D$ is numerically identical to the naive difference in means. Regression provides a convenient framework for inference (standard errors, confidence intervals), but it does not change the estimand. The same selection bias that contaminates the simple difference also contaminates the regression coefficient.
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A study compares test scores of students who voluntarily attended tutoring ($D=1$) with those who did not ($D=0$). The tutored students score 8 points higher on average. A skeptical colleague argues: "Students who seek tutoring are more motivated, so they would have scored higher anyway." Formalize this argument using the selection bias decomposition. What is the sign of the bias? Does the naive estimate overstate or understate the effect of tutoring?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The colleague's argument, stated formally: students who seek tutoring have higher *baseline* test-taking ability, so $E[Y(0)|D=1] > E[Y(0)|D=0]$. This means the selection bias term is **positive**.
+
+The decomposition gives us: $8 = \text{ATT} + \text{Bias}$. Since bias $> 0$, it must be that $\text{ATT} < 8$. The naive estimate **overstates** the effect of tutoring. Part of the 8-point gap is real tutoring effect, but part is the pre-existing motivation difference.
+
+For example, if the true ATT is 3 points, then the selection bias is 5 points --- motivated students would have scored 5 points higher *anyway*, and tutoring added 3 more on top of that.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the interactive simulation, set $\gamma = -2$ (negative selection). Observe the naive estimate, the true ATE, and the selection bias. Now set $\gamma = +2$. In which scenario is the naive estimate more misleading, and why? Can you find a $\gamma$ where the naive estimate is *negative* even though the true ATE is positive?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+At $\gamma = -2$: "sicker" regions adopt the program. Selection bias is negative (the treated group has lower baseline outcomes). The naive estimate underestimates the true ATE and can even turn negative --- making an effective program look harmful.
+
+At $\gamma = +2$: "healthier" regions adopt. Selection bias is positive. The naive estimate inflates the true ATE, making the program look more effective than it is.
+
+Both are misleading, but **negative selection** ($\gamma = -2$) is arguably more dangerous because it can reverse the *sign* of the estimated effect. By around $\gamma \approx -1$ the selection bias already exceeds the true effect in magnitude, so the naive estimate turns negative even though the true ATE is +4.0 (and it grows more negative as $\gamma$ decreases further). The program genuinely helps, but the naive comparison makes it look like it hurts. A policymaker using this estimate would cancel an effective program.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Prove that the naive difference in means equals the OLS coefficient from regressing $Y_i$ on $D_i$ (without additional covariates). Why does this imply that simple regression does not solve the selection bias problem?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The OLS regression is $Y_i = \alpha + \beta D_i + \varepsilon_i$. The OLS formula for $\hat{\beta}$ is:
+
+$$
+\hat{\beta} = \frac{\text{Cov}(Y_i, D_i)}{\text{Var}(D_i)}
+$$
+
+Since $D_i$ is binary (0/1), we can show $\text{Cov}(Y_i, D_i) = \bar{p}(1-\bar{p})(\bar{Y}_1 - \bar{Y}_0)$ and $\text{Var}(D_i) = \bar{p}(1-\bar{p})$, where $\bar{p}$ is the fraction treated and $\bar{Y}_1, \bar{Y}_0$ are the group means. These cancel:
+
+$$
+\hat{\beta} = \bar{Y}_1 - \bar{Y}_0 = \hat{\Delta}_{\text{naive}}
+$$
+
+Alternatively: OLS minimizes $\sum (Y_i - \alpha - \beta D_i)^2$. The first-order conditions give $\hat{\alpha} = \bar{Y}_0$ and $\hat{\alpha} + \hat{\beta} = \bar{Y}_1$, so $\hat{\beta} = \bar{Y}_1 - \bar{Y}_0$.
+
+**Implication**: Since the OLS coefficient is *identical* to the naive difference in means, it inherits the same selection bias. Running a regression does not fix the problem --- it just repackages it. The regression gives you standard errors and p-values for the biased estimate, which can create a false sense of precision around the wrong answer.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Consider the alternative decomposition targeting the ATE (from the Math Details section). Under what conditions does the "differential treatment effect bias" term equal zero? Give a substantive example where this term is likely non-zero.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The alternative decomposition is:
+
+$$
+\Delta_{\text{naive}} = \text{ATE} + \text{Selection bias} + (1 - P(D=1)) \cdot \underbrace{(E[\tau_i|D=1] - E[\tau_i|D=0])}_{\text{Differential treatment effect bias}}
+$$
+
+The differential treatment effect bias term is zero when $E[\tau_i|D=1] = E[\tau_i|D=0]$ --- that is, when the *average treatment effect is the same* for those who select into treatment and those who don't. This holds under:
+
+- **Constant treatment effects**: if $\tau_i = \tau$ for all $i$, then both conditional expectations equal $\tau$.
+- **Independence of gains from selection**: if who benefits from treatment is unrelated to who gets treated (even if effects are heterogeneous).
+
+**Substantive example where it's non-zero**: Job training programs. Workers who enroll voluntarily may be those who know they need retraining (career changers, recently laid off from declining industries). These workers might benefit *more* from training than the average non-participant, who may already have marketable skills. Then $E[\tau_i|D=1] > E[\tau_i|D=0]$ and the differential treatment effect bias is positive. This is "selection on gains" --- people who expect to benefit more are more likely to participate.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Selection bias is the term $E[Y(0)\mid D=1] - E[Y(0)\mid D=0]$: how different the treated and untreated groups would have been even with no treatment.
+- The naive difference identifies the ATT if and only if mean independence holds; endogenous selection breaks it.
+- The sign of the bias follows the selection pattern — healthier units adopting overstates the effect, sicker units adopting understates it (and can flip the sign).
+- Selection bias is structural, not a sampling-noise problem: more data makes the naive estimate more precise but no less biased; only a different research design removes it.
+- Running OLS of $Y$ on $D$ gives exactly the naive difference, so a regression coefficient inherits the same bias while adding a false air of precision.
+:::
+
+## What Comes Next
+
+If naive comparisons fail whenever treatment assignment is correlated with potential outcomes, how do we proceed? The next page shows how **randomization** solves this problem at its root --- and clarifies why, absent randomization, we need the quasi-experimental methods developed in the rest of this book.

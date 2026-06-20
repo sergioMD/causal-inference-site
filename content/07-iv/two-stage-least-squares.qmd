@@ -1,0 +1,1118 @@
+---
+title: "Two-Stage Least Squares"
+subtitle: "The IV estimator, the first stage, and the reduced form"
+---
+
+## When You Cannot Hold the Confounder Fixed
+
+The previous page, [The Endogeneity Problem](endogeneity.qmd), left us in an uncomfortable place. We wanted to know whether assigning each Type 2 diabetes patient a dedicated *distriktssköterska* (district nurse) for structured follow-up --- measured as nurse contact hours per patient per year --- actually lowers their HbA1c. But the number of contact hours a patient receives is *endogenous*: the sickest, most engaged, most anxious patients demand and receive the most nursing time, and those same patients differ from everyone else in ways that also move their blood sugar. The regression of HbA1c on nursing hours conflates the effect of the nursing with the fact that high-need patients selected into high nursing intensity. OLS is biased, and no amount of data fixes it, because the bias is baked into the data-generating process.
+
+The instrumental-variables (IV) strategy is a way out that does *not* require us to observe and adjust for the confounder. Instead, it requires us to find a third variable --- an **instrument** --- that nudges nursing intensity around for reasons that have nothing to do with the patient's underlying health. If we can find such a lever, we can isolate the part of the variation in nursing hours that is "as good as random" and use only that part to estimate the causal effect.
+
+Our instrument on this page is **distance to the nearest staffed vårdcentral**, in kilometres. A patient who lives 2 km from a well-staffed primary-care centre finds it cheap to drop in for an extra nurse visit; a patient 25 km away, on a rural route with infrequent transit, racks up fewer contact hours for the same level of need. Distance pushes nursing intensity around. And --- this is the bet we are making --- distance does not affect a patient's HbA1c through any channel *other* than the nursing it enables. This page is about the estimator you build once you have such an instrument: **two-stage least squares (2SLS)**. The page after this one, [Relevance and Exclusion](relevance-exclusion.qmd), interrogates whether those two bets are credible. Here, we take them as given and learn the machinery.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Construct the IV estimator from a *first stage* (regress the endogenous regressor on the instrument) and a *reduced form* (regress the outcome on the instrument), and read off $\hat\beta_{IV}$ as their ratio.
+- State and apply the Wald formula $\hat\beta_{IV} = \mathrm{Cov}(z,y)/\mathrm{Cov}(z,x)$ and explain why it equals the reduced-form slope divided by the first-stage slope.
+- Explain the "two-stage" interpretation --- fit $\hat x$, then regress $y$ on $\hat x$ --- and why running it by hand gives the *wrong* standard errors.
+- Distinguish the just-identified case (one instrument, one endogenous regressor) from the over-identified case, and name the estimand that IV recovers under heterogeneous effects (a forward reference to LATE).
+:::
+
+
+## The Three Regressions Behind One Estimate
+
+Fix notation for the rest of the page. For patient $i$:
+
+- $y_i$ is the outcome --- HbA1c at 12-month follow-up, in percentage points (lower is better).
+- $x_i$ is the **endogenous regressor** --- nurse contact hours per year. We want the causal effect of $x$ on $y$.
+- $z_i$ is the **instrument** --- distance to the nearest staffed vårdcentral, in km.
+- $u_i$ is everything else that moves HbA1c and is *correlated with $x$*: baseline severity, health literacy, diet, comorbidities. This is the unobserved confounder.
+
+The picture below shows why IV works *before* any algebra. The confounder $u$ (the unobserved fork) opens a **back-door path** --- a non-causal route linking nursing and HbA1c --- so the raw $x$--$y$ association is contaminated. The instrument $z$ sidesteps it: distance pushes nursing ($z \to x$, green) but reaches HbA1c *only* through nursing. The **crossed-out** $z \to y$ arrow is the **exclusion restriction** --- the assumption that distance has no direct path to blood sugar --- and the missing $z \to u$ link is instrument exogeneity. Those two missing arrows are exactly what let us read the effect of $x$ on $y$ off the instrument.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG component for this page (IV / exclusion diagram). ──
+// Pure function of d3 only; builds an SVG with d3.create and returns the node.
+//   nodes: [{id, x, y, label}]  x,y normalized in [0,1] (padded so nothing clips)
+//   edges: [{source, target, kind}]  kind ∈
+//            "causal"        → green  (#2e6f40)   a causal edge
+//            "biasing"       → red    (#b3000b)   an open back-door edge
+//            "blocked"       → grey   (#79766e, dashed)  a blocked/forbidden edge
+//   conditioned: [id,...]    drawn as rounded SQUARES instead of circles
+//   crossed:     [["z","y"], ...]  edges drawn with a red ✕ struck through them
+//                (used here for the forbidden z→y direct path of the exclusion restriction)
+p2sls_drawDAG = function ({ nodes, edges, width = 460, height = 250, conditioned = [], crossed = [] }) {
+  const pad = 50;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+  const crossSet = new Set(crossed.map(c => c[0] + "→" + c[1]));
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "biasing" ? "#b3000b" : "#79766e";
+  const markerFor = k =>
+    k === "causal" ? "p2sls-arrow-green" :
+    k === "biasing" ? "p2sls-arrow-red" : "p2sls-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["p2sls-arrow-green", "#2e6f40"],
+    ["p2sls-arrow-red", "#b3000b"],
+    ["p2sls-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  // ── Edges underneath ──
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    const struck = crossSet.has(e.source + "→" + e.target);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", (e.kind === "blocked" || struck) ? "6,4" : null)
+      .attr("opacity", struck ? 0.6 : 1)
+      .attr("marker-end", `url(#${markerFor(e.kind)})`);
+    if (struck) {
+      // Red ✕ at the midpoint of a forbidden edge.
+      const mx = (xa + xb) / 2, my = (ya + yb) / 2, h = 7;
+      const xg = eg.append("g").attr("stroke", "#b3000b").attr("stroke-width", 3).attr("stroke-linecap", "round");
+      xg.append("line").attr("x1", mx - h).attr("y1", my - h).attr("x2", mx + h).attr("y2", my + h);
+      xg.append("line").attr("x1", mx - h).attr("y1", my + h).attr("x2", mx + h).attr("y2", my - h);
+    }
+  }
+
+  // ── Nodes on top ──
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// IV / exclusion DAG: z → x → y is the only open route; u forks into x and y
+// (the back-door the confounder opens); z → y direct is FORBIDDEN (exclusion),
+// drawn struck-through; z and u are not linked (instrument exogeneity).
+p2sls_drawDAG({
+  width: Math.min(480, width),
+  height: 250,
+  nodes: [
+    { id: "z", x: 0.07, y: 0.50, label: "z", caption: "Distance" },
+    { id: "x", x: 0.50, y: 0.50, label: "x", caption: "Nursing" },
+    { id: "y", x: 0.93, y: 0.50, label: "y", caption: "HbA1c" },
+    { id: "u", x: 0.715, y: 0.06, label: "u", caption: "Confounder" }
+  ],
+  edges: [
+    { source: "z", target: "x", kind: "causal" },
+    { source: "x", target: "y", kind: "causal" },
+    { source: "u", target: "x", kind: "biasing" },
+    { source: "u", target: "y", kind: "biasing" },
+    { source: "z", target: "y", kind: "blocked" }   // forbidden direct path
+  ],
+  crossed: [["z", "y"]]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = open causal path (the channel we want); <span style="color:#b3000b; font-weight:700;">red</span> = the open back-door the confounder $u$ creates; <span style="color:#79766e; font-weight:700;">grey dashed line</span> struck through with a <span style="color:#b3000b; font-weight:700;">red ✕</span> = the *forbidden* direct $z \to y$ path ruled out by the exclusion restriction. The instrument $z$ is also assumed unconnected to $u$ (no arrow between them). IV exploits the green $z \to x \to y$ pipe while the red fork stays untouched.
+:::
+
+The structural equation we care about --- the one with the causal parameter $\beta$ --- is
+
+$$
+y_i = \alpha + \beta\, x_i + u_i .
+$$
+
+**Read this as**: "A patient's follow-up HbA1c equals a baseline level $\alpha$, plus $\beta$ for every additional hour of nurse contact, plus an idiosyncratic term $u_i$ that bundles all the unobserved drivers of blood sugar." The trouble, again, is that $x_i$ and $u_i$ are correlated --- $\mathrm{Cov}(x,u)\neq 0$ --- so OLS of $y$ on $x$ does not return $\beta$.
+
+IV builds $\hat\beta$ out of *two* auxiliary regressions on the instrument, plus the structural equation that ties them together.
+
+### The first stage
+
+The **first stage** regresses the endogenous regressor on the instrument:
+
+$$
+x_i = \pi_0 + \pi_1\, z_i + v_i .
+$$
+
+**Read this as**: "Nurse contact hours equal a constant $\pi_0$, plus $\pi_1$ hours for each additional kilometre of distance, plus a residual $v_i$." Because farther patients get *less* nursing, we expect $\pi_1 < 0$. The slope $\pi_1$ is the **instrument strength** (or relevance): it measures how hard the instrument pushes on $x$. A big $|\pi_1|$ means distance is a powerful lever; $\pi_1 = 0$ means distance does nothing and IV is hopeless. The fitted values $\hat x_i = \hat\pi_0 + \hat\pi_1 z_i$ are the "predicted nursing intensity from distance alone" --- the slice of nursing variation that is driven by geography rather than by patient health.
+
+### The reduced form
+
+The **reduced form** regresses the outcome *directly* on the instrument, skipping $x$ entirely:
+
+$$
+y_i = \gamma_0 + \gamma_1\, z_i + w_i .
+$$
+
+**Read this as**: "Follow-up HbA1c equals a constant plus $\gamma_1$ for each kilometre of distance, plus a residual." The slope $\gamma_1$ is the *total* effect of distance on HbA1c. If distance only matters because it changes nursing, then $\gamma_1$ is "the effect of distance on nursing, times the effect of nursing on HbA1c" --- a composition of the first stage and the structural effect. We expect $\gamma_1 > 0$: living farther means less nursing means worse (higher) HbA1c.
+
+### The IV estimate is their ratio
+
+Substitute the first stage into the structural equation. Since the only part of $x$ that is uncorrelated with $u$ is the part driven by $z$, the effect of $z$ on $y$ must run entirely through $x$:
+
+$$
+\gamma_1 \;=\; \beta \cdot \pi_1 .
+$$
+
+**Read this as**: "The reduced-form slope equals the structural effect times the first-stage slope --- distance moves HbA1c only by moving nursing." Solve for the one unknown we want:
+
+::: {.glass-card .glass-card--definition}
+The **instrumental-variables (Wald) estimator** of $\beta$ is the ratio of the reduced form to the first stage:
+
+$$
+\hat\beta_{IV} \;=\; \frac{\hat\gamma_1}{\hat\pi_1} \;=\; \frac{\widehat{\mathrm{Cov}}(z,y)}{\widehat{\mathrm{Cov}}(z,x)} .
+$$
+
+**Read this as**: "The IV estimate of the effect of nursing on HbA1c is how much distance moves HbA1c, divided by how much distance moves nursing." Equivalently, it is the sample covariance of the instrument with the outcome divided by the sample covariance of the instrument with the regressor. The two forms are identical because a simple-regression slope of $a$ on $b$ is exactly $\mathrm{Cov}(b,a)/\mathrm{Var}(b)$, and the shared $\mathrm{Var}(z)$ in numerator and denominator cancels.
+:::
+
+Four Greek slopes arrive quickly, so here is a one-glance key. The colours match the panels of the interactive below: the **first stage** ($\pi_1$) is drawn in dark red, the **reduced form** ($\gamma_1$) in slate blue, and the answer $\beta$ in green.
+
+```{ojs}
+//| echo: false
+
+// Color-coded notation key: links each symbol to its meaning AND to the plot
+// color used in the interactive, so the eye connects equation → panel and
+// π₁ (first stage) never gets confused with γ₁ (reduced form). Static HTML.
+html`<table class="science-table" style="margin-top:0.5rem;">
+  <thead><tr>
+    <th style="text-align:left;">Symbol</th>
+    <th style="text-align:left;">Plain meaning</th>
+    <th style="text-align:left;">Role in IV</th>
+  </tr></thead>
+  <tbody style="font-family:'Inter',sans-serif;">
+    <tr>
+      <td style="text-align:left;"><strong style="color:#990000;">π̂₁</strong></td>
+      <td style="text-align:left;"><strong style="color:#990000;">first stage</strong> — how much distance moves nursing</td>
+      <td style="text-align:left;">denominator (instrument strength / relevance)</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:#3d5a6c;">γ̂₁</strong></td>
+      <td style="text-align:left;"><strong style="color:#3d5a6c;">reduced form</strong> — how much distance moves HbA1c</td>
+      <td style="text-align:left;">numerator (total effect of the instrument)</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:#2e6f40;">β̂<sub>IV</sub></strong></td>
+      <td style="text-align:left;"><strong style="color:#2e6f40;">the answer</strong> — effect of nursing on HbA1c</td>
+      <td style="text-align:left;">the ratio γ̂₁ ÷ π̂₁</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:#1c1c1a;">β<sub>OLS</sub></strong></td>
+      <td style="text-align:left;">naive slope of HbA1c on nursing</td>
+      <td style="text-align:left;">biased benchmark (ignores the confounder)</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:#79766e;">u</strong></td>
+      <td style="text-align:left;">unobserved confounder (severity, literacy …)</td>
+      <td style="text-align:left;">the thing IV lets us <em>not</em> observe</td>
+    </tr>
+  </tbody>
+</table>`
+```
+
+This is the heart of IV. You do not need to see the confounder $u$. You need only two slopes against an instrument, and you divide one by the other. The unit check is reassuring: $\gamma_1$ is (percentage points of HbA1c) per km; $\pi_1$ is (nurse hours) per km; the km cancel and $\hat\beta_{IV}$ comes out in (percentage points of HbA1c) per (nurse hour) --- exactly the units of the structural effect $\beta$.
+
+::: {.glass-card .glass-card--insight}
+**Distance does not appear in the answer.** Look again at $\hat\beta_{IV} = \hat\gamma_1 / \hat\pi_1$: the units of the instrument cancel. Whether you measure distance in kilometres or miles, in travel-minutes or in a binary "rural vs urban" flag, the IV estimate of the effect of *nursing on HbA1c* is the same. The instrument is scaffolding --- it generates the as-good-as-random variation we exploit --- but it scales out of the final estimate. This is why a binary instrument and a continuous one can both identify the very same $\beta$.
+:::
+
+
+## See It: The Ratio of Two Slopes
+
+The instrument's whole job is to manufacture variation in $x$ that is unrelated to the confounder, and the IV estimate is the slope of $y$ on $z$ divided by the slope of $x$ on $z$. The interactive below lets you *see* those two slopes and watch their ratio. The left panel is the **first stage** (nursing hours vs distance); the right panel is the **reduced form** (HbA1c vs distance); the scoreboard underneath reports the resulting $\hat\beta_{IV}$ next to the OLS estimate and the truth.
+
+The keystone control is **instrument strength**: it sets the true first-stage slope $\pi_1$. Drag it toward zero and watch the IV estimate stay *centred on the truth* while its sampling spread explodes --- a weak instrument is unbiased in expectation but wildly imprecise. Drag it strong and the cloud of repeated estimates collapses to a tight band around $\beta$.
+
+::: {.interactive-container}
+
+#### The First Stage, the Reduced Form, and Their Ratio
+
+::: {.callout-note appearance="simple"}
+**Start here:** drag **instrument strength** toward 0 and watch the green IV histogram below fan out while staying centred on the truth. The step-by-step "How to Read" tour is just below the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof iv2sls_strength = Inputs.range([0.02, 0.55], {
+  value: 0.30,
+  step: 0.01,
+  label: "Instrument strength — how hard distance pushes nursing hours (|π₁|, hours per km)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof iv2sls_confound = Inputs.range([0, 1.2], {
+  value: 0.7,
+  step: 0.05,
+  label: "Confounding strength (how much u moves both x and y)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof iv2sls_n = Inputs.range([60, 600], {
+  value: 220,
+  step: 20,
+  label: "Sample size (patients)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof iv2sls_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed truths of the simulation ───────────────────────────────────────
+// β_true is the causal effect of one extra nurse-hour on HbA1c (pp). Negative
+// = nursing helps. Distance z (km) drives nursing x with slope −strength
+// (farther → fewer hours). The confounder u (latent severity/literacy) RAISES
+// both nursing demand (x) and HbA1c (y), which is what biases OLS upward.
+// One top-level definition per OJS cell, so each constant gets its own cell.
+iv2sls_betaTrue = -0.045          // pp of HbA1c per nurse-hour (truth)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+iv2sls_alpha = 8.4               // baseline HbA1c
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+iv2sls_xMean = 18                // mean nurse-hours/yr at z = 0 distance
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Generate one patient sample deterministically from the controls + the
+// "Draw new sample" counter. Referencing iv2sls_draw makes a fresh draw on
+// each click without any mutable state.
+iv2sls_data = {
+  iv2sls_draw;                                   // reactive dependency: re-draw on click
+  const n    = iv2sls_n;
+  const pi1  = -iv2sls_strength;                 // first-stage slope (hours per km), negative
+  const cf   = iv2sls_confound;                  // confounding strength
+  const rnd  = d3.randomNormal.source(Math.random);
+
+  const zN = rnd(0, 1);   // distance shock
+  const uN = rnd(0, 1);   // latent confounder (severity/health literacy)
+  const vN = rnd(0, 1);   // first-stage noise
+  const eN = rnd(0, 1);   // structural noise
+
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    // Distance to nearest staffed vårdcentral, km: mean 12, sd ~7, clipped ≥ 0.5
+    const z = Math.max(0.5, 12 + 7 * zN());
+    // Latent confounder, standardized
+    const u = uN();
+    // First stage: nursing falls with distance; confounder ADDS demand (cf*u).
+    const x = iv2sls_xMean + pi1 * (z - 12) + cf * 4 * u + 3 * vN();
+    // Structural eq: HbA1c = α + β x + (confounder enters error) + noise.
+    // The confounder u enters the structural error → Cov(x,error) ≠ 0 → OLS biased.
+    const y = iv2sls_alpha + iv2sls_betaTrue * (x - iv2sls_xMean)
+              + cf * 0.9 * u + 0.5 * eN();
+    out.push({ i, z, x, y, u });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Ordinary least squares slope & intercept of `yk` on `xk` over an array.
+iv2sls_ols = function (rows, xk, yk) {
+  const xb = d3.mean(rows, d => d[xk]);
+  const yb = d3.mean(rows, d => d[yk]);
+  let sxy = 0, sxx = 0;
+  for (const r of rows) {
+    sxy += (r[xk] - xb) * (r[yk] - yb);
+    sxx += (r[xk] - xb) * (r[xk] - xb);
+  }
+  const slope = sxy / sxx;
+  return { slope, intercept: yb - slope * xb };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The three regressions + the IV ratio, all from the current sample.
+iv2sls_fit = {
+  const d  = iv2sls_data;
+  const fs = iv2sls_ols(d, "z", "x");   // first stage:  x ~ z   → π̂₁
+  const rf = iv2sls_ols(d, "z", "y");   // reduced form: y ~ z   → γ̂₁
+  const ls = iv2sls_ols(d, "x", "y");   // naive OLS:    y ~ x   → biased
+  const betaIV = rf.slope / fs.slope;   // Wald ratio
+  return { pi1: fs.slope, gamma1: rf.slope, olsSlope: ls.slope, betaIV, fs, rf };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Lines for the two scatter panels, drawn across each panel's x-domain.
+iv2sls_zDom = [d3.min(iv2sls_data, d => d.z), d3.max(iv2sls_data, d => d.z)]
+
+iv2sls_fsLine = iv2sls_zDom.map(z => ({ z, x: iv2sls_fit.fs.intercept + iv2sls_fit.fs.slope * z }))
+iv2sls_rfLine = iv2sls_zDom.map(z => ({ z, y: iv2sls_fit.rf.intercept + iv2sls_fit.rf.slope * z }))
+```
+
+```{ojs}
+//| echo: false
+
+// LEFT: first stage — nursing hours vs distance. Slope = π̂₁.
+iv2sls_firstStagePlot = Plot.plot({
+  width: Math.min(330, width),
+  height: 300,
+  marginLeft: 60,
+  marginTop: 28,
+  marginBottom: 42,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+  x: { label: "Distance z (km) →", grid: true },
+  y: { label: "↑ Nurse hours x", grid: true },
+  marks: [
+    Plot.dot(iv2sls_data, { x: "z", y: "x", r: 2.6, fill: "#990000", fillOpacity: 0.40 }),
+    Plot.line(iv2sls_fsLine, { x: "z", y: "x", stroke: "#1c1c1a", strokeWidth: 3 }),
+    Plot.text(["FIRST STAGE"], {
+      frameAnchor: "top-left", dx: 4, dy: 4,
+      text: d => d, textAnchor: "start",
+      fill: "#990000", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([iv2sls_fit.pi1], {
+      frameAnchor: "bottom-left", dx: 4, dy: -6,
+      text: d => `π̂₁ = ${d.toFixed(3)}`, textAnchor: "start",
+      fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// RIGHT: reduced form — HbA1c vs distance. Slope = γ̂₁.
+iv2sls_reducedFormPlot = Plot.plot({
+  width: Math.min(330, width),
+  height: 300,
+  marginLeft: 60,
+  marginTop: 28,
+  marginBottom: 42,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+  x: { label: "Distance z (km) →", grid: true },
+  y: { label: "↑ HbA1c y (%)", grid: true },
+  marks: [
+    Plot.dot(iv2sls_data, { x: "z", y: "y", r: 2.6, fill: "#3d5a6c", fillOpacity: 0.40 }),
+    Plot.line(iv2sls_rfLine, { x: "z", y: "y", stroke: "#1c1c1a", strokeWidth: 3 }),
+    Plot.text(["REDUCED FORM"], {
+      frameAnchor: "top-left", dx: 4, dy: 4,
+      text: d => d, textAnchor: "start",
+      fill: "#3d5a6c", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([iv2sls_fit.gamma1], {
+      frameAnchor: "bottom-right", dx: -4, dy: -6,
+      text: d => `γ̂₁ = ${d.toFixed(3)}`, textAnchor: "end",
+      fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Lay the two scatter panels side by side, with a centered "÷ = ratio" caption.
+html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; justify-content:center;">
+  ${iv2sls_firstStagePlot}
+  ${iv2sls_reducedFormPlot}
+</div>
+<div style="text-align:center; font-family:'Inter', sans-serif; font-size:0.9rem; color:#1c1c1a; margin-top:0.25rem; line-height:1.5;">
+  <span style="white-space:nowrap;">β̂<sub>IV</sub> = (reduced-form slope <span style="color:#3d5a6c; font-weight:700;">γ̂₁</span>) ÷ (first-stage slope <span style="color:#990000; font-weight:700;">π̂₁</span>)</span><br>
+  <span style="white-space:nowrap; font-family:'JetBrains Mono', monospace;">= ${iv2sls_fit.gamma1.toFixed(3)} ÷ ${iv2sls_fit.pi1.toFixed(3)} = <strong style="color:#990000;">${iv2sls_fit.betaIV.toFixed(3)}</strong></span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// RIGHT-equivalent: a numeric scoreboard — IV vs OLS vs truth.
+{
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  const ivErr  = iv2sls_fit.betaIV  - iv2sls_betaTrue;
+  const olsErr = iv2sls_fit.olsSlope - iv2sls_betaTrue;
+  const tile = (name, val, color, bg, note) => html`<div style="
+      text-align:center; padding:0.6rem 0.4rem; min-height:6.5rem;
+      display:flex; flex-direction:column; justify-content:center;
+      border-radius:0.5rem; background:${bg};">
+    <div style="font-family:'Inter', sans-serif; font-size:0.7rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${name}</div>
+    <div style="font-family:'JetBrains Mono', monospace; font-size:1.3rem;
+        font-weight:700; color:${color};">${fmt(val)}</div>
+    <div style="font-family:'Inter', sans-serif; font-size:0.68rem;
+        color:#79766e;">${note}</div>
+  </div>`;
+  return html`<div style="display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(8.5rem, 1fr));
+      gap:0.5rem; margin-top:0.75rem;">
+    ${tile("True β", iv2sls_betaTrue, "#1c1c1a", "#f6f5f1", "baked into the DGP")}
+    ${tile("IV (Wald)", iv2sls_fit.betaIV, "#2e6f40", "rgba(46,111,64,0.08)",
+        `error ${fmt(ivErr)}`)}
+    ${tile("OLS (naive)", iv2sls_fit.olsSlope, "#b3000b", "rgba(179,0,11,0.06)",
+        `biased: error ${fmt(olsErr)}`)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Monte-Carlo cloud: 400 IV and 400 OLS estimates at the CURRENT strength &
+// confounding, to show IV stays centered on truth while its SPREAD grows as the
+// instrument weakens. Recomputed when the structural controls change (NOT tied
+// to the per-click counter, so the cloud is stable while you read it).
+iv2sls_mc = {
+  const reps = 400;
+  const n    = iv2sls_n;
+  const pi1  = -iv2sls_strength;
+  const cf   = iv2sls_confound;
+  const rnd  = d3.randomNormal.source(Math.random);
+  const zN = rnd(0, 1), uN = rnd(0, 1), vN = rnd(0, 1), eN = rnd(0, 1);
+
+  const ivs = [], olss = [];
+  for (let r = 0; r < reps; r++) {
+    let szx = 0, szy = 0, zb = 0, xb = 0, yb = 0, sxx = 0, sxy = 0;
+    const Z = [], X = [], Y = [];
+    for (let i = 0; i < n; i++) {
+      const z = Math.max(0.5, 12 + 7 * zN());
+      const u = uN();
+      const x = iv2sls_xMean + pi1 * (z - 12) + cf * 4 * u + 3 * vN();
+      const y = iv2sls_alpha + iv2sls_betaTrue * (x - iv2sls_xMean) + cf * 0.9 * u + 0.5 * eN();
+      Z.push(z); X.push(x); Y.push(y); zb += z; xb += x; yb += y;
+    }
+    zb /= n; xb /= n; yb /= n;
+    for (let i = 0; i < n; i++) {
+      szx += (Z[i] - zb) * (X[i] - xb);
+      szy += (Z[i] - zb) * (Y[i] - yb);
+      sxx += (X[i] - xb) * (X[i] - xb);
+      sxy += (X[i] - xb) * (Y[i] - yb);
+    }
+    ivs.push(szy / szx);     // Wald ratio = Cov(z,y)/Cov(z,x)
+    olss.push(sxy / sxx);    // OLS slope
+  }
+  return { ivs, olss };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Sampling distribution of β̂_IV vs β̂_OLS across 400 simulated studies.
+{
+  const ivData  = iv2sls_mc.ivs.filter(v => v > -0.4 && v < 0.3).map(v => ({ v, est: "IV" }));
+  const olsData = iv2sls_mc.olss.map(v => ({ v, est: "OLS" }));
+  const all = ivData.concat(olsData);
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 230,
+    marginLeft: 60,
+    marginTop: 24,
+    marginRight: 16,
+    marginBottom: 40,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+    x: { label: "Estimated effect of nursing on HbA1c (pp per hour) →", domain: [-0.25, 0.15], grid: true },
+    y: { label: "↑ count (of 400 studies)" },
+    color: { domain: ["IV", "OLS"], range: ["#2e6f40", "#b3000b"], legend: true },
+    marks: [
+      Plot.rectY(all, Plot.binX({ y: "count" }, { x: "v", fill: "est", fillOpacity: 0.55, thresholds: 50 })),
+      Plot.ruleX([iv2sls_betaTrue], { stroke: "#9c7a33", strokeWidth: 2.5, strokeDasharray: "5,4" }),
+      Plot.text([{ x: iv2sls_betaTrue }], {
+        x: "x", text: () => "true β", dy: 4, dx: 4,
+        fill: "#9c7a33", fontWeight: 700, fontSize: 11, textAnchor: "start", frameAnchor: "top",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line note: the histogram reflects the structural sliders, not the per-click draw.
+html`<div style="font-family:'Inter', sans-serif; font-size:0.75rem; color:#79766e;
+    margin-top:0.25rem; text-align:center;">
+  This histogram shows 400 simulated studies at the <em>current slider settings</em> — it does
+  <strong>not</strong> change when you click "Draw new sample" (that button only redraws the dots above).
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Plain-language verdict that updates with the strength slider.
+{
+  const sd  = d3.deviation(iv2sls_mc.ivs.filter(v => v > -0.4 && v < 0.3));
+  const bias = d3.mean(iv2sls_mc.ivs.filter(v => v > -0.4 && v < 0.3)) - iv2sls_betaTrue;
+  const strong = iv2sls_strength >= 0.25;
+  // OLS displacement: the mean of the 400 OLS draws minus the truth. With
+  // confounding ≈ 0 this is ≈ 0 and OLS is *not* biased, so the message must
+  // not claim otherwise.
+  const olsOff = d3.mean(iv2sls_mc.olss) - iv2sls_betaTrue;
+  const olsBiased = Math.abs(olsOff) > 0.015;
+  const olsClause = olsBiased
+    ? `while OLS sits stubbornly off-target (≈ ${(iv2sls_betaTrue + olsOff).toFixed(3)}, error ${olsOff >= 0 ? "+" : ""}${olsOff.toFixed(3)}) — biased by the confounding you dialled in.`
+    : `and so is OLS: with confounding near zero there is no endogeneity to correct, so the two estimators agree (turn up "confounding strength" to pull OLS away).`;
+  const msg = strong
+    ? `Strong instrument (|π₁| = ${iv2sls_strength.toFixed(2)}): the green IV histogram is tight (sd ≈ ${sd.toFixed(3)}) and centred on the truth, ${olsClause}`
+    : `Weak instrument (|π₁| = ${iv2sls_strength.toFixed(2)}): the green IV histogram is still centred near the truth (bias ≈ ${bias.toFixed(3)}) but FAT (sd ≈ ${sd.toFixed(3)}). Dividing by a tiny first stage magnifies noise — IV is unbiased in theory yet wildly imprecise in practice.`;
+  return html`<div style="margin-top:0.5rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+      border-left:3px solid ${strong ? "#2e6f40" : "#9c7a33"}; background:#f6f5f1;
+      font-family:'Inter', sans-serif; font-size:0.86rem; line-height:1.45;
+      color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Three-Panel View
+
+Work through these in order; each isolates one moving part of the IV machine.
+
+**Step 1: Read the two slopes.** The left panel is the **first stage** --- each dot is a patient, plotted by distance ($z$) against nurse hours ($x$). The fitted line slopes *down*: farther patients get fewer hours, so $\hat\pi_1 < 0$. The right panel is the **reduced form** --- the same patients, distance against HbA1c ($y$). That line slopes *up*: farther patients have worse blood sugar, so $\hat\gamma_1 > 0$.
+
+**Step 2: Form the ratio.** The caption between the panels does the one operation that defines IV: it divides the reduced-form slope by the first-stage slope. A downhill first stage divided into an uphill reduced form yields a *negative* $\hat\beta_{IV}$ --- nursing lowers HbA1c. Confirm it lands near the true $\beta = -0.045$ in the scoreboard.
+
+**Step 3: Compare IV to OLS.** The scoreboard shows three numbers: the truth, the IV estimate, and the naive OLS slope of $y$ on $x$. OLS is biased *upward* (toward zero or positive) because the confounder --- latent severity and engagement --- pushes both nursing demand and HbA1c up together, masking the benefit. IV throws away the confounded variation in $x$ and keeps only the geography-driven slice, so it recovers the truth.
+
+**Step 4: Weaken the instrument.** Now drag **instrument strength** toward 0.02. The first-stage line flattens. Watch the bottom histogram: the green IV distribution stays *centred on the truth* but balloons in width, because you are dividing the reduced form by an ever-smaller $\hat\pi_1$ --- and dividing by something near zero magnifies every wiggle of noise. (The verdict box reports this width as the **sd** --- the standard deviation of the estimate across the 400 simulated studies, i.e. the spread you see in the histogram; it is the standard error you would face in one real study.) This is the weak-instrument problem in one picture: IV is unbiased in expectation yet can be uselessly imprecise. One caveat the picture *understates*: in real finite samples a weak instrument also nudges $\hat\beta_{IV}$ slightly *toward* the biased OLS value --- a median bias the symmetric green cloud here does not show. The next page makes both the strength threshold and that finite-sample bias precise.
+
+**Step 5: Resample and crank confounding.** Click **Draw new sample** a few times to feel the sampling variability of a single study. Then push **confounding strength** up: the pink OLS histogram marches further from the truth while the green IV histogram holds its position. More confounding hurts OLS and leaves IV (in expectation) alone --- which is the entire reason to pay the precision cost of instrumenting.
+
+
+## The "Two-Stage" in Two-Stage Least Squares
+
+The name *two-stage least squares* describes a literal recipe that produces the same number as the Wald ratio:
+
+1. **Stage 1.** Regress $x$ on $z$ by OLS and save the fitted values $\hat x_i = \hat\pi_0 + \hat\pi_1 z_i$. These fitted values are the projection of $x$ onto the instrument --- the part of nursing intensity explained by geography.
+2. **Stage 2.** Regress $y$ on $\hat x$ (the fitted values, *not* the original $x$) by OLS. The slope coefficient is $\hat\beta_{2SLS}$.
+
+::: {.glass-card .glass-card--insight}
+**Why this works.** The fitted values $\hat x_i$ are a function of $z_i$ alone, so they inherit the instrument's key property: they are uncorrelated with the structural error $u$. By regressing $y$ on $\hat x$ instead of $x$, stage 2 uses *only* the clean, geography-driven variation in nursing and discards the confounded part. In the just-identified case (one instrument, one endogenous regressor) this two-stage procedure returns *exactly* the Wald ratio $\hat\gamma_1/\hat\pi_1$ --- they are algebraically the same estimator. The Math Details prove it.
+:::
+
+The two-stage picture generalizes in a way the Wald ratio does not: with several instruments you cannot take a single ratio, but you *can* still project $x$ onto all the instruments in stage 1 and regress $y$ on the projection in stage 2. That is why "2SLS" is the name that stuck, and why it is the default IV estimator in software.
+
+::: {.glass-card .glass-card--warning}
+**Never run the two stages by hand for your final answer.** It is tempting to literally fit stage 1, save $\hat x$, and run stage 2 in a second `lm()` call. The *point estimate* will be correct, but the **standard errors will be wrong** --- too small. Here is why: stage 2's software computes residuals as $y_i - \hat\beta_{2SLS}\,\hat x_i$, using the *fitted* regressor $\hat x$. But the correct residual for inference is $y_i - \hat\beta_{2SLS}\, x_i$, using the *actual* nursing hours, because $\beta$ is the effect of real nursing on real HbA1c. The hand-rolled second stage never sees the original $x$, so it understates the residual variance and reports overconfident standard errors and too-narrow confidence intervals. A purpose-built IV command (R's `ivreg`/`feols`, Python's `IV2SLS`) computes the point estimate the same way but plugs the *original* $x$ back in for the variance, delivering valid inference. Use the command, not the two-`lm` shortcut.
+:::
+
+The warning rests on one fact: the fitted regressor $\hat x$ (nursing predicted from distance alone) varies *less* than the actual nursing $x$, because $\hat x$ keeps only the geography-driven slice and throws away every other source of variation. The figure below makes that gap visible --- it reuses the *same* sample drawn in the interactive above (move the sliders or click "Draw new sample" and it follows). The spread of $\hat x$ is a sliver of the spread of $x$, and that shrunken spread is exactly what a hand-rolled stage 2 mistakes for the residual scale, reporting standard errors that are too small.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Reuse the live sample + first-stage fit from the interactive above (read-only;
+// we never reassign them). x̂ = fitted nursing from distance; compare its spread
+// to that of actual x to show why hand-rolled stage-2 SEs are understated.
+p2sls_xhat = iv2sls_data.map(d => ({
+  xActual: d.x,
+  xHat: iv2sls_fit.fs.intercept + iv2sls_fit.fs.slope * d.z
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+p2sls_sdActual = d3.deviation(p2sls_xhat, d => d.xActual)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+p2sls_sdHat = d3.deviation(p2sls_xhat, d => d.xHat)
+```
+
+```{ojs}
+//| echo: false
+
+// Paired-bar comparison of sd(x) vs sd(x̂). The shorter x̂ bar is the visible
+// cause of the too-small hand-rolled standard error.
+{
+  const rows = [
+    { which: "actual x", sd: p2sls_sdActual, color: "#990000" },
+    { which: "fitted x̂", sd: p2sls_sdHat,    color: "#9c7a33" }
+  ];
+  return Plot.plot({
+    width: Math.min(420, width),
+    height: 200,
+    marginLeft: 84,
+    marginBottom: 45,
+    marginRight: 60,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+    x: { label: "Standard deviation (nurse hours) →", grid: true, domain: [0, Math.max(p2sls_sdActual, 0.1) * 1.15] },
+    y: { label: null, domain: ["actual x", "fitted x̂"] },
+    marks: [
+      Plot.barX(rows, { y: "which", x: "sd", fill: "color", fillOpacity: 0.85 }),
+      Plot.text(rows, {
+        y: "which", x: "sd", text: d => d.sd.toFixed(2),
+        dx: 6, textAnchor: "start", fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.ruleX([0])
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line takeaway tying the bars to the SE warning, computed live.
+html`<div style="font-family:'Inter', sans-serif; font-size:0.78rem; color:#79766e;
+    margin-top:0.25rem; text-align:center;">
+  Here sd(x̂) ≈ ${p2sls_sdHat.toFixed(2)} is only about
+  <strong>${Math.round(100 * p2sls_sdHat / p2sls_sdActual)}%</strong>
+  of sd(x) ≈ ${p2sls_sdActual.toFixed(2)} — a hand-rolled stage 2 plugs the smaller number into the
+  variance and so under-reports the standard error. (A proper IV command puts the actual x back in.)
+</div>`
+```
+
+
+## Just-Identified vs Over-Identified
+
+The relationship between the number of instruments and the number of endogenous regressors has a name.
+
+- **Just-identified.** One instrument for one endogenous regressor. There is exactly one moment condition for one parameter, the system has a unique solution, and 2SLS collapses to the single Wald ratio $\hat\gamma_1/\hat\pi_1$. This is the case all over this page: distance instruments nursing.
+- **Over-identified.** More instruments than endogenous regressors --- say, *both* distance *and* whether the patient's nearest centre had a recent staffing surge, each instrumenting nursing. Now there are several ways to form a ratio, and they need not agree. 2SLS combines them optimally: it projects $x$ on *all* the instruments in stage 1 and uses that single best-predicted $\hat x$ in stage 2, which is equivalent to a precision-weighted average of the individual Wald ratios.
+- **Under-identified.** Fewer instruments than endogenous regressors (e.g. zero instruments). The parameter is not identified at all --- there is no IV estimate.
+
+The counting rule, at a glance:
+
+```{ojs}
+//| echo: false
+
+// Compact identification-regime table: # instruments vs # endogenous regressors
+// and the consequence. Static; makes the counting rule instantly scannable.
+html`<table class="science-table" style="margin-top:0.5rem;">
+  <thead><tr>
+    <th style="text-align:left;">Regime</th>
+    <th>Instruments vs endog. regressors</th>
+    <th style="text-align:left;">Consequence</th>
+    <th>Can you test the instruments?</th>
+  </tr></thead>
+  <tbody style="font-family:'Inter',sans-serif;">
+    <tr>
+      <td style="text-align:left;"><strong style="color:#b3000b;">Under-identified</strong></td>
+      <td># instruments &lt; # endogenous</td>
+      <td style="text-align:left;">no IV estimate exists</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:#2e6f40;">Just-identified</strong></td>
+      <td># instruments = # endogenous</td>
+      <td style="text-align:left;">unique Wald ratio γ̂₁ ÷ π̂₁</td>
+      <td>no (one instrument can't check itself)</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:#3d5a6c;">Over-identified</strong></td>
+      <td># instruments &gt; # endogenous</td>
+      <td style="text-align:left;">2SLS = precision-weighted blend</td>
+      <td>yes — the overid (Sargan/Hansen J) test</td>
+    </tr>
+  </tbody>
+</table>`
+```
+
+Over-identification has a hidden bonus: because the instruments *should* all point at the same $\beta$ if the exclusion restriction holds for each, a disagreement among them is evidence that something is wrong. This is the logic of the **overidentification (Sargan/Hansen $J$) test**, which we develop on the next page. In the just-identified case there is nothing to test --- one instrument can never check itself.
+
+
+## What IV Actually Estimates: A Forward Glance
+
+There is a subtlety we will only flag here and develop fully two pages on. Everything above implicitly assumed the structural effect $\beta$ is the *same* for every patient --- a constant treatment effect. When effects are **heterogeneous** --- when an extra nurse-hour helps some patients a lot and others barely at all --- IV does not recover the population average treatment effect. Instead, it recovers a weighted average that up-weights exactly the patients whose nursing intensity *responds* to the instrument. (The *estimand* is just the quantity an estimator is aiming at --- the target effect, distinct from the $\hat\beta$ number you compute in any one sample.)
+
+::: {.glass-card .glass-card--insight}
+Under heterogeneous effects, $\hat\beta_{IV}$ estimates the **Local Average Treatment Effect (LATE)** --- the average effect of nursing among the *compliers*, the patients whose nursing intensity is actually moved by distance. Patients whose nursing is fixed regardless of where they live (the "always-takers" and "never-takers") contribute nothing to the IV estimate, because the instrument generates no variation in their treatment. The instrument can only teach us about the patients it moves. We make this precise on the LATE page; for now, just retain the slogan: *IV identifies the effect for those whose behaviour the instrument changes.*
+:::
+
+
+<details>
+<summary>Math Details: Deriving the IV estimator from the moment condition E[z·u] = 0</summary>
+<div class="details-content">
+
+### The identifying assumption as a moment condition
+
+The instrument's validity is captured by a single population statement: the instrument is uncorrelated with the structural error,
+
+$$
+\mathbb{E}[z_i\, u_i] = 0 .
+$$
+
+This is the **exclusion restriction** in moment form: distance affects HbA1c *only* through nursing, so once nursing's effect is accounted for, distance carries no leftover association with the unobserved drivers $u$. (We also assume relevance, $\mathrm{Cov}(z,x)\neq 0$, and, for simplicity, that $z$ is mean-centred so $\mathbb{E}[z]=0$ and the covariance is just $\mathbb{E}[zu]$.)
+
+### Solve for β
+
+Start from the structural equation and isolate the error:
+
+$$
+u_i = y_i - \alpha - \beta\, x_i .
+$$
+
+Substitute into the moment condition $\mathbb{E}[z_i u_i] = 0$:
+
+$$
+\mathbb{E}\big[z_i\,(y_i - \alpha - \beta\, x_i)\big] = 0 .
+$$
+
+With $z$ mean-centred, $\mathbb{E}[z_i] = 0$ kills the $\alpha$ term ($\mathbb{E}[z_i\alpha] = \alpha\,\mathbb{E}[z_i] = 0$), leaving
+
+$$
+\mathbb{E}[z_i y_i] - \beta\,\mathbb{E}[z_i x_i] = 0
+\quad\Longrightarrow\quad
+\beta = \frac{\mathbb{E}[z_i y_i]}{\mathbb{E}[z_i x_i]} = \frac{\mathrm{Cov}(z,y)}{\mathrm{Cov}(z,x)} .
+$$
+
+**Read this as**: "Because the instrument is clean ($\mathbb{E}[zu]=0$), the only way it can be associated with $y$ is through $x$; so the ratio of those two associations is exactly the structural slope." The sample analogue replaces population covariances with sample covariances, giving the Wald estimator $\hat\beta_{IV} = \widehat{\mathrm{Cov}}(z,y)/\widehat{\mathrm{Cov}}(z,x)$.
+
+### Why this is the reduced form over the first stage
+
+Divide numerator and denominator by $\mathrm{Var}(z)$:
+
+$$
+\hat\beta_{IV}
+= \frac{\widehat{\mathrm{Cov}}(z,y)/\widehat{\mathrm{Var}}(z)}{\widehat{\mathrm{Cov}}(z,x)/\widehat{\mathrm{Var}}(z)}
+= \frac{\hat\gamma_1}{\hat\pi_1} ,
+$$
+
+because $\mathrm{Cov}(z,y)/\mathrm{Var}(z)$ *is* the OLS slope of $y$ on $z$ (the reduced form $\hat\gamma_1$) and $\mathrm{Cov}(z,x)/\mathrm{Var}(z)$ *is* the OLS slope of $x$ on $z$ (the first stage $\hat\pi_1$). The shared $\mathrm{Var}(z)$ cancels --- which is why the *scale* of the instrument never enters the answer.
+
+### Equivalence to the two-stage procedure
+
+Stage 1 produces $\hat x_i = \hat\pi_0 + \hat\pi_1 z_i$, an exact linear function of $z$. The stage-2 slope is
+
+$$
+\hat\beta_{2SLS} = \frac{\widehat{\mathrm{Cov}}(\hat x, y)}{\widehat{\mathrm{Var}}(\hat x)} .
+$$
+
+Since $\hat x$ is linear in $z$, $\widehat{\mathrm{Cov}}(\hat x, y) = \hat\pi_1\,\widehat{\mathrm{Cov}}(z,y)$ and $\widehat{\mathrm{Var}}(\hat x) = \hat\pi_1^2\,\widehat{\mathrm{Var}}(z)$. Therefore
+
+$$
+\hat\beta_{2SLS}
+= \frac{\hat\pi_1\,\widehat{\mathrm{Cov}}(z,y)}{\hat\pi_1^2\,\widehat{\mathrm{Var}}(z)}
+= \frac{\widehat{\mathrm{Cov}}(z,y)}{\hat\pi_1\,\widehat{\mathrm{Var}}(z)}
+= \frac{\widehat{\mathrm{Cov}}(z,y)}{\widehat{\mathrm{Cov}}(z,x)}
+= \hat\beta_{IV} . \quad\checkmark
+$$
+
+The two-stage recipe and the Wald ratio are the *same number* in the just-identified case.
+
+### Why hand-rolled stage-2 standard errors are wrong
+
+The asymptotic variance of 2SLS is
+
+$$
+\widehat{\mathrm{Var}}(\hat\beta_{2SLS}) = \hat\sigma^2_u \big(\hat X' \hat X\big)^{-1},
+\qquad
+\hat\sigma^2_u = \frac{1}{n}\sum_i \big(y_i - \hat\beta_{2SLS}\, x_i\big)^2 ,
+$$
+
+where the residual variance $\hat\sigma^2_u$ uses the **original** regressor $x_i$, because $\beta$ is the effect of actual nursing on actual HbA1c. A naive second-stage `lm(y ~ x_hat)` instead forms residuals $y_i - \hat\beta_{2SLS}\,\hat x_i$ using the *fitted* $\hat x_i$. Since $\hat x$ has smaller variance than $x$, those residuals are systematically too small, $\hat\sigma^2_u$ is understated, and the reported standard errors are too narrow. A dedicated IV command substitutes $x$ back in for the variance step, which is why you must use it for inference.
+
+</div>
+</details>
+
+
+## Computing 2SLS
+
+Both implementations simulate the nursing--HbA1c study, show that OLS is biased, and recover the truth three equivalent ways: the Wald ratio, a *deliberately wrong* hand-rolled two-stage fit (correct point estimate, broken SEs), and a proper IV command (correct point estimate *and* correct SEs).
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(AER)      # ivreg()
+library(fixest)   # feols() with IV syntax
+
+set.seed(2024)
+n <- 800
+
+# --- Data-generating process -------------------------------------------------
+# u = latent severity/health-literacy confounder (RAISES nursing demand AND HbA1c)
+# z = distance to nearest staffed vårdcentral (km), the instrument
+# x = nurse contact hours/yr;  falls with distance, rises with u (endogenous)
+# y = HbA1c (%);  true effect of nursing is -0.045 pp per hour
+u <- rnorm(n)
+z <- pmax(0.5, 12 + 7 * rnorm(n))
+x <- 18 - 0.30 * (z - 12) + 0.7 * 4 * u + 3 * rnorm(n)
+y <- 8.4 - 0.045 * (x - 18) + 0.7 * 0.9 * u + 0.5 * rnorm(n)
+dat <- tibble(y, x, z)
+
+# --- 1. Naive OLS (biased: x is correlated with u) ---------------------------
+ols <- lm(y ~ x, data = dat)
+cat("OLS slope (biased):    ", round(coef(ols)["x"], 4), "\n")
+
+# --- 2. First stage, reduced form, and the Wald ratio ------------------------
+fs <- lm(x ~ z, data = dat); pi1   <- coef(fs)["z"]
+rf <- lm(y ~ z, data = dat); gamma1 <- coef(rf)["z"]
+cat("First stage  pi1:      ", round(pi1, 4), "\n")
+cat("Reduced form gamma1:   ", round(gamma1, 4), "\n")
+cat("Wald ratio  gamma1/pi1:", round(gamma1 / pi1, 4), "\n")
+
+# --- 3. Hand-rolled 2SLS: RIGHT point estimate, WRONG standard errors --------
+xhat   <- fitted(fs)
+manual <- lm(y ~ xhat, data = dat)
+cat("Manual 2SLS slope:     ", round(coef(manual)["xhat"], 4),
+    " (SE", round(summary(manual)$coef["xhat", "Std. Error"], 4),
+    "is TOO SMALL — ignores that y depends on real x, not x-hat)\n")
+
+# --- 4. Proper IV: same point estimate, CORRECT SEs --------------------------
+iv <- ivreg(y ~ x | z, data = dat)     #  y ~ endogenous | instrument
+summary(iv)                            #  valid SEs for the x coefficient
+
+# Equivalent in fixest (also gives the first-stage F automatically):
+iv_fe <- feols(y ~ 1 | x ~ z, data = dat)
+summary(iv_fe)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from linearmodels.iv import IV2SLS
+
+rng = np.random.default_rng(2024)
+n = 800
+
+# --- Data-generating process -------------------------------------------------
+# u = latent severity/literacy confounder; z = distance (km, instrument);
+# x = nurse hours/yr (endogenous); y = HbA1c (true effect -0.045 pp/hour)
+u = rng.normal(size=n)
+z = np.maximum(0.5, 12 + 7 * rng.normal(size=n))
+x = 18 - 0.30 * (z - 12) + 0.7 * 4 * u + 3 * rng.normal(size=n)
+y = 8.4 - 0.045 * (x - 18) + 0.7 * 0.9 * u + 0.5 * rng.normal(size=n)
+dat = pd.DataFrame({"y": y, "x": x, "z": z})
+
+# --- 1. Naive OLS (biased) ---------------------------------------------------
+ols = smf.ols("y ~ x", data=dat).fit()
+print("OLS slope (biased):     ", round(ols.params["x"], 4))
+
+# --- 2. First stage, reduced form, Wald ratio --------------------------------
+pi1    = smf.ols("x ~ z", data=dat).fit().params["z"]
+gamma1 = smf.ols("y ~ z", data=dat).fit().params["z"]
+print("First stage pi1:        ", round(pi1, 4))
+print("Reduced form gamma1:    ", round(gamma1, 4))
+print("Wald ratio gamma1/pi1:  ", round(gamma1 / pi1, 4))
+
+# --- 3. Hand-rolled 2SLS: RIGHT estimate, WRONG SEs --------------------------
+dat["xhat"] = smf.ols("x ~ z", data=dat).fit().fittedvalues
+manual = smf.ols("y ~ xhat", data=dat).fit()
+print("Manual 2SLS slope:      ", round(manual.params["xhat"], 4),
+      " (SE", round(manual.bse["xhat"], 4), "is TOO SMALL)")
+
+# --- 4. Proper IV: same estimate, CORRECT SEs --------------------------------
+iv = IV2SLS.from_formula("y ~ 1 + [x ~ z]", data=dat).fit()
+print(iv.summary)                 # valid SE for x; .first_stage for the F-stat
+```
+
+:::
+
+Across both languages the Wald ratio, the manual two-stage point estimate, and the IV-command estimate agree to the last decimal --- all near the true $-0.045$ --- while only the IV command reports a trustworthy standard error. The naive OLS slope is visibly biased *upward*: with this much confounding it lands near $+0.04$, on the wrong side of zero entirely, because the latent severity term inflates both nursing demand and HbA1c together. The genuine benefit of nursing is masked --- and then reversed --- by the selection of high-need patients into high nursing intensity.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region studies whether nurse contact hours ($x$) lower HbA1c ($y$), using distance to the nearest staffed vårdcentral ($z$, km) as an instrument. From its data it estimates a first stage of $\hat\pi_1 = -0.40$ nurse-hours per km and a reduced form of $\hat\gamma_1 = +0.018$ HbA1c points per km.
+
+(a) Compute $\hat\beta_{IV}$ and state its units. (b) Interpret the sign. (c) The naive OLS regression of $y$ on $x$ gave $-0.010$. Is OLS biased toward or away from zero here, and what does that imply about the confounder?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\hat\beta_{IV} = \hat\gamma_1 / \hat\pi_1 = 0.018 / (-0.40) = -0.045$. The units are (HbA1c percentage points) per (nurse-hour): the km in numerator and denominator cancel.
+
+**(b)** Negative: each additional nurse-hour per year is estimated to lower HbA1c by 0.045 percentage points. Since lower HbA1c is better, nursing helps.
+
+**(c)** OLS ($-0.010$) is *closer to zero* than IV ($-0.045$), so OLS is biased *toward zero* --- it understates the benefit. That is the signature of a confounder $u$ that pushes nursing and HbA1c in the *same* direction: sicker, higher-need patients demand more nursing *and* have higher HbA1c, which partly cancels the genuine downward effect of nursing in the raw $x$--$y$ association. IV strips out that confounded variation and reveals the larger true benefit.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Show, using the Wald formula, that the IV estimate is invariant to the *scale* of the instrument. Specifically, suppose a colleague re-expresses distance in metres instead of kilometres, i.e. $z' = 1000\, z$. What happens to the first stage $\hat\pi_1$, the reduced form $\hat\gamma_1$, and the ratio $\hat\beta_{IV}$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Rescaling $z' = 1000\, z$ rescales every covariance with $z$ by the same factor:
+
+$$
+\hat\pi_1' = \frac{\mathrm{Cov}(z', x)}{\mathrm{Var}(z')}
+= \frac{1000\,\mathrm{Cov}(z,x)}{1000^2\,\mathrm{Var}(z)}
+= \frac{\hat\pi_1}{1000},
+\qquad
+\hat\gamma_1' = \frac{\hat\gamma_1}{1000}.
+$$
+
+Both the first-stage and reduced-form slopes shrink by a factor of 1000 (now "per metre" instead of "per km"). But the ratio is unchanged:
+
+$$
+\hat\beta_{IV}' = \frac{\hat\gamma_1'}{\hat\pi_1'}
+= \frac{\hat\gamma_1 / 1000}{\hat\pi_1 / 1000}
+= \frac{\hat\gamma_1}{\hat\pi_1} = \hat\beta_{IV}. \quad\checkmark
+$$
+
+The instrument's scale cancels. This is the algebra behind the Key Insight box: the instrument is scaffolding for generating clean variation, and its units never appear in the estimate of the effect of nursing on HbA1c.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A graduate student runs IV by hand: she regresses $x$ on $z$, saves $\hat x$, then runs `lm(y ~ x_hat)` and reports the coefficient *and* its standard error from that second regression. Her supervisor says the point estimate is fine but the standard error is wrong. (a) Why is the point estimate correct? (b) Is the reported standard error too large or too small, and why? (c) What single change fixes the inference?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The point estimate is correct because, in the just-identified case, regressing $y$ on the fitted values $\hat x$ is algebraically identical to the Wald ratio $\hat\gamma_1/\hat\pi_1$ (proved in the Math Details). The fitted values are a linear function of $z$, and the covariance and variance factors of $\hat\pi_1$ cancel, leaving exactly $\mathrm{Cov}(z,y)/\mathrm{Cov}(z,x)$.
+
+**(b)** Too *small*. The second `lm` computes residuals as $y_i - \hat\beta\,\hat x_i$ using the *fitted* regressor $\hat x$, whose variance is smaller than that of the actual $x$. The correct residual for the structural equation is $y_i - \hat\beta\, x_i$, using *actual* nursing hours. Underusing the variance of the regressor understates the residual variance $\hat\sigma_u^2$, so the reported standard errors --- and the confidence intervals --- are too narrow, making the result look more precise (and more "significant") than it is.
+
+**(c)** Use a dedicated IV command (`ivreg(y ~ x | z)` in R, `feols(y ~ 1 | x ~ z)`, or `IV2SLS` in Python). These compute the same point estimate but plug the *original* $x$ back in when forming the residual variance, delivering valid standard errors. The fix is to stop hand-rolling stage 2 for inference.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set instrument strength near its minimum (|π₁| ≈ 0.02) and watch the green IV histogram. The estimate stays centred on the truth but becomes very wide. (a) Explain, using the Wald formula, why a weak first stage inflates the *variance* of $\hat\beta_{IV}$ without (in expectation) creating bias. (b) Why is "unbiased but high-variance" still a serious practical problem for a single study?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Write $\hat\beta_{IV} = \hat\gamma_1 / \hat\pi_1$. As the true first stage $\pi_1 \to 0$, the denominator $\hat\pi_1$ is a small number estimated with its own sampling noise. Dividing the reduced form by a near-zero, noisy denominator magnifies that noise: a small wiggle in $\hat\pi_1$ produces a large swing in the ratio. Because the *expected* numerator and denominator still satisfy $\gamma_1 = \beta\,\pi_1$, the ratio remains (approximately) centred on $\beta$ --- so there is no first-order bias in the just-identified large-sample sense --- but its variance blows up. Geometrically, you are reading the slope of $y$ on $z$ off an almost-flat first stage, where tiny vertical movements imply huge slope changes.
+
+**(b)** A single study gives you *one* draw from that fat sampling distribution, not the average over 400 draws. If the distribution is wide, your one estimate can land far from the truth, your confidence interval will be enormous (or, if you mis-estimate it, misleadingly tight), and you cannot distinguish a real effect from zero. "Unbiased on average" is cold comfort when you only run the study once. This is exactly why the next page is devoted to *measuring* instrument strength (the first-stage $F$-statistic) before trusting any IV estimate.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The IV estimator is the ratio of two simple regressions on the instrument: $\hat\beta_{IV} = \hat\gamma_1/\hat\pi_1 = \mathrm{Cov}(z,y)/\mathrm{Cov}(z,x)$ --- the reduced form divided by the first stage. The instrument's scale cancels out of the answer.
+- It is derived from a single moment condition, $\mathbb{E}[z\,u]=0$ (the instrument is uncorrelated with the structural error): because the instrument is clean, its only association with $y$ runs through $x$, so dividing one association by the other recovers the structural slope.
+- "Two-stage least squares" --- fit $\hat x$ from $z$, then regress $y$ on $\hat x$ --- gives the identical point estimate in the just-identified case, but running it as two `lm` calls produces *wrong (too small) standard errors*. Always use a dedicated IV command (`ivreg`/`feols`/`IV2SLS`).
+- A weak first stage ($\pi_1$ near zero) keeps IV centred on the truth but inflates its variance: dividing by a tiny, noisy denominator magnifies noise. Just-identified means one instrument per endogenous regressor; over-identification lets you test the instruments against each other.
+- Under heterogeneous effects, IV does not recover the population average effect --- it recovers the **LATE**, the effect for the compliers whose treatment the instrument actually moves.
+:::
+
+
+## What Comes Next
+
+We have built the IV estimator three equivalent ways --- the Wald ratio, the literal two-stage recipe, and a single moment condition --- and seen that it rescues us from confounding *without* observing the confounder, at the price of precision when the instrument is weak. But every line of this page rested on two unproven promises: that distance genuinely moves nursing (**relevance**, $\pi_1 \neq 0$) and that distance affects HbA1c *only* through nursing (**exclusion**, $\mathbb{E}[z\,u]=0$). The next page, [Relevance and Exclusion](relevance-exclusion.qmd), puts both assumptions under the microscope: it shows how to quantify instrument strength with the first-stage $F$-statistic, how weak instruments bias 2SLS back toward OLS in finite samples, why the exclusion restriction is fundamentally untestable and must be defended by argument, and how the overidentification test uses extra instruments to catch a violation in the act.

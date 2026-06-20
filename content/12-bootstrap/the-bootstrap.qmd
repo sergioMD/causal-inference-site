@@ -1,0 +1,665 @@
+---
+title: "The Bootstrap"
+subtitle: "Approximating the sampling distribution by resampling"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain the plug-in principle --- why the empirical distribution $\hat F_n$ stands in for the unknown population $F$, and why resampling the data with replacement mimics drawing fresh samples
+- Run the nonparametric bootstrap: draw $B$ resamples, recompute the statistic each time, and read off its sampling distribution
+- Compute a bootstrap standard error and three confidence intervals --- percentile, basic (reverse), and (conceptually) BCa
+- Apply the bootstrap to statistics with no clean closed-form SE --- a median, a ratio of means, an IV estimate
+- Diagnose when the bootstrap *fails* --- non-smooth functionals, dependence, and heavy tails
+:::
+
+## The Question Behind Every Standard Error
+
+A *verksamhetschef* (clinic manager) in Region Uppsala wants to report one number to the regional dashboard: across the diabetes patients at her *vårdcentral* (primary care center), what is the **median** HbA1c (mmol/mol)? The point estimate is easy --- sort the values, take the middle one. But the dashboard also asks for a 95% confidence interval, and here she is stuck. For a sample *mean* there is a textbook formula, $\widehat{\text{SE}} = \hat\sigma/\sqrt{n}$. For a *median* there is no such tidy expression that a busy clinician can apply. The same wall appears for a **ratio of two means** (cost per patient as kronor divided by visits), for an **instrumental-variables estimate**, for a **trimmed mean**, for almost any statistic more interesting than a mean or an OLS coefficient.
+
+The bootstrap, introduced by Bradley Efron (1979), is the universal escape hatch. Its idea is almost suspiciously simple, and it rests on a single conceptual move that the rest of this page unpacks. The standard error of an estimator is a feature of its **sampling distribution** --- how the estimate would scatter if we could redraw the sample over and over from the population. We cannot redraw from the population; we only have the one sample we collected. But the sample itself is our best picture of the population. So we treat the sample *as if it were the population* and draw new samples from it. Each redraw gives a new estimate; the scatter of those estimates approximates the scatter we could never observe directly.
+
+::: {.glass-card .glass-card--insight}
+**The whole idea in one sentence.** The bootstrap substitutes the *sample* for the *population*: resampling the observed data with replacement, many times, and recomputing the statistic each time approximates the estimator's sampling distribution --- *without any closed-form variance formula*. Whatever you can compute once, you can bootstrap.
+:::
+
+## The Plug-In Principle
+
+To see why resampling works, we need one definition. The population is described by an unknown cumulative distribution function $F$ --- the true distribution of HbA1c in the patient population. Our estimand is some **functional** of $F$, a number we could compute if we knew $F$ exactly: the population median is $\theta = \theta(F)$, the population mean is $\mu = \int y \, dF(y)$, and so on. The trouble is that $F$ is unknown.
+
+::: {.glass-card .glass-card--definition}
+The **empirical distribution function** $\hat F_n$ places mass $1/n$ on each observed data point $y_1, \dots, y_n$:
+
+$$
+\hat F_n(y) \;=\; \frac{1}{n}\sum_{i=1}^{n} \mathbf{1}\{y_i \le y\}.
+$$
+
+**Read this as**: "$\hat F_n$ evaluated at $y$ is the fraction of observations that are less than or equal to $y$." It is a staircase that steps up by $1/n$ at every data point. By the Glivenko--Cantelli theorem, $\hat F_n$ converges uniformly to the true $F$ as $n$ grows --- the staircase fills in toward the true curve. So $\hat F_n$ is, in a precise sense, the *best nonparametric estimate of the population we have.*
+:::
+
+The **plug-in principle** says: to estimate a functional $\theta(F)$, just plug in $\hat F_n$ wherever $F$ appears. The plug-in estimator is $\hat\theta = \theta(\hat F_n)$. The sample median *is* the median of $\hat F_n$; the sample mean *is* the mean of $\hat F_n$. Plugging in is what we were doing all along without naming it.
+
+Here is the leap. The standard error of $\hat\theta$ is itself a functional of $F$ --- it depends on how $\hat\theta$ behaves across samples drawn from $F$. We do not know $F$, but we have $\hat F_n$. So we plug in *again*: estimate the standard error of $\hat\theta$ by the standard error of $\hat\theta^*$ computed on samples drawn from $\hat F_n$. And drawing a sample from $\hat F_n$ --- a distribution that puts probability $1/n$ on each observed point --- is *exactly* drawing $n$ observations from your data **with replacement**.
+
+::: {.glass-card .glass-card--insight}
+**Resampling with replacement = sampling from $\hat F_n$.** A draw from $\hat F_n$ picks one of your $n$ data points, each with probability $1/n$. Doing that $n$ times, with the points eligible to repeat, *is* a bootstrap resample. The bootstrap is not a trick; it is the plug-in principle applied to the sampling distribution itself.
+:::
+
+## The Algorithm
+
+::: {.glass-card .glass-card--definition}
+**The nonparametric bootstrap.** Given data $y_1,\dots,y_n$ and a statistic $\hat\theta = s(y_1,\dots,y_n)$:
+
+1. **Resample.** Draw $n$ observations from the data *with replacement*. Call this bootstrap sample $y_1^*,\dots,y_n^*$.
+2. **Recompute.** Evaluate the statistic on the resample: $\hat\theta^{*(b)} = s(y_1^*,\dots,y_n^*)$.
+3. **Repeat** steps 1--2 for $b = 1,\dots,B$ (typically $B = 1000$ to $10{,}000$).
+
+The collection $\{\hat\theta^{*(1)},\dots,\hat\theta^{*(B)}\}$ is the **bootstrap distribution** --- an approximation to the sampling distribution of $\hat\theta$.
+:::
+
+The **bootstrap standard error** is just the standard deviation of those $B$ replicates:
+
+$$
+\widehat{\text{SE}}_{\text{boot}} \;=\; \sqrt{\frac{1}{B-1}\sum_{b=1}^{B}\big(\hat\theta^{*(b)} - \bar\theta^{*}\big)^2}, \qquad \bar\theta^{*} = \frac{1}{B}\sum_{b=1}^{B}\hat\theta^{*(b)}.
+$$
+
+**Read this as**: "the bootstrap SE is the sample standard deviation of the $B$ bootstrapped estimates around their own average $\bar\theta^*$." No formula for $\text{SE}$ was needed --- we *measured* the scatter instead of deriving it. There are two sources of error here: the **statistical** error from having only $n$ data points (irreducible without more data), and the **Monte Carlo** error from using finite $B$ (shrinks as you crank $B$ up).
+
+## See It: Building a Bootstrap Distribution One Resample at a Time
+
+The interactive below fixes a small Swedish dataset --- the HbA1c values of nine diabetes patients at a vårdcentral. Pick a statistic that has *no clean SE formula* (the median, or the ratio of two group means), then press **Resample** to draw one bootstrap sample at a time and watch the histogram of bootstrapped estimates accumulate. The bootstrap SE and the 95% percentile interval update live. The slider for $B$ lets you draw many replicates at once and watch the distribution stabilize.
+
+::: {.interactive-container}
+
+#### The Bootstrap Distribution Builder
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette shared across this page's interactives.
+bsboot_pal = ({
+  focal:  "#990000",   // focal series — bootstrap distribution (Uppsala red)
+  slate:  "#3d5a6c",   // secondary / latest-resample marker
+  good:   "#2e6f40",   // on-target / point estimate
+  ochre:  "#9c7a33",   // true value / percentile-CI bounds (highlight)
+  ink:    "#1c1c1a",   // ink text & reference lines
+  axis:   "#79766e",   // axis / muted label text
+  hair:   "#e6e3db",   // gridlines / hairlines
+  muted:  "#79766e",   // muted ink
+  bad:    "#b3000b",   // alarm
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Fixed dataset: HbA1c (mmol/mol) for 9 diabetes patients at one vårdcentral.
+// One large value (92) gives the median/mean a visibly different story so the
+// "no clean SE formula" statistics are genuinely interesting to bootstrap.
+bsboot_data = [42, 48, 51, 53, 55, 58, 61, 64, 92]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A second dataset for the "ratio of means" statistic: HbA1c at a Region-run
+// vs a Privat vårdcentral. The estimand is the ratio of group means — a
+// nonlinear functional with no elementary SE formula.
+bsboot_region = [51, 53, 55, 58, 61]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+bsboot_privat = [48, 49, 52, 54, 56]
+```
+
+```{ojs}
+//| echo: false
+viewof bsboot_stat = Inputs.radio(
+  ["Median HbA1c", "Ratio of means (Region ÷ Privat)"],
+  { label: "Statistic to bootstrap", value: "Median HbA1c" }
+)
+```
+
+```{ojs}
+//| echo: false
+viewof bsboot_B = Inputs.range([20, 4000], {
+  value: 200, step: 20,
+  label: "B — replicates drawn per click"
+})
+```
+
+```{ojs}
+//| echo: false
+// The Resample button. reduce:v=>v+1 makes it an ever-incrementing counter we
+// can depend on in a normal cell WITHOUT ever reading+writing one mutable.
+viewof bsboot_draw = Inputs.button("Resample (draw B bootstrap samples)", {
+  value: 0, reduce: v => v + 1
+})
+```
+
+```{ojs}
+//| echo: false
+// Re-roll: redraw the SAME number of batches with fresh random resamples.
+// Incrementing this counter forces bsboot_reps to recompute with new draws.
+viewof bsboot_reroll = Inputs.button("Re-roll (fresh random resamples)", {
+  value: 0, reduce: v => v + 1
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Helpers: median and mean of a numeric array.
+bsboot_median = function (a) {
+  const s = [...a].sort((x, y) => x - y);
+  const n = s.length;
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+bsboot_mean = a => a.reduce((p, c) => p + c, 0) / a.length
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// One bootstrap resample (with replacement) of an array of length n.
+bsboot_resampleOnce = function (a) {
+  const n = a.length;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) out[i] = a[Math.floor(Math.random() * n)];
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Compute one bootstrap replicate of the CURRENTLY selected statistic.
+bsboot_oneReplicate = function () {
+  if (bsboot_stat === "Median HbA1c") {
+    return bsboot_median(bsboot_resampleOnce(bsboot_data));
+  } else {
+    // Ratio of means: resample each group independently with replacement.
+    const r = bsboot_mean(bsboot_resampleOnce(bsboot_region));
+    const p = bsboot_mean(bsboot_resampleOnce(bsboot_privat));
+    return r / p;
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The accumulated bootstrap distribution — a PURE function of the reactive
+// inputs, recomputed from scratch on every render. There is no shared mutable
+// that any cell both reads and writes, so the reactive graph stays acyclic.
+//
+//   • Each press of "Resample" bumps bsboot_draw, so the distribution holds
+//     bsboot_draw batches of B replicates → it visibly GROWS click by click.
+//   • Re-roll bumps bsboot_reroll, which only changes what this cell depends on,
+//     forcing a fresh set of random resamples at the same batch count.
+//   • Switching the statistic (bsboot_stat) likewise triggers a clean rebuild.
+//
+// Referencing bsboot_reroll (without using its value) makes a Re-roll click a
+// genuine dependency that re-runs this cell with new Math.random() draws.
+bsboot_reps = {
+  void bsboot_reroll;                             // dependency: re-roll trigger
+  const batches = Math.max(0, Math.round(bsboot_draw));
+  const B = Math.round(bsboot_B);
+  const reps = new Array(batches * B);
+  for (let i = 0; i < reps.length; i++) reps[i] = bsboot_oneReplicate();
+  return reps;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The point estimate on the ORIGINAL data (what we are bootstrapping around).
+bsboot_pointEst = bsboot_stat === "Median HbA1c"
+  ? bsboot_median(bsboot_data)
+  : bsboot_mean(bsboot_region) / bsboot_mean(bsboot_privat)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Bootstrap summaries: SE (sd of replicates) and the percentile 95% CI.
+bsboot_summary = {
+  const reps = bsboot_reps;
+  const B = reps.length;
+  if (B < 2) return { B, se: NaN, lo: NaN, hi: NaN, mean: NaN };
+  const m = bsboot_mean(reps);
+  const se = Math.sqrt(reps.reduce((s, v) => s + (v - m) ** 2, 0) / (B - 1));
+  const sorted = [...reps].sort((a, b) => a - b);
+  const q = p => {
+    const idx = (sorted.length - 1) * p;
+    const lo = Math.floor(idx), hi = Math.ceil(idx);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+  };
+  return { B, se, mean: m, lo: q(0.025), hi: q(0.975) };
+}
+```
+
+```{ojs}
+//| echo: false
+// The accumulating bootstrap histogram.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 320,
+  marginLeft: 60,
+  marginBottom: 46,
+  style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: bsboot_pal.axis },
+  x: {
+    label: bsboot_stat === "Median HbA1c"
+      ? "Bootstrapped median HbA1c (mmol/mol)  →"
+      : "Bootstrapped ratio of means  →",
+    grid: false
+  },
+  y: { label: "↑ Count of replicates", grid: true },
+  marks: [
+    Plot.gridY({ stroke: bsboot_pal.hair }),
+    Plot.rectY(bsboot_reps, Plot.binX(
+      { y: "count" },
+      { x: d => d, fill: bsboot_pal.focal, fillOpacity: 0.55, thresholds: 28 }
+    )),
+    // Percentile-CI bounds (ochre dashed) — only once we have enough replicates.
+    bsboot_summary.B >= 2 ? Plot.ruleX([bsboot_summary.lo, bsboot_summary.hi], {
+      stroke: bsboot_pal.ochre, strokeWidth: 2, strokeDasharray: "5,4"
+    }) : null,
+    // The point estimate on the original data (green solid).
+    Plot.ruleX([bsboot_pointEst], { stroke: bsboot_pal.good, strokeWidth: 2.5 }),
+    // Labels live on the top frame band so they never collide with the bars.
+    Plot.text([{ x: bsboot_pointEst }], {
+      x: "x", frameAnchor: "top", dy: -4,
+      text: () => `estimate = ${bsboot_pointEst.toFixed(bsboot_stat === "Median HbA1c" ? 1 : 3)}`,
+      fill: bsboot_pal.good, fontWeight: 700, fontSize: 11, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live numeric panel — replicate count, bootstrap SE, and the percentile CI.
+{
+  const s = bsboot_summary;
+  const dp = bsboot_stat === "Median HbA1c" ? 2 : 3;
+  const fmt = v => Number.isFinite(v) ? v.toFixed(dp) : "—";
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${bsboot_pal.fill}; border:1px solid ${bsboot_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${bsboot_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Replicates B", s.B.toString(), bsboot_pal.ink)}
+    ${tile("Point estimate", fmt(bsboot_pointEst), bsboot_pal.good)}
+    ${tile("Bootstrap SE", fmt(s.se), bsboot_pal.focal)}
+    ${tile("95% percentile CI", `[${fmt(s.lo)}, ${fmt(s.hi)}]`, bsboot_pal.ochre)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// A one-line reactive verdict that grows more trustworthy as B increases.
+{
+  const B = bsboot_summary.B;
+  let msg, color;
+  if (B < 2) {
+    msg = "Press “Resample” to start drawing bootstrap samples and building the distribution.";
+    color = bsboot_pal.muted;
+  } else if (B < 200) {
+    msg = `Only ${B} replicates so far — the histogram is jagged and the SE/CI still wobble between clicks. Keep resampling (or raise B).`;
+    color = bsboot_pal.bad;
+  } else if (B < 1000) {
+    msg = `${B} replicates: the shape is settling. By B ≈ 1000–2000 the percentile CI is stable to the displayed precision.`;
+    color = bsboot_pal.ochre;
+  } else {
+    msg = `${B} replicates: Monte-Carlo noise is now small. The remaining width of the CI reflects genuine statistical uncertainty from only n = ${bsboot_data.length} patients — more clicks will not shrink it.`;
+    color = bsboot_pal.good;
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem;
+      border-radius:0.5rem; border-left:3px solid ${color}; background:${bsboot_pal.fill};
+      font-family:'Inter',system-ui,sans-serif; font-size:0.86rem; line-height:1.45;
+      color:${bsboot_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Bootstrap Builder
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Note the point estimate.** The solid green line is the statistic computed once on the original nine patients. For the median that is $55$ mmol/mol; for the ratio of means it is $55.6/51.8 = 1.073$. This single number is all a naive report would contain --- no sense of its uncertainty.
+
+**Step 2: Draw one batch.** Set $B$ to its smallest value and press **Resample**. A short, jagged histogram appears: each bar counts how many resamples produced a median (or ratio) in that bin. Notice the median histogram is *spiky* --- with these nine ($n$ odd) values the bootstrap median is always the 5th order statistic of the resample, so it can only land on one of the observed data points, because a median is a non-smooth functional. This spikiness is a preview of where the bootstrap struggles.
+
+**Step 3: Accumulate.** Press **Resample** again and again. The histogram fills in and the **Bootstrap SE** and **95% percentile CI** tiles stop jumping around. You are watching the sampling distribution materialize from nothing but resampling --- no formula was ever invoked.
+
+**Step 4: Crank up $B$.** Slide $B$ toward 4000 and press once. The distribution smooths and the CI snaps to stable values. The verdict bar turns green: Monte-Carlo error is now negligible, and the CI's remaining width is *real* statistical uncertainty from having only nine patients --- a width no amount of resampling can shrink.
+
+**Step 5: Switch statistics.** Choose **Ratio of means**. The distribution resets and the same machinery delivers an SE and CI for a quantity with no elementary variance formula at all. This is the bootstrap's signature payoff: the *procedure does not change* when the statistic gets harder.
+
+## Three Bootstrap Confidence Intervals
+
+The bootstrap distribution gives a standard error for free, but for confidence intervals there are several recipes. Order the $B$ replicates and let $\hat\theta^*_{(\alpha)}$ denote the $\alpha$-quantile of the bootstrap distribution.
+
+::: {.glass-card .glass-card--definition}
+**Percentile interval.** Read the interval straight off the bootstrap quantiles:
+
+$$
+\big[\,\hat\theta^*_{(\alpha/2)}, \; \hat\theta^*_{(1-\alpha/2)}\,\big].
+$$
+
+For a 95% interval ($\alpha = 0.05$) with $B = 1000$, these are roughly the 25th and 975th values in the sorted list of replicates. Simple, transparent, and *transformation-respecting* (it works on whatever scale the statistic lives on).
+:::
+
+::: {.glass-card .glass-card--definition}
+**Basic (reverse percentile) interval.** Reflect the percentile interval through the point estimate:
+
+$$
+\big[\,2\hat\theta - \hat\theta^*_{(1-\alpha/2)}, \;\; 2\hat\theta - \hat\theta^*_{(\alpha/2)}\,\big].
+$$
+
+**Read this as**: "twice the estimate minus the *upper* bootstrap quantile, up to twice the estimate minus the *lower* quantile." It treats the *bootstrap deviations* $\hat\theta^* - \hat\theta$ as a stand-in for the true sampling deviations $\hat\theta - \theta$ and inverts them. It corrects for some bias the raw percentile interval ignores, but can stray outside a parameter's natural range.
+:::
+
+::: {.glass-card .glass-card--assumption}
+**BCa --- bias-corrected and accelerated** (Efron, 1987). The gold-standard refinement. It shifts and stretches the percentile endpoints using two estimated constants: a **bias-correction** $\hat z_0$ (how far the median of the bootstrap distribution sits from $\hat\theta$) and an **acceleration** $\hat a$ (how fast the SE changes with the parameter, estimated by jackknife skewness). BCa is *second-order accurate* and respects range and transformations --- but it needs more replicates ($B \ge 2000$) and is fiddly to code by hand. In practice you let `boot.ci` or `scipy.stats.bootstrap` compute it.
+:::
+
+When the bootstrap distribution is symmetric and centered on $\hat\theta$, all three intervals nearly coincide. They diverge precisely when the distribution is skewed or biased --- exactly the cases where the simple normal-approximation interval $\hat\theta \pm 1.96\,\widehat{\text{SE}}$ would mislead, and where the bootstrap earns its keep.
+
+<details>
+<summary>Math Details: The plug-in principle and why the percentile interval works</summary>
+<div class="details-content">
+
+### The plug-in / empirical-distribution principle
+
+Write the estimand as a functional $\theta = T(F)$ of the population distribution $F$. Three examples:
+
+$$
+\text{mean: } T(F) = \int y\,dF(y), \qquad
+\text{variance: } T(F) = \int \big(y - T_{\text{mean}}(F)\big)^2 dF(y), \qquad
+\text{median: } T(F) = F^{-1}(1/2).
+$$
+
+The empirical distribution $\hat F_n$ puts mass $1/n$ on each $y_i$. The **plug-in estimator** simply substitutes $\hat F_n$ for $F$:
+
+$$
+\hat\theta \;=\; T(\hat F_n).
+$$
+
+For the mean this returns $\frac1n\sum_i y_i = \bar y$; for the median it returns the sample median; the plug-in recipe reproduces the "obvious" estimators. The justification is **Glivenko--Cantelli**: $\sup_y |\hat F_n(y) - F(y)| \to 0$ almost surely, so for any *smooth* functional $T$, $T(\hat F_n) \to T(F)$.
+
+### Why resampling estimates the sampling distribution
+
+The sampling distribution of $\hat\theta$ is the law of $T(\hat F_n)$ when $\hat F_n$ is built from $n$ i.i.d. draws from $F$. The bootstrap replaces the unknown $F$ in this statement with the known $\hat F_n$:
+
+$$
+\underbrace{\text{Law of } \big(T(\hat F_n) - T(F)\big) \text{ under } F}_{\text{what we want}}
+\;\approx\;
+\underbrace{\text{Law of } \big(T(\hat F_n^*) - T(\hat F_n)\big) \text{ under } \hat F_n}_{\text{what we can simulate}},
+$$
+
+where $\hat F_n^*$ is the empirical distribution of a sample drawn from $\hat F_n$ --- i.e., a resample with replacement. We cannot evaluate the right-hand law in closed form either, so we approximate *it* by Monte Carlo: draw $B$ resamples and tabulate $\hat\theta^{*(b)}$. Two approximations stacked: plug-in ($F \to \hat F_n$, statistical, controlled by $n$) and Monte Carlo (finitely many $b$, controlled by $B$).
+
+### A case where the plug-in SE is exact: the mean
+
+For $\hat\theta = \bar y$ the "ideal" bootstrap (averaging over *all* $n^n$ resamples) gives a variance with a clean closed form:
+
+$$
+\operatorname{Var}^*(\bar y^*) \;=\; \frac{1}{n}\cdot\frac{1}{n}\sum_{i=1}^n (y_i - \bar y)^2 \;=\; \frac{\hat\sigma^2_{\text{plug-in}}}{n}.
+$$
+
+This is *exactly* the plug-in version of the usual $\sigma^2/n$ (with the $1/n$ divisor). So for the mean the bootstrap SE reproduces the textbook formula --- reassuring, and a sanity check you can run (it appears in Exercise 4). The bootstrap only becomes *necessary* when no such closed form exists.
+
+### The percentile interval as quantile inversion
+
+Suppose there is a monotone transformation $\phi$ such that $\phi(\hat\theta) - \phi(\theta) \sim G$ for a distribution $G$ symmetric about 0 --- a "normalizing and variance-stabilizing" transform. Efron's key observation is that the **percentile interval is invariant to such $\phi$**: you never have to find $\phi$, because reading quantiles off the bootstrap distribution of $\hat\theta$ automatically respects any monotone reparametrization. Concretely, if $[L, U]$ is the percentile interval for $\theta$, then $[\phi(L), \phi(U)]$ is the percentile interval for $\phi(\theta)$. This transformation-respecting property is why a percentile CI for a *ratio* or an *odds* stays inside the natural (positive) range without ad hoc fixes, whereas the symmetric interval $\hat\theta \pm 1.96\,\widehat{\text{SE}}$ can spill below zero.
+
+</div>
+</details>
+
+## When the Bootstrap Works --- and When It Fails
+
+The bootstrap is broad but not universal. Its validity rests on the statistic being a *smooth* functional of the distribution and on the observations being (close to) i.i.d. Three classic failure modes are worth memorizing.
+
+::: {.glass-card .glass-card--warning}
+**Non-smooth functionals.** The sample **maximum** (or minimum) is the textbook bootstrap failure. The largest value can only ever be one of the observed points, so the bootstrap distribution of $\max_i y_i^*$ piles a large atom on the true sample maximum and cannot represent values above it --- it does not converge to the correct extreme-value law. The same pathology, milder, makes the **median** bootstrap distribution discrete and spiky (you saw this in the interactive). For smooth functionals the spikiness averages out; for genuinely non-differentiable ones it does not.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Dependence.** The plain bootstrap assumes the data are i.i.d., so it destroys any ordering or grouping. If HbA1c readings are autocorrelated over time, or patients **cluster** within a *läkare* (physician) or vårdcentral, resampling individual rows breaks the dependence and yields standard errors that are *too small*. The fix is to resample the **dependent blocks intact**: the *block bootstrap* for time series, the *cluster (block-of-clusters) bootstrap* for grouped data --- resample whole physicians, not individual patients. The wild cluster bootstrap (below) is the workhorse for few-cluster inference.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Heavy tails and infinite variance.** If the population has such heavy tails that the variance is infinite (e.g. some cost distributions in kronor, before trimming), the sample mean has no stable sampling distribution and the bootstrap of the mean is **inconsistent**. More generally the bootstrap can fail at the boundary of a parameter space (a variance pinned at zero, a probability at 0 or 1) and for super-efficient estimators. When in doubt, prefer a statistic with a finite variance (a trimmed mean, a median computed on a smoothed distribution) or use the *m-out-of-n* bootstrap.
+:::
+
+::: {.glass-card .glass-card--insight}
+**The bootstrap's home turf.** Its decisive advantage is statistics with *no clean SE formula but smooth behavior*: a **ratio of means**, a **median** or other quantile (with care), a **correlation**, an **IV / 2SLS coefficient**, an **indirect (mediation) effect**, an **R²**, a **Gini coefficient**. For these, the delta method is painful or unavailable, and the bootstrap is the path of least resistance.
+:::
+
+## Computing the Bootstrap
+
+Both panels bootstrap the **median HbA1c** and a **ratio of means** on the same nine-patient data used above, then sketch the cluster case. By construction the point median is $55$ and the ratio of group means is $1.073$.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("boot", "fwildclusterboot"))   # if needed
+library(boot)
+
+## ---- Data: HbA1c (mmol/mol) for 9 patients at one vårdcentral ----
+hba1c <- c(42, 48, 51, 53, 55, 58, 61, 64, 92)
+
+## ---- Bootstrap the MEDIAN (no clean closed-form SE) ----
+# boot() calls our statistic on each resample; `idx` are the resampled rows.
+med_stat <- function(x, idx) median(x[idx])
+
+set.seed(2024)
+boot_med <- boot(hba1c, statistic = med_stat, R = 2000)
+
+boot_med                       # prints original estimate + bootstrap SE
+boot.ci(boot_med, type = c("perc", "basic", "bca"))   # all three CIs
+
+## ---- Bootstrap a RATIO OF MEANS (Region ÷ Privat) ----
+region <- c(51, 53, 55, 58, 61)
+privat <- c(48, 49, 52, 54, 56)
+df <- data.frame(
+  y     = c(region, privat),
+  group = rep(c("Region", "Privat"), c(length(region), length(privat)))
+)
+
+ratio_stat <- function(d, idx) {
+  s <- d[idx, ]
+  mean(s$y[s$group == "Region"]) / mean(s$y[s$group == "Privat"])
+}
+boot_ratio <- boot(df, statistic = ratio_stat, R = 2000)
+boot.ci(boot_ratio, type = "perc")     # percentile CI for the ratio
+
+## ---- Manual percentile CI (to see there is no magic) ----
+reps <- boot_med$t                      # the 2000 bootstrap medians
+c(estimate = median(hba1c),
+  se       = sd(reps),
+  lo       = quantile(reps, 0.025),
+  hi       = quantile(reps, 0.975))
+
+## ---- Wild CLUSTER bootstrap for a regression with few clusters ----
+# When patients cluster within läkare/region, resample clusters, not rows.
+# fwildclusterboot::boottest() gives cluster-robust wild-bootstrap p-values
+# and CIs that stay valid with only a handful of clusters.
+# library(fwildclusterboot)
+# m  <- lm(hba1c_change ~ program + age, data = panel)
+# bt <- boottest(m, clustid = "region", param = "program", B = 9999)
+# summary(bt)
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy.stats import bootstrap
+
+rng = np.random.default_rng(2024)
+
+# ---- Data: HbA1c (mmol/mol) for 9 patients at one vårdcentral ----
+hba1c = np.array([42, 48, 51, 53, 55, 58, 61, 64, 92])
+
+# ---- Bootstrap the MEDIAN by hand (the explicit resampling loop) ----
+B, n = 2000, hba1c.size
+reps = np.empty(B)
+for b in range(B):
+    sample = rng.choice(hba1c, size=n, replace=True)   # resample WITH replacement
+    reps[b] = np.median(sample)
+
+est = np.median(hba1c)
+se  = reps.std(ddof=1)
+lo, hi = np.percentile(reps, [2.5, 97.5])              # percentile CI
+print(f"median = {est:.1f}   SE = {se:.2f}   95% perc CI = [{lo:.1f}, {hi:.1f}]")
+
+# ---- Same thing via scipy (gives BCa for free) ----
+res = bootstrap((hba1c,), np.median, n_resamples=2000,
+                method="BCa", random_state=rng)
+print("BCa CI:", res.confidence_interval)
+
+# ---- Bootstrap a RATIO OF MEANS (Region / Privat) ----
+region = np.array([51, 53, 55, 58, 61])
+privat = np.array([48, 49, 52, 54, 56])
+
+def ratio(r, p):
+    return r.mean() / p.mean()
+
+res_ratio = bootstrap((region, privat), ratio, n_resamples=2000,
+                      paired=False, method="percentile", random_state=rng)
+print(f"ratio estimate = {ratio(region, privat):.3f}")
+print("percentile CI:", res_ratio.confidence_interval)
+
+# ---- CLUSTER bootstrap sketch: resample whole clusters, not rows ----
+# Suppose `panel` has columns y, x, and cluster id `region`. Resample
+# the LIST OF CLUSTERS with replacement, then stack their rows.
+# clusters = [g for _, g in panel.groupby("region")]
+# def cluster_resample():
+#     idx = rng.integers(0, len(clusters), len(clusters))
+#     return pd.concat([clusters[i] for i in idx], ignore_index=True)
+# coefs = [smf.ols("y ~ x", cluster_resample()).fit().params["x"]
+#          for _ in range(2000)]
+# lo, hi = np.percentile(coefs, [2.5, 97.5])
+```
+
+:::
+
+Both languages return a bootstrap SE and percentile interval for the median, and a percentile interval for the ratio of means --- statistics for which we wrote down *no* variance formula. The cluster sketches show the one structural change the bootstrap ever needs: **resample the unit of dependence**, not the individual row.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+In one or two sentences each, explain (a) what the empirical distribution $\hat F_n$ is, (b) why drawing a sample from $\hat F_n$ is the same as resampling the data with replacement, and (c) what the "two plug-ins" of the bootstrap are.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\hat F_n$ is the distribution that places probability mass $1/n$ on each of the $n$ observed data points; equivalently, $\hat F_n(y)$ is the fraction of observations $\le y$. It is the nonparametric estimate of the unknown population $F$, and converges to $F$ uniformly (Glivenko--Cantelli).
+
+**(b)** A single draw from $\hat F_n$ selects one of the $n$ data points, each with equal probability $1/n$. Repeating this $n$ times --- with points eligible to be picked again --- produces exactly a sample of size $n$ drawn *with replacement* from the data. So "sample from $\hat F_n$" and "resample with replacement" are literally the same operation.
+
+**(c)** First plug-in: estimate the estimand $\theta = T(F)$ by $\hat\theta = T(\hat F_n)$ (the ordinary point estimate). Second plug-in: estimate the *sampling distribution / standard error* of $\hat\theta$ --- itself a functional of $F$ --- by the bootstrap distribution computed from resamples of $\hat F_n$. The bootstrap is the plug-in principle applied a second time, to the sampling distribution.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A region reports the median HbA1c of nine patients, with sorted values $42, 48, 51, 53, 55, 58, 61, 64, 92$ mmol/mol. (a) What is the point estimate of the median? (b) You draw two bootstrap resamples (already sorted): $\{42,48,48,53,55,61,64,64,92\}$ and $\{48,51,51,55,58,58,61,64,64\}$. Compute the median of each. (c) Explain why a histogram of many such bootstrap medians looks *spiky* rather than smooth.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $n = 9$ (odd), the median is the 5th sorted value: $\hat\theta = 55$ mmol/mol.
+
+**(b)** Each resample also has $n = 9$, so its median is its 5th sorted value. For $\{42,48,48,53,\mathbf{55},61,64,64,92\}$ the 5th value is $55$. For $\{48,51,51,55,\mathbf{58},58,61,64,64\}$ the 5th value is $58$. So the two bootstrap medians are $55$ and $58$.
+
+**(c)** A median of nine numbers must *equal one of the observed data values* (it is always a specific order statistic of the resample, and every resampled value is one of the original nine). The bootstrap median can therefore take only the handful of values present in the data --- here $\{42,48,51,53,55,58,61,64,92\}$ --- so its distribution is a set of spikes at those values, not a smooth curve. This non-smoothness is exactly the warning sign that the bootstrap handles quantiles less gracefully than smooth functionals like the mean.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+You run $B = 1000$ bootstrap replicates of a ratio of two clinic mean costs (SEK). (a) Describe precisely how to read off a 95% **percentile** confidence interval from the sorted replicates. (b) The point estimate is $\hat\theta = 1.20$ and the bootstrap distribution is right-skewed, with percentile interval $[1.05, 1.55]$. Compute the 95% **basic (reverse percentile)** interval and explain why it differs from the percentile interval. (c) Which property makes the percentile interval attractive for a *ratio* specifically?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Sort the 1000 replicates from smallest to largest. The lower endpoint is the $0.025 \times 1000 = 25$th ordered value and the upper endpoint is the $0.975 \times 1000 = 975$th ordered value (with interpolation between neighbors if you prefer a continuous quantile rule). That pair $[\hat\theta^*_{(0.025)}, \hat\theta^*_{(0.975)}]$ is the percentile CI.
+
+**(b)** The basic interval reflects the percentile interval through the estimate: $[\,2\hat\theta - \hat\theta^*_{(0.975)},\; 2\hat\theta - \hat\theta^*_{(0.025)}\,] = [\,2(1.20) - 1.55,\; 2(1.20) - 1.05\,] = [\,2.40 - 1.55,\; 2.40 - 1.05\,] = [0.85, 1.35]$. It differs from the percentile interval $[1.05, 1.55]$ because the bootstrap distribution is skewed: the basic interval treats the bootstrap *deviations* $\hat\theta^* - \hat\theta$ as proxies for the true deviations $\hat\theta - \theta$ and inverts them, which flips the direction of the skew relative to the raw percentile interval.
+
+**(c)** The percentile interval is **transformation-respecting**: it is invariant to any monotone reparametrization. A ratio is naturally positive and often analyzed on the log scale; the percentile interval automatically stays inside the positive range and matches whatever scale you would have transformed to, with no ad hoc clipping --- unlike a symmetric $\hat\theta \pm 1.96\,\widehat{\text{SE}}$ interval, which can dip below zero.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Take the tiny dataset $\{2, 4, 9\}$ and the statistic "sample mean." (a) Its plug-in variance is $\hat\sigma^2_{\text{plug-in}}/n$ with the $1/n$ divisor; compute the implied standard error. (b) The "ideal" bootstrap averages over all $3^3 = 27$ equally likely resamples. Argue that the ideal bootstrap variance of the mean equals exactly $\hat\sigma^2_{\text{plug-in}}/n$, and state the numerical SE. (c) What does this tell you about *when* the bootstrap is actually necessary?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The sample mean is $\bar y = (2+4+9)/3 = 5$. The plug-in variance (divide by $n$) is
+$$
+\hat\sigma^2_{\text{plug-in}} = \tfrac13\big[(2-5)^2 + (4-5)^2 + (9-5)^2\big] = \tfrac13(9 + 1 + 16) = \tfrac{26}{3} \approx 8.667.
+$$
+So $\hat\sigma^2_{\text{plug-in}}/n = 8.667/3 = 2.889$ and the plug-in SE is $\sqrt{2.889} = 1.700$.
+
+**(b)** For the mean, each resample average $\bar y^*$ is the mean of three i.i.d. draws from $\hat F_n$. Since draws from $\hat F_n$ have variance $\hat\sigma^2_{\text{plug-in}}$, the variance of their average over $n=3$ draws is $\hat\sigma^2_{\text{plug-in}}/n$ exactly --- no approximation, because the mean is *linear*. Enumerating all 27 resamples and computing the variance of their means confirms it: the bootstrap variance is $2.889$, so the ideal bootstrap SE is $\sqrt{2.889} = 1.700$, identical to part (a).
+
+**(c)** For the mean the bootstrap merely *reproduces* the closed-form SE --- it adds nothing. The bootstrap earns its keep only for statistics where **no clean closed form exists** (medians, ratios, IV estimates, correlations). When a textbook formula is available and trustworthy, use it; reach for the bootstrap when it is not.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The bootstrap substitutes the *sample* for the *population*: resampling with replacement is sampling from the empirical distribution $\hat F_n$, which by Glivenko--Cantelli converges to the true $F$.
+- The algorithm is the same for every statistic --- draw $B$ resamples, recompute, and read the SE and CI off the resulting bootstrap distribution; no closed-form variance formula is required.
+- The percentile CI reads quantiles off the bootstrap distribution and respects monotone transformations; the basic interval reflects them through the estimate; BCa corrects for bias and skew and is the default in `boot.ci` / `scipy.stats.bootstrap`.
+- The bootstrap shines for statistics with no clean SE --- a median, a ratio of means, an IV coefficient --- where it reproduces $\sigma/\sqrt n$ for the mean as a special case but goes far beyond it.
+- It *fails* for non-smooth functionals (the maximum), for dependent data unless you resample whole blocks/clusters, and for heavy tails with infinite variance.
+:::
+
+## What Comes Next
+
+The bootstrap reconstructs an estimator's sampling distribution by resampling the data *with replacement* --- treating the sample as the population. The next page, [Randomization Inference](randomization-inference.qmd), turns the same resampling instinct toward a different null: instead of asking how the estimate would vary across hypothetical samples, it asks how it would vary across hypothetical *treatment assignments*, reshuffling who was treated to build an exact null distribution for a sharp hypothesis. Where the bootstrap answers "how precise is my estimate?", randomization inference answers "could this effect have arisen by chance under the randomization alone?" --- two complementary ways of letting the data, not a formula, supply the reference distribution.

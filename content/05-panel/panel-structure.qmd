@@ -1,0 +1,1275 @@
+---
+title: "Panel Structure"
+subtitle: "What panel data look like and why they matter"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- distinguish cross-section, time series, and panel (longitudinal) data, and recognize long vs. wide and balanced vs. unbalanced layouts
+- decompose any panel variable into a between-unit component (the unit means) and a within-unit component (deviations from each unit's own mean)
+- derive the within transformation and explain how it annihilates the time-invariant unit effect $\alpha_i$
+- diagnose why pooled OLS conflates between and within variation and can reverse the sign of the true within effect (Simpson's paradox)
+- state the assumptions the within estimator needs: time-invariant confounders, within variation in $x$, and strict exogeneity
+:::
+
+## Watching the Same Units Over Time
+
+Sweden's 21 *regioner* (regions) each run a network of *vårdcentraler* (primary care centers), and each year they report what they spend on primary care and what their patients experience. Suppose we want to know whether spending more on primary care --- more *läkare* (physicians) and *distriktssköterskor* (district nurses) per capita, longer appointment slots, better staffing --- actually shortens the time a patient waits to be seen.
+
+We could take a single year and compare the 21 regions: do the high-spending regions have shorter waiting times? That is a **cross-section** --- a snapshot of many units at one moment. The trouble is that regions differ in a thousand ways we cannot measure. Norrbotten is vast and sparsely populated; Stockholm is dense and young; some regions have older, sicker populations or a deeper-rooted culture of seeking care early. A cross-sectional comparison confounds the effect of *spending* with the effect of being *that kind of region*.
+
+Alternatively, we could follow one region year after year: that is a **time series**. But a single region's history is buffeted by national reforms, pandemics, and economic cycles that hit everyone at once, and a sample of one tells us little about the general relationship.
+
+**Panel data** --- also called **longitudinal data** --- combine both. We observe *many* units, *each* repeated over *several* time periods. This is the data structure that will let us, on the next several pages, control for "being that kind of region" without ever measuring what makes a region that kind of region. The trick is to compare each region *to itself* over time. This page builds the vocabulary and, most importantly, the single idea that powers all of panel econometrics: the decomposition of variation into a **between** part and a **within** part.
+
+
+## The Notation of Panels
+
+::: {.glass-card .glass-card--definition}
+A **panel** (or **longitudinal**) dataset observes $N$ units indexed by $i = 1, \dots, N$, each across $T$ time periods indexed by $t = 1, \dots, T$. For unit $i$ in period $t$ we record an outcome and one or more covariates:
+
+$$
+y_{it}, \quad x_{it}, \qquad i = 1, \dots, N, \quad t = 1, \dots, T.
+$$
+
+Read $y_{it}$ as "*y-sub-i-t*": the value of the outcome for unit $i$ in period $t$. In our running example, $i$ indexes a region, $t$ indexes a year, $x_{it}$ is primary-care spending per capita (SEK), and $y_{it}$ is the average waiting time (days) to a routine appointment.
+
+The dataset has $N \times T$ rows if every unit is observed in every period.
+:::
+
+Contrast the three data structures explicitly:
+
+| Structure | Units | Periods | Typical row |
+|:---|:---:|:---:|:---|
+| **Cross-section** | many ($N$) | one ($T=1$) | one region in 2024 |
+| **Time series** | one ($N=1$) | many ($T$) | Region Skåne, 2010--2024 |
+| **Panel** | many ($N$) | many ($T$) | each region, each year 2018--2024 |
+
+The double index $it$ is the entire conceptual payload. It says: every observation belongs simultaneously to a *unit* and to a *time*. Every quantity we compute will eventually be sorted into "variation that lives in the $i$ direction" and "variation that lives in the $t$ direction." Holding that picture in mind makes the rest of the chapter easy.
+
+The schematic below makes the $N$-versus-$T$ contrast literal. A **cross-section** is one column of units at a single time; a **time series** is one row of times for a single unit; a **panel** fills the whole $N \times T$ grid --- many units, each followed across many periods. The shaded cells are the unit-periods you actually observe.
+
+```{ojs}
+//| echo: false
+
+p2_dataShapes = {
+  const cell = 19, gap = 4, padL = 92, padT = 30;
+  const cols = 5, rows = 5;
+  const red = "#990000", slate = "#3d5a6c", panel = "#f6f5f1", rule = "#e6e3db", ink = "#1c1c1a", muted = "#79766e";
+
+  // Which (col=time, row=unit) cells are "observed" in each structure.
+  const panels = [
+    { title: "Cross-section", sub: "many units, one time (N large, T = 1)",
+      keep: (c, r) => c === 0, color: red },
+    { title: "Time series", sub: "one unit, many times (N = 1, T large)",
+      keep: (c, r) => r === 0, color: slate },
+    { title: "Panel", sub: "many units × many times (N×T)",
+      keep: (c, r) => true, color: "#2e6f40" }
+  ];
+
+  const gridW = padL + cols * (cell + gap) + 14;
+  const gridH = padT + rows * (cell + gap) + 26;
+  const wTotal = panels.length * gridW;
+
+  const svg = d3.create("svg")
+    .attr("viewBox", `0 0 ${wTotal} ${gridH}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  panels.forEach((p, pi) => {
+    const ox = pi * gridW;
+    const g = svg.append("g").attr("transform", `translate(${ox},0)`);
+    g.append("text").attr("x", padL).attr("y", 14)
+      .attr("font-size", 12).attr("font-weight", 700).attr("fill", ink).text(p.title);
+    g.append("text").attr("x", padL).attr("y", 26)
+      .attr("font-size", 9.5).attr("fill", muted).text(p.sub);
+    // Axis labels.
+    g.append("text").attr("x", padL + cols * (cell + gap) / 2).attr("y", padT + rows * (cell + gap) + 18)
+      .attr("text-anchor", "middle").attr("font-size", 9.5).attr("fill", muted).text("time t →");
+    g.append("text")
+      .attr("transform", `translate(${padL - 14},${padT + rows * (cell + gap) / 2}) rotate(-90)`)
+      .attr("text-anchor", "middle").attr("font-size", 9.5).attr("fill", muted).text("unit i →");
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const on = p.keep(c, r);
+        g.append("rect")
+          .attr("x", padL + c * (cell + gap)).attr("y", padT + r * (cell + gap))
+          .attr("width", cell).attr("height", cell).attr("rx", 3)
+          .attr("fill", on ? p.color : panel)
+          .attr("fill-opacity", on ? 0.85 : 1)
+          .attr("stroke", on ? p.color : rule)
+          .attr("stroke-width", 1);
+      }
+    }
+  });
+  return svg.node();
+}
+```
+
+::: {.aside}
+Each square is one unit-period. <span style="color:#990000; font-weight:700;">Cross-section</span> = one column (many units, one year). <span style="color:#3d5a6c; font-weight:700;">Time series</span> = one row (one unit, many years). <span style="color:#2e6f40; font-weight:700;">Panel</span> = the full grid (every unit, every year) --- the only shape with both kinds of variation.
+:::
+
+
+## Long vs. Wide; Balanced vs. Unbalanced
+
+Before any analysis, you must know how your panel is physically laid out and whether it is complete.
+
+::: {.glass-card .glass-card--definition}
+**Long format** stores one row per unit-period. Columns are `region`, `year`, `spending`, `waiting`. With $N = 21$ regions and $T = 7$ years, the table has $147$ rows. This is the format almost every panel estimator expects.
+
+**Wide format** stores one row per *unit*, with separate columns for each period: `spending_2018`, `spending_2019`, ..., `waiting_2018`, .... The table has $21$ rows and many columns.
+
+A panel is **balanced** if every unit is observed in every period (all $N \times T$ cells are filled). It is **unbalanced** if some unit-periods are missing --- a vårdcentral that opened in 2021, a region that failed to report one year.
+:::
+
+Long format is preferred because the unit and time identifiers are explicit data values, so we can group, demean, and cluster on them programmatically. Reshaping wide-to-long (R: `pivot_longer`; pandas: `melt` or `wide_to_long`) is usually the first step of any panel workflow.
+
+The figure below shows the *same* three-region, two-year panel in both shapes, with the reshape arrow between them. Notice that in **long** format `year` is a column of data values; in **wide** format the year is baked into the column *names* (`spend_18`, `spend_19`).
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter', sans-serif; display:flex; flex-wrap:wrap; align-items:center; gap:0.75rem; justify-content:center; margin:1rem 0 0.25rem;">
+  <div>
+    <div style="font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:#990000; margin-bottom:0.3rem; text-align:center;">Long — one row per unit-period</div>
+    <table class="science-table" style="margin:0; font-size:0.78rem; min-width:15rem;">
+      <thead><tr><th>region</th><th>year</th><th>spend</th><th>wait</th></tr></thead>
+      <tbody>
+        <tr><td>Skåne</td><td>2018</td><td>30</td><td>14</td></tr>
+        <tr><td>Skåne</td><td>2019</td><td>33</td><td>13</td></tr>
+        <tr><td>Uppsala</td><td>2018</td><td>54</td><td>23</td></tr>
+        <tr><td>Uppsala</td><td>2019</td><td>57</td><td>22</td></tr>
+        <tr><td>Norrbotten</td><td>2018</td><td>90</td><td>38</td></tr>
+        <tr><td>Norrbotten</td><td>2019</td><td>93</td><td>37</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex; flex-direction:column; align-items:center; color:#79766e; font-size:0.7rem; font-weight:600; min-width:7rem;">
+    <span style="font-size:1.5rem; line-height:1; color:#3d5a6c;">⇄</span>
+    <span style="margin-top:0.2rem; text-align:center;">pivot_longer / melt<br>↔ pivot_wider / pivot</span>
+  </div>
+  <div>
+    <div style="font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:#3d5a6c; margin-bottom:0.3rem; text-align:center;">Wide — one row per unit</div>
+    <table class="science-table" style="margin:0; font-size:0.78rem; min-width:17rem;">
+      <thead><tr><th>region</th><th>spend_18</th><th>spend_19</th><th>wait_18</th><th>wait_19</th></tr></thead>
+      <tbody>
+        <tr><td>Skåne</td><td>30</td><td>33</td><td>14</td><td>13</td></tr>
+        <tr><td>Uppsala</td><td>54</td><td>57</td><td>23</td><td>22</td></tr>
+        <tr><td>Norrbotten</td><td>90</td><td>93</td><td>38</td><td>37</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>`
+```
+
+A panel is **balanced** when every unit-period cell is filled and **unbalanced** when some are missing. The grids below show the difference at a glance --- the red cells in the unbalanced panel are unit-years we never observe (a vårdcentral that opened late, a region that skipped a report).
+
+```{ojs}
+//| echo: false
+
+p2_balanceGrids = {
+  const cell = 30, gap = 6, padL = 70, padT = 26;
+  const units = ["Skåne", "Uppsala", "Norrbn"];
+  const years = ["2018", "2019", "2020", "2021"];
+  const red = "#990000", green = "#2e6f40", panel = "#f6f5f1", rule = "#e6e3db", ink = "#1c1c1a", muted = "#79766e";
+
+  // missing[unit][year] = true means the cell is unobserved.
+  const grids = [
+    { title: "Balanced", sub: "every cell filled", missing: () => false, color: green },
+    { title: "Unbalanced", sub: "some cells missing",
+      missing: (u, y) => (u === 2 && y === 0) || (u === 1 && y === 3), color: green }
+  ];
+
+  const gW = padL + years.length * (cell + gap) + 14;
+  const gH = padT + units.length * (cell + gap) + 26;
+  const svg = d3.create("svg")
+    .attr("viewBox", `0 0 ${grids.length * gW} ${gH}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  grids.forEach((grid, gi) => {
+    const g = svg.append("g").attr("transform", `translate(${gi * gW},0)`);
+    g.append("text").attr("x", padL).attr("y", 12)
+      .attr("font-size", 12).attr("font-weight", 700).attr("fill", ink).text(grid.title);
+    g.append("text").attr("x", padL).attr("y", 23)
+      .attr("font-size", 9.5).attr("fill", muted).text(grid.sub);
+    years.forEach((yr, c) => {
+      g.append("text").attr("x", padL + c * (cell + gap) + cell / 2).attr("y", padT - 4)
+        .attr("text-anchor", "middle").attr("font-size", 9).attr("fill", muted).text(yr);
+    });
+    units.forEach((u, r) => {
+      g.append("text").attr("x", padL - 8).attr("y", padT + r * (cell + gap) + cell / 2 + 3)
+        .attr("text-anchor", "end").attr("font-size", 9.5).attr("fill", muted).text(u);
+      years.forEach((yr, c) => {
+        const miss = grid.missing(r, c);
+        g.append("rect")
+          .attr("x", padL + c * (cell + gap)).attr("y", padT + r * (cell + gap))
+          .attr("width", cell).attr("height", cell).attr("rx", 4)
+          .attr("fill", miss ? "rgba(153,0,0,0.08)" : grid.color)
+          .attr("fill-opacity", miss ? 1 : 0.8)
+          .attr("stroke", miss ? red : grid.color)
+          .attr("stroke-width", miss ? 1.5 : 1)
+          .attr("stroke-dasharray", miss ? "4,3" : null);
+        if (miss) {
+          g.append("text").attr("x", padL + c * (cell + gap) + cell / 2)
+            .attr("y", padT + r * (cell + gap) + cell / 2 + 4)
+            .attr("text-anchor", "middle").attr("font-size", 13).attr("font-weight", 700)
+            .attr("fill", red).text("✕");
+        }
+      });
+    });
+  });
+  return svg.node();
+}
+```
+
+::: {.aside}
+Filled <span style="color:#2e6f40; font-weight:700;">green</span> cells are observed unit-years; <span style="color:#990000; font-weight:700;">red ✕</span> cells are missing. An unbalanced panel is fine *as long as* the reason a cell is empty is unrelated to the outcome.
+:::
+
+Unbalanced panels are the norm in real Swedish administrative data and are not a problem *per se* --- the estimators we will study handle them --- as long as the reason a cell is missing is unrelated to the outcome (missingness must not itself be caused by $y_{it}$). If sicker regions stop reporting *because* their waiting times exploded, the panel is unbalanced in a way that biases everything. Always ask *why* a cell is empty.
+
+
+## The Heart of It: Between and Within Variation
+
+Here is the single idea that the rest of this chapter exploits. Take any variable in a panel --- say spending, $x_{it}$ --- and decompose it into two pieces.
+
+First, compute each unit's **time-average** (its average over all the years we observe it):
+
+$$
+\bar{x}_i = \frac{1}{T}\sum_{t=1}^{T} x_{it}.
+$$
+
+Read this as: "$\bar{x}_i$ is the average of unit $i$'s values across the $T$ periods." It is a single number per unit --- Region Skåne's *typical* spending level over the whole window.
+
+Now write any observation as its unit mean plus a deviation from that mean:
+
+$$
+x_{it} = \underbrace{\bar{x}_i}_{\text{between component}} + \underbrace{(x_{it} - \bar{x}_i)}_{\text{within component}}.
+$$
+
+::: {.glass-card .glass-card--definition}
+- The **between-unit variation** is the spread of the unit means $\bar{x}_i$ across units. It answers: *do high-spending regions differ from low-spending regions?* It is a comparison **across** units, after averaging away time.
+
+- The **within-unit variation** is the spread of the deviations $x_{it} - \bar{x}_i$ around each unit's own mean. It answers: *when a region spends more than its own usual level, what happens?* It is a comparison of a unit **to itself** over time.
+:::
+
+The same decomposition applies to the outcome $y_{it}$. And the total sum of squares of any panel variable splits cleanly into a between part and a within part:
+
+$$
+\underbrace{\sum_{i}\sum_{t}(x_{it} - \bar{x})^2}_{\text{Total}}
+=
+\underbrace{T\sum_{i}(\bar{x}_i - \bar{x})^2}_{\text{Between}}
++
+\underbrace{\sum_{i}\sum_{t}(x_{it} - \bar{x}_i)^2}_{\text{Within}},
+$$
+
+where $\bar{x} = \frac{1}{NT}\sum_i\sum_t x_{it}$ is the grand mean. **Read this as**: "the total variation of $x$ around the grand mean equals the variation of the unit means around the grand mean (between), plus the variation of each observation around its own unit mean (within)." There is no cross-term --- the two pieces are orthogonal, which is why we can treat them as genuinely separate sources of information. (The Math Details box proves the cross-term vanishes.)
+
+The picture below decomposes a single observation. One region-year $x_{it}$ sits above the grand mean $\bar{x}$. Its distance from the grand mean splits exactly into a **between** leg (how far this region's own mean $\bar{x}_i$ sits from the grand mean) and a **within** leg (how far this particular year sits from the region's own mean). That is the equation $x_{it} = \bar{x}_i + (x_{it} - \bar{x}_i)$ drawn as two stacked arrows.
+
+```{ojs}
+//| echo: false
+
+p2_decompFig = {
+  const W = Math.min(560, width), H = 220;
+  const red = "#990000", slate = "#3d5a6c", green = "#2e6f40", ink = "#1c1c1a", muted = "#79766e", rule = "#e6e3db";
+  // Value positions on a vertical scale.
+  const grand = 40, unitMean = 64, obs = 78, lo = 28, hi = 88;
+  const padT = 24, padB = 24;
+  const yOf = v => padT + (hi - v) / (hi - lo) * (H - padT - padB);
+  const xAxis = 150;       // where the vertical value axis sits
+
+  const svg = d3.create("svg")
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // Reference horizontal lines for the three levels.
+  const levels = [
+    { v: grand, col: muted, dash: "4,3", lab: "grand mean  x̄" },
+    { v: unitMean, col: slate, dash: null, lab: "region mean  x̄ᵢ" },
+    { v: obs, col: ink, dash: null, lab: "observation  xᵢₜ" }
+  ];
+  for (const L of levels) {
+    svg.append("line").attr("x1", 60).attr("x2", W - 14)
+      .attr("y1", yOf(L.v)).attr("y2", yOf(L.v))
+      .attr("stroke", L.col).attr("stroke-width", L.v === grand ? 1.5 : 1.2)
+      .attr("stroke-dasharray", L.dash);
+    svg.append("text").attr("x", W - 14).attr("y", yOf(L.v) - 4)
+      .attr("text-anchor", "end").attr("font-size", 10.5).attr("font-weight", 600)
+      .attr("fill", L.col).text(L.lab);
+  }
+
+  // The observation point.
+  svg.append("circle").attr("cx", xAxis).attr("cy", yOf(obs)).attr("r", 5)
+    .attr("fill", ink).attr("stroke", "white").attr("stroke-width", 1.5);
+
+  // Between leg: grand mean -> region mean (slate).
+  svg.append("line").attr("x1", xAxis - 40).attr("x2", xAxis - 40)
+    .attr("y1", yOf(grand)).attr("y2", yOf(unitMean))
+    .attr("stroke", slate).attr("stroke-width", 3)
+    .attr("marker-end", "url(#p2-arr-slate)").attr("marker-start", "url(#p2-arr-slate)");
+  svg.append("text").attr("x", xAxis - 48).attr("y", (yOf(grand) + yOf(unitMean)) / 2)
+    .attr("text-anchor", "end").attr("font-size", 10.5).attr("font-weight", 700)
+    .attr("fill", slate).text("between");
+  svg.append("text").attr("x", xAxis - 48).attr("y", (yOf(grand) + yOf(unitMean)) / 2 + 13)
+    .attr("text-anchor", "end").attr("font-size", 9.5).attr("fill", muted).text("x̄ᵢ − x̄");
+
+  // Within leg: region mean -> observation (red).
+  svg.append("line").attr("x1", xAxis).attr("x2", xAxis)
+    .attr("y1", yOf(unitMean)).attr("y2", yOf(obs))
+    .attr("stroke", red).attr("stroke-width", 3)
+    .attr("marker-end", "url(#p2-arr-red)").attr("marker-start", "url(#p2-arr-red)");
+  svg.append("text").attr("x", xAxis + 10).attr("y", (yOf(unitMean) + yOf(obs)) / 2)
+    .attr("font-size", 10.5).attr("font-weight", 700).attr("fill", red).text("within");
+  svg.append("text").attr("x", xAxis + 10).attr("y", (yOf(unitMean) + yOf(obs)) / 2 + 13)
+    .attr("font-size", 9.5).attr("fill", muted).text("xᵢₜ − x̄ᵢ");
+
+  // Arrow markers.
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2-arr-slate", slate], ["p2-arr-red", red]]) {
+    defs.append("marker").attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 5).attr("refY", 0).attr("markerWidth", 6).attr("markerHeight", 6)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+  return svg.node();
+}
+```
+
+::: {.aside}
+The full distance from the grand mean up to the observation is the sum of the <span style="color:#3d5a6c; font-weight:700;">between</span> leg ($\bar{x}_i - \bar{x}$, the part shared by all of region $i$'s years) and the <span style="color:#990000; font-weight:700;">within</span> leg ($x_{it} - \bar{x}_i$, what is special about *this* year). The within transformation keeps only the red leg.
+:::
+
+::: {.glass-card .glass-card--insight}
+A regression run on the raw $x_{it}$ uses *both* sources of variation at once. A regression run on the unit means $\bar{x}_i$ uses *only* the between variation. A regression run on the deviations $x_{it} - \bar{x}_i$ uses *only* the within variation. These three regressions can give different slopes --- and the gap between them is exactly where causal inference with panels lives. Fixed effects, the subject of the next page, is nothing but the within regression.
+:::
+
+
+## Why Panels Are Powerful for Causal Inference
+
+Recall the cross-sectional worry: regions differ in unmeasured ways --- ruralness, population age, health culture --- that affect both spending and waiting times. Call that bundle of stable, unit-specific traits $\alpha_i$. If we cannot measure $\alpha_i$, a cross-sectional regression of waiting on spending will be biased whenever $\alpha_i$ is correlated with spending.
+
+Panels offer an escape, because we observe each region *more than once*. Posit the **unobserved-effects model**:
+
+$$
+y_{it} = \alpha_i + \beta\, x_{it} + e_{it}.
+$$
+
+::: {.glass-card .glass-card--definition}
+In the unobserved-effects model:
+
+- $\alpha_i$ is the **unit fixed effect** --- everything about region $i$ that is *constant over time* and affects waiting times: its geography, baseline population health, entrenched routines. We never observe $\alpha_i$ directly, and we make **no** assumption about whether it correlates with spending.
+- $\beta$ is the causal parameter of interest: the effect of an extra krona of per-capita spending on waiting times, holding the region's fixed traits constant.
+- $e_{it}$ is the **idiosyncratic error**: shocks that vary across both unit and time (a bad flu season, a temporary staffing gap).
+
+**Read this as**: "a region's waiting time in a given year equals its permanent baseline level, plus the effect of how much it spends, plus year-specific noise."
+:::
+
+As a causal picture, the unobserved-effects model is a **fork**: the unit effect $\alpha_i$ is a common cause of both spending and waiting times, so it opens a back-door path $x_{it} \leftarrow \alpha_i \rightarrow y_{it}$ alongside the causal arrow $x_{it} \rightarrow y_{it}$ we care about. Because $\alpha_i$ is unobserved, a cross-section cannot block that back-door. The within transformation blocks it for free --- by differencing $\alpha_i$ away --- which is why the figure on the right boxes $\alpha_i$ and turns the red back-door grey.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Small static DAG helper for this page (pure: depends only on global d3).
+// nodes: [{id,x,y,label}] with x,y in normalized [0,1]; conditioned ids drawn
+// as a rounded square. edges: [{source,target,kind}] with kind ∈
+//   "causal" → green #2e6f40 | "biasing"/"backdoor-open" → red #b3000b
+//   "blocked" → grey dashed #79766e.
+p2_drawDAG = function ({ nodes, edges, width = 440, height = 200, conditioned = [] }) {
+  const pad = 44, r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerFor = k =>
+    k === "causal" ? "p2-arr-green" :
+    (k === "biasing" || k === "backdoor-open") ? "p2-arr-red" : "p2-arr-gray";
+
+  const svg = d3.create("svg")
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2-arr-green", "#2e6f40"], ["p2-arr-red", "#b3000b"], ["p2-arr-gray", "#79766e"]]) {
+    defs.append("marker").attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerFor(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y), boxed = condSet.has(n.id);
+    const g = ng.append("g");
+    if (boxed) {
+      g.append("rect").attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r).attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle").attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text").attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 14).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text").attr("x", cx).attr("y", cy + r + 14)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 10.5).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; flex-wrap:wrap; gap:1.25rem; justify-content:center; align-items:flex-start; margin:0.75rem 0 0.25rem;">
+  <figure style="margin:0; text-align:center;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:#79766e; margin-bottom:0.2rem;">Pooled / cross-section: back-door open</figcaption>
+    ${p2_drawDAG({
+      width: Math.min(330, (width - 24) / 2),
+      height: 180,
+      nodes: [
+        { id: "a", x: 0.5,  y: 0.12, label: "αᵢ", caption: "unit effect" },
+        { id: "x", x: 0.10, y: 0.82, label: "xᵢₜ", caption: "spending" },
+        { id: "y", x: 0.90, y: 0.82, label: "yᵢₜ", caption: "waiting" }
+      ],
+      edges: [
+        { source: "a", target: "x", kind: "biasing" },
+        { source: "a", target: "y", kind: "biasing" },
+        { source: "x", target: "y", kind: "causal" }
+      ]
+    })}
+  </figure>
+  <figure style="margin:0; text-align:center;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:#79766e; margin-bottom:0.2rem;">Within: αᵢ differenced away (boxed)</figcaption>
+    ${p2_drawDAG({
+      width: Math.min(330, (width - 24) / 2),
+      height: 180,
+      conditioned: ["a"],
+      nodes: [
+        { id: "a", x: 0.5,  y: 0.12, label: "αᵢ", caption: "held fixed" },
+        { id: "x", x: 0.10, y: 0.82, label: "xᵢₜ", caption: "spending" },
+        { id: "y", x: 0.90, y: 0.82, label: "yᵢₜ", caption: "waiting" }
+      ],
+      edges: [
+        { source: "a", target: "x", kind: "blocked" },
+        { source: "a", target: "y", kind: "blocked" },
+        { source: "x", target: "y", kind: "causal" }
+      ]
+    })}
+  </figure>
+</div>`
+```
+
+::: {.aside}
+<span style="color:#2e6f40; font-weight:700;">Green</span> = the causal effect $x_{it}\to y_{it}$ we want ($\beta$); <span style="color:#b3000b; font-weight:700;">red</span> = the open back-door through the unit effect $\alpha_i$; <span style="color:#79766e; font-weight:700;">grey dashed</span> = blocked. Boxing $\alpha_i$ (the within transformation) closes the back-door while leaving the causal arrow untouched.
+:::
+
+Now take each region's time-average of the model. Because $\alpha_i$ is constant over time, it survives averaging unchanged:
+
+$$
+\bar{y}_i = \alpha_i + \beta\,\bar{x}_i + \bar{e}_i.
+$$
+
+Subtract this from the original equation, and watch what happens:
+
+$$
+y_{it} - \bar{y}_i = \beta\,(x_{it} - \bar{x}_i) + (e_{it} - \bar{e}_i).
+$$
+
+**The $\alpha_i$ is gone.** Read this as: "the deviation of a region's waiting time from its own average equals $\beta$ times the deviation of its spending from its own average, plus noise." Every time-invariant trait of the region --- measured *or unmeasured* --- has been differenced away, simply by comparing the region to itself. We did not need to observe ruralness or health culture; we only needed to observe each region repeatedly. This **within transformation** is the engine of fixed-effects estimation, and it is why panels are such a powerful tool against unobserved confounding.
+
+::: {.glass-card .glass-card--assumption}
+The within transformation buys identification of $\beta$ at a price. It can only succeed if:
+
+1. **The confounders are time-invariant.** $\alpha_i$ must be constant over the window. A trait that *changes* over time (a region that ages, reforms its triage system, gentrifies) is *not* swept out and can still bias $\beta$.
+2. **There is within variation in $x$.** If a region's spending never changes over the window ($x_{it} = \bar{x}_i$ for all $t$), it contributes nothing to the within estimator. A variable that is constant within every unit (e.g., a region's land area) cannot be estimated at all.
+3. **Strict exogeneity of the idiosyncratic error**: $E[e_{it} \mid x_{i1}, \dots, x_{iT}, \alpha_i] = 0$. The shock in any year is unrelated to spending in *every* year. *In words*: this year's shock must be unrelated to spending in **every** year --- past, present, *and* future --- not merely the current year (the conditioning on all periods $x_{i1},\dots,x_{iT}$ is the whole point). We unpack this on the fixed-effects page.
+:::
+
+
+## Pooled OLS Conflates Between and Within
+
+What if we ignore the panel structure entirely and just regress $y_{it}$ on $x_{it}$ across all $N \times T$ rows, as if they were independent observations? This is **pooled OLS**:
+
+$$
+y_{it} = \gamma + \delta\, x_{it} + u_{it}.
+$$
+
+Pooled OLS makes no distinction between unit means and deviations from them, so its slope $\delta$ is a *weighted blend* of the between slope and the within slope. When the two slopes agree, that blend is harmless. But the unobserved-effects model tells us $u_{it} = \alpha_i + e_{it}$, which means the pooled error contains $\alpha_i$. If $\alpha_i$ is correlated with $x_{it}$ --- if the kind of region that spends more is also the kind of region with intrinsically longer (or shorter) waiting times for reasons unrelated to spending --- then the pooled regressor is correlated with the pooled error, and
+
+$$
+\text{pooled OLS is biased: } \quad \text{plim}\;\hat\delta \neq \beta.
+$$
+
+Here $\text{plim}\;\hat\delta$ (the *probability limit* of $\hat\delta$) is the single value the pooled estimate settles down to as the sample grows without bound --- so "$\text{plim}\;\hat\delta \neq \beta$" says that even with infinite data, pooled OLS converges to the *wrong* number, not to the causal $\beta$.
+
+::: {.glass-card .glass-card--warning}
+Pooled OLS is consistent for $\beta$ **only** if $\text{Cov}(\alpha_i, x_{it}) = 0$ --- the unit effects are uncorrelated with the regressor. That is precisely the assumption a cross-section cannot defend and the assumption fixed effects refuses to make. When it fails, pooled OLS reports the between relationship (sicker, higher-spending regions look bad) contaminated into the slope, and can even reverse the sign of the true within effect. The interactive below shows exactly this Simpson's-paradox-style reversal.
+:::
+
+
+## See It: Pooled vs. Within in a Swedish Regional Panel
+
+The visualization below shows a small balanced panel: several Swedish regions, each observed over a handful of years. The horizontal axis is primary-care spending per capita (SEK, indexed); the vertical axis is the average waiting time (days). Each region has its own color; each dot is one region-year.
+
+The data are built so that *within* every region, spending more reduces waiting times (the causal $\beta$ is negative --- a beneficial effect). But regions with intrinsically longer waiting times --- sparse, hard-to-staff regions --- *also* spend more to cope. That positive between-region relationship can dominate the pooled view and flip the apparent slope.
+
+::: {.interactive-container}
+
+#### Pooled view vs. within view
+
+::: {.start-here}
+**Start here:** keep the view on *Pooled*, then drag the spread slider from 0 up to 80 and watch the pooled slope flip sign while the within slope stays negative. New here? Follow the 5-step tour just below the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof ps_view = Inputs.radio(
+  ["Pooled (between + within)", "Within (recentered on each region's mean)"],
+  { label: "View", value: "Pooled (between + within)" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof ps_betweenGap = Inputs.range([0, 80], {
+  value: 55,
+  step: 5,
+  label: "Between-region spread"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ps_showUnitLines = Inputs.toggle({
+  label: "Show each region's own slope",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ps_showMeans = Inputs.toggle({
+  label: "Show region means (the between points)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:0.72rem; color:#79766e; margin:-0.25rem 0 0.25rem 0;">
+  Region means are active only in the <strong>Pooled</strong> view — in the Within view every region's mean collapses to the origin (0, 0).
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Small seeded RNG so the panel is reproducible across re-renders.
+ps_mulberry32 = function(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Eight Swedish regions, each observed over five years.
+ps_regions = [
+  { name: "Stockholm",       base_x: 18, base_y: 9  },
+  { name: "Skåne",           base_x: 30, base_y: 14 },
+  { name: "Västra Götaland", base_x: 42, base_y: 18 },
+  { name: "Uppsala",         base_x: 54, base_y: 23 },
+  { name: "Östergötland",    base_x: 66, base_y: 28 },
+  { name: "Jämtland",        base_x: 78, base_y: 33 },
+  { name: "Norrbotten",      base_x: 90, base_y: 38 },
+  { name: "Gävleborg",       base_x: 64, base_y: 25 }
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_years = [2019, 2020, 2021, 2022, 2023]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// True within slope: more spending lowers waiting time (beta < 0).
+ps_betaWithin = -0.55
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the panel. Each region's mean spending is pushed apart by the
+// between-spread control; within each region spending wiggles year to year,
+// and waiting time follows the NEGATIVE within slope plus mild noise.
+ps_panel = {
+  const gap = ps_betweenGap;
+  const rng = ps_mulberry32(20240619);
+  const rows = [];
+  ps_regions.forEach((r) => {
+    // Region-specific mean spending, spread out by `gap`.
+    const meanX = 60 + (r.base_x - 50) * (gap / 100);
+    // Region intrinsic waiting level: higher for the harder-to-staff regions.
+    // This is the unit fixed effect alpha_i, correlated with spending.
+    const alpha = r.base_y + 20;
+    ps_years.forEach((yr, ti) => {
+      // Within-region spending deviation around the region mean.
+      const dev = (ti - 2) * 3 + (rng() - 0.5) * 3;
+      const x = meanX + dev;
+      // Waiting = alpha (region effect) + within slope * deviation + noise.
+      const y = alpha + ps_betaWithin * dev + (rng() - 0.5) * 2.0;
+      rows.push({ region: r.name, year: yr, spending: x, waiting: y });
+    });
+  });
+  // Attach each row's within-deviations (recentered on region mean).
+  const byRegion = d3.group(rows, d => d.region);
+  rows.forEach(d => {
+    const g = byRegion.get(d.region);
+    const mx = d3.mean(g, p => p.spending);
+    const my = d3.mean(g, p => p.waiting);
+    d.spending_dev = d.spending - mx;
+    d.waiting_dev = d.waiting - my;
+    d.region_mean_x = mx;
+    d.region_mean_y = my;
+  });
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Region-level means (the "between" points).
+ps_regionMeans = Array.from(
+  d3.group(ps_panel, d => d.region),
+  ([region, g]) => ({
+    region,
+    mx: d3.mean(g, d => d.spending),
+    my: d3.mean(g, d => d.waiting)
+  })
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Simple OLS slope helper.
+ps_olsSlope = function(data, xKey, yKey) {
+  const mx = d3.mean(data, d => d[xKey]);
+  const my = d3.mean(data, d => d[yKey]);
+  let num = 0, den = 0;
+  data.forEach(d => {
+    num += (d[xKey] - mx) * (d[yKey] - my);
+    den += (d[xKey] - mx) ** 2;
+  });
+  return den === 0 ? 0 : num / den;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_pooledSlope = ps_olsSlope(ps_panel, "spending", "waiting")
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_withinSlope = ps_olsSlope(ps_panel, "spending_dev", "waiting_dev")
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_betweenSlope = ps_olsSlope(ps_regionMeans, "mx", "my")
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_isWithin = ps_view.startsWith("Within")
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_plotData = ps_isWithin
+  ? ps_panel.map(d => ({ ...d, px: d.spending_dev, py: d.waiting_dev }))
+  : ps_panel.map(d => ({ ...d, px: d.spending, py: d.waiting }))
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 440,
+  marginLeft: 70,
+  marginBottom: 60,
+  marginTop: 16,
+  marginRight: 24,
+  grid: true,
+  style: {
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    fontSize: "12px",
+    background: "transparent"
+  },
+  x: {
+    label: ps_isWithin
+      ? "Spending − region mean (SEK, indexed) →"
+      : "Primary-care spending per capita (SEK, indexed) →",
+    grid: true
+  },
+  y: {
+    label: ps_isWithin
+      ? "↑ Waiting − region mean (days)"
+      : "↑ Average waiting time (days)",
+    grid: true
+  },
+  color: {
+    legend: true,
+    domain: ps_regions.map(r => r.name),
+    range: ["#990000", "#3d5a6c", "#9c7a33", "#2e6f40", "#b3000b", "#79766e", "#1c1c1a", "#44443f"]
+  },
+  marks: [
+    // Reference axes in the within view.
+    ps_isWithin ? Plot.ruleX([0], { stroke: "#79766e", strokeDasharray: "3,3" }) : null,
+    ps_isWithin ? Plot.ruleY([0], { stroke: "#79766e", strokeDasharray: "3,3" }) : null,
+
+    // Label the within-view origin so the dashed lines aren't mistaken for gridlines.
+    ps_isWithin
+      ? Plot.text(["each region's own mean = (0, 0)"], {
+          frameAnchor: "top-left",
+          dx: 8,
+          dy: 8,
+          fill: "#9c7a33",
+          fontSize: 11,
+          fontWeight: 600,
+          stroke: "white",
+          strokeWidth: 3,
+          paintOrder: "stroke"
+        })
+      : null,
+
+    // Per-region OLS lines (each region's own slope).
+    ps_showUnitLines
+      ? Plot.linearRegressionY(ps_plotData, {
+          x: "px",
+          y: "py",
+          z: "region",
+          stroke: "region",
+          strokeWidth: 1.5,
+          strokeOpacity: 0.7,
+          ci: 0
+        })
+      : null,
+
+    // The dots.
+    Plot.dot(ps_plotData, {
+      x: "px",
+      y: "py",
+      fill: "region",
+      r: 5,
+      fillOpacity: 0.85,
+      stroke: "white",
+      strokeWidth: 0.5,
+      title: d =>
+        `${d.region} (${d.year})\nSpending: ${d.spending.toFixed(1)}\nWaiting: ${d.waiting.toFixed(1)} days`
+    }),
+
+    // Region means (between points) in pooled view.
+    (!ps_isWithin && ps_showMeans)
+      ? Plot.dot(ps_regionMeans, {
+          x: "mx",
+          y: "my",
+          fill: "region",
+          r: 9,
+          stroke: "#1c1c1a",
+          strokeWidth: 1.5,
+          symbol: "square"
+        })
+      : null,
+
+    // The single overall regression line for the active view.
+    Plot.linearRegressionY(ps_plotData, {
+      x: "px",
+      y: "py",
+      stroke: ps_isWithin ? "#990000" : "#3d5a6c",
+      strokeWidth: 3,
+      ci: 0
+    }),
+
+    // Between line in the pooled view (through the region means).
+    (!ps_isWithin && ps_showMeans)
+      ? Plot.linearRegressionY(ps_regionMeans, {
+          x: "mx",
+          y: "my",
+          stroke: "#1c1c1a",
+          strokeWidth: 2,
+          strokeDasharray: "6,4",
+          ci: 0
+        })
+      : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr)); gap:0.5rem; margin-top:0.75rem; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:0.82rem;">
+  <div style="padding:0.6rem 0.8rem; border-radius:0.5rem; min-height:4.6rem; background:rgba(61,90,108,0.08); border:1px solid rgba(61,90,108,0.22);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">Pooled slope</div>
+    <div style="font-size:1.25rem; font-weight:700; color:#3d5a6c;">${ps_pooledSlope.toFixed(2)}</div>
+    <div style="color:#79766e; font-size:0.7rem;">between + within blended</div>
+  </div>
+  <div style="padding:0.6rem 0.8rem; border-radius:0.5rem; min-height:4.6rem; background:#f6f5f1; border:1px solid #e6e3db;">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">Between slope</div>
+    <div style="font-size:1.25rem; font-weight:700; color:#1c1c1a;">${ps_betweenSlope.toFixed(2)}</div>
+    <div style="color:#79766e; font-size:0.7rem;">across region means</div>
+  </div>
+  <div style="padding:0.6rem 0.8rem; border-radius:0.5rem; min-height:4.6rem; background:rgba(153,0,0,0.07); border:1px solid rgba(153,0,0,0.2);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">Within slope (β)</div>
+    <div style="font-size:1.25rem; font-weight:700; color:#990000;">${ps_withinSlope.toFixed(2)}</div>
+    <div style="color:#79766e; font-size:0.7rem;">each region vs. itself</div>
+  </div>
+</div>
+<div style="margin-top:0.4rem; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:0.72rem; color:#79766e;">
+  Drag the spread slider and watch only the within slope stay put (~ −0.55).
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Variation share ω of spending: SS_within / (SS_within + SS_between).
+// This is the weight pooled OLS puts on the WITHIN slope (Wooldridge);
+// it ties the live slopes back to SS_total = SS_between + SS_within.
+// Purely additive read of the existing panel — no DGP or control change.
+ps_grandX = d3.mean(ps_panel, d => d.spending)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_ssWithinX = d3.sum(ps_panel, d => (d.spending - d.region_mean_x) ** 2)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_ssBetweenX = ps_years.length * d3.sum(ps_regionMeans, d => (d.mx - ps_grandX) ** 2)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ps_omega = ps_ssBetweenX + ps_ssWithinX === 0
+  ? 0
+  : ps_ssWithinX / (ps_ssWithinX + ps_ssBetweenX)
+```
+
+```{ojs}
+//| echo: false
+
+// Live bar showing how spending's variation splits within vs. between, with
+// the implied weighted-average identity ω·β_W + (1−ω)·β_B = pooled slope.
+html`<div style="margin-top:0.9rem; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; color:#79766e; margin-bottom:0.3rem;">
+    Where spending's variation lives (ω)
+  </div>
+  <div style="display:flex; height:1.4rem; border-radius:0.3rem; overflow:hidden; border:1px solid #e6e3db;">
+    <div style="width:${(ps_omega * 100).toFixed(1)}%; background:rgba(153,0,0,0.78); color:#fff; font-size:0.66rem; font-weight:700; display:flex; align-items:center; justify-content:center; min-width:0; white-space:nowrap;">
+      within ${(ps_omega * 100).toFixed(0)}%
+    </div>
+    <div style="width:${((1 - ps_omega) * 100).toFixed(1)}%; background:rgba(61,90,108,0.78); color:#fff; font-size:0.66rem; font-weight:700; display:flex; align-items:center; justify-content:center; min-width:0; white-space:nowrap;">
+      between ${((1 - ps_omega) * 100).toFixed(0)}%
+    </div>
+  </div>
+  <div style="font-size:0.72rem; color:#79766e; margin-top:0.35rem; line-height:1.45;">
+    Pooled OLS is a variation-weighted blend:
+    <strong style="color:#1c1c1a;">ω·β<sub>within</sub> + (1−ω)·β<sub>between</sub></strong>
+    = ${ps_omega.toFixed(2)}·(${ps_withinSlope.toFixed(2)}) + ${(1 - ps_omega).toFixed(2)}·(${ps_betweenSlope.toFixed(2)})
+    ≈ <strong style="color:#3d5a6c;">${(ps_omega * ps_withinSlope + (1 - ps_omega) * ps_betweenSlope).toFixed(2)}</strong>.
+    As you raise the spread, the <span style="color:#3d5a6c; font-weight:700;">between</span> share grows and drags the pooled slope toward the between sign. Fixed effects sets ω = 1 (keeps only the red within slice).
+  </div>
+</div>`
+```
+
+:::
+
+### How to Read the Panel Plot
+
+Work through these steps with the controls; the reversal is the punchline.
+
+**Step 1: Start in the pooled view.** Leave the view on **Pooled** and set the between-spread slider near the middle. Every dot is a region-year, colored by region. The slate line is a single regression through *all* the points, ignoring which region each came from --- this is pooled OLS. Read its slope from the **Pooled slope** card. With moderate or high between-spread it is *positive*: across the cloud, more spending appears to go with *longer* waiting times.
+
+**Step 2: Reveal the between structure.** Turn on **Show region means**. A large square appears at each region's average $(\bar{x}_i, \bar{y}_i)$, and a dashed black line runs through those means --- the *between* regression. Notice that the squares climb from lower-left to upper-right: regions that spend more are, on average, the ones with longer waiting times. This is the confounding $\alpha_i$ at work --- hard-to-staff regions both spend more and wait longer. The pooled line essentially traces this between pattern.
+
+**Step 3: Look inside a single region.** Turn on **Show each region's own slope**. Thin colored lines fit each region's five years separately. Every one of them slopes *downward*: within any given region, the years it spent more than usual were the years it waited *less*. The within story is the opposite of the between story.
+
+**Step 4: Switch to the within view.** Flip the view to **Within**. Now every region's points are recentered on its own mean --- each colored cloud is shifted so its center sits at the origin. The between differences have been subtracted away. The red line is the pooled regression *on the recentered data*, and it now slopes clearly *downward*, matching the **Within slope (β)** card (about $-0.55$). This is exactly the within transformation $y_{it} - \bar{y}_i = \beta(x_{it}-\bar{x}_i) + \dots$ made visual.
+
+**Step 5: Drive the spread to zero, then crank it up.** Set the between-spread slider to **0**: the region means line up at the same spending level, so there is essentially no between variation left to confound the comparison, and the pooled and within slopes nearly coincide (both near $-0.55$) --- with no correlation between $\alpha_i$ and spending, pooled OLS is fine. Now slide it to **80**: the between pattern dominates, the pooled slope turns sharply positive while the within slope stays negative. You have produced a Simpson's paradox: the aggregate relationship has the opposite sign of every within-unit relationship. Pooled OLS reports the wrong sign; the within estimator recovers the truth.
+
+
+## Reading the Two Worlds in Data
+
+The reversal you just saw is not a visualization trick --- it is a real, recurring hazard in policy analysis. The between comparison answers *"are high-spending regions different?"* and is poisoned by everything that makes regions different. The within comparison answers *"when a region changes its spending, what happens to it?"* and is immune to every region trait that does not change. Only the second is a clean answer to the causal question, and only because we observed each region repeatedly.
+
+::: {.glass-card .glass-card--insight}
+Panels do not magically solve causal inference. They convert the problem from "control for all confounders" (impossible) into "control for all *time-invariant* confounders" (free, via the within transformation) plus "worry about *time-varying* confounders and dynamics" (the rest of this chapter). That is a dramatic reduction in what you must assume --- and it is bought entirely by repeated observation.
+:::
+
+
+<details>
+<summary>Math Details: The Between–Within Decomposition Is Orthogonal</summary>
+<div class="details-content">
+
+### The total sum of squares splits with no cross-term
+
+Let $\bar{x}_i = \frac{1}{T}\sum_t x_{it}$ be the unit mean and $\bar{x} = \frac{1}{NT}\sum_i\sum_t x_{it}$ the grand mean. Write the deviation of each observation from the grand mean as the sum of a between piece and a within piece:
+
+$$
+x_{it} - \bar{x} = \underbrace{(\bar{x}_i - \bar{x})}_{\text{between}} + \underbrace{(x_{it} - \bar{x}_i)}_{\text{within}}.
+$$
+
+Square and sum over all $i, t$:
+
+$$
+\sum_i\sum_t (x_{it}-\bar{x})^2
+= \sum_i\sum_t (\bar{x}_i-\bar{x})^2
++ \sum_i\sum_t (x_{it}-\bar{x}_i)^2
++ 2\sum_i\sum_t (\bar{x}_i-\bar{x})(x_{it}-\bar{x}_i).
+$$
+
+The cross-term vanishes. Hold $i$ fixed and sum the cross-term over $t$: the factor $(\bar{x}_i - \bar{x})$ does not depend on $t$, so it pulls out of the inner sum:
+
+$$
+\sum_t (\bar{x}_i-\bar{x})(x_{it}-\bar{x}_i)
+= (\bar{x}_i-\bar{x})\sum_t (x_{it}-\bar{x}_i)
+= (\bar{x}_i-\bar{x})\cdot 0 = 0,
+$$
+
+because deviations from a mean sum to zero: $\sum_t (x_{it}-\bar{x}_i) = T\bar{x}_i - T\bar{x}_i = 0$. Summing the now-zero cross-term over $i$ leaves zero. Therefore
+
+$$
+\underbrace{\sum_i\sum_t (x_{it}-\bar{x})^2}_{\text{SS}_\text{total}}
+= \underbrace{T\sum_i (\bar{x}_i-\bar{x})^2}_{\text{SS}_\text{between}}
++ \underbrace{\sum_i\sum_t (x_{it}-\bar{x}_i)^2}_{\text{SS}_\text{within}},
+$$
+
+using $\sum_t (\bar{x}_i-\bar{x})^2 = T(\bar{x}_i-\bar{x})^2$ since the summand is constant in $t$. The between and within components are *orthogonal*: they partition the variance with no overlap, which is what licenses treating them as independent sources of identifying variation.
+
+### Pooled OLS as a variance-weighted average of the two slopes
+
+A classic result (see Wooldridge, *Econometric Analysis of Cross Section and Panel Data*) is that the pooled OLS slope is a weighted average of the between slope $\hat\beta_B$ and the within slope $\hat\beta_W$, with weights proportional to the *amount of variation in $x$* contributed by each source:
+
+$$
+\hat\delta_{\text{pooled}}
+= \omega\,\hat\beta_W + (1-\omega)\,\hat\beta_B,
+\qquad
+\omega = \frac{\text{SS}^x_{\text{within}}}{\text{SS}^x_{\text{within}} + \text{SS}^x_{\text{between}}}.
+$$
+
+**Read this as**: "pooled OLS leans toward whichever margin --- within or between --- carries more variation in the regressor." When $\hat\beta_W$ and $\hat\beta_B$ have opposite signs (as in our interactive), the pooled slope lands somewhere between them and can take either sign depending on $\omega$ --- which is precisely why pooled OLS is untrustworthy when $\alpha_i$ correlates with $x_{it}$. The fixed-effects estimator sets $\omega = 1$ by construction: it throws away the between variation and keeps only the within.
+
+</div>
+</details>
+
+
+## Computing Between and Within in Code
+
+The code below builds the same eight-region panel, computes the between, within, and pooled slopes, and confirms that the within slope recovers the true $\beta$ while pooled OLS does not.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(fixest)   # fast fixed effects with clustered SEs
+
+set.seed(20240619)
+
+regions <- tibble(
+  region  = c("Stockholm","Skane","Vastra Gotaland","Uppsala",
+              "Ostergotland","Jamtland","Norrbotten","Gavleborg"),
+  mean_x  = c(48, 54, 60, 66, 72, 78, 84, 70),   # region mean spending
+  alpha   = c(29, 34, 38, 43, 48, 53, 58, 45)    # unit fixed effect (waiting)
+)
+years <- 2019:2023
+beta_true <- -0.55                                # true WITHIN effect
+
+panel <- expand_grid(regions, year = years) |>
+  group_by(region) |>
+  mutate(
+    dev      = (row_number() - 3) * 3 + rnorm(n(), 0, 1.5),  # within dev in x
+    spending = mean_x + dev,
+    waiting  = alpha + beta_true * dev + rnorm(n(), 0, 1.0)
+  ) |>
+  ungroup()
+
+# --- Between vs. within decomposition ---
+panel <- panel |>
+  group_by(region) |>
+  mutate(
+    x_bar = mean(spending), y_bar = mean(waiting),     # unit means (between)
+    x_dev = spending - x_bar, y_dev = waiting - y_bar  # deviations (within)
+  ) |>
+  ungroup()
+
+# Pooled OLS: blends between + within (biased here)
+pooled  <- lm(waiting ~ spending, data = panel)
+
+# Between regression: on the region means only
+between <- panel |>
+  group_by(region) |>
+  summarise(x_bar = first(x_bar), y_bar = first(y_bar)) |>
+  lm(y_bar ~ x_bar, data = _)
+
+# Within regression: on the demeaned data (= fixed effects)
+within  <- lm(y_dev ~ x_dev, data = panel)
+
+# Equivalent, idiomatic fixed effects with clustered SEs:
+fe <- feols(waiting ~ spending | region, data = panel, cluster = ~region)
+
+cat("Pooled slope :", round(coef(pooled)["spending"], 3), "\n")
+cat("Between slope:", round(coef(between)["x_bar"],   3), "\n")
+cat("Within slope :", round(coef(within)["x_dev"],    3), "\n")
+cat("feols (FE)   :", round(coef(fe)["spending"],     3), "\n")
+cat("True beta    :", beta_true, "\n")
+# Within and feols match beta_true (~-0.55); pooled has the wrong sign.
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from linearmodels.panel import PanelOLS
+
+rng = np.random.default_rng(20240619)
+
+regions = pd.DataFrame({
+    "region": ["Stockholm","Skane","Vastra Gotaland","Uppsala",
+               "Ostergotland","Jamtland","Norrbotten","Gavleborg"],
+    "mean_x": [48, 54, 60, 66, 72, 78, 84, 70],   # region mean spending
+    "alpha":  [29, 34, 38, 43, 48, 53, 58, 45],   # unit fixed effect
+})
+years = [2019, 2020, 2021, 2022, 2023]
+beta_true = -0.55                                  # true WITHIN effect
+
+rows = []
+for _, r in regions.iterrows():
+    for k, yr in enumerate(years):
+        dev = (k - 2) * 3 + rng.normal(0, 1.5)     # within deviation in x
+        spending = r.mean_x + dev
+        waiting  = r.alpha + beta_true * dev + rng.normal(0, 1.0)
+        rows.append((r.region, yr, spending, waiting))
+panel = pd.DataFrame(rows, columns=["region","year","spending","waiting"])
+
+# --- Between vs. within via groupby ---
+g = panel.groupby("region")
+panel["x_bar"] = g["spending"].transform("mean")     # unit means (between)
+panel["y_bar"] = g["waiting"].transform("mean")
+panel["x_dev"] = panel["spending"] - panel["x_bar"]  # deviations (within)
+panel["y_dev"] = panel["waiting"]  - panel["y_bar"]
+
+pooled  = smf.ols("waiting ~ spending", data=panel).fit()
+between = smf.ols("y_bar ~ x_bar",
+                  data=panel.drop_duplicates("region")).fit()
+within  = smf.ols("y_dev ~ x_dev", data=panel).fit()
+
+# Idiomatic fixed effects with clustered SEs:
+fe = PanelOLS.from_formula(
+    "waiting ~ spending + EntityEffects",
+    data=panel.set_index(["region", "year"]),
+).fit(cov_type="clustered", cluster_entity=True)
+
+print(f"Pooled slope : {pooled.params['spending']:.3f}")
+print(f"Between slope: {between.params['x_bar']:.3f}")
+print(f"Within slope : {within.params['x_dev']:.3f}")
+print(f"PanelOLS (FE): {fe.params['spending']:.3f}")
+print(f"True beta    : {beta_true}")
+# Within / PanelOLS recover ~-0.55; pooled is biased toward the between sign.
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A health-policy team hands you a spreadsheet covering all 21 Swedish regions, with one row per region and the columns `region`, `waiting_2019`, `waiting_2020`, `waiting_2021`, `spending_2019`, `spending_2020`, `spending_2021`.
+
+(a) Is this long or wide format? (b) How many rows does it have, and how many would the long version have? (c) Name the R and Python functions you would use to reshape it, and state which format the fixed-effects estimators require.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** This is **wide** format: one row per *unit* (region), with separate columns for each year. The time index lives in the column *names*, not in a data column.
+
+**(b)** It has $21$ rows (one per region). The long version has one row per region-year: $21 \times 3 = 63$ rows, with columns `region`, `year`, `spending`, `waiting`.
+
+**(c)** In R, `tidyr::pivot_longer()` (you would pivot the spending and waiting columns and split the suffix year into its own column); in Python, `pandas.wide_to_long()` or `melt()`. Panel estimators --- `fixest::feols`, `plm`, `linearmodels.PanelOLS`, `statsmodels` with entity dummies --- all expect **long** format, because they need the unit and time identifiers to be explicit data values they can group, demean, and cluster on.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A region is observed for $T = 4$ years with primary-care spending (SEK, indexed) of $x = (60, 64, 62, 66)$ and waiting times (days) of $y = (24, 21, 23, 20)$.
+
+(a) Compute the region's time-averages $\bar{x}$ and $\bar{y}$. (b) Compute the within deviations $x_{it} - \bar{x}$ and $y_{it} - \bar{y}$. (c) Verify the deviations sum to zero. (d) Using only the within deviations, compute this region's within slope $\hat\beta = \frac{\sum_t (x_{it}-\bar x)(y_{it}-\bar y)}{\sum_t (x_{it}-\bar x)^2}$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\bar{x} = (60+64+62+66)/4 = 252/4 = 63$. $\bar{y} = (24+21+23+20)/4 = 88/4 = 22$.
+
+**(b)** Spending deviations: $x_{it}-\bar{x} = (-3,\ +1,\ -1,\ +3)$. Waiting deviations: $y_{it}-\bar{y} = (+2,\ -1,\ +1,\ -2)$.
+
+**(c)** Spending deviations sum: $-3+1-1+3 = 0$. Waiting deviations sum: $2-1+1-2 = 0$. $\checkmark$ This is the algebraic fact that powers the within transformation --- demeaning forces deviations to sum to zero, which is why the time-invariant $\alpha_i$ is annihilated.
+
+**(d)** Numerator $\sum_t (x_{it}-\bar x)(y_{it}-\bar y)$:
+$$(-3)(2) + (1)(-1) + (-1)(1) + (3)(-2) = -6 -1 -1 -6 = -14.$$
+Denominator $\sum_t (x_{it}-\bar x)^2$:
+$$(-3)^2 + 1^2 + (-1)^2 + 3^2 = 9 + 1 + 1 + 9 = 20.$$
+So $\hat\beta = -14/20 = -0.70$. Within this region, an extra unit of spending is associated with a $0.70$-day shorter wait --- a beneficial within effect.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Two regions are observed for two years each. Region A: $(x, y) = (40, 30)$ in year 1 and $(44, 28)$ in year 2. Region B: $(x, y) = (70, 50)$ in year 1 and $(74, 48)$ in year 2.
+
+(a) Compute each region's within slope. (b) Compute the between slope using the two region means. (c) The pooled slope through all four points is approximately $+0.65$. Explain in words why it differs in sign from the within slopes, and which one answers the causal question.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Region A: as $x$ rises $40\to44$ (+4), $y$ falls $30\to28$ (−2), so within slope $= -2/4 = -0.5$. Region B: as $x$ rises $70\to74$ (+4), $y$ falls $50\to48$ (−2), so within slope $= -2/4 = -0.5$. **Both within slopes are $-0.5$.**
+
+**(b)** Region means: A is $(\bar x,\bar y) = (42, 29)$; B is $(72, 49)$. Between slope $= (49-29)/(72-42) = 20/30 \approx +0.67$.
+
+**(c)** Within *each* region, more spending lowers waiting ($-0.5$). But Region B sits far up and to the right of Region A: it spends much more *and* has much longer baseline waiting times, for reasons captured by its fixed effect $\alpha_B > \alpha_A$ (it is the harder-to-serve region). The pooled regression, blind to which region a point belongs to, is dominated by the gap *between* the two clusters --- the between slope --- and so comes out *positive* ($\approx +0.65$, close to the between slope of $+0.67$). This is Simpson's paradox: the aggregate sign is the reverse of every disaggregated sign. The **within** slope ($-0.5$) answers the causal question, because it compares each region *to itself* and so holds $\alpha_i$ fixed; the pooled and between slopes are contaminated by the correlation between $\alpha_i$ and spending.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+For each variable below in a region-by-year panel of Swedish primary care, state whether a *unit* fixed-effects (within) estimator can estimate its coefficient, and explain why or why not.
+
+(a) The region's land area in km². (b) Per-capita primary-care spending, which the region adjusts each year. (c) A national reform that takes effect in 2022 for *all* regions simultaneously. (d) A region's number of *distriktssköterskor* per 10,000 residents, which trends upward in some regions and is flat in others.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Land area --- cannot be estimated.** It is perfectly time-invariant: $x_{it} = \bar{x}_i$ for all $t$, so its within deviation is exactly zero. The within transformation differences it away along with $\alpha_i$. Any variable constant within every unit is absorbed by the unit fixed effect and drops out.
+
+**(b) Per-capita spending --- can be estimated.** It varies within regions over time (positive within variation), so it survives demeaning and contributes to the within estimator. This is exactly the regressor in our running example.
+
+**(c) National reform in 2022 --- cannot be estimated by *unit* fixed effects alone.** Because it switches on for every region in the same year, it is constant *across units within each year* --- it has no cross-sectional within-region variation that distinguishes it from a common time shock. It would be collinear with (and absorbed by) *time* fixed effects, not unit fixed effects. To study such a policy you need either variation in timing across units (a difference-in-differences design) or an explicit time-effects specification; a uniform national change observed only before/after is identified only under additional assumptions.
+
+**(d) Nurses per 10,000 --- can be estimated, with a caveat.** It has within variation in the regions where it trends, so the within estimator uses those regions to identify the coefficient. Regions where it is flat contribute nothing to its identification. The caveat: if the upward trend is itself a *time-varying* confounder correlated with other determinants of waiting times, the within transformation does **not** sweep it out (it only removes time-*invariant* heterogeneity), and the estimate can still be biased.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A panel observes many units, each repeated over several periods; the double index $it$ lets you sort every quantity into variation in the $i$ (between) direction and the $t$ (within) direction.
+- Every panel variable splits orthogonally into a between component (the unit means $\bar{x}_i$) and a within component (deviations $x_{it} - \bar{x}_i$), with no cross-term, so the two are genuinely separate sources of identifying variation.
+- The within transformation $y_{it} - \bar{y}_i = \beta(x_{it} - \bar{x}_i) + (e_{it} - \bar{e}_i)$ differences away every time-invariant trait $\alpha_i$ --- measured or not --- simply by comparing each unit to itself.
+- Pooled OLS blends the between and within slopes; when $\alpha_i$ correlates with $x_{it}$ it is biased and can even flip the sign of the true within effect (Simpson's paradox).
+- Panels do not solve causal inference outright --- they trade "control for all confounders" for "control for all time-invariant confounders (free) plus worry about time-varying ones."
+:::
+
+## What Comes Next
+
+We now have the central insight of panel econometrics: a panel lets us split every variable into a **between** component (differences across units) and a **within** component (a unit's deviations from its own average), and only the within component is safe from time-invariant confounding. We saw the within transformation $y_{it} - \bar{y}_i = \beta(x_{it} - \bar{x}_i) + (e_{it} - \bar{e}_i)$ annihilate the unit effect $\alpha_i$ on paper, and we watched it reverse a misleading pooled slope in the interactive.
+
+The next page, [Fixed Effects](fixed-effects.qmd), makes this estimator rigorous: how to implement the within transformation (and its equivalent dummy-variable form), what strict exogeneity really requires, how to get standard errors right by clustering on the unit, and what fixed effects can and cannot rescue you from.

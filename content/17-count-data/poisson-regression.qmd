@@ -1,0 +1,647 @@
+---
+title: "Poisson Regression"
+subtitle: "Modeling counts and rates"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Recognize a *count outcome* (GP visits, hospitalisations, falls) and explain why ordinary least squares is the wrong tool for it
+- Write the Poisson regression model with the log link, $\mathbb{E}[y\mid x] = \exp(x'\beta)$, and explain why the link keeps the mean strictly positive
+- Interpret a coefficient $\beta_j$ as a semi-elasticity and $\exp(\beta_j)$ as an incidence rate ratio
+- Add an *offset* (exposure) to turn a model of counts into a model of rates per person-year or per 1000 listed patients
+- Fit the model by maximum likelihood in R (`glm(family = poisson)`) and Python (`statsmodels` GLM/Poisson)
+:::
+
+## The Question Behind a Count
+
+A *vårdcentral* (primary care center) in Region Uppsala wants to understand how often its listed patients contact the clinic. The outcome for patient $i$ is $y_i$, the **number of GP visits** in a calendar year: $0, 1, 2, 3, \dots$. Most patients visit zero or one time; a few chronically ill patients visit ten or more. The *verksamhetschef* (clinic manager) suspects that visit frequency rises with age and with the number of chronic diagnoses, and wants a model that predicts the *expected count* for any patient profile.
+
+The instinct from earlier modules is to run a linear regression of $y_i$ on age. But a count is not a continuous quantity living on the whole real line. It is a **non-negative integer**, it is often skewed (a long right tail of frequent attenders), and its variance grows with its mean. A linear model $\mathbb{E}[y\mid x] = x'\beta$ will happily predict $-0.4$ visits for a young healthy patient --- a nonsense number --- and its constant-variance, normal-errors assumptions are violated from the start.
+
+Poisson regression fixes both problems at once. It models the *log* of the expected count as linear in the predictors, so the predicted mean is always positive, and it ties the variance to the mean through the Poisson distribution. This page builds the model, shows how to read its coefficients as **rate ratios**, and adds an **offset** so we can model *rates* (visits per person-year, hospitalisations per 1000 listed patients) rather than raw counts. Like logistic and the discrete-choice models of the [previous module](../16-discrete-choice/multinomial-ordered.qmd), it is estimated by [maximum likelihood](../11-mle-gmm/likelihood.qmd).
+
+## The Poisson Distribution for Counts
+
+Before the regression, recall the distribution that gives the model its name. A count $y$ that records the number of independent events in a fixed window --- visits in a year, falls in a quarter --- is often well described by the **Poisson distribution** with a single rate parameter $\mu > 0$.
+
+::: {.glass-card .glass-card--definition}
+A random variable $y \in \{0, 1, 2, \dots\}$ is **Poisson** with mean $\mu$ if
+
+$$
+\Pr(y = k) \;=\; \frac{\mu^{k}\,e^{-\mu}}{k!}, \qquad k = 0, 1, 2, \dots
+$$
+
+**Read this as**: "the probability of observing exactly $k$ events equals the rate $\mu$ raised to the $k$, times $e$ to the minus $\mu$, divided by $k$ factorial." The single parameter $\mu$ is both the **mean and the variance**:
+
+$$
+\mathbb{E}[y] = \operatorname{Var}(y) = \mu.
+$$
+
+This last fact --- mean equals variance --- is called **equidispersion**, and it is the model's signature assumption. When real data have variance larger than the mean (the usual case), we have *overdispersion*, the subject of the next page.
+:::
+
+The Poisson arises whenever events happen one at a time, at a constant underlying rate, independently of one another. A patient's visits across a year, accidents at a road junction, or claims arriving at an insurer are the textbook examples. The whole regression problem now reduces to one question: **how does the rate $\mu$ depend on the patient's characteristics $x$?**
+
+## The Log Link: Keeping the Mean Positive
+
+We want the expected count to depend on predictors, but a count's mean must stay positive --- a clinic cannot have $-0.4$ expected visits. If we wrote $\mu_i = x_i'\beta$ directly, nothing would stop the right-hand side from going negative. The fix is to model the **log** of the mean linearly.
+
+::: {.glass-card .glass-card--definition}
+The **Poisson regression model** specifies the conditional mean through a **log link**:
+
+$$
+\log \mathbb{E}[y_i \mid x_i] \;=\; x_i'\beta
+\qquad\Longleftrightarrow\qquad
+\mathbb{E}[y_i \mid x_i] \;=\; \mu_i \;=\; \exp(x_i'\beta).
+$$
+
+**Read the right-hand form as**: "the expected count for patient $i$ equals $e$ raised to the linear predictor $x_i'\beta$." Because $\exp(\cdot)$ returns a strictly positive number for *any* real input, $\mu_i > 0$ is guaranteed no matter what values the coefficients and covariates take. The conditional distribution is then $y_i \mid x_i \sim \text{Poisson}(\mu_i)$.
+:::
+
+The log link does two jobs. First, it is a **range-respecting transform**: the linear predictor $x_i'\beta$ can roam over $(-\infty, \infty)$, but once passed through $\exp(\cdot)$ it lands in $(0, \infty)$ exactly where a mean count must live. Second, it makes the model **multiplicative** rather than additive. Adding one to a covariate multiplies the expected count by a constant factor, instead of adding a constant number of visits --- which matches how risk factors actually compound in health data. A one-line summary: *additive on the log scale, multiplicative on the count scale.*
+
+::: {.glass-card .glass-card--insight}
+**Why multiplicative beats additive for counts.** Suppose each additional chronic diagnosis raises GP visits. An *additive* model would add, say, $+1.5$ visits per diagnosis to everyone --- the same absolute bump for a healthy 20-year-old (who visits 0.3 times a year) and a frail 85-year-old (who visits 12 times). That is implausible. The log link instead says each diagnosis *multiplies* the expected count by a fixed factor (e.g. $\times 1.4$, a $40\%$ increase), so the absolute increment scales with how often the patient already visits. Proportional effects are the natural language of rates.
+:::
+
+## Reading the Coefficients: Semi-Elasticities and Rate Ratios
+
+Because the model is linear on the log scale, the coefficients have two clean interpretations. Differentiate $\log \mu_i = x_i'\beta$ with respect to a continuous covariate $x_{j}$:
+
+$$
+\frac{\partial \log \mu_i}{\partial x_{ij}} \;=\; \beta_j
+\qquad\Longleftrightarrow\qquad
+\frac{1}{\mu_i}\frac{\partial \mu_i}{\partial x_{ij}} \;=\; \beta_j.
+$$
+
+**Read this as**: "$\beta_j$ is the proportional change in the expected count per one-unit change in $x_j$." This is a **semi-elasticity**: a one-unit rise in $x_j$ changes $\mathbb{E}[y\mid x]$ by approximately $100\beta_j$ percent. A coefficient of $\beta_j = 0.05$ means each extra year of age raises expected visits by roughly $5\%$.
+
+For larger changes the approximation is exact if we exponentiate. Compare the mean at $x_j + 1$ to the mean at $x_j$:
+
+$$
+\frac{\mathbb{E}[y \mid x_j + 1]}{\mathbb{E}[y \mid x_j]}
+= \frac{\exp\!\big(\beta_0 + \beta_j(x_j+1) + \cdots\big)}{\exp\!\big(\beta_0 + \beta_j x_j + \cdots\big)}
+= e^{\beta_j}.
+$$
+
+::: {.glass-card .glass-card--definition}
+The quantity $\exp(\beta_j)$ is the **incidence rate ratio** (IRR): the multiplicative factor by which the expected count changes for a one-unit increase in $x_j$, holding the other covariates fixed.
+
+- $\exp(\beta_j) = 1$ ($\beta_j = 0$): no effect on the rate.
+- $\exp(\beta_j) = 1.40$: a one-unit rise multiplies expected counts by $1.40$ --- a $40\%$ **increase**.
+- $\exp(\beta_j) = 0.75$: a one-unit rise multiplies expected counts by $0.75$ --- a $25\%$ **decrease**.
+
+**Read $\exp(\beta_j)$ aloud as**: "the rate ratio --- counts in the higher group are $\exp(\beta_j)$ times the counts in the reference group." For a binary covariate (e.g. *diabetes diagnosis: yes/no*), $\exp(\beta_j)$ is exactly the ratio of expected visit counts between the two groups.
+:::
+
+So a clinician reads $\beta_j$ directly as a percent effect and $\exp(\beta_j)$ as a "times" factor --- a *rate ratio*. The interactive below lets you watch $\beta$ bend the fitted mean curve while reporting $\exp(\beta)$ live.
+
+## See It: The Fitted exp() Mean Through a Cloud of Counts
+
+The interactive plots a simulated year of data for one vårdcentral: each dot is a patient, the $x$-axis is the patient's number of chronic diagnoses, and the $y$-axis is their observed GP-visit count. Overlaid is the fitted Poisson mean $\hat\mu(x) = \exp(\hat\alpha + \beta x)$. Drag the slider for the slope $\beta$ and watch the curve bend: as $\beta$ rises, the curve sweeps upward more steeply and the reported rate ratio $\exp(\beta)$ grows. Crucially, the curve **never dips below zero** --- the hallmark of the log link.
+
+::: {.interactive-container}
+
+#### GP-visit counts vs. chronic diagnoses, with the fitted exp() mean
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette shared across this page's interactives.
+ctpois_pal = ({
+  focal:  "#990000",   // Uppsala red — fitted mean / focal series
+  slate:  "#3d5a6c",   // comparison series
+  good:   "#2e6f40",   // on-target / good
+  ochre:  "#9c7a33",   // highlight / true value
+  ink:    "#1c1c1a",   // neutral ink
+  axis:   "#79766e",   // axis text (Uppsala muted token)
+  hair:   "#e6e3db",   // gridlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+ctpois_chartFont = "'Inter', system-ui, sans-serif"
+```
+
+```{ojs}
+//| echo: false
+viewof ctpois_beta = Inputs.range([-0.2, 0.8], {
+  value: 0.35,
+  step: 0.01,
+  label: "Slope β (effect of one extra chronic diagnosis)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof ctpois_alpha = Inputs.range([-1.5, 1.5], {
+  value: -0.3,
+  step: 0.05,
+  label: "Intercept α (log baseline rate at 0 diagnoses)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A fixed, reproducible cloud of patients generated ONCE from a "true"
+// data-generating process (α = -0.3, β = 0.35) so the dots never re-shuffle
+// when the reader drags the sliders. d3.randomNormal with a fixed source gives
+// deterministic draws; we map a Normal latent to a Poisson count via the
+// inverse-CDF so the scatter is genuinely integer-valued.
+ctpois_rng = d3.randomLcg(20240607)   // seeded, reproducible
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Inverse-CDF Poisson sampler: accumulate Poisson probabilities until the
+// uniform draw u is exceeded. Stable for the small means in this demo.
+ctpois_rpois = function (mu, u) {
+  let k = 0;
+  let p = Math.exp(-mu);   // P(0)
+  let cdf = p;
+  while (u > cdf && k < 200) {
+    k += 1;
+    p *= mu / k;           // recurrence P(k) = P(k-1) * mu / k
+    cdf += p;
+  }
+  return k;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The patient cloud: 160 patients, each with a number of chronic diagnoses
+// (0–6) and a GP-visit count drawn from the TRUE Poisson mean. This is the
+// fixed "data" the reader's fitted curve is laid over.
+ctpois_data = {
+  const aTrue = -0.3, bTrue = 0.35;
+  const out = [];
+  for (let i = 0; i < 160; i++) {
+    // diagnoses: integer 0–6, skewed toward fewer (most patients are healthy)
+    const x = Math.min(6, Math.floor(-Math.log(1 - ctpois_rng()) * 1.6));
+    const muTrue = Math.exp(aTrue + bTrue * x);
+    const y = ctpois_rpois(muTrue, ctpois_rng());
+    out.push({ x, y });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Jitter the integer dots slightly on x so overlapping patients are visible.
+// Jitter is deterministic (seeded) so dots stay put across slider drags.
+ctpois_jrng = d3.randomLcg(99)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Apply the seeded jitter to the patient cloud (one cell = one definition).
+ctpois_scatter = ctpois_data.map(d => ({
+  x: d.x,
+  xj: d.x + (ctpois_jrng() - 0.5) * 0.55,
+  y: d.y
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The reader's fitted mean curve μ̂(x) = exp(α + β x), sampled on a fine grid.
+ctpois_curve = d3.range(0, 6.01, 0.05).map(x => ({
+  x,
+  mu: Math.exp(ctpois_alpha + ctpois_beta * x)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Group means of observed counts at each integer diagnosis level — the
+// "nonparametric" target the exp() curve should pass through when α, β fit.
+ctpois_groupMeans = Array.from(
+  d3.rollup(ctpois_data, v => d3.mean(v, d => d.y), d => d.x),
+  ([x, ybar]) => ({ x, ybar })
+).sort((a, b) => a.x - b.x)
+```
+
+```{ojs}
+//| echo: false
+ctpois_plot = Plot.plot({
+  width: Math.min(680, width),
+  height: 400,
+  marginLeft: 62,
+  marginBottom: 48,
+  style: {
+    fontFamily: ctpois_chartFont,
+    fontSize: "12px",
+    background: "transparent",
+    color: ctpois_pal.axis
+  },
+  x: {
+    label: "Chronic diagnoses  x  →",
+    domain: [-0.4, 6.4],
+    grid: false
+  },
+  y: {
+    label: "↑ GP visits in the year  y",
+    domain: [0, Math.max(12, d3.max(ctpois_scatter, d => d.y) + 1)],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: ctpois_pal.hair }),
+    // Patient cloud (slate, semi-transparent so density reads).
+    Plot.dot(ctpois_scatter, {
+      x: "xj", y: "y",
+      r: 3.4, fill: ctpois_pal.slate, fillOpacity: 0.42
+    }),
+    // Observed group means (ochre diamonds — the empirical target).
+    Plot.dot(ctpois_groupMeans, {
+      x: "x", y: "ybar",
+      symbol: "diamond", r: 6,
+      fill: ctpois_pal.ochre, stroke: "white", strokeWidth: 1.2
+    }),
+    // The reader's fitted exp() mean (Uppsala red, focal).
+    Plot.line(ctpois_curve, {
+      x: "x", y: "mu",
+      stroke: ctpois_pal.focal, strokeWidth: 3
+    }),
+    // Label on the curve near its right end, with a white halo so it survives
+    // over gridlines (Plot.line has no text channel — use Plot.text).
+    Plot.text(
+      [{ x: 6, mu: Math.exp(ctpois_alpha + ctpois_beta * 6) }],
+      {
+        x: "x", y: "mu",
+        text: () => "μ̂(x) = exp(α + βx)",
+        fill: ctpois_pal.focal, fontWeight: 700, fontSize: 12,
+        dx: -8, dy: -12, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }
+    )
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tying the slider to the rate ratio. Built in an html`` cell so
+// the reactive values interpolate (a markdown ${...} would render literally).
+{
+  const rr = Math.exp(ctpois_beta);
+  const pct = (rr - 1) * 100;
+  const dirWord = pct >= 0 ? "increase" : "decrease";
+  const rrColor = Math.abs(ctpois_beta) < 0.005
+    ? ctpois_pal.muted
+    : (ctpois_beta > 0 ? ctpois_pal.focal : ctpois_pal.good);
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7.5rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${ctpois_pal.fill}; border: 1px solid ${ctpois_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${ctpois_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("Slope  β", ctpois_beta.toFixed(2), ctpois_pal.ink)}
+    ${tile("Rate ratio  exp(β)", rr.toFixed(2), rrColor)}
+    ${tile("Percent change", (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%", rrColor)}
+    ${tile("Baseline μ̂ at x=0", Math.exp(ctpois_alpha).toFixed(2) + " visits", ctpois_pal.slate)}
+  </div>
+  <p style="font-family:'Inter',system-ui,sans-serif; font-size:0.82rem;
+      color:${ctpois_pal.axis}; margin:0.55rem 0 0; line-height:1.45;">
+    Each extra chronic diagnosis multiplies expected GP visits by
+    <strong style="color:${rrColor};">${rr.toFixed(2)}</strong>
+    &mdash; a ${Math.abs(pct).toFixed(0)}% ${dirWord} per diagnosis.
+  </p>`;
+}
+```
+
+:::
+
+### How to Read the Count Scatter
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the cloud.** Each slate dot is one patient: horizontal position is their number of chronic diagnoses (jittered slightly so overlapping patients separate), vertical position is the GP visits they made this year. Notice the cloud fans *upward and outward* to the right --- patients with more diagnoses visit more, and their counts are also more *spread out*. That widening spread is the Poisson variance growing with the mean.
+
+**Step 2: Find the empirical target.** The ochre diamonds mark the *average* observed count at each diagnosis level. They trace a curve that bends upward, not a straight line --- a hint that the relationship is multiplicative.
+
+**Step 3: Bend the curve with β.** Drag **slope β**. The red curve $\hat\mu(x) = \exp(\hat\alpha + \beta x)$ flexes: larger $\beta$ makes it sweep up more steeply; $\beta = 0$ flattens it to a horizontal line (no effect of diagnoses). At every setting the curve stays **strictly above zero** --- the log link makes a negative predicted count impossible.
+
+**Step 4: Read the rate ratio.** Watch the "Rate ratio $\exp(\beta)$" tile. When $\beta = 0.35$ it reads $1.42$: each extra diagnosis multiplies expected visits by $1.42$, a $42\%$ increase. Set $\beta$ negative and the ratio drops below $1$ (a protective-looking factor); set $\beta = 0$ and it reads exactly $1.00$ (no effect).
+
+**Step 5: Fit by eye.** Adjust **β** and the **intercept α** until the red curve threads through the ochre diamonds. The settings that make it pass through the empirical means are close to the maximum-likelihood estimates the software would return --- you have just done Poisson regression by hand.
+
+## Modeling Rates: The Offset
+
+So far each patient was observed for the same window --- one calendar year. But often the exposure differs. One patient was listed at the vårdcentral for the full 12 months; another moved in halfway through and was listed for only 6. Comparing their raw visit *counts* is unfair: the second patient had half the time to accumulate visits. We want to model the **rate** --- visits *per person-year* --- not the raw count.
+
+Let $t_i$ be patient $i$'s exposure (person-years listed, or number of listed patients when the unit is a clinic). The natural model puts the linear predictor on the *rate* $\mu_i / t_i$:
+
+$$
+\log\!\left(\frac{\mu_i}{t_i}\right) = x_i'\beta
+\qquad\Longleftrightarrow\qquad
+\log \mu_i = x_i'\beta + \log t_i.
+$$
+
+**Read the right-hand form as**: "the log expected count equals the linear predictor plus the log of the exposure." That extra term $\log t_i$ is the **offset**: a regressor whose coefficient is *fixed at 1*, not estimated.
+
+::: {.glass-card .glass-card--definition}
+An **offset** is a known term $\log t_i$ added to the linear predictor with a coefficient constrained to $1$:
+
+$$
+\log \mathbb{E}[y_i \mid x_i] = x_i'\beta + \underbrace{\log t_i}_{\text{offset}}.
+$$
+
+It converts a model of **counts** into a model of **rates**. The fitted $\beta$ and the rate ratios $\exp(\beta_j)$ now describe events *per unit of exposure* --- per person-year, per 1000 listed patients, per 100 bed-days. Doubling a patient's exposure $t_i$ doubles their expected count $\mu_i$, exactly as a constant rate demands.
+:::
+
+::: {.glass-card .glass-card--insight}
+**An offset is not a covariate.** A covariate gets an estimated slope; an offset gets a slope *pinned to 1*. If you instead entered $\log t_i$ as an ordinary regressor, the software would estimate its coefficient (say $0.7$ instead of $1$), which assumes counts scale *sub-linearly* with exposure --- usually not what you want. Use `offset = log(t)` (R) or `exposure = t` / `offset = np.log(t)` (statsmodels), never a free regressor, when you believe events accrue at a constant rate over the exposure window.
+:::
+
+A concrete Swedish example: to compare **hospital readmissions per 1000 listed patients** across vårdcentraler of very different sizes, set the count $y_i$ to the clinic's readmissions and the offset to $\log(\text{listsize}_i / 1000)$. The intercept and rate ratios then speak in readmissions per 1000 listed patients, directly comparable across a small rural clinic and a large urban one.
+
+## Estimation by Maximum Likelihood
+
+There is no closed-form solution for $\beta$, so the model is fit by [maximum likelihood](../11-mle-gmm/likelihood.qmd) --- the same machinery behind logistic and the discrete-choice models. We write the log-likelihood, set its score (gradient) to zero, and let an iteratively reweighted least squares (IRLS) solver climb to the maximum. The Math Details derive the score; the panels below run the fit in two lines of idiomatic code.
+
+::: {.glass-card .glass-card--assumption}
+**Poisson regression assumes:**
+
+1. **Correct mean function.** $\mathbb{E}[y_i \mid x_i] = \exp(x_i'\beta)$ --- the log link and the chosen covariates capture how the rate varies. Omitted nonlinearity (e.g. age entered linearly when its effect is U-shaped) biases the coefficients.
+
+2. **Equidispersion.** $\operatorname{Var}(y_i \mid x_i) = \mathbb{E}[y_i \mid x_i] = \mu_i$. The conditional variance equals the conditional mean. Health-care counts routinely violate this (frequent attenders make the variance *exceed* the mean) --- the next page handles that.
+
+3. **Independent events given $x$.** Counts are not driven by contagion or clustering left out of the model. Visits clustered within a *läkare* (physician) panel, or an epidemic that makes one visit beget another, break the independence the Poisson assumes.
+:::
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("AER")   # for dispersiontest (optional check)
+# --- Simulate a year of GP-visit data for one vårdcentral ----------------
+set.seed(2024)
+n        <- 600
+age_c    <- round(rnorm(n, 50, 16))          # patient age
+age_c    <- pmin(pmax(age_c, 18), 95)
+diagnos  <- rpois(n, 1.1)                      # number of chronic diagnoses
+months   <- sample(6:12, n, replace = TRUE)   # months listed (exposure)
+
+# True log-rate: baseline + age + diagnoses, on a PER-YEAR basis.
+eta   <- -1.6 + 0.012 * (age_c - 50) + 0.35 * diagnos
+mu    <- exp(eta) * (months / 12)             # scale by exposure
+visits <- rpois(n, mu)
+
+dat <- data.frame(visits, age_c, diagnos, months)
+
+# --- Poisson GLM with a log link and an exposure OFFSET ------------------
+# offset = log(person-years): models VISITS PER PERSON-YEAR, not raw counts.
+fit <- glm(
+  visits ~ age_c + diagnos,
+  family = poisson(link = "log"),
+  offset = log(months / 12),
+  data   = dat
+)
+
+summary(fit)
+
+# Coefficients as INCIDENCE RATE RATIOS exp(beta) with 95% CIs.
+exp(cbind(IRR = coef(fit), confint(fit)))
+#   diagnos ~ 1.42  => each extra chronic diagnosis multiplies the
+#                      visit RATE by ~1.42 (a 42% increase per diagnosis),
+#                      since the true slope is 0.35 and exp(0.35) = 1.42
+
+# Quick overdispersion check (foreshadows the next page):
+AER::dispersiontest(fit)   # H0: equidispersion (dispersion = 1)
+
+# Predicted RATE per person-year for a 60-year-old with 2 diagnoses:
+predict(fit, newdata = data.frame(age_c = 60, diagnos = 2, months = 12),
+        type = "response")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+# --- Simulate a year of GP-visit data for one vårdcentral ----------------
+rng     = np.random.default_rng(2024)
+n       = 600
+age_c   = np.clip(rng.normal(50, 16, n).round(), 18, 95)
+diagnos = rng.poisson(1.1, n)                  # number of chronic diagnoses
+months  = rng.integers(6, 13, n)               # months listed (exposure)
+
+# True log-rate, scaled by exposure (months / 12 = person-years).
+eta    = -1.6 + 0.012 * (age_c - 50) + 0.35 * diagnos
+mu     = np.exp(eta) * (months / 12)
+visits = rng.poisson(mu)
+
+dat = pd.DataFrame({"visits": visits, "age_c": age_c,
+                    "diagnos": diagnos, "months": months})
+
+# --- Poisson GLM with a log link and an exposure OFFSET ------------------
+# offset = log(person-years): models VISITS PER PERSON-YEAR, not raw counts.
+fit = smf.glm(
+    "visits ~ age_c + diagnos",
+    data   = dat,
+    family = sm.families.Poisson(link=sm.families.links.Log()),
+    offset = np.log(dat["months"] / 12),
+).fit()
+
+print(fit.summary())
+
+# Coefficients as INCIDENCE RATE RATIOS exp(beta) with 95% CIs.
+irr = np.exp(pd.concat([fit.params, fit.conf_int()], axis=1))
+irr.columns = ["IRR", "lo", "hi"]
+print(irr)
+#   diagnos ~ 1.42  => each extra chronic diagnosis multiplies the
+#                      visit RATE by ~1.42 (a 42% increase per diagnosis),
+#                      since the true slope is 0.35 and exp(0.35) = 1.42
+
+# Equivalent count-model API: discrete_model.Poisson(..., exposure=months/12)
+# Predicted RATE per person-year for a 60-year-old with 2 diagnoses:
+print(fit.predict(pd.DataFrame(
+    {"age_c": [60], "diagnos": [2], "months": [12]}),
+    offset=np.log([12 / 12])))
+```
+
+:::
+
+In both languages the estimated $\beta$ for `diagnos` lands near $0.35$, so $\exp(0.35) \approx 1.42$: each additional chronic diagnosis multiplies the expected visit *rate* by about $1.42$. The offset ensures this is a rate per person-year, comparable across patients listed for different lengths of time.
+
+<details>
+<summary>Math Details: The Poisson log-likelihood and the score</summary>
+<div class="details-content">
+
+### The log-likelihood
+
+For patient $i$ with covariates $x_i$, the Poisson model sets $\mu_i = \exp(x_i'\beta)$ and assumes $y_i \mid x_i \sim \text{Poisson}(\mu_i)$. The probability of the observed count is
+
+$$
+\Pr(y_i \mid x_i) = \frac{\mu_i^{\,y_i}\, e^{-\mu_i}}{y_i!}.
+$$
+
+Taking logs of one observation,
+
+$$
+\log \Pr(y_i \mid x_i) = y_i \log \mu_i - \mu_i - \log(y_i!).
+$$
+
+Substitute $\log \mu_i = x_i'\beta$ and $\mu_i = \exp(x_i'\beta)$, then sum over the $n$ independent patients:
+
+$$
+\ell(\beta) = \sum_{i=1}^{n} \Big[\, y_i\, x_i'\beta \;-\; \exp(x_i'\beta) \;-\; \log(y_i!) \,\Big].
+$$
+
+The final term $\log(y_i!)$ does not depend on $\beta$, so it is a constant that cannot move the maximizer --- it is dropped during optimization.
+
+### The score equation
+
+Differentiate $\ell(\beta)$ with respect to the coefficient vector. Using $\partial(x_i'\beta)/\partial\beta = x_i$ and $\partial \exp(x_i'\beta)/\partial\beta = \exp(x_i'\beta)\, x_i = \mu_i x_i$,
+
+$$
+s(\beta) = \frac{\partial \ell}{\partial \beta}
+= \sum_{i=1}^{n} \big(\, y_i - \mu_i \,\big)\, x_i
+= \sum_{i=1}^{n} \big(\, y_i - \exp(x_i'\beta) \,\big)\, x_i.
+$$
+
+**Read this as**: "the score is the sum, over patients, of the residual $(y_i - \mu_i)$ times the covariate vector." The MLE $\hat\beta$ solves $s(\hat\beta) = 0$ --- the fitted means $\hat\mu_i = \exp(x_i'\hat\beta)$ make the *covariate-weighted residuals* sum to zero. With an intercept, the unweighted residuals sum to zero too: $\sum_i (y_i - \hat\mu_i) = 0$, so the model reproduces the total observed count.
+
+There is no closed form, so we solve the score equation numerically. The Hessian,
+
+$$
+\frac{\partial^2 \ell}{\partial\beta\,\partial\beta'} = -\sum_{i=1}^{n} \mu_i\, x_i x_i',
+$$
+
+is negative definite for any $\beta$ (a sum of positively weighted outer products, negated), so $\ell(\beta)$ is **globally concave** --- the MLE is unique and Newton-Raphson / IRLS converges reliably.
+
+### The offset
+
+With exposure $t_i$ the mean becomes $\mu_i = t_i \exp(x_i'\beta) = \exp(x_i'\beta + \log t_i)$. The offset $\log t_i$ enters the linear predictor exactly like a covariate whose coefficient is fixed at $1$, so the score is unchanged in form:
+
+$$
+s(\beta) = \sum_{i=1}^{n} \big(\, y_i - t_i \exp(x_i'\beta) \,\big)\, x_i .
+$$
+
+The residual is now "observed count minus expected count at this exposure," and $\hat\beta$ describes events per unit of $t$.
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A Poisson regression of annual GP visits on a binary indicator $\textit{diabetes}$ (1 = diagnosed, 0 = not) returns intercept $\hat\alpha = 0.41$ and slope $\hat\beta = 0.55$.
+
+(a) What is the expected visit count for a non-diabetic patient? (b) For a diabetic patient? (c) State and interpret the incidence rate ratio.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** For a non-diabetic, $\textit{diabetes} = 0$, so $\hat\mu_0 = \exp(\hat\alpha) = \exp(0.41) \approx 1.51$ visits per year.
+
+**(b)** For a diabetic, $\textit{diabetes} = 1$, so $\hat\mu_1 = \exp(\hat\alpha + \hat\beta) = \exp(0.41 + 0.55) = \exp(0.96) \approx 2.61$ visits per year.
+
+**(c)** The IRR is $\exp(\hat\beta) = \exp(0.55) \approx 1.73$. Diabetic patients have $1.73$ times the expected visit rate of non-diabetic patients --- a $73\%$ increase. Check: $\hat\mu_1 / \hat\mu_0 = 2.61 / 1.51 \approx 1.73$. $\checkmark$
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain why we model $\log \mathbb{E}[y \mid x] = x'\beta$ rather than $\mathbb{E}[y \mid x] = x'\beta$ directly. Give two distinct reasons.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+1. **Positivity.** A count's mean must be positive. The linear form $x'\beta$ can take any real value, so for some covariate combinations it would predict a *negative* expected count --- impossible for a number of visits. Passing the linear predictor through $\exp(\cdot)$ guarantees $\hat\mu = \exp(x'\beta) > 0$ for every $x$.
+
+2. **Multiplicative (proportional) effects.** On the log scale, adding a unit to a covariate *adds* $\beta_j$ to $\log\mu$, which *multiplies* $\mu$ by $\exp(\beta_j)$. This proportional structure matches how risk factors actually act on rates: an extra diagnosis raises a frail patient's many visits by the same *percentage* as a healthy patient's few visits, rather than by the same absolute number. It also yields the clean rate-ratio interpretation $\exp(\beta_j)$.
+
+(A bonus reason: the log link makes the log-likelihood globally concave, so the MLE is unique and easy to compute.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Two vårdcentraler report hospital readmissions among their listed patients over one year. Clinic A: $90$ readmissions among $3{,}000$ listed patients. Clinic B: $48$ readmissions among $1{,}200$ listed patients.
+
+(a) Why would a raw count comparison ($90$ vs. $48$) mislead? (b) How does an offset fix this? (c) Compute each clinic's readmission rate per 1000 listed patients and the rate ratio of B to A.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Clinic A has $90$ readmissions and Clinic B has $48$, so A looks "worse" on raw counts. But A is $2.5$ times larger ($3{,}000$ vs. $1{,}200$ listed patients), so it *should* have more readmissions simply by size. The raw count confounds clinic quality with clinic size.
+
+**(b)** An offset of $\log(\text{listsize}/1000)$ converts the count model into a model of readmissions *per 1000 listed patients*. The exposure (list size) is divided out, so the estimated intercept and rate ratios compare clinics on a per-patient basis, fair across sizes.
+
+**(c)** Rate per 1000:
+$$
+\text{A: } \frac{90}{3000}\times 1000 = 30 \text{ per 1000}, \qquad
+\text{B: } \frac{48}{1200}\times 1000 = 40 \text{ per 1000}.
+$$
+Rate ratio of B to A $= 40 / 30 = 1.33$. Once exposure is accounted for, Clinic **B** has the higher readmission rate ($1.33$ times A's), reversing the raw-count impression. This is exactly what the offset captures.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set $\beta = 0.35$ and read the rate ratio. (a) What is $\exp(0.35)$, and what does it mean for one extra chronic diagnosis? (b) Now drag $\beta$ to $0$: what happens to the curve and to $\exp(\beta)$? (c) The next page is about *overdispersion*. In the scatter, what visual feature of the cloud already hints that a pure Poisson model (variance = mean) might be too restrictive?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\exp(0.35) \approx 1.42$. Each additional chronic diagnosis multiplies the expected number of GP visits by about $1.42$ --- a $42\%$ increase in the visit rate per diagnosis, holding other covariates fixed.
+
+**(b)** At $\beta = 0$ the fitted curve $\hat\mu(x) = \exp(\hat\alpha + 0\cdot x) = \exp(\hat\alpha)$ becomes a *horizontal line*: the expected count no longer depends on the number of diagnoses. The rate ratio $\exp(0) = 1.00$ exactly --- no effect.
+
+**(c)** The cloud fans out: at higher diagnosis counts the dots are not only higher on average but far more *spread out*, and there is a long upper tail of frequent attenders. A pure Poisson forces $\operatorname{Var}(y\mid x) = \mathbb{E}[y\mid x]$; if the observed spread at a given $x$ exceeds the mean there, the data are *overdispersed* and the Poisson standard errors will be too small. That is precisely the motivation for the negative binomial model on the next page.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A count outcome (visits, hospitalisations, falls) is a non-negative integer with mean-dependent variance; OLS can predict negative means and mis-states the variance, so use Poisson regression.
+- The Poisson model uses a **log link**: $\mathbb{E}[y\mid x] = \exp(x'\beta)$, which keeps the mean strictly positive and makes covariate effects multiplicative.
+- A coefficient $\beta_j$ is a **semi-elasticity** ($\approx 100\beta_j\%$ change in the rate per unit), and $\exp(\beta_j)$ is the **incidence rate ratio** --- the factor by which the expected count changes.
+- An **offset** $\log t_i$ (coefficient fixed at $1$) turns a count model into a **rate model** --- events per person-year, per 1000 listed patients --- making clinics of different size or patients of different exposure comparable.
+- The model is fit by **maximum likelihood**; the log-likelihood is globally concave and the key assumption is **equidispersion** (variance = mean), which real health-care counts often violate.
+:::
+
+## What Comes Next
+
+Poisson regression gives a clean, range-respecting model for counts and rates, but it rests on a single fragile assumption: that the conditional variance equals the conditional mean. The scatter already warned us --- the cloud of GP visits fanned out far more than a pure Poisson allows, with a heavy tail of frequent attenders. When the variance exceeds the mean, the Poisson coefficients stay roughly right but the standard errors are too small, so we declare effects significant that are not. The next page, [Overdispersion and Negative Binomial](overdispersion-negbin.qmd), diagnoses overdispersion formally, introduces the negative binomial model (a Poisson with a gamma-distributed rate that lets the variance grow faster than the mean), and shows when to reach for quasi-Poisson, robust standard errors, or zero-inflated models for the surplus of patients who never visit at all.

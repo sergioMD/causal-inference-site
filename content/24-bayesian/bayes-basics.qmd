@@ -1,0 +1,748 @@
+---
+title: "Bayesian Inference: Priors and Posteriors"
+subtitle: "Updating beliefs with data"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- State Bayes' rule for a parameter and read the proportionality $p(\theta \mid y) \propto p(y \mid \theta)\,p(\theta)$ as "posterior $\propto$ likelihood $\times$ prior"
+- Distinguish the prior, the likelihood, and the posterior, and explain what role each plays in updating a belief
+- Derive the Beta-Binomial conjugate update and read off the posterior $\text{Beta}(a+k,\,b+n-k)$ by inspection
+- Express the posterior mean as a precision-weighted average of the prior mean and the data, and connect this shrinkage to multilevel models
+- Interpret a credible interval as a direct probability statement about $\theta$, and contrast it with a frequentist confidence interval
+:::
+
+## The Question Behind Every Belief
+
+A *verksamhetschef* (clinic manager) at a *vårdcentral* in Region Uppsala is launching a new structured program for Type 2 diabetes. The clinical target is an HbA1c at or below 52 mmol/mol --- "on target." Before a single patient finishes the program, the manager is *not* a blank slate: a decade of similar programs across Sweden suggests that somewhere around half of enrolled patients reach the target, give or take. Then the first cohort reports back: $k = 26$ of $n = 40$ patients hit the target.
+
+A frequentist would compute the [maximum likelihood estimate](../11-mle-gmm/likelihood.qmd) $\hat p = 26/40 = 0.65$ and stop there --- the prior decade of experience plays no formal role. The Bayesian asks a different question: **given everything I believed before *and* the 26-of-40 I just saw, what should I believe now?** The answer is not $0.65$ and not the manager's prior hunch of $0.5$; it is a principled compromise that leans toward the data as the sample grows.
+
+This is the entire Bayesian program. A parameter such as $p$ is treated not as a fixed-but-unknown constant but as a quantity we are *uncertain about*, and uncertainty is described by a probability distribution. We start with a **prior** distribution, observe data through a **likelihood**, and combine the two with Bayes' rule to get a **posterior** distribution. Every Bayesian analysis --- from this two-parameter clinic example to the hierarchical models of [Module 15](../15-multilevel/partial-pooling-shrinkage.qmd) and the Markov-chain samplers of the [next page](mcmc.qmd) --- is this single update, applied once or a million times.
+
+## Bayes' Rule for a Parameter
+
+You have already met Bayes' rule for events: $P(A \mid B) = P(B \mid A)\,P(A) / P(B)$. The Bayesian move is to apply exactly this rule with the *parameter* $\theta$ in the role of $A$ and the *data* $y$ in the role of $B$.
+
+::: {.glass-card .glass-card--definition}
+**Bayes' rule for inference.** For a parameter $\theta$ and observed data $y$,
+
+$$
+p(\theta \mid y) \;=\; \frac{p(y \mid \theta)\,p(\theta)}{p(y)},
+\qquad
+p(y) = \int p(y \mid \theta)\,p(\theta)\,\mathrm{d}\theta .
+$$
+
+**Read this as**: "the posterior density of $\theta$ given the data equals the likelihood of the data given $\theta$, times the prior density of $\theta$, divided by the marginal probability of the data." Each piece has a name:
+
+- $p(\theta)$ --- the **prior**: what we believe about $\theta$ *before* seeing this data.
+- $p(y \mid \theta)$ --- the **likelihood**: how probable the observed data are under each candidate $\theta$ (the same object we maximized in [MLE](../11-mle-gmm/likelihood.qmd), now read as a function of $\theta$).
+- $p(\theta \mid y)$ --- the **posterior**: what we believe about $\theta$ *after* folding in the data.
+- $p(y)$ --- the **marginal likelihood** or **evidence**: a normalizing constant that makes the posterior integrate to 1.
+:::
+
+The denominator $p(y)$ does not depend on $\theta$ --- it is just whatever number is needed to make the right-hand side a proper density. So for the purpose of *finding the shape* of the posterior over $\theta$, we can drop it and write the relationship that does all the work:
+
+$$
+\underbrace{p(\theta \mid y)}_{\text{posterior}} \;\propto\; \underbrace{p(y \mid \theta)}_{\text{likelihood}}\;\times\;\underbrace{p(\theta)}_{\text{prior}}.
+$$
+
+**Read the symbol $\propto$ as "is proportional to."** The posterior is the prior *reweighted* by the likelihood: wherever the data say "this $\theta$ explains what I saw well," the likelihood is large and pulls the posterior up; wherever the prior says "I doubt $\theta$ lives here," the prior is small and pulls the posterior down. The posterior is the pointwise product, renormalized to sum to one.
+
+::: {.glass-card .glass-card--insight}
+**Posterior $\propto$ likelihood $\times$ prior is the whole story.** Frequentist inference uses only the likelihood; Bayesian inference multiplies it by a prior. When the prior is flat (constant over $\theta$), the posterior is *proportional to the likelihood*, and its peak --- the posterior mode --- coincides with the MLE. The prior is therefore not a departure from likelihood inference but an extra factor layered on top of it. As data accumulate, that extra factor matters less and less.
+:::
+
+## Conjugate Update I: Beta-Binomial
+
+Multiplying a likelihood by a prior and renormalizing usually requires a nasty integral for $p(y)$. In a few blessed cases the algebra closes: the prior and posterior belong to the *same family*, and the update is just a rule for shuffling the parameters. Such a prior is called **conjugate** to the likelihood. The flagship example is the Beta-Binomial, and it is exactly our clinic problem.
+
+Each enrolled patient either reaches the target ($y_i = 1$) or not ($y_i = 0$), independently, with probability $p$. With $k$ successes in $n$ patients, the likelihood is the binomial kernel
+
+$$
+p(y \mid p) \;\propto\; p^{\,k}\,(1-p)^{\,n-k}.
+$$
+
+The conjugate prior on a probability $p \in (0,1)$ is the **Beta distribution** $\text{Beta}(a, b)$, whose density is proportional to $p^{\,a-1}(1-p)^{\,b-1}$. The two hyperparameters $a$ and $b$ act like **prior pseudo-counts**: $a-1$ imagined prior successes and $b-1$ imagined prior failures. Now multiply prior by likelihood:
+
+$$
+p(p \mid y) \;\propto\; \underbrace{p^{\,a-1}(1-p)^{\,b-1}}_{\text{prior}}\;\times\;\underbrace{p^{\,k}(1-p)^{\,n-k}}_{\text{likelihood}}
+\;=\; p^{\,(a+k)-1}\,(1-p)^{\,(b+n-k)-1}.
+$$
+
+**Read the last step as**: "add the exponents." The right-hand side is *again* a Beta kernel --- with parameters $a+k$ and $b+n-k$.
+
+::: {.glass-card .glass-card--definition}
+**The Beta-Binomial conjugate update.** If the prior is $p \sim \text{Beta}(a, b)$ and we observe $k$ successes in $n$ Bernoulli trials, then the posterior is
+
+$$
+p \mid (k, n) \;\sim\; \text{Beta}\big(a + k,\; b + n - k\big).
+$$
+
+**Read this as**: "the posterior is Beta, with first parameter the prior $a$ plus the observed successes, and second parameter the prior $b$ plus the observed failures." Updating is *pure bookkeeping*: add successes to $a$, add failures to $b$. No integral required.
+:::
+
+For the clinic, take a gently informative prior $\text{Beta}(2, 2)$ --- it is centered at $0.5$ (the decade-long hunch) but very weak, worth only about two prior observations each way. Observing $k = 26$, $n - k = 14$ gives the posterior
+
+$$
+\text{Beta}(2 + 26,\; 2 + 14) = \text{Beta}(28, 16),
+$$
+
+with posterior mean $28/44 \approx 0.636$ and posterior standard deviation $\approx 0.072$. The data have pulled the belief from $0.5$ almost all the way to the MLE of $0.65$, stopping just short because the prior still exerts a little tug.
+
+## See It: The Beta-Binomial Updater
+
+The interactive below *is* Bayes' rule. Set a prior with the two Beta sliders; set the data with the successes and sample-size sliders. The page plots three curves on the same axis: the **prior** (slate), the **likelihood** rescaled to be visible (ochre), and the **posterior** (red). Watch the posterior sit between the prior and the likelihood --- and watch it slide toward the likelihood, ignoring the prior, as you push the sample size up.
+
+::: {.interactive-container}
+
+#### Updating a belief about the HbA1c-target probability
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette shared across this page's interactives.
+baybasic_pal = ({
+  prior:  "#3d5a6c",   // prior series (slate)
+  like:   "#9c7a33",   // likelihood series (ochre / highlight)
+  post:   "#990000",   // posterior series (focal Uppsala red)
+  good:    "#2e6f40",  // on-target / success (green)
+  bad:     "#b3000b",  // alarm
+  ink:     "#1c1c1a",  // ink text & reference lines
+  axis:    "#79766e",  // axis text
+  hair:    "#e6e3db",  // gridlines
+  muted:   "#79766e",  // muted ink
+  fill:    "#f6f5f1"   // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+viewof baybasic_a = Inputs.range([0.5, 30], {
+  value: 2,
+  step: 0.5,
+  label: "Prior a  (pseudo-successes + 1)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof baybasic_b = Inputs.range([0.5, 30], {
+  value: 2,
+  step: 0.5,
+  label: "Prior b  (pseudo-failures + 1)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof baybasic_n = Inputs.range([1, 400], {
+  value: 40,
+  step: 1,
+  label: "Sample size n (patients enrolled)"
+})
+```
+
+```{ojs}
+//| echo: false
+// k tracks the chosen n at the clinic's observed proportion 0.65, but the
+// reader may override it. Re-created when n changes so it can never exceed n.
+// (Reads baybasic_n here, writes baybasic_k — no cycle.)
+viewof baybasic_k = Inputs.range([0, baybasic_n], {
+  value: Math.round(0.65 * baybasic_n),
+  step: 1,
+  label: "Successes k (reached target)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// log-Gamma (Lanczos) — needed to normalize the Beta density for plotting.
+baybasic_logGamma = function (x) {
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+  ];
+  if (x < 0.5) {
+    return Math.log(Math.PI / Math.sin(Math.PI * x)) - baybasic_logGamma(1 - x);
+  }
+  x -= 1;
+  let a = c[0];
+  const t = x + g + 0.5;
+  for (let i = 1; i < g + 2; i++) a += c[i] / (x + i);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Beta(a,b) density at p, computed in log space then exponentiated so large
+// parameters (big n) do not overflow.
+baybasic_betaPdf = function (p, a, b) {
+  if (p <= 0 || p >= 1) return 0;
+  const logB = baybasic_logGamma(a) + baybasic_logGamma(b) - baybasic_logGamma(a + b);
+  const logd = (a - 1) * Math.log(p) + (b - 1) * Math.log(1 - p) - logB;
+  return Math.exp(logd);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Posterior parameters from the conjugate rule: Beta(a+k, b+n-k).
+baybasic_postA = baybasic_a + baybasic_k
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+baybasic_postB = baybasic_b + (baybasic_n - baybasic_k)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The (normalized) likelihood as a function of p is itself a Beta kernel,
+// Beta(k+1, n-k+1). Plotting it as a density puts it on the same footing as the
+// prior and posterior without an arbitrary scale factor.
+baybasic_likeA = baybasic_k + 1
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+baybasic_likeB = baybasic_n - baybasic_k + 1
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sample all three curves on a shared grid. Each row carries the density of the
+// prior, the (normalized) likelihood, and the posterior at that p.
+baybasic_grid = d3.range(0.002, 0.999, 0.002).map(p => ({
+  p,
+  prior: baybasic_betaPdf(p, baybasic_a, baybasic_b),
+  like:  baybasic_betaPdf(p, baybasic_likeA, baybasic_likeB),
+  post:  baybasic_betaPdf(p, baybasic_postA, baybasic_postB)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Long format so a single Plot.line with a color channel draws all three.
+baybasic_long = baybasic_grid.flatMap(d => [
+  { p: d.p, density: d.prior, kind: "Prior" },
+  { p: d.p, density: d.like,  kind: "Likelihood" },
+  { p: d.p, density: d.post,  kind: "Posterior" }
+])
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Posterior summaries used by the chart annotations and the readout tiles.
+baybasic_postMean = baybasic_postA / (baybasic_postA + baybasic_postB)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+baybasic_priorMean = baybasic_a / (baybasic_a + baybasic_b)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+baybasic_mle = baybasic_n > 0 ? baybasic_k / baybasic_n : 0.5
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Weight the posterior mean places on the PRIOR: w = (a+b)/(a+b+n).
+// posterior mean = w * prior_mean + (1-w) * (k/n).  This is the precision-
+// weighted-average identity made numeric.
+baybasic_wPrior = (baybasic_a + baybasic_b) / (baybasic_a + baybasic_b + baybasic_n)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Posterior standard deviation of a Beta(A,B).
+baybasic_postSd = {
+  const A = baybasic_postA, B = baybasic_postB;
+  return Math.sqrt(A * B / ((A + B) ** 2 * (A + B + 1)));
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 62,
+  marginBottom: 46,
+  marginTop: 28,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: baybasic_pal.axis
+  },
+  x: {
+    label: "Probability a patient reaches the HbA1c target,  p  →",
+    domain: [0, 1]
+  },
+  y: {
+    label: "↑ Density",
+    grid: false,
+    // Headroom above the tallest of the three curves; falls back gracefully
+    // when the posterior is very peaked at large n.
+    domain: [0, d3.max(baybasic_long, d => d.density) * 1.08 || 1]
+  },
+  color: {
+    domain: ["Prior", "Likelihood", "Posterior"],
+    range: [baybasic_pal.prior, baybasic_pal.like, baybasic_pal.post],
+    legend: true
+  },
+  marks: [
+    Plot.gridY({ stroke: baybasic_pal.hair }),
+    // The three densities.
+    Plot.line(baybasic_long, {
+      x: "p", y: "density", stroke: "kind",
+      strokeWidth: d => d.kind === "Posterior" ? 3 : 2
+    }),
+    // Vertical markers: prior mean (slate), MLE = data proportion (ochre),
+    // posterior mean (red). Dashed so they read as annotations.
+    Plot.ruleX([baybasic_priorMean], {
+      stroke: baybasic_pal.prior, strokeWidth: 1.25, strokeDasharray: "3,3"
+    }),
+    Plot.ruleX([baybasic_mle], {
+      stroke: baybasic_pal.like, strokeWidth: 1.25, strokeDasharray: "3,3"
+    }),
+    Plot.ruleX([baybasic_postMean], {
+      stroke: baybasic_pal.post, strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    // Posterior-mean label, pinned to the top frame band so it never clips.
+    Plot.text(
+      [{ x: baybasic_postMean }],
+      {
+        x: "x", frameAnchor: "top", dy: -6,
+        text: () => `posterior mean ${baybasic_postMean.toFixed(3)}`,
+        fill: baybasic_pal.post, fontWeight: 700, fontSize: 12,
+        textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }
+    )
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tying the picture to the numbers. Built in an html`` cell so the
+// reactive values interpolate (markdown ${...} would render literally).
+{
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7.5rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${baybasic_pal.fill}; border: 1px solid ${baybasic_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${baybasic_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("Prior mean  a/(a+b)", baybasic_priorMean.toFixed(3), baybasic_pal.prior)}
+    ${tile("Data  k/n (MLE)", baybasic_mle.toFixed(3), baybasic_pal.like)}
+    ${tile("Posterior  Beta(" + baybasic_postA.toFixed(0) + "," + baybasic_postB.toFixed(0) + ")",
+        baybasic_postMean.toFixed(3), baybasic_pal.post)}
+    ${tile("Weight on prior", (100 * baybasic_wPrior).toFixed(0) + "%",
+        baybasic_wPrior > 0.5 ? baybasic_pal.bad : baybasic_pal.good)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// One-line plain-language verdict that updates with the sliders.
+{
+  const post = baybasic_postMean, prior = baybasic_priorMean, mle = baybasic_mle;
+  const wp = baybasic_wPrior;
+  let msg, color;
+  if (wp > 0.6) {
+    msg = `With only n = ${baybasic_n} patients, the prior still carries ${(100 * wp).toFixed(0)}% of the weight: the posterior mean ${post.toFixed(3)} sits close to the prior mean ${prior.toFixed(3)}, not the data's ${mle.toFixed(3)}.`;
+    color = baybasic_pal.bad;
+  } else if (wp > 0.2) {
+    msg = `The posterior mean ${post.toFixed(3)} is a compromise — ${(100 * (1 - wp)).toFixed(0)}% data, ${(100 * wp).toFixed(0)}% prior — pulled from the prior mean ${prior.toFixed(3)} toward the data's ${mle.toFixed(3)}.`;
+    color = baybasic_pal.ink;
+  } else {
+    msg = `With n = ${baybasic_n} the data dominate (${(100 * (1 - wp)).toFixed(0)}% of the weight): the posterior mean ${post.toFixed(3)} has all but ignored the prior and snapped onto the data's ${mle.toFixed(3)}. The posterior is also tight (sd ${baybasic_postSd.toFixed(3)}).`;
+    color = baybasic_pal.good;
+  }
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${color}; background: ${baybasic_pal.fill};
+      font-family: 'Inter', system-ui, sans-serif; font-size: 0.86rem;
+      line-height: 1.45; color: ${baybasic_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Beta-Binomial Updater
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the three curves.** The slate curve is the **prior** $\text{Beta}(a,b)$ --- your belief before the data. The ochre curve is the **likelihood** (normalized so it is on the same density scale), peaking at the data proportion $k/n$. The thick red curve is the **posterior** $\text{Beta}(a+k,\,b+n-k)$. The dashed vertical lines mark each distribution's center.
+
+**Step 2: See the posterior sit *between* prior and likelihood.** With the defaults --- prior $\text{Beta}(2,2)$ centered at $0.5$, data $26/40$ peaking at $0.65$ --- the red posterior mean lands at $0.636$, between the two. The posterior is the prior reweighted by the likelihood; its peak is always pulled from the prior toward the data.
+
+**Step 3: Strengthen the prior.** Drag $a$ and $b$ up together (try $a = 8$, $b = 12$, a prior centered at $0.4$ worth 20 pseudo-observations). The slate prior becomes tall and narrow, the "Weight on prior" tile jumps, and the posterior is dragged back toward the prior mean. A confident prior resists the data.
+
+**Step 4: Add data and watch the prior fade.** Return the prior to $\text{Beta}(2,2)$ and push **sample size $n$** from 40 toward 400 (with $k$ tracking the $0.65$ proportion). Two things happen at once: the ochre likelihood and the red posterior both grow **tall and narrow**, and the "Weight on prior" tile collapses toward $0\%$. The posterior snaps onto the data proportion $0.65$ --- the prior's influence vanishes as evidence accumulates.
+
+**Step 5: Make the data say something else.** Hold $n$ fixed and drag **successes $k$**. The ochre likelihood and the red posterior slide together along the axis, tracking $k/n$, while the slate prior stays put. The prior is a fixed belief; the likelihood is what the data report; the posterior is their product.
+
+## The Posterior Mean as a Precision-Weighted Average
+
+Step 4 hinted at something exact. The Beta-Binomial posterior mean can be written as a transparent weighted average of the prior mean and the data proportion:
+
+$$
+\underbrace{\frac{a + k}{a + b + n}}_{\text{posterior mean}}
+\;=\;
+\underbrace{\frac{a + b}{a + b + n}}_{w}\cdot \underbrace{\frac{a}{a + b}}_{\text{prior mean}}
+\;+\;
+\underbrace{\frac{n}{a + b + n}}_{1 - w}\cdot \underbrace{\frac{k}{n}}_{\text{data mean}}.
+$$
+
+**Read this as**: "the posterior mean is a weighted average of the prior mean and the sample proportion, where the weight on the prior is the prior's pseudo-sample-size $a+b$ divided by the *total* sample size $a+b+n$." The prior contributes $a+b$ pseudo-observations; the data contribute $n$ real ones; the posterior simply pools them. The same logic governs the **Normal-Normal** model, where the weights are *precisions* (inverse variances) rather than counts.
+
+::: {.glass-card .glass-card--definition}
+**Normal-Normal conjugate update.** Suppose the data are $n$ i.i.d. draws with known variance $\sigma^2$ and sample mean $\bar y$, and the prior on the unknown mean is $\mu \sim \mathcal N(m_0, \tau_0^2)$. Then the posterior is Normal,
+
+$$
+\mu \mid \bar y \;\sim\; \mathcal N\!\left(m_n, \tau_n^2\right),
+\qquad
+\frac{1}{\tau_n^2} = \underbrace{\frac{1}{\tau_0^2}}_{\text{prior precision}} + \underbrace{\frac{n}{\sigma^2}}_{\text{data precision}},
+$$
+
+and the posterior mean is the **precision-weighted average**
+
+$$
+m_n = \frac{\tfrac{1}{\tau_0^2}\,m_0 + \tfrac{n}{\sigma^2}\,\bar y}{\tfrac{1}{\tau_0^2} + \tfrac{n}{\sigma^2}}.
+$$
+
+**Read this as**: "posterior precision is prior precision plus data precision, and the posterior mean weights the prior mean and the sample mean each by its own precision." More confident (higher-precision) sources count for more.
+:::
+
+Take a concrete Swedish example. A region's planners believe the mean *väntetid* (waiting time for a primary-care appointment) is around $m_0 = 21$ days, with prior standard deviation $\tau_0 = 3$ days (so $\tau_0^2 = 9$). A fresh audit of $n = 16$ visits has sample mean $\bar y = 27$ days, with a known measurement spread $\sigma = 12$ days ($\sigma^2 = 144$). Prior precision is $1/9 \approx 0.111$; data precision is $16/144 \approx 0.111$ --- *equal*. The posterior mean is therefore the simple midpoint,
+
+$$
+m_n = \frac{0.111 \times 21 + 0.111 \times 27}{0.111 + 0.111} = 24 \text{ days},
+$$
+
+with posterior variance $\tau_n^2 = 1/(0.111 + 0.111) = 4.5$ (sd $\approx 2.12$ days) --- *tighter than either the prior (sd 3) or the data alone (sd $12/\sqrt{16} = 3$)*, because pooling two independent sources sharpens the belief.
+
+::: {.glass-card .glass-card--insight}
+**This is shrinkage --- the same idea as multilevel models.** The posterior mean shrinks the noisy data estimate $\bar y$ back toward the prior mean $m_0$, by an amount that depends on relative precision. When the data are sparse (small $n$, large $\sigma^2$), shrinkage is strong; when the data are abundant, shrinkage vanishes and $m_n \to \bar y$. The [partial pooling](../15-multilevel/partial-pooling-shrinkage.qmd) of Module 15 is exactly this update applied across groups, with the "prior" supplied by the overall population rather than by hand. A random-effects model *is* a Bayesian hierarchical model in disguise.
+:::
+
+## Credible Intervals: Probability Statements About $\theta$
+
+Because the posterior is a full probability distribution over $\theta$, we can make direct probability statements --- something a frequentist confidence interval cannot do.
+
+::: {.glass-card .glass-card--definition}
+A **95% credible interval** is any interval $[\,\ell, u\,]$ that contains 95% of the posterior probability:
+
+$$
+\Pr\big(\ell \le \theta \le u \;\big|\; y\big) = 0.95 .
+$$
+
+**Read this as**: "given the data, the probability that $\theta$ lies between $\ell$ and $u$ is 95%." The most common choice takes the $2.5\%$ and $97.5\%$ quantiles of the posterior (an *equal-tailed* interval). For our clinic posterior $\text{Beta}(28, 16)$, this is $[0.491,\, 0.770]$: **there is a 95% probability that the underlying target-attainment rate lies between 49% and 77%.**
+:::
+
+That sentence is *false* if you replace "credible" with "confidence." A 95% confidence interval makes a statement about the *procedure* --- if we repeated the study many times, 95% of the intervals so constructed would cover the true fixed $p$ --- not about *this* interval and *this* $p$.
+
+::: {.glass-card .glass-card--warning}
+**Credible $\ne$ confidence.** A **credible** interval is a probability statement about the parameter given the data you have: "$p$ is 95% probably in here." A **confidence** interval is a probability statement about the long-run behavior of the *method*: "95% of intervals built this way would trap the true $p$." The Bayesian conditions on the data and treats $\theta$ as random; the frequentist conditions on $\theta$ and treats the interval as random. They often *look* numerically similar (and coincide asymptotically, or under a flat prior), but they answer different questions --- do not paraphrase one as the other.
+:::
+
+## Prior Sensitivity and the Triumph of Data
+
+A standing objection to Bayesian methods is that the prior is subjective: two analysts with different priors get different posteriors. This is true, and it matters most exactly when it should --- when the data are thin.
+
+With $n = 40$, swapping our weak $\text{Beta}(2,2)$ prior for a confident $\text{Beta}(8,12)$ (centered at $0.4$) moves the posterior mean from $0.636$ to $0.567$ --- a meaningful 7-point shift. But hold the *same* two priors and grow the sample to $n = 400$ at the same $0.65$ proportion: the $\text{Beta}(2,2)$ posterior mean is $0.649$ and the $\text{Beta}(8,12)$ posterior mean is $0.638$ --- a difference of about one percentage point. The likelihood, which scales with $n$, eventually swamps any fixed prior.
+
+::: {.glass-card .glass-card--assumption}
+**What a sound Bayesian analysis assumes:**
+
+1. **An honestly chosen prior.** The prior should encode genuine prior information or be deliberately weak ("uninformative"). Smuggling in a strong prior to force a conclusion is a misuse, not a feature. Always report a **prior sensitivity check**: re-run the analysis under a weak and a strong prior and show the posterior barely moves (or be transparent that it does).
+
+2. **A correctly specified likelihood.** As in [MLE](../11-mle-gmm/likelihood.qmd), $p(y \mid \theta)$ must reflect the real data-generating process. Bayes' rule propagates uncertainty *within* a model; it cannot rescue a wrong model. If patients cluster by *läkare* (physician), an i.i.d. binomial likelihood overstates the information and the posterior will be falsely confident.
+
+3. **As $n \to \infty$, the posterior concentrates on the truth.** Under mild regularity conditions (the Bernstein-von Mises theorem), the posterior becomes approximately Normal, centered at the MLE, with the prior's influence vanishing. Bayesian and frequentist conclusions converge in large samples.
+:::
+
+<details>
+<summary>Math Details: Bayes' rule and the Beta-Binomial conjugate update</summary>
+<div class="details-content">
+
+### Bayes' rule from the definition of conditional probability
+
+For any two random quantities, the joint density factors two ways:
+
+$$
+p(\theta, y) = p(y \mid \theta)\,p(\theta) = p(\theta \mid y)\,p(y).
+$$
+
+Equating the two right-hand expressions and dividing by $p(y)$ (assumed positive) gives Bayes' rule:
+
+$$
+p(\theta \mid y) = \frac{p(y \mid \theta)\,p(\theta)}{p(y)}.
+$$
+
+The denominator is recovered by the law of total probability, integrating the numerator over all $\theta$:
+
+$$
+p(y) = \int p(y \mid \theta)\,p(\theta)\,\mathrm{d}\theta.
+$$
+
+Because $p(y)$ is a constant in $\theta$, it serves only to normalize, giving $p(\theta \mid y) \propto p(y \mid \theta)\,p(\theta)$.
+
+### The Beta density and its kernel
+
+The $\text{Beta}(a,b)$ density on $p \in (0,1)$ is
+
+$$
+\pi(p) = \frac{1}{B(a,b)}\,p^{\,a-1}(1-p)^{\,b-1},
+\qquad
+B(a,b) = \frac{\Gamma(a)\,\Gamma(b)}{\Gamma(a+b)},
+$$
+
+where $B(a,b)$ is the Beta function, the normalizing constant. The part that depends on $p$ --- the **kernel** --- is $p^{\,a-1}(1-p)^{\,b-1}$.
+
+### Multiplying prior by likelihood
+
+The binomial likelihood for $k$ successes in $n$ trials is
+
+$$
+p(k \mid p) = \binom{n}{k}\,p^{\,k}(1-p)^{\,n-k} \;\propto\; p^{\,k}(1-p)^{\,n-k},
+$$
+
+since $\binom{n}{k}$ does not depend on $p$. Multiplying kernels,
+
+$$
+p(p \mid k) \;\propto\; p^{\,a-1}(1-p)^{\,b-1}\cdot p^{\,k}(1-p)^{\,n-k}
+= p^{\,(a+k)-1}\,(1-p)^{\,(b+n-k)-1}.
+$$
+
+This is the kernel of a $\text{Beta}(a+k,\,b+n-k)$ distribution. Because we *recognize* the kernel, no integration is needed: the normalizing constant must be $1/B(a+k,\,b+n-k)$, and
+
+$$
+p \mid k \;\sim\; \text{Beta}(a + k,\; b + n - k). \qquad \checkmark
+$$
+
+### The posterior mean as a weighted average
+
+The mean of a $\text{Beta}(A,B)$ is $A/(A+B)$. With $A = a+k$, $B = b+n-k$, so $A+B = a+b+n$,
+
+$$
+E[p \mid k] = \frac{a+k}{a+b+n}
+= \frac{a+b}{a+b+n}\cdot\frac{a}{a+b} + \frac{n}{a+b+n}\cdot\frac{k}{n},
+$$
+
+obtained by splitting the numerator $a+k = (a+b)\cdot\frac{a}{a+b} + n\cdot\frac{k}{n}$ and dividing each piece by $a+b+n$. The weight on the prior, $w = (a+b)/(a+b+n)$, falls to zero as $n \to \infty$, so $E[p\mid k] \to k/n$, the MLE. The prior's pseudo-counts $a+b$ behave exactly like extra observations.
+
+</div>
+</details>
+
+## Computing Posteriors in Practice
+
+For conjugate models the posterior is closed-form, so the "computation" is one line of arithmetic --- but the same code generalizes to a full probabilistic-programming workflow. The panels below first do the Beta-Binomial update by hand, then fit it with a proper Bayesian engine (`rstanarm` in R, `PyMC` in Python), and report the posterior mean and a 95% credible interval. Both reproduce the analytic $\text{Beta}(28,16)$ posterior with mean $\approx 0.636$ and credible interval $\approx [0.49,\,0.77]$.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("rstanarm"))   # if needed
+
+## ---- 1. Conjugate update by hand ----
+a <- 2; b <- 2          # prior Beta(2, 2): weak, centred at 0.5
+k <- 26; n <- 40        # 26 of 40 patients reached the HbA1c target
+
+post_a <- a + k         # 28
+post_b <- b + (n - k)   # 16
+
+post_mean <- post_a / (post_a + post_b)              # 0.6364
+ci <- qbeta(c(0.025, 0.975), post_a, post_b)         # 95% credible interval
+
+cat(sprintf("Posterior: Beta(%d, %d)\n", post_a, post_b))
+cat(sprintf("Posterior mean = %.4f\n", post_mean))
+cat(sprintf("95%% credible interval = [%.3f, %.3f]\n", ci[1], ci[2]))
+
+## ---- 2. Same model via rstanarm (MCMC) ----
+# A logistic intercept-only model on the 0/1 outcomes is the Bernoulli model;
+# with a weak prior it reproduces the conjugate answer.
+library(rstanarm)
+y  <- c(rep(1L, k), rep(0L, n - k))     # 26 ones, 14 zeros
+df <- data.frame(target = y)
+
+fit <- stan_glm(
+  target ~ 1, data = df, family = binomial("logit"),
+  prior_intercept = normal(0, 1.5),     # weakly-informative prior on logit(p)
+  chains = 4, iter = 2000, seed = 2024, refresh = 0
+)
+
+# Push posterior draws of the intercept through the inverse logit to get p.
+p_draws <- plogis(as.matrix(fit)[, "(Intercept)"])
+cat(sprintf("rstanarm posterior mean p = %.3f\n", mean(p_draws)))
+print(round(quantile(p_draws, c(0.025, 0.975)), 3))
+```
+
+### Python
+
+```python
+# pip install scipy pymc arviz
+import numpy as np
+from scipy.stats import beta
+
+# ---- 1. Conjugate update by hand ----
+a, b = 2, 2            # prior Beta(2, 2): weak, centred at 0.5
+k, n = 26, 40          # 26 of 40 patients reached the HbA1c target
+
+post_a, post_b = a + k, b + (n - k)        # Beta(28, 16)
+post_mean = post_a / (post_a + post_b)     # 0.6364
+ci = beta.ppf([0.025, 0.975], post_a, post_b)
+
+print(f"Posterior: Beta({post_a}, {post_b})")
+print(f"Posterior mean = {post_mean:.4f}")
+print(f"95% credible interval = [{ci[0]:.3f}, {ci[1]:.3f}]")
+
+# ---- 2. Same model via PyMC (MCMC) ----
+import pymc as pm
+
+y = np.concatenate([np.ones(k), np.zeros(n - k)])   # 26 ones, 14 zeros
+
+with pm.Model() as model:
+    # Use the conjugate Beta(2, 2) prior directly on p.
+    p = pm.Beta("p", alpha=a, beta=b)
+    pm.Bernoulli("obs", p=p, observed=y)
+    idata = pm.sample(2000, tune=1000, chains=4,
+                      random_seed=2024, progressbar=False)
+
+post = idata.posterior["p"].values.ravel()
+print(f"PyMC posterior mean p = {post.mean():.3f}")
+print(f"95% credible interval = "
+      f"[{np.quantile(post, 0.025):.3f}, {np.quantile(post, 0.975):.3f}]")
+```
+
+:::
+
+The hand calculation and the sampler agree because, with a weak prior, the posterior is governed by the likelihood. When a model has *no* conjugate form --- logistic regression with covariates, hierarchical models, anything realistic --- the closed form disappears but the `stan_glm` / `pm.sample` call is unchanged. That sampler is the subject of the [next page](mcmc.qmd).
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A *vårdcentral* pilots a fall-prevention program. The clinician's prior on the success probability $p$ (a patient remaining fall-free for a year) is the uniform $\text{Beta}(1, 1)$. Of $n = 12$ patients, $k = 9$ remain fall-free.
+
+(a) Write the posterior distribution. (b) Compute the posterior mean and compare it to the MLE. (c) Why does the posterior mean differ from the MLE here?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The conjugate update gives $\text{Beta}(1 + 9,\; 1 + 3) = \text{Beta}(10, 4)$.
+
+**(b)** Posterior mean $= 10/(10+4) = 10/14 \approx 0.714$. The MLE is $k/n = 9/12 = 0.75$.
+
+**(c)** Even the "uniform" $\text{Beta}(1,1)$ prior contributes pseudo-counts: $a+b = 2$ prior observations centered at $0.5$. The posterior mean $(a+k)/(a+b+n) = 10/14$ is a precision-weighted average of the prior mean $0.5$ (weight $2/14$) and the data $0.75$ (weight $12/14$), so it is pulled slightly below the MLE toward $0.5$. With more data the gap would shrink.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+State, in one sentence each, the difference between a 95% **credible** interval and a 95% **confidence** interval. Then explain why it is correct to say "there is a 95% probability that $p$ lies in $[0.49, 0.77]$" for the clinic's posterior $\text{Beta}(28,16)$, but *not* correct to say the same of a frequentist confidence interval.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Credible interval:** an interval containing 95% of the *posterior* probability mass, so "$p$ is 95% probably inside it" *given this data* --- it treats $\theta$ as random and conditions on the data.
+
+**Confidence interval:** an interval produced by a procedure that, *across hypothetical repeated samples*, traps the fixed true $p$ in 95% of cases --- it treats $\theta$ as fixed and the interval as random.
+
+The probability statement is valid for the credible interval because the posterior *is* a probability distribution over $p$: 95% of that distribution's mass lies in $[0.49, 0.77]$, so $\Pr(0.49 \le p \le 0.77 \mid y) = 0.95$. For a confidence interval, $p$ is a fixed constant and the realized interval is fixed once computed; the true $p$ is either in it or not (probability 0 or 1). The "95%" describes the long-run hit rate of the *method*, not the probability that *this* interval contains $p$. Paraphrasing a confidence interval as a probability about $p$ is the single most common misinterpretation in applied statistics.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A regional planner models the mean monthly *sjukfrånvaro* (sick-leave) rate $\mu$ (in percent) with a Normal prior $\mu \sim \mathcal N(m_0 = 4.0,\; \tau_0^2 = 0.25)$ (prior sd $0.5$). A new sample of $n = 9$ workplaces has mean $\bar y = 5.5\%$ with known $\sigma^2 = 2.25$ (sd $1.5$).
+
+(a) Compute the prior and data precisions. (b) Compute the posterior mean and variance. (c) What fraction of the weight does the data carry?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Prior precision $= 1/\tau_0^2 = 1/0.25 = 4.0$. Data precision $= n/\sigma^2 = 9/2.25 = 4.0$. They are equal.
+
+**(b)** Posterior precision $= 4.0 + 4.0 = 8.0$, so posterior variance $\tau_n^2 = 1/8 = 0.125$ (sd $\approx 0.354$). Posterior mean
+$$
+m_n = \frac{4.0 \times 4.0 + 4.0 \times 5.5}{4.0 + 4.0} = \frac{16 + 22}{8} = \frac{38}{8} = 4.75\%.
+$$
+The posterior mean is the exact midpoint of prior mean $4.0$ and data mean $5.5$, because the two precisions are equal.
+
+**(c)** Weight on the data $= \dfrac{4.0}{8.0} = 0.5$, i.e. 50%. Equal precisions split the weight evenly; the posterior sd $0.354$ is *smaller* than either the prior sd $0.5$ or the data's $\sigma/\sqrt n = 0.5$, because pooling two independent sources sharpens the estimate.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the prior to $\text{Beta}(20, 5)$ (a confident prior centered at $0.80$) and the data to $k = 12$, $n = 30$ (proportion $0.40$). (a) What is the posterior, its mean, and the weight it places on the prior? (b) Now raise $n$ toward 300 with $k$ tracking the $0.40$ proportion. Describe what happens to the posterior mean and to the prior's weight, and name the principle.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The conjugate update gives $\text{Beta}(20 + 12,\; 5 + 18) = \text{Beta}(32, 23)$. Posterior mean $= 32/55 \approx 0.582$. The weight on the prior is $w = (a+b)/(a+b+n) = 25/(25+30) \approx 0.455$, so about 45% prior, 55% data --- the posterior sits between the prior's $0.80$ and the data's $0.40$, closer to the data but still substantially tugged up by the confident prior.
+
+**(b)** As $n$ grows to 300 (with $k = 120$), the posterior becomes $\text{Beta}(140, 185)$, mean $140/325 \approx 0.431$, and the prior weight falls to $25/325 \approx 0.077$ (under 8%). The posterior mean slides down toward the data proportion $0.40$ and the posterior tightens dramatically. This is the principle that **the data dominate the prior as the sample grows** (Bernstein-von Mises): a fixed prior's influence is overwhelmed by an ever-larger likelihood, and Bayesian and frequentist answers converge.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Bayesian inference treats the parameter as uncertain and updates beliefs with Bayes' rule: posterior $\propto$ likelihood $\times$ prior, where the evidence $p(y)$ is just the normalizing constant.
+- For conjugate models the posterior stays in the prior's family: the Beta-Binomial update is "add successes to $a$, failures to $b$," giving $\text{Beta}(a+k,\,b+n-k)$ by inspection.
+- The posterior mean is a precision-weighted average of the prior mean and the data --- shrinkage --- and this is exactly the partial pooling of multilevel models in Module 15.
+- A credible interval is a direct probability statement about $\theta$ given the data ("$p$ is 95% probably in here"); a confidence interval is a statement about the long-run behavior of the method. They are not interchangeable.
+- The prior matters most when data are scarce; as $n$ grows the likelihood dominates and the posterior concentrates on the truth, so Bayesian and frequentist conclusions converge.
+:::
+
+## What Comes Next
+
+We can now turn a prior and a likelihood into a posterior --- exactly, when the model is conjugate. But conjugacy is the exception. The moment we add covariates, hierarchy, or a non-standard likelihood, the marginal likelihood $p(y) = \int p(y\mid\theta)\,p(\theta)\,\mathrm{d}\theta$ becomes an intractable integral and there is no closed-form posterior to read off. The next page, [MCMC: Sampling the Posterior](mcmc.qmd), shows how to sidestep that integral entirely: instead of computing the posterior density, we *draw samples* from it with Markov chain Monte Carlo, and use those draws to estimate any posterior mean, quantile, or credible interval we like --- turning the one-line conjugate update into a general-purpose engine for Bayesian inference.

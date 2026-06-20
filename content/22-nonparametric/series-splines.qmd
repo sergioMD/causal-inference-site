@@ -1,0 +1,826 @@
+---
+title: "Series and Spline Methods"
+subtitle: "Flexible curves from basis functions"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Recast a nonparametric regression as a *flexible parametric* one by approximating an unknown function with a linear combination of basis functions estimated by OLS
+- Build a regression-spline basis (piecewise cubics joined at knots) and explain the knot-count / number-of-terms bias--variance tradeoff
+- Distinguish regression splines (choose knots) from penalized **smoothing splines** (keep many knots, tune a roughness penalty $\lambda$), and read off what the smoothing parameter controls
+- Justify *natural* cubic splines for stable behaviour in the sparse tails of the data
+- Write a partially linear model and estimate its parametric part with the Robinson double-residual estimator --- the bridge to double machine learning
+:::
+
+## The Question Behind a Curve You Cannot Name
+
+A *folkhälsosamordnare* (public-health coordinator) in Region Skåne is studying a **dose--response** relationship at the region's *vårdcentraler* (primary care centers): how does a Type 2 diabetes patient's **weekly minutes of supervised physical activity** map onto their twelve-month change in **HbA1c** (mmol/mol)? Clinical intuition says the curve is *not* a straight line. The first 60 minutes a week buy a large improvement; the next 60 help less; beyond a couple of hours the curve flattens and may even turn back up as the heaviest-exercising patients are disproportionately those whose diabetes was severe to begin with. The relationship bends --- twice --- and nobody can write down the formula.
+
+The [previous page](kernel-local-regression.qmd) solved this by *local averaging*: estimate the conditional mean $m(x)=E[y\mid x]$ point by point, borrowing from neighbours. This page takes a different route to the same goal. Instead of refitting a tiny local model at every evaluation point, we **expand the unknown function in a fixed dictionary of simple building blocks** and fit the whole thing *once* with ordinary least squares. The building blocks are called **basis functions**; the approach is variously called the **series**, **sieve**, or **spline** method.
+
+The payoff is conceptual as much as computational. A nonparametric problem --- "estimate an entire function" --- becomes a *parametric* problem --- "estimate the coefficients on $K$ known functions." Everything you know about OLS (standard errors, $F$-tests, $R^2$) comes along for free. The only genuinely new decision is *how many* building blocks to use, and that single dial controls the same bias--variance tradeoff that the bandwidth controlled last page.
+
+## The Series Idea: Approximate, Then Regress
+
+Suppose the true regression function is some smooth but unknown $m(x)$. Pick a sequence of known **basis functions** $b_1(x), b_2(x), \dots, b_K(x)$ --- for now imagine simple powers $1, x, x^2, \dots$ The series approximation writes $m$ as a weighted sum of them:
+
+$$
+m(x) \;\approx\; \sum_{k=1}^{K} \beta_k\, b_k(x).
+$$
+
+**Read this as**: "the unknown function at $x$ is approximately a linear combination, over the $K$ basis functions, of each basis function $b_k(x)$ weighted by an unknown coefficient $\beta_k$." The functions $b_k$ are *fixed and known*; only the weights $\beta_k$ are unknown. That is the whole trick: the curve is nonlinear in $x$, but it is **linear in the parameters** $\beta$, so we can estimate it by least squares.
+
+::: {.glass-card .glass-card--definition}
+A **series (sieve) estimator** of $m(x)=E[y\mid x]$ chooses basis functions $b_1,\dots,b_K$, forms the $n\times K$ **design matrix** $\mathbf{B}$ with entries $B_{ik}=b_k(x_i)$, and runs OLS of $y$ on $\mathbf{B}$:
+
+$$
+\hat{\boldsymbol\beta} = (\mathbf{B}^\top\mathbf{B})^{-1}\mathbf{B}^\top \mathbf{y},
+\qquad
+\hat m(x) = \sum_{k=1}^{K}\hat\beta_k\, b_k(x).
+$$
+
+**Read this as**: "regress the outcome on the transformed regressors $b_k(x)$ to get $\hat\beta$, then read off the fitted curve as the same linear combination evaluated at any $x$." The number of terms $K$ is allowed to **grow with the sample size** $n$ --- that is what makes the estimator nonparametric rather than a fixed parametric model. A finite $K$ is a *parametric approximation*; letting $K\to\infty$ slowly as $n\to\infty$ is the *sieve*.
+:::
+
+So *which* basis? Raw powers $1,x,x^2,x^3,\dots$ (a global polynomial) are the obvious first guess and a terrible practical one. A single global polynomial is rigid in the middle and wild at the edges: pushing the degree up to capture a local wiggle makes the tails swing violently (the classic **Runge phenomenon**). We want a basis that is *flexible where the data demand it* and *calm where they do not*. That basis is the **spline**.
+
+## Splines: Piecewise Polynomials Joined Smoothly
+
+A **spline** abandons one global polynomial in favour of *several low-degree polynomial pieces*, stitched together at chosen breakpoints called **knots** so that the seams are invisible --- the pieces match in value and in their first two derivatives. The standard workhorse is the **cubic spline**: each piece is a cubic, and at every interior knot the function is continuous and has continuous first and second derivatives. The eye sees one smooth curve; under the hood it is a chain of cubics.
+
+::: {.glass-card .glass-card--definition}
+A **cubic regression spline** with interior knots $\kappa_1 < \kappa_2 < \dots < \kappa_m$ is a function that is a cubic polynomial on each interval between knots and is twice continuously differentiable everywhere (continuous value, slope, and curvature at each knot). It can be written in the **truncated-power basis**
+
+$$
+m(x) = \beta_0 + \beta_1 x + \beta_2 x^2 + \beta_3 x^3 + \sum_{j=1}^{m}\gamma_j\,(x-\kappa_j)_{+}^{3},
+\qquad (u)_+ = \max(u,0).
+$$
+
+**Read this as**: "a global cubic, plus one extra cubic 'kink' term per knot that switches on only for $x$ beyond that knot." Each truncated term $(x-\kappa_j)_+^3$ is zero to the left of $\kappa_j$ and grows as a cubic to the right, adding exactly enough local flexibility at $\kappa_j$ to bend the curve while preserving smoothness. With $m$ interior knots there are $4+m$ basis functions, hence $4+m$ coefficients.
+:::
+
+In practice nobody uses the truncated-power basis for computation --- it is numerically ill-conditioned. The equivalent, well-behaved basis is the **B-spline** basis (`bs()` in R, `patsy` in Python): a set of local bumps, each nonzero over only a few adjacent knot intervals, that span the *exact same space* of piecewise cubics. The fitted curve is identical; only the columns of $\mathbf B$ differ. The Math Details derive the B-spline recursion.
+
+::: {.glass-card .glass-card--insight}
+**Why piecewise beats global.** A degree-$p$ global polynomial uses its $p$ degrees of freedom *everywhere at once*: a wiggle needed in one region forces oscillation everywhere else. A spline spends its flexibility *locally* --- a knot near the troublesome region adds a basis function that is silent elsewhere. This is why a cubic spline with a handful of knots routinely beats a high-degree global polynomial, and why splines, not raw powers, are the default series basis.
+:::
+
+### Natural cubic splines for stable tails
+
+Cubic splines still misbehave in the **tails**, beyond the outermost knots, where data are sparse: the boundary cubics can swing far on the strength of one or two observations. A **natural cubic spline** fixes this by adding **boundary constraints** --- it forces the function to be *linear* (second and third derivatives zero) outside the extreme knots. The curve cannot curl up or down in the data-poor tails; it can only run off in a straight line.
+
+::: {.glass-card .glass-card--assumption}
+A **natural cubic spline** is a cubic spline with the added constraint that $m''(x)=0$ for $x \le \kappa_1$ and $x \ge \kappa_m$ --- the function is **linear beyond the boundary knots**. This removes two degrees of freedom at each end, trading a little flexibility in the sparse tails for a large reduction in boundary variance. Use `ns()` in R (natural spline) rather than `bs()` whenever the tails matter --- which is almost always for a dose--response curve read at its extremes.
+:::
+
+## The Knot/Penalty Dial: Too Stiff vs. Overfit
+
+There are two ways to control how wiggly a spline is, and they are the two halves of the same story.
+
+1. **Regression splines** fix a *small* number of knots and fit by plain OLS. **More knots $\Rightarrow$ more basis functions $\Rightarrow$ more flexibility.** Too few knots and the curve is too stiff to follow the bend (high bias, *underfitting*); too many and it chases noise (high variance, *overfitting*). You choose $K$, typically by cross-validation.
+
+2. **Smoothing (penalized) splines** take the opposite tack: place a knot at (nearly) *every* data point --- far more than you could ever estimate by OLS --- and then **penalize roughness** so the fit cannot use all that flexibility at once. You minimise
+
+$$
+\sum_{i=1}^{n}\big(y_i - m(x_i)\big)^2 \;+\; \lambda \int \big(m''(x)\big)^2\,dx.
+$$
+
+**Read this as**: "fit the data well (small squared residuals) but keep the curve smooth (small total squared curvature), with $\lambda$ setting the exchange rate." The penalty term $\int (m'')^2$ is the **total curvature** of the curve; the **smoothing parameter** $\lambda \ge 0$ is the price of wiggling. At $\lambda = 0$ the penalty is free and the curve interpolates every point (maximal overfit); as $\lambda \to \infty$ any curvature is infinitely expensive and the fit collapses to the ordinary least-squares *straight line*. A remarkable theorem says the minimiser is always a **natural cubic spline with knots at the data points**, so penalization and splines are the same object viewed two ways.
+
+Both dials --- the **number of knots** $K$ and the **penalty** $\lambda$ --- run from "too stiff" at one end to "overfit" at the other. The interactive below lets you feel that continuum directly.
+
+## See It: A Spline Flexing From Stiff to Overfit
+
+The scatter below is 80 Type 2 diabetes patients at Skåne vårdcentraler: the horizontal axis is **weekly minutes of supervised physical activity**, the vertical axis is the patient's twelve-month **HbA1c change** (mmol/mol; negative means improvement). A dashed ochre line shows the *true* dose--response curve $m(x)$ that generated the data --- a sharp early benefit that flattens and turns back up --- so you can judge each fit against the truth.
+
+Drag the dial to add knots (in **Regression spline** mode) or to lower the penalty (in **Smoothing spline** mode). Watch the red fitted curve travel from a too-stiff near-line, through a faithful tracking of the true bend, into a noise-chasing tangle. The readout reports in-sample fit ($R^2$) against held-out error so you can *see* overfitting set in: training fit keeps improving while the honest test error bottoms out and then climbs.
+
+::: {.interactive-container}
+
+#### The spline flexibility dial: from too-stiff to overfit
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+npser_pal = ({
+  fit:     "#990000",   // focal: the fitted spline (Uppsala red)
+  truth:   "#9c7a33",   // highlight: the true data-generating curve (ochre)
+  data:    "#3d5a6c",   // secondary: the scatter points (slate)
+  good:    "#2e6f40",   // on-target: test-optimal / good fit (green)
+  bad:     "#b3000b",   // alarm: overfit warning (bright red)
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis / muted label text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#e6e3db"    // subtle tile fill (Uppsala paper/rule token)
+})
+```
+
+```{ojs}
+//| echo: false
+viewof npser_mode = Inputs.radio(
+  ["Regression spline (choose knots)", "Smoothing spline (tune penalty λ)"],
+  { label: "Method", value: "Regression spline (choose knots)" }
+)
+```
+
+```{ojs}
+//| echo: false
+// One dial drives both modes. In knot mode it is the number of interior knots
+// (more knots = more flexible). In penalty mode it is a log-penalty index that
+// we MAP so that dragging RIGHT always means "more flexible" — matching the knot
+// dial's direction so the reader's intuition transfers across modes.
+viewof npser_dial = Inputs.range([0, 100], {
+  value: 30,
+  step: 1,
+  label: "Flexibility  →  (drag right for a more wiggly curve)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── A fixed synthetic cohort of 80 patients, generated DETERMINISTICALLY so the
+// picture is reproducible across renders. x = weekly supervised-activity minutes
+// in [0, 240]; the true dose–response m(x) falls steeply, flattens, then turns
+// back up (sickest patients exercise most). Noise is a fixed pseudo-random
+// sequence (a hashed sine) so there is no run-to-run drift.
+npser_truth = function (x) {
+  // HbA1c CHANGE (mmol/mol): big early drop, flatten near ~120 min, gentle rise.
+  const t = x / 240;                       // scale to [0,1]
+  return -9 * (1 - Math.exp(-4.2 * t)) + 7.5 * Math.pow(t, 2.3);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Deterministic "noise": a hashed fractional-sine generator in [-1,1]. Using a
+// fixed formula (not Math.random) keeps the scatter identical every render so
+// the prose numbers stay valid.
+npser_rand = function (i) {
+  const s = Math.sin((i + 1) * 12.9898) * 43758.5453;
+  return 2 * (s - Math.floor(s)) - 1;       // in [-1, 1]
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+npser_data = {
+  const n = 80;
+  const sd = 1.6;                           // residual scale (mmol/mol)
+  return d3.range(n).map(i => {
+    // Spread x with a fixed jitter so points are not on a grid.
+    const x = (i + 0.5) / n * 240 + 6 * npser_rand(i + 100);
+    const xc = Math.max(0, Math.min(240, x));
+    const y = npser_truth(xc) + sd * npser_rand(i);
+    // Deterministic train/test split: every 4th patient is held out for testing.
+    return { i, x: xc, y, set: (i % 4 === 0) ? "test" : "train" };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+npser_train = npser_data.filter(d => d.set === "train")
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+npser_test = npser_data.filter(d => d.set === "test")
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Truncated-power spline basis (same span as the cubic B-spline basis, but
+// simpler to code transparently). For a polynomial `degree` and a set of
+// interior `knots`, return x -> [1, u, ..., u^degree, (u-k1)+^degree, ...].
+// We standardize x to [0,1] to keep the powers well-conditioned. `degree` lets
+// the stiffest end of the dial be a genuine straight line (degree 1) before it
+// ramps up to a cubic (degree 3) and then starts adding knots.
+npser_basis = function (knots, degree = 3) {
+  const a = 0, b = 240;
+  return function (x) {
+    const u = (x - a) / (b - a);            // standardized predictor in [0,1]
+    const row = [1];
+    let p = u;
+    for (let g = 1; g <= degree; g++) { row.push(p); p *= u; }
+    // Truncated-power knot terms use the spline degree (cubic when degree = 3).
+    for (const k of knots) {
+      const ku = (k - a) / (b - a);
+      const dd = Math.max(0, u - ku);
+      let t = 1;
+      for (let g = 0; g < degree; g++) t *= dd;   // dd^degree
+      row.push(t);
+    }
+    return row;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Place `m` interior knots at evenly spaced quantiles of the activity range.
+npser_knotsFor = function (m) {
+  if (m <= 0) return [];
+  return d3.range(1, m + 1).map(j => (j / (m + 1)) * 240);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Tiny linear-algebra helpers (no external solver). Normal-equations OLS with
+// optional ridge penalty (used to emulate the smoothing-spline roughness penalty
+// on the same basis). Returns the coefficient vector.
+npser_solve = function (B, y, ridge = 0) {
+  const K = B[0].length;
+  // Build B'B (+ ridge·I on non-intercept terms) and B'y.
+  const A = d3.range(K).map(() => new Array(K).fill(0));
+  const c = new Array(K).fill(0);
+  for (let r = 0; r < B.length; r++) {
+    const br = B[r];
+    for (let p = 0; p < K; p++) {
+      c[p] += br[p] * y[r];
+      for (let q = 0; q < K; q++) A[p][q] += br[p] * br[q];
+    }
+  }
+  for (let p = 1; p < K; p++) A[p][p] += ridge;   // don't penalize intercept
+  // Gaussian elimination with partial pivoting.
+  const M = A.map((row, p) => row.concat(c[p]));
+  for (let col = 0; col < K; col++) {
+    let piv = col;
+    for (let r = col + 1; r < K; r++)
+      if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+    [M[col], M[piv]] = [M[piv], M[col]];
+    const d = M[col][col] || 1e-9;
+    for (let j = col; j <= K; j++) M[col][j] /= d;
+    for (let r = 0; r < K; r++) {
+      if (r === col) continue;
+      const f = M[r][col];
+      for (let j = col; j <= K; j++) M[r][j] -= f * M[col][j];
+    }
+  }
+  return M.map(row => row[K]);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Translate the single dial into (knots, ridge penalty) for the active mode.
+npser_config = {
+  if (npser_mode.startsWith("Regression")) {
+    // The far-left of the dial is a genuine STRAIGHT LINE (degree 1, 0 knots) —
+    // the stiffest fit, high bias. As the dial climbs we first raise the
+    // polynomial degree to a cubic (1 -> 2 -> 3), then start adding interior
+    // knots, so flexibility increases monotonically left -> right.
+    const t = npser_dial / 100;
+    let degree, m;
+    if (t < 0.06)      { degree = 1; m = 0; }   // straight line
+    else if (t < 0.12) { degree = 2; m = 0; }   // quadratic
+    else if (t < 0.18) { degree = 3; m = 0; }   // global cubic
+    else {
+      degree = 3;                                // cubic spline, growing knots
+      m = Math.max(1, Math.round(((t - 0.18) / 0.82) * 22));
+    }
+    return ({ knots: npser_knotsFor(m), ridge: 0, degree, mKnots: m });
+  } else {
+    // Smoothing mode: a DENSE knot set (fixed) + a ridge penalty that emulates
+    // the roughness penalty λ. Dial RIGHT -> smaller λ -> wigglier (to match the
+    // knot dial's direction). Map dial 0..100 to log10(λ) from +2.5 (very smooth)
+    // down to -4 (interpolating).
+    const logLam = 2.5 - (npser_dial / 100) * 6.5;
+    const lambda = Math.pow(10, logLam);
+    return ({ knots: npser_knotsFor(18), ridge: lambda, degree: 3, mKnots: 18, lambda });
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Fit on the TRAINING patients only, so the test error is honest.
+npser_fit = {
+  const cfg = npser_config;
+  const phi = npser_basis(cfg.knots, cfg.degree);
+  const B = npser_train.map(d => phi(d.x));
+  const yv = npser_train.map(d => d.y);
+  const beta = npser_solve(B, yv, cfg.ridge);
+  const predict = x => {
+    const row = phi(x);
+    let s = 0;
+    for (let k = 0; k < beta.length; k++) s += beta[k] * row[k];
+    return s;
+  };
+  return ({ predict, beta, K: beta.length });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sample the fitted curve and the true curve on a fine grid for plotting.
+npser_curve = d3.range(0, 240.5, 2).map(x => ({
+  x,
+  fit: npser_fit.predict(x),
+  truth: npser_truth(x)
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Train / test fit diagnostics. R² on the training set (always rises with
+// flexibility) vs. RMSE on the held-out test set (U-shaped: the overfit signal).
+npser_diag = {
+  const ybar = d3.mean(npser_train, d => d.y);
+  let ssTot = 0, ssRes = 0;
+  for (const d of npser_train) {
+    ssTot += (d.y - ybar) ** 2;
+    ssRes += (d.y - npser_fit.predict(d.x)) ** 2;
+  }
+  const r2 = 1 - ssRes / ssTot;
+
+  let seTest = 0;
+  for (const d of npser_test) seTest += (d.y - npser_fit.predict(d.x)) ** 2;
+  const rmseTest = Math.sqrt(seTest / npser_test.length);
+
+  // Integrated squared bias vs. the truth on the grid — the honest "distance
+  // from truth" the reader cannot normally see.
+  let iseGrid = 0;
+  for (const c of npser_curve) iseGrid += (c.fit - c.truth) ** 2;
+  const rmseTruth = Math.sqrt(iseGrid / npser_curve.length);
+
+  return ({ r2, rmseTest, rmseTruth });
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginRight: 18,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: npser_pal.axis
+  },
+  x: {
+    label: "Weekly supervised activity (minutes)  →",
+    domain: [0, 240],
+    grid: false
+  },
+  y: {
+    label: "↑ 12-month HbA1c change (mmol/mol)",
+    domain: [-12, 6],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: npser_pal.hair }),
+    Plot.ruleY([0], { stroke: npser_pal.hair, strokeWidth: 1 }),
+    // Training scatter (slate) and test scatter (hollow slate).
+    Plot.dot(npser_train, {
+      x: "x", y: "y", fill: npser_pal.data, r: 3.2, fillOpacity: 0.7
+    }),
+    Plot.dot(npser_test, {
+      x: "x", y: "y", stroke: npser_pal.data, fill: "white",
+      strokeWidth: 1.5, r: 3.6
+    }),
+    // True data-generating curve (ochre dashed).
+    Plot.line(npser_curve, {
+      x: "x", y: "truth",
+      stroke: npser_pal.truth, strokeWidth: 2, strokeDasharray: "6,4"
+    }),
+    // Fitted spline (focal red).
+    Plot.line(npser_curve, {
+      x: "x", y: "fit",
+      stroke: npser_pal.fit, strokeWidth: 2.8
+    }),
+    // Knot markers along the bottom (regression-spline mode only) so the reader
+    // sees WHERE the flexibility is being spent.
+    npser_mode.startsWith("Regression")
+      ? Plot.tickX(npser_config.knots.map(k => ({ k })), {
+          x: "k", y: () => -11.4, stroke: npser_pal.fit, strokeWidth: 1.5
+        })
+      : null,
+    // In-frame legend text (no rule label channel — use Plot.text with halo).
+    Plot.text(
+      [{ x: 232, y: npser_truth(232), label: "true curve" }],
+      { x: "x", y: "y", text: "label", fill: npser_pal.truth,
+        fontSize: 11, fontWeight: 600, textAnchor: "end", dy: -10,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    )
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live diagnostic tiles tying the picture to honest numbers. Built in an OJS
+// html`` cell so reactive values interpolate (markdown ${...} would render
+// literally). The test-RMSE tile flips to green when the fit is near its
+// honest optimum and red when overfitting has set in.
+{
+  const d = npser_diag;
+  const cfg = npser_config;
+  // Name the low-flexibility regression fits (line / quadratic / global cubic)
+  // and otherwise report the interior-knot count of the cubic spline.
+  const regLabel = cfg.mKnots > 0
+    ? `${cfg.mKnots} interior knots  (K = ${npser_fit.K} terms)`
+    : (cfg.degree === 1 ? `straight line  (K = ${npser_fit.K} terms)`
+      : cfg.degree === 2 ? `global quadratic  (K = ${npser_fit.K} terms)`
+      : `global cubic  (K = ${npser_fit.K} terms)`);
+  const flexLabel = npser_mode.startsWith("Regression")
+    ? regLabel
+    : `λ ≈ ${cfg.lambda < 0.01 ? cfg.lambda.toExponential(1) : cfg.lambda.toFixed(3)}  (18 knots, penalized)`;
+  // Heuristic overfit flag: test RMSE much worse than distance-to-truth, or a
+  // near-interpolating fit. Green when test error is in a good band.
+  const overfit = d.rmseTest > 2.4 || d.r2 > 0.93;
+  const tooStiff = d.rmseTruth > 1.6 && d.r2 < 0.45;
+  const testColor = overfit ? npser_pal.bad : (tooStiff ? npser_pal.truth : npser_pal.good);
+  const verdict = overfit ? "overfit — chasing noise"
+                : tooStiff ? "too stiff — missing the bend"
+                : "good — close to the truth";
+
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7.5rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${npser_pal.fill}; border:1px solid ${npser_pal.axis};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${npser_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+      ${tile("Flexibility", flexLabel.split("  ")[0], npser_pal.ink)}
+      ${tile("Train R²", d.r2.toFixed(3), npser_pal.data)}
+      ${tile("Test RMSE", d.rmseTest.toFixed(2), testColor)}
+      ${tile("RMSE vs. truth", d.rmseTruth.toFixed(2), npser_pal.ink)}
+    </div>
+    <div style="margin-top:0.6rem; padding:0.5rem 0.8rem; border-radius:0.4rem;
+        border-left:3px solid ${testColor}; background:${npser_pal.fill};
+        font-family:'Inter',system-ui,sans-serif; font-size:0.85rem;
+        color:${npser_pal.ink};">
+      <strong>${flexLabel}</strong> &mdash; verdict:
+      <span style="color:${testColor}; font-weight:600;">${verdict}</span>.
+      Training fit always improves as you add flexibility; the
+      <em>held-out</em> test error is the honest judge.
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Flexibility Dial
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the scene.** The slate dots are 80 patients (filled = used to *fit*; hollow = *held out* to test honesty). The dashed ochre line is the *true* dose--response curve --- the steep early benefit, the flat middle, the upturn at high doses. The red line is your fitted spline. In a real study you would see only the dots; the ochre truth is shown here so you can grade each fit.
+
+**Step 2: Start too stiff.** Drag the dial fully **left**. The fit is a single **straight line** (the Flexibility tile reads "straight line"). It misses the sharp early drop and the late upturn entirely: **Train R²** is low and **RMSE vs. truth** is large. This is *underfitting* --- the basis is too small to express the shape (high bias). Nudge the dial slightly and the line bends into a quadratic, then a global cubic, before the first interior knot appears.
+
+**Step 3: Find the sweet spot.** Drag slowly **right**. The red curve peels off the line and begins to trace the true ochre bend. Watch the tiles: **Train R²** keeps climbing, but the honest **Test RMSE** *falls to a minimum* and the verdict tile turns **green**. The red and ochre curves nearly coincide --- the spline has recovered the dose--response shape from noisy data.
+
+**Step 4: Push into overfit.** Keep dragging **right**. Now the red curve sprouts wiggles between data points, darting toward individual dots. **Train R²** is still rising (it always rises with flexibility), but **Test RMSE** turns **upward** and the verdict tile flips to **red**: the extra basis functions are fitting *noise*, not signal. The tick marks along the bottom show the knots crowding in. This is the overfitting the held-out points expose.
+
+**Step 5: Switch dials, same story.** Toggle to **Smoothing spline**. Now the basis is huge (18 knots) but a roughness penalty $\lambda$ holds it back; the dial lowers $\lambda$ as you drag right. The *same* journey replays --- stiff line (large $\lambda$) $\to$ faithful curve $\to$ wiggly overfit (tiny $\lambda$). The lesson: whether you control flexibility by *counting knots* or by *penalizing curvature*, you are sliding along one bias--variance continuum, and the held-out error picks the spot.
+
+## From Curves to Coefficients: Partially Linear Models
+
+So far the whole function was the object of interest. Often it is not. An economist usually cares about *one* coefficient --- the effect of a policy, a price, a treatment --- and the flexible curve is a **nuisance** that must be controlled for but is not itself interesting. This is the **partially linear model** (Robinson, 1988):
+
+$$
+y_i = \underbrace{\tau\, d_i}_{\text{parametric part of interest}} \;+\; \underbrace{g(x_i)}_{\text{nonparametric nuisance}} \;+\; \varepsilon_i,
+\qquad E[\varepsilon_i \mid d_i, x_i] = 0.
+$$
+
+**Read this as**: "the outcome is a linear treatment effect $\tau$ times the treatment $d_i$, plus an *unknown smooth function* $g$ of the controls $x_i$, plus mean-zero noise." The treatment $d_i$ enters **linearly** --- $\tau$ is a single number we want to estimate and stand behind with a standard error --- while the confounders $x_i$ enter through a fully flexible $g$ we refuse to parameterise. We want a *credible* $\tau$ without committing to a functional form for the controls.
+
+::: {.glass-card .glass-card--definition}
+A **partially linear model** splits the regression into a finite-dimensional parameter of interest $\tau$ (the coefficient on the treatment $d$) and an infinite-dimensional nuisance $g(\cdot)$ (a flexible function of the controls $x$):
+$$
+y = \tau\, d + g(x) + \varepsilon, \qquad E[\varepsilon \mid d, x] = 0.
+$$
+It is **semiparametric**: parametric in the part you report, nonparametric in the part you only need to adjust away.
+:::
+
+### The Robinson double-residual estimator
+
+How do you estimate $\tau$ without ever pinning down $g$? Robinson's insight is a partialling-out trick that should feel familiar from the Frisch--Waugh--Lovell theorem. Take expectations of the model given $x$ alone:
+
+$$
+E[y \mid x] = \tau\, E[d \mid x] + g(x).
+$$
+
+Now **subtract** this from the original equation. The nuisance $g(x)$ appears in both and *cancels*:
+
+$$
+\underbrace{y - E[y \mid x]}_{\tilde y} \;=\; \tau\,\underbrace{\big(d - E[d \mid x]\big)}_{\tilde d} \;+\; \varepsilon.
+$$
+
+**Read this as**: "the part of $y$ not predicted by the controls equals $\tau$ times the part of the treatment not predicted by the controls, plus noise." The nuisance has vanished. The two conditional expectations $E[y\mid x]$ and $E[d\mid x]$ are themselves *nonparametric* regressions --- estimate them with **series/splines** (or any flexible learner) --- and then $\tau$ is recovered by a trivial OLS of one residual on the other:
+
+::: {.glass-card .glass-card--definition}
+The **Robinson double-residual estimator** of $\tau$ in the partially linear model is:
+
+1. Regress $y$ on $x$ *nonparametrically* and form the residual $\tilde y_i = y_i - \hat E[y\mid x_i]$.
+2. Regress $d$ on $x$ *nonparametrically* and form the residual $\tilde d_i = d_i - \hat E[d\mid x_i]$.
+3. Regress $\tilde y$ on $\tilde d$ by OLS:
+$$
+\hat\tau = \frac{\sum_i \tilde d_i\, \tilde y_i}{\sum_i \tilde d_i^{\,2}}.
+$$
+
+**Read this as**: "net out the controls from both the outcome and the treatment, then regress the cleaned outcome on the cleaned treatment." Because $g$ is differenced away in step 3, $\hat\tau$ is $\sqrt n$-consistent and asymptotically normal *even though* the nuisance was estimated nonparametrically at a slower rate.
+:::
+
+::: {.glass-card .glass-card--insight}
+**This is the seed of Double Machine Learning.** Robinson's two nuisance regressions $E[y\mid x]$ and $E[d\mid x]$ are exactly the two "first-stage" predictions in double/debiased ML --- only there you may swap splines for random forests, gradient boosting, or neural nets, add **cross-fitting** to remove overfitting bias, and lean on the *orthogonality* of the residual moment to stay robust to first-stage error. The partialling-out logic is identical; the next module just widens the dictionary of learners.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Series methods are not free of choices.** Three traps recur. (1) **Too many terms overfit**: $K$ growing too fast inflates variance and ruins inference --- always validate $K$ or $\lambda$ out of sample. (2) **Tail instability**: ordinary (`bs`) cubic splines swing wildly beyond the outer knots; prefer *natural* splines (`ns`) when you read the curve at its extremes. (3) **Extrapolation is fiction**: a spline says nothing credible outside the range of the data --- a dose--response fit on 0--240 minutes must not be read at 400. Report the support and refuse to extrapolate.
+:::
+
+<details>
+<summary>Math Details: the B-spline basis and the Robinson estimator</summary>
+<div class="details-content">
+
+### The B-spline basis (Cox--de Boor recursion)
+
+Given a non-decreasing **knot vector** $t_1 \le t_2 \le \dots \le t_{K+p+1}$, the B-spline basis functions of degree $p$ are defined recursively. Start from the degree-0 indicators:
+
+$$
+B_{i,0}(x) = \begin{cases} 1 & t_i \le x < t_{i+1}\\ 0 & \text{otherwise} \end{cases}
+$$
+
+and build up degree by degree with the **Cox--de Boor recursion**:
+
+$$
+B_{i,p}(x) = \frac{x - t_i}{t_{i+p} - t_i}\,B_{i,p-1}(x) \;+\; \frac{t_{i+p+1} - x}{t_{i+p+1} - t_{i+1}}\,B_{i+1,p-1}(x).
+$$
+
+Each $B_{i,p}$ is a piecewise polynomial of degree $p$ that is **nonzero only on the interval $[t_i, t_{i+p+1})$** --- it has *local support* over $p+1$ knot spans. The basis has three properties that make it the computational standard:
+
+- **Local support** $\Rightarrow$ the design matrix $\mathbf B$ is banded and well-conditioned (unlike the truncated-power basis, whose columns are nearly collinear).
+- **Partition of unity**: $\sum_i B_{i,p}(x) = 1$ for all $x$, so an intercept is implicit and the fit is shift-equivariant.
+- **Same span**: cubic ($p=3$) B-splines span the *identical* function space as the truncated-power cubic spline of the same knots, so $\hat m(x)$ is numerically the same curve --- only the parameterisation differs.
+
+A **natural** cubic spline imposes $m''=0$ beyond the boundary knots; in basis terms this is two linear constraints at each end, reducing the column count by 2 per boundary and removing the high-variance boundary cubics.
+
+### The penalized (smoothing) spline as generalized ridge
+
+Write the fit as $m(x) = \mathbf b(x)^\top \boldsymbol\beta$ with B-spline basis vector $\mathbf b(x)$. The roughness penalty becomes a quadratic form in $\boldsymbol\beta$:
+$$
+\int \big(m''(x)\big)^2 dx = \boldsymbol\beta^\top \boldsymbol\Omega\, \boldsymbol\beta,
+\qquad
+\Omega_{jk} = \int b_j''(x)\, b_k''(x)\, dx,
+$$
+so the penalized criterion $\lVert \mathbf y - \mathbf B\boldsymbol\beta\rVert^2 + \lambda\,\boldsymbol\beta^\top\boldsymbol\Omega\boldsymbol\beta$ has the **generalized-ridge** solution
+$$
+\hat{\boldsymbol\beta}_\lambda = (\mathbf B^\top\mathbf B + \lambda\boldsymbol\Omega)^{-1}\mathbf B^\top\mathbf y.
+$$
+At $\lambda=0$ this is OLS through (nearly) every point; as $\lambda\to\infty$ the null space of $\boldsymbol\Omega$ (functions with $m''\equiv 0$, i.e. straight lines) survives and the fit is the OLS line. The **effective degrees of freedom** $\operatorname{tr}\!\big[(\mathbf B^\top\mathbf B + \lambda\boldsymbol\Omega)^{-1}\mathbf B^\top\mathbf B\big]$ slide continuously from $K$ down to $2$ as $\lambda$ grows --- the continuous analogue of "number of knots." (The interactive uses a plain ridge on the basis as a transparent stand-in for $\boldsymbol\Omega$.)
+
+### Why the Robinson residual regression identifies $\tau$
+
+Start from $y = \tau d + g(x) + \varepsilon$ with $E[\varepsilon\mid d,x]=0$. Conditioning on $x$,
+$$
+E[y\mid x] = \tau\, E[d\mid x] + g(x),
+$$
+because $E[\varepsilon\mid x] = E\big[E[\varepsilon\mid d,x]\mid x\big] = 0$. Subtract this from the structural equation:
+$$
+y - E[y\mid x] = \tau\big(d - E[d\mid x]\big) + \varepsilon
+\;\Longleftrightarrow\;
+\tilde y = \tau\, \tilde d + \varepsilon.
+$$
+The nuisance $g(x)$ has cancelled exactly. Since $E[\tilde d\,\varepsilon] = 0$ (the residualised treatment is orthogonal to the error), OLS of $\tilde y$ on $\tilde d$ identifies $\tau$:
+$$
+\hat\tau = \frac{\sum_i \tilde d_i \tilde y_i}{\sum_i \tilde d_i^2}
+\;\xrightarrow{p}\;
+\frac{\operatorname{Cov}(\tilde d,\tilde y)}{\operatorname{Var}(\tilde d)} = \tau.
+$$
+The estimator is **Neyman-orthogonal**: the moment condition $E\big[(\tilde y - \tau\tilde d)\,\tilde d\big]=0$ has zero derivative with respect to small errors in the estimated nuisances $\hat E[y\mid x]$, $\hat E[d\mid x]$. That insensitivity is why $\hat\tau$ achieves the parametric $\sqrt n$ rate even though the nuisances converge slower --- the formal result behind double machine learning.
+
+</div>
+</details>
+
+## Fitting Splines in Practice
+
+Both panels fit a natural cubic spline to a Swedish dose--response scatter, compare knot counts, and then run the Robinson double-residual estimator for a partially linear model. R uses `splines` and `mgcv`; Python uses `patsy` and `statsmodels`.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("splines", "mgcv"))
+library(splines)
+library(mgcv)
+
+set.seed(2024)
+## ---- Swedish dose–response: activity minutes -> HbA1c change ----
+n <- 200
+x <- runif(n, 0, 240)                              # weekly activity minutes
+m <- function(x) -9 * (1 - exp(-4.2 * x / 240)) + 7.5 * (x / 240)^2.3
+y <- m(x) + rnorm(n, sd = 1.6)                     # mmol/mol change
+dat <- data.frame(x = x, y = y)
+
+## (1) Regression spline: natural cubic spline, 4 interior knots, by OLS.
+##     ns() builds a natural-spline basis (linear in the tails -> stable edges).
+fit_ns <- lm(y ~ ns(x, df = 5), data = dat)        # df = #basis cols
+summary(fit_ns)$r.squared
+
+## (2) Smoothing spline via GAM: knots everywhere, penalty chosen by REML.
+##     The smoothing parameter lambda is selected automatically.
+fit_gam <- gam(y ~ s(x, bs = "cr"), data = dat, method = "REML")
+summary(fit_gam)$edf                               # effective degrees of freedom
+
+## Compare predictions on a grid.
+grid <- data.frame(x = seq(0, 240, length.out = 100))
+grid$ns  <- predict(fit_ns,  grid)
+grid$gam <- predict(fit_gam, grid)
+
+## ---- (3) Robinson partially linear model: y = tau*d + g(x) + e ----
+## Treatment d (e.g. enrolled in a structured exercise program), confounded by x.
+d   <- rbinom(n, 1, plogis(-1 + x / 120))          # treatment depends on x
+tau <- -2.0                                        # true effect on HbA1c change
+y2  <- tau * d + m(x) + rnorm(n, sd = 1.5)
+
+## Step 1-2: nonparametric residuals of y2 and d on x (natural splines).
+ry <- residuals(lm(y2 ~ ns(x, df = 6)))            # y - E[y|x]
+rd <- residuals(lm(d  ~ ns(x, df = 6)))            # d - E[d|x]
+
+## Step 3: OLS of residual on residual recovers tau.
+tau_hat <- coef(lm(ry ~ rd - 1))                   # ~ -2.0
+cat("Robinson tau-hat =", round(tau_hat, 3), "\n")
+```
+
+### Python
+
+```python
+# pip install numpy pandas patsy statsmodels
+import numpy as np, pandas as pd
+import statsmodels.api as sm
+from statsmodels.gam.api import GLMGam, BSplines
+from patsy import dmatrix
+
+rng = np.random.default_rng(2024)
+# ---- Swedish dose–response: activity minutes -> HbA1c change ----
+n = 200
+x = rng.uniform(0, 240, n)                          # weekly activity minutes
+m = lambda x: -9 * (1 - np.exp(-4.2 * x / 240)) + 7.5 * (x / 240) ** 2.3
+y = m(x) + rng.normal(0, 1.6, n)                    # mmol/mol change
+
+# (1) Regression spline: natural cubic spline basis via patsy, fit by OLS.
+#     cr() = natural (restricted) cubic spline -> linear, stable tails.
+B = dmatrix("cr(x, df=5)", {"x": x}, return_type="dataframe")
+fit_ns = sm.OLS(y, sm.add_constant(B)).fit()
+print("R^2 (regression spline):", round(fit_ns.rsquared, 3))
+
+# (2) Smoothing spline via penalized GAM. Here we fix the roughness penalty
+#     for transparency; in practice select it with fit_gam.select_penweight().
+bs = BSplines(x, df=[12], degree=[3])
+fit_gam = GLMGam(y, smoother=bs, alpha=[10.0]).fit()  # alpha = roughness penalty
+print("GAM penalty alpha:", fit_gam.model.alpha)
+
+# ---- (3) Robinson partially linear model: y = tau*d + g(x) + e ----
+d   = rng.binomial(1, 1 / (1 + np.exp(-(-1 + x / 120))), n)   # d depends on x
+tau = -2.0
+y2  = tau * d + m(x) + rng.normal(0, 1.5, n)
+
+# Step 1-2: nonparametric residuals of y2 and d on x (natural-spline basis).
+Bx = dmatrix("cr(x, df=6)", {"x": x}, return_type="dataframe")
+Bx = sm.add_constant(Bx)
+ry = y2 - sm.OLS(y2, Bx).fit().fittedvalues         # y - E[y|x]
+rd = d  - sm.OLS(d,  Bx).fit().fittedvalues         # d - E[d|x]
+
+# Step 3: OLS of residual on residual recovers tau (no intercept).
+tau_hat = sm.OLS(ry, rd).fit().params[0]            # ~ -2.0
+print("Robinson tau-hat =", round(tau_hat, 3))
+```
+
+:::
+
+In both languages the natural spline tracks the dose--response bend with a handful of basis columns, the penalized GAM reaches a similar shape by selecting its own smoothing parameter, and the Robinson double-residual regression recovers $\hat\tau \approx -2.0$ even though the confounder $x$ entered through a function we never wrote down. That last step --- two flexible nuisance fits plus one tiny OLS --- is the entire skeleton of double machine learning.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A cubic regression spline is fit to monthly **waiting times** for primary-care appointments across Sweden with $m = 3$ interior knots placed at the quartiles of the calendar range.
+
+(a) How many basis functions (and coefficients) does the truncated-power representation have? (b) If the analyst switches to a *natural* cubic spline with the same 3 interior knots, how many coefficients now, and why fewer? (c) State the one practical situation in which the natural spline is clearly preferable.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** A cubic spline with $m$ interior knots has $4 + m$ basis functions: the global cubic $\{1, x, x^2, x^3\}$ (4 terms) plus one truncated term $(x-\kappa_j)_+^3$ per knot ($m=3$). So $4 + 3 = \mathbf{7}$ coefficients.
+
+**(b)** A natural cubic spline forces $m''(x)=0$ beyond each boundary knot --- *linear* tails --- imposing **two constraints at each end (four total)**. With $m=3$ interior knots, the usual count is $m + 1 = \mathbf{4}$ basis functions (often written as `ns(x, df = 4)` for 3 interior knots plus boundary handling). Fewer coefficients because the boundary-cubic degrees of freedom have been removed.
+
+**(c)** When the curve is read or extrapolated **near the edges of the data**, where observations are sparse --- e.g. interpreting the waiting-time trend in the earliest and latest months. Ordinary cubic splines swing wildly there; the natural spline's linear tails keep the fit stable.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the interactive, set the method to **Regression spline** and drag the dial from far left to far right.
+
+(a) Describe what happens to **Train R²** and to **Test RMSE** as flexibility increases. (b) Why do they move in *different* directions once you pass the optimum? (c) Which of the two quantities should you use to choose the number of knots, and why can you not use the other?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** **Train R²** rises *monotonically* --- every added basis function can only reduce in-sample residuals, so training fit never gets worse. **Test RMSE** is **U-shaped**: it falls as the spline gains enough flexibility to capture the true bend, reaches a minimum near the truth, then rises as added flexibility starts fitting noise.
+
+**(b)** Past the optimum the spline begins modelling the *idiosyncratic noise* of the training points. That lowers training residuals (so R² still climbs) but the noise does not generalise, so predictions on the held-out test points get worse (RMSE climbs). This divergence *is* overfitting.
+
+**(c)** Use **Test RMSE** (out-of-sample error, e.g. via cross-validation). Train R² cannot be used to choose flexibility because it always favours the most complex model --- it would select the interpolating overfit every time. Honest model selection needs data the model did not see.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A health economist models monthly **sjukfrånvaro** (sickness absence) rate $y$ as $y = \tau\, d + g(\text{month}) + \varepsilon$, where $d$ is a binary indicator for a new return-to-work policy and $g$ captures unknown seasonal/secular trend. They run the Robinson double-residual estimator.
+
+(a) Write the two nonparametric "first-stage" regressions. (b) Show algebraically why $g$ drops out. (c) Suppose they *skip* residualising $d$ and instead regress $\tilde y$ on the raw $d$. What goes wrong?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Regress the outcome and the treatment, each *nonparametrically* (e.g. with a spline in `month`), on the control:
+$$
+\hat E[y\mid \text{month}] \quad\text{and}\quad \hat E[d\mid \text{month}],
+$$
+then form residuals $\tilde y = y - \hat E[y\mid \text{month}]$ and $\tilde d = d - \hat E[d\mid \text{month}]$.
+
+**(b)** Taking expectations of the model given `month`: $E[y\mid \text{month}] = \tau\,E[d\mid \text{month}] + g(\text{month})$ (since $E[\varepsilon\mid\text{month}]=0$). Subtracting from $y = \tau d + g(\text{month}) + \varepsilon$ gives
+$$
+\tilde y = \tau\,\tilde d + \varepsilon,
+$$
+and $g(\text{month})$ --- present identically in both lines --- **cancels**.
+
+**(c)** Regressing $\tilde y$ on the raw $d$ leaves the part of $d$ that is predictable from `month` *uncontrolled*. If the policy $d$ was rolled out in particular months (so $d$ correlates with the seasonal trend $g$), that correlation contaminates the estimate: $\hat\tau$ picks up trend movements that have nothing to do with the policy. **Both** sides must be residualised on $x$ for $g$ to cancel and for $\hat\tau$ to be unbiased.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Switch the interactive to **Smoothing spline** mode.
+
+(a) As you drag the dial *right* (lowering $\lambda$), what happens to the fitted curve, and what is the limiting behaviour as $\lambda \to 0$? (b) What is the limiting fit as $\lambda \to \infty$, and why is it a straight line specifically? (c) Relate the penalty $\lambda$ to the "number of knots" dial of the regression-spline mode --- what single quantity do both control?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Lowering $\lambda$ makes curvature *cheaper*, so the curve becomes progressively wigglier, chasing individual points. As $\lambda \to 0$ the roughness penalty vanishes and the fit **interpolates** the data (within the dense knot set) --- maximal overfit, zero training residual.
+
+**(b)** As $\lambda \to \infty$ any curvature is infinitely expensive, so the minimiser must have $\int (m'')^2 = 0$, i.e. $m'' \equiv 0$ everywhere. The only functions with zero second derivative are **straight lines**, so the fit collapses to the **ordinary least-squares regression line** --- maximal smoothing, maximal bias.
+
+**(c)** Both control the **effective degrees of freedom** (effective number of parameters) of the fit. The regression-spline dial sets it discretely by *counting knots* ($K$); the smoothing dial sets it continuously via $\operatorname{tr}\!\big[(\mathbf B^\top\mathbf B + \lambda\boldsymbol\Omega)^{-1}\mathbf B^\top\mathbf B\big]$, which slides from $K$ (at $\lambda=0$) down to $2$ (at $\lambda=\infty$). Same bias--variance dial, two parameterisations.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The series/sieve idea turns "estimate a function" into "estimate the coefficients on $K$ known basis functions" --- a nonparametric problem solved by ordinary OLS, with $K$ allowed to grow with $n$.
+- Splines (piecewise cubics joined smoothly at knots) beat global polynomials because they spend flexibility *locally*; the B-spline basis is the well-conditioned way to fit them and *natural* cubic splines tame the sparse tails.
+- Flexibility has two equivalent dials --- the **number of knots** (regression splines) and the **roughness penalty** $\lambda$ (smoothing splines) --- both running from too-stiff (high bias) to overfit (high variance), with out-of-sample error, not training fit, choosing the spot.
+- A partially linear model $y = \tau d + g(x) + \varepsilon$ keeps the coefficient of interest $\tau$ parametric while leaving the confounders $g(x)$ nonparametric.
+- The Robinson double-residual estimator nets the controls out of *both* $y$ and $d$ with flexible first-stage regressions, then runs a one-line OLS of residual on residual to recover a $\sqrt n$-consistent $\hat\tau$ --- the orthogonalisation that underpins double machine learning.
+:::
+
+## What Comes Next
+
+Series and spline methods showed how to make a regression *flexible* while keeping it estimable, and the Robinson partially linear model showed how to keep one coefficient honest while flexibly adjusting for everything else. But we chose the basis and tuned its flexibility by hand, and we used splines as the flexible learner. The [Machine Learning module](../23-machine-learning/regularization.qmd) generalises both moves: it replaces hand-built bases with learners that *select* their own structure through **regularization** (ridge, lasso, and beyond), shows how penalties like the $\lambda$ you just dialled are the heart of high-dimensional estimation, and --- building directly on Robinson's double-residual trick --- leads into the cross-fitted, learner-agnostic machinery of double/debiased machine learning for credible causal effects.

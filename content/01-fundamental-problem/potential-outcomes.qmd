@@ -1,0 +1,1712 @@
+---
+title: "Potential Outcomes"
+subtitle: "The notation and logic of counterfactual reasoning"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Express a causal question with potential-outcomes notation, writing $Y_i(1)$, $Y_i(0)$, the individual effect $\tau_i$, and the switching equation
+- Explain the Fundamental Problem of Causal Inference as a missing-data problem in which one potential outcome is always unobserved
+- Distinguish the ATE, ATT, and ATU and choose the estimand that matches a given policy question
+- Diagnose why the naive difference in means can have the wrong sign, decomposing it into ATT plus selection bias
+- Check whether SUTVA (no interference, no hidden versions of treatment) is plausible before applying the notation
+:::
+
+## The Question Behind Every Causal Claim
+
+Sweden's *vårdcentraler* (primary care centers), operated by the country's 21 *regioner* (regions), are the backbone of chronic disease management. A recurring policy question in Swedish primary care is disarmingly simple: does enrolling Type 2 diabetes patients in a structured chronic disease management program --- a *Diabetessamordning* (diabetes coordination program) --- improve their blood sugar control?
+
+Notice that the question is about a *comparison*. It is not asking "what were the HbA1c levels of patients who enrolled?" It is asking "how much *lower* were their HbA1c levels than they would have been without the program?" That second quantity --- what *would have happened* in the absence of the program --- is never directly observable. It is a counterfactual.
+
+Every causal question has this structure. "Did the medicine help?" means "would the patient have recovered without it?" "Did the policy reduce unemployment?" means "what would unemployment have been if the policy had not been adopted?" Causal reasoning is, at its core, a comparison between what happened and what *would have* happened under a different scenario.
+
+The **potential outcomes framework** --- developed by Jerzy Neyman (1923) in the context of agricultural experiments and extended to observational studies by Donald Rubin (1974) --- gives us a precise language for talking about these inherently unobservable comparisons. It is the foundation on which the rest of this book is built.
+
+
+## Two Potential Worlds
+
+Here is the key mental move. For every patient in our study, we imagine that *two versions of the future* exist simultaneously:
+
+- **World 1**: the patient enrolls in the diabetes management program. Twelve months later, they have some HbA1c level.
+- **World 0**: the patient receives standard care only. Twelve months later, they have some (possibly different) HbA1c level.
+
+These two futures are called **potential outcomes**. They are "potential" because only one of them can ever be realized --- we live in one world, not two. But both are conceptually well-defined.
+
+Let's build the notation carefully.
+
+### The setup
+
+We have $N$ patients, indexed by $i = 1, \dots, N$. Each patient either enrolls in the structured diabetes management program ($D_i = 1$) or receives standard care ($D_i = 0$). The letter $D$ stands for the treatment "decision" or "designation."
+
+::: {.glass-card .glass-card--definition}
+For each patient $i$, define two **potential outcomes**:
+
+- $Y_i(1)$ --- read as "*Y-sub-i of 1*" --- is the HbA1c level patient $i$ would have **if enrolled in the program** (i.e., if $D_i = 1$).
+- $Y_i(0)$ --- read as "*Y-sub-i of 0*" --- is the HbA1c level patient $i$ would have **under standard care** (i.e., if $D_i = 0$).
+
+The **individual treatment effect** (ITE) for patient $i$ is the difference:
+
+$$
+\tau_i = Y_i(1) - Y_i(0)
+$$
+
+Read this as: "tau-sub-i equals the outcome under treatment minus the outcome under control, for patient $i$."
+
+**A note on sign conventions.** Because lower HbA1c is better, a *beneficial* treatment effect means $Y_i(1) < Y_i(0)$, so $\tau_i < 0$. This reverses the intuition from settings where "higher is better" (such as earnings or test scores). Throughout this page, a *negative* $\tau_i$ indicates that the program helped patient $i$.
+:::
+
+A few things to notice about this notation:
+
+1. **Both potential outcomes exist for every patient**, regardless of whether that patient actually enrolls. Patient $i$ has a $Y_i(1)$ and a $Y_i(0)$ even if they never participate in the program. These are properties of the patient, like their age or their genetic predisposition.
+
+2. **The treatment effect $\tau_i$ can differ across individuals.** The program might reduce Patient 1's HbA1c by 1.2 percentage points and Patient 2's by only 0.3 percentage points. This is called **treatment effect heterogeneity**, and it is the norm rather than the exception.
+
+3. **We can never observe $\tau_i$ directly.** To compute $\tau_i$ we would need to see *both* $Y_i(1)$ and $Y_i(0)$ for the same patient, and we only ever get to see one.
+
+### The switching equation
+
+Which potential outcome do we actually observe? It depends on whether the patient enrolled. This is formalized by the **switching equation**:
+
+$$
+Y_i^{\text{obs}} = D_i \cdot Y_i(1) + (1 - D_i) \cdot Y_i(0)
+$$
+
+Reading this in words: "The observed HbA1c for patient $i$ equals their program outcome if they enrolled, and their standard-care outcome if they did not." When $D_i = 1$, the first term "switches on" and gives $Y_i(1)$. When $D_i = 0$, the second term gives $Y_i(0)$.
+
+The figure below makes the "switch" literal: the treatment $D_i$ acts like a railway switch. It routes us down exactly one branch --- we keep the potential outcome on that branch ($Y_i^{\text{obs}}$) and lose the other one forever (the counterfactual, crossed out).
+
+```{ojs}
+//| echo: false
+
+// ADDITIVE static figure: the switching equation as a literal switch. D_i routes
+// to exactly ONE branch; the kept branch is the observed Y, the other is the
+// crossed-out counterfactual. Pure d3 (depends only on d3 + the shared `pal`).
+p2_drawSwitch = function ({ width = 460, height = 230 }) {
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  const mk = (id, col) => defs.append("marker")
+    .attr("id", id).attr("viewBox", "0 -5 10 10")
+    .attr("refX", 9).attr("refY", 0)
+    .attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  mk("p2-arr-green", pal.good);
+  mk("p2-arr-gray", pal.muted);
+
+  const cx = 70, cy = height / 2;          // the switch node
+  const yTop = height * 0.27, yBot = height * 0.73;
+  const xMid = width * 0.55, xEnd = width - 150;
+
+  // Switch node (Dᵢ)
+  svg.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 26)
+    .attr("fill", pal.fill).attr("stroke", pal.ink).attr("stroke-width", 2);
+  svg.append("text").attr("x", cx).attr("y", cy).attr("text-anchor", "middle")
+    .attr("dominant-baseline", "central").attr("font-size", 16).attr("font-weight", 700)
+    .attr("fill", pal.ink).text("Dᵢ");
+  svg.append("text").attr("x", cx).attr("y", cy + 44).attr("text-anchor", "middle")
+    .attr("font-size", 10).attr("font-weight", 600).attr("fill", pal.muted)
+    .text("treatment");
+
+  // KEPT branch (D=1 → Y(1) observed): solid green
+  svg.append("path")
+    .attr("d", `M${cx + 26},${cy - 6} C ${cx + 80},${yTop} ${xMid - 60},${yTop} ${xMid},${yTop}`)
+    .attr("fill", "none").attr("stroke", pal.good).attr("stroke-width", 3)
+    .attr("marker-end", "url(#p2-arr-green)");
+  svg.append("text").attr("x", cx + 70).attr("y", yTop - 12)
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", pal.good).text("if Dᵢ = 1");
+
+  // LOST branch (D=0 → Y(0) counterfactual): gray dashed
+  svg.append("path")
+    .attr("d", `M${cx + 26},${cy + 6} C ${cx + 80},${yBot} ${xMid - 60},${yBot} ${xMid},${yBot}`)
+    .attr("fill", "none").attr("stroke", pal.muted).attr("stroke-width", 2)
+    .attr("stroke-dasharray", "5,4").attr("marker-end", "url(#p2-arr-gray)");
+  svg.append("text").attr("x", cx + 70).attr("y", yBot + 18)
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", pal.muted).text("if Dᵢ = 0");
+
+  // Outcome labels at the ends of each branch
+  const outcome = (x, y, txt, col, kept) => {
+    svg.append("text").attr("x", x).attr("y", y).attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", col).text(txt);
+    if (!kept) {
+      // strike-through the lost (counterfactual) outcome
+      const w = 52;
+      svg.append("line").attr("x1", x - 4).attr("y1", y).attr("x2", x + w).attr("y2", y)
+        .attr("stroke", pal.bad).attr("stroke-width", 2.5);
+    }
+  };
+  outcome(xMid + 8, yTop, "Yᵢ(1)", pal.good, true);
+  outcome(xMid + 8, yBot, "Yᵢ(0)", pal.muted, false);
+
+  // Tags: kept = observed, lost = counterfactual
+  svg.append("text").attr("x", xEnd + 8).attr("y", yTop).attr("dominant-baseline", "central")
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", pal.good)
+    .text("✓ observed");
+  svg.append("text").attr("x", xEnd + 8).attr("y", yBot).attr("dominant-baseline", "central")
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", pal.bad)
+    .text("✗ counterfactual");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; justify-content:center; margin:0.25rem 0 0.75rem;">
+  ${p2_drawSwitch({ width: Math.min(480, width) })}
+</div>`
+```
+
+::: {.aside}
+The switch shows the case $D_i = 1$: the green branch is kept (the *observed* outcome $Y_i^{\text{obs}} = Y_i(1)$); the gray branch is the road not taken ($Y_i(0)$, the counterfactual, struck through). For a control patient ($D_i = 0$) the roles flip.
+:::
+
+The other potential outcome --- the one we *don't* get to see --- is the **counterfactual**. It is the road not taken.
+
+::: {.glass-card .glass-card--insight}
+**The Fundamental Problem of Causal Inference** (Holland, 1986). The switching equation reveals a hard limit: for any patient $i$ we observe exactly *one* of the two potential outcomes --- whichever one $D_i$ selects --- and the other is forever missing. To compute the individual treatment effect $\tau_i = Y_i(1) - Y_i(0)$ we would need *both*. We never get both. Causal inference is therefore, at its core, a **missing-data problem**: every causal estimate is an attempt to reconstruct an outcome that was never observed.
+:::
+
+
+## Causal Estimands: What Do We Want to Know?
+
+Since we cannot observe $\tau_i$ for any individual patient, we target summary measures that average treatment effects across groups. Each such target is an **estimand** --- the precise quantity we are trying to learn, defined before we touch any data (as opposed to an *estimator*, the recipe we use to guess it, or an *estimate*, the number that recipe spits out). There are three standard estimands, and understanding the differences between them is crucial for applied work. We define them here so you can recognize them in the interactive visualization that follows.
+
+### ATE: Average Treatment Effect
+
+$$
+\text{ATE} = E[Y_i(1) - Y_i(0)]
+$$
+
+**How to read this formula**: "The ATE equals the expected value (the population average) of $Y_i(1)$ minus $Y_i(0)$." In plain English: if we could magically observe both potential outcomes for everyone in the population, compute each person's treatment effect $\tau_i = Y_i(1) - Y_i(0)$, and then take the average of all those $\tau_i$ values --- that average is the ATE.
+
+**When to use it**: The ATE answers the question "what would happen if we applied this treatment to *everyone* in the population?" This is the right estimand when you are considering a universal policy --- for example, enrolling all Type 2 diabetes patients in Sweden in the structured management program.
+
+
+### ATT: Average Treatment Effect on the Treated
+
+$$
+\text{ATT} = E[Y_i(1) - Y_i(0) \mid D_i = 1]
+$$
+
+**How to read this formula**: "The ATT equals the expected value of $Y_i(1) - Y_i(0)$, conditional on $D_i = 1$." The vertical bar "$\mid$" means "given that" or "among those for whom." So this reads: "the average treatment effect, *among those who were actually treated*."
+
+**When to use it**: The ATT answers the question "did the program work for the patients who participated?" This is the natural estimand for evaluating an existing program. A Swedish region wants to know whether its diabetes coordination program helped the patients who enrolled --- not whether it would help a hypothetical population of all diabetes patients.
+
+
+### ATU: Average Treatment Effect on the Untreated
+
+$$
+\text{ATU} = E[Y_i(1) - Y_i(0) \mid D_i = 0]
+$$
+
+**How to read this formula**: "The average treatment effect, among those who were *not* treated."
+
+**When to use it**: The ATU answers the question "what would happen if we extended the program to patients who *aren't* currently participating?" If the region is considering expanding the diabetes program to all its vårdcentraler, the ATU tells them what to expect for the patients not yet enrolled.
+
+The three estimands are easy to conflate when they are read as separate prose blocks. The reference below lines them up side by side --- which population each one averages over, and the policy question each one answers --- so you can keep all three in view while using the interactive.
+
+```{ojs}
+//| echo: false
+
+// ADDITIVE static reference: ATE / ATT / ATU at a glance — which population each
+// averages over and the policy question each answers. Pure HTML, no controls.
+html`<table class="science-table" style="font-size:0.86rem;">
+  <thead>
+    <tr>
+      <th style="text-align:left;">Estimand</th>
+      <th style="text-align:left;">Averages over</th>
+      <th style="text-align:left;">Policy question it answers</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align:left;"><strong style="color:${pal.ink};">ATE</strong><br>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:${pal.muted};">E[Y(1)−Y(0)]</span></td>
+      <td style="text-align:left;"><strong>Everyone</strong><br><span style="color:${pal.muted};">all patients in the population</span></td>
+      <td style="text-align:left;">If we applied the program to <em>everyone</em>, what is the average effect? <br><span style="color:${pal.muted};">(a universal policy)</span></td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:${pal.treated};">ATT</strong><br>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:${pal.muted};">E[Y(1)−Y(0) | D=1]</span></td>
+      <td style="text-align:left;"><strong style="color:${pal.treated};">Treated only</strong><br><span style="color:${pal.muted};">patients who actually enrolled</span></td>
+      <td style="text-align:left;">Did the program help <em>the people who took it</em>? <br><span style="color:${pal.muted};">(evaluate an existing program)</span></td>
+    </tr>
+    <tr>
+      <td style="text-align:left;"><strong style="color:${pal.control};">ATU</strong><br>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:${pal.muted};">E[Y(1)−Y(0) | D=0]</span></td>
+      <td style="text-align:left;"><strong style="color:${pal.control};">Untreated only</strong><br><span style="color:${pal.muted};">patients who did not enroll</span></td>
+      <td style="text-align:left;">What would happen if we <em>extended</em> the program to those not yet in it? <br><span style="color:${pal.muted};">(expand the program)</span></td>
+    </tr>
+  </tbody>
+</table>`
+```
+
+
+### Why the Three Estimands Can Differ
+
+These three quantities are generally *not* the same. They differ whenever two conditions hold simultaneously:
+
+1. **Treatment effects are heterogeneous** --- different people benefit by different amounts.
+2. **Who gets treated is correlated with who benefits** --- the people who select into treatment tend to be those who gain more (or less) from it.
+
+When patients who expect to benefit most are the ones who enroll, the magnitude of the ATT exceeds that of the ATE, which exceeds that of the ATU. This is called **selection on gains**. The interactive below will make this concrete.
+
+::: {.glass-card .glass-card--insight}
+The choice of estimand is not a statistical question --- it is a *policy* question. "Did the program help its participants?" (ATT) is a different question from "should we expand the program to everyone?" (ATE). Clear thinking about causal inference begins with being precise about which question you are trying to answer.
+:::
+
+
+## The Science Table
+
+Now let's make all of this concrete. Consider eight patients at a Swedish *vårdcentral* (primary care center), all diagnosed with Type 2 diabetes. Four of them ($D_i = 1$) enrolled in the structured diabetes management program; four received standard care ($D_i = 0$). The table below shows *both* potential outcomes for each patient --- something that a real researcher could never have.
+
+In real data, we would see only one column per patient. The other would be a question mark. Toggle "Reveal counterfactuals" to see the difference between what a researcher observes and what they wish they could observe. Use the "Show Estimand" buttons to visualize the ATE, ATT, and ATU we just defined.
+
+::: {.interactive-container}
+
+#### Visualizing the Fundamental Problem
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls (the fuller tour is below).
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${pal.axis};
+    background: ${pal.fill};
+    border-left: 3px solid ${pal.treated};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave the toggle off to see what a researcher
+  actually observes (one dot, one "?"). Then flip <em>Reveal counterfactuals</em>
+  on and step through the comparisons. Full guided tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof showCounterfactuals = Inputs.toggle({
+  label: "Reveal counterfactuals",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+// "Naive" is an estimator/comparison, not an estimand — the label and the note
+// below make that distinction explicit for a basic-stats reader.
+viewof estimandSelect = Inputs.radio(
+  ["None", "ATE", "ATT", "ATU", "Naive"],
+  {
+    label: "Show comparison",
+    value: "None"
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${pal.muted};
+    margin: -0.2rem 0 0.4rem;">
+  Note: ATE / ATT / ATU are <em>estimands</em> (the truths we want); "Naive" is
+  the difference we can actually compute &mdash; not an estimand.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+// The Science Table — both potential outcomes for every patient.
+// Counterfactual cells (the unobserved Y) show a red "?" when the toggle is
+// off, and fade in the true value when "Reveal counterfactuals" is on.
+html`<table class="science-table">
+  <thead>
+    <tr>
+      <th>Patient</th>
+      <th>D</th>
+      <th>Y(0)</th>
+      <th>Y(1)</th>
+      <th>&tau;<sub>i</sub></th>
+    </tr>
+  </thead>
+  <tbody>
+    ${units.map(u => {
+      const tau = u.y1 - u.y0;
+      // Y(0) is observed only for controls; Y(1) only for treated.
+      // For an unobserved cell: show a red "?" when the toggle is off,
+      // and fade in the true value (class "revealed") when it is on.
+      const cell = (val, observed) => observed
+        ? html`<td>${val.toFixed(1)}</td>`
+        : (showCounterfactuals
+            ? html`<td><span class="revealed">${val.toFixed(1)}</span></td>`
+            : html`<td><span class="missing">?</span></td>`);
+      return html`<tr>
+        <td>${u.id}</td>
+        <td>${u.d}</td>
+        ${cell(u.y0, u.d === 0)}
+        ${cell(u.y1, u.d === 1)}
+        <td>${showCounterfactuals
+          ? html`<span class="revealed">${tau.toFixed(1)}</span>`
+          : html`<span class="missing">?</span>`}</td>
+      </tr>`;
+    })}
+  </tbody>
+</table>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Define data — HbA1c levels (lower is better; Y(1) < Y(0) means program helps)
+units = [
+  { id: 1, y0: 8.4, y1: 7.3, d: 1 },
+  { id: 2, y0: 9.2, y1: 8.9, d: 1 },
+  { id: 3, y0: 8.9, y1: 7.3, d: 1 },
+  { id: 4, y0: 7.8, y1: 7.3, d: 0 },
+  { id: 5, y0: 7.2, y1: 6.6, d: 0 },
+  { id: 6, y0: 9.5, y1: 9.2, d: 1 },
+  { id: 7, y0: 7.5, y1: 6.7, d: 0 },
+  { id: 8, y0: 7.1, y1: 7.3, d: 0 }
+]
+
+// Prepare plot data
+plotData = units.map(u => ({
+  ...u,
+  y_obs: u.d ? u.y1 : u.y0,
+  y_miss: u.d ? u.y0 : u.y1,
+  type: u.d ? "Treated" : "Control"
+}))
+
+// Calculate aggregates
+means = {
+  const y1_all = d3.mean(units, d => d.y1);
+  const y0_all = d3.mean(units, d => d.y0);
+  const y1_tr  = d3.mean(units.filter(d => d.d), d => d.y1);
+  const y0_tr  = d3.mean(units.filter(d => d.d), d => d.y0);
+  const y1_ct  = d3.mean(units.filter(d => !d.d), d => d.y1);
+  const y0_ct  = d3.mean(units.filter(d => !d.d), d => d.y0);
+
+  const y_obs_tr = d3.mean(units.filter(d => d.d), d => d.y1);
+  const y_obs_ct = d3.mean(units.filter(d => !d.d), d => d.y0);
+
+  return {
+    ATE: y1_all - y0_all,
+    ATT: y1_tr - y0_tr,
+    ATU: y1_ct - y0_ct,
+    Naive: y_obs_tr - y_obs_ct,
+    vals: {
+      ATE: [y0_all, y1_all],
+      ATT: [y0_tr, y1_tr],
+      ATU: [y0_ct, y1_ct],
+      Naive: [y_obs_ct, y_obs_tr]
+    }
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Half-up rounder so displayed values match the prose (one source of truth).
+// JS toFixed truncates .xx5 toward even, so (-0.825).toFixed(2) = "-0.82";
+// roundHalfUp gives -0.83, matching the text.
+roundHalfUp = (v, dp = 2) => {
+  const f = Math.pow(10, dp);
+  return Math.sign(v) * Math.round(Math.abs(v) * f) / f;
+};
+fmtSigned = (v, dp = 2) => {
+  const r = roundHalfUp(v, dp);
+  const s = (Math.abs(r) < Math.pow(10, -dp) / 2 ? 0 : r).toFixed(dp);
+  return `${r >= 0 && Number(s) !== 0 ? "+" : r > 0 ? "+" : ""}${s}`;
+};
+
+// Uppsala-academic palette tokens shared across this page's interactives.
+pal = ({
+  treated: "#990000",   // focal / treated series (Uppsala red)
+  control: "#3d5a6c",   // comparison / control series (slate)
+  good:    "#2e6f40",   // success / no-bias (green)
+  bad:     "#b3000b",   // alarm / bias present (bright red)
+  ochre:   "#9c7a33",   // selection-bias segment / highlight
+  ink:     "#1c1c1a",   // reference lines & ink text
+  axis:    "#44443f",   // axis / muted label text (Uppsala ink-soft)
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 300,
+  marginLeft: 70,
+  marginTop: 44,
+  marginRight: 24,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: {
+    label: "HbA1c (%)",
+    domain: [6, 10]
+  },
+  y: {
+    label: "Patient",
+    domain: [1, 2, 3, 4, 5, 6, 7, 8],
+    tickFormat: d => `Patient ${d}`
+  },
+  color: {
+    domain: ["Treated", "Control"],
+    range: [pal.treated, pal.control]
+  },
+  marks: [
+    showCounterfactuals ? Plot.link(plotData, {
+      x1: "y0",
+      x2: "y1",
+      y: "id",
+      stroke: pal.muted,
+      strokeWidth: 2,
+      markerEnd: "arrow"
+    }) : null,
+
+    // ADDITIVE: per-patient τ label at the midpoint of each reveal arrow, so the
+    // heterogeneity the tour describes (Patient 3 τ=-1.6, Patient 8 τ=+0.2) can
+    // be read straight off the figure. Drawn just above the link so it never sits
+    // on the dots; green when the program helps (τ<0), alarm-red when it harms.
+    showCounterfactuals ? Plot.text(plotData, {
+      x: d => (d.y0 + d.y1) / 2,
+      y: "id",
+      text: d => `τ=${fmtSigned(d.y1 - d.y0, 1)}`,
+      fill: d => (d.y1 - d.y0) < -0.005 ? pal.good : (d.y1 - d.y0) > 0.005 ? pal.bad : pal.muted,
+      fontSize: 10,
+      fontWeight: "bold",
+      dy: -9,
+      stroke: "white",
+      strokeWidth: 3,
+      paintOrder: "stroke"
+    }) : null,
+
+    Plot.dot(plotData, {
+      x: "y_obs",
+      y: "id",
+      fill: "type",
+      r: 6,
+      title: d => `Patient ${d.id}\nObserved: ${d.y_obs}`
+    }),
+
+    showCounterfactuals ? Plot.dot(plotData, {
+      x: "y_miss",
+      y: "id",
+      stroke: "type",
+      fill: "white",
+      strokeWidth: 2,
+      r: 5,
+      title: d => `Patient ${d.id}\nCounterfactual: ${d.y_miss}`
+    }) : null,
+
+    !showCounterfactuals ? Plot.text(plotData, {
+      x: d => d.d ? d.y0 : d.y1,
+      y: "id",
+      text: d => "?",
+      fill: pal.muted,
+      fontSize: 14,
+      dy: 0
+    }) : null,
+
+    estimandSelect !== "None" ? [
+      Plot.ruleX([means.vals[estimandSelect][0]], {
+        stroke: estimandSelect === "Naive" ? pal.control : pal.muted,
+        strokeWidth: 3,
+        strokeDasharray: "4,4"
+      }),
+      Plot.ruleX([means.vals[estimandSelect][1]], {
+        stroke: estimandSelect === "Naive" ? pal.treated : pal.muted,
+        strokeWidth: 3,
+        strokeDasharray: "4,4"
+      }),
+      // Plot.ruleX renders no text channel — print the line labels explicitly.
+      // All overlay labels live on a dedicated band in the top margin
+      // (frameAnchor:"top", no y channel) so they never collide with the data
+      // rows; the two "Avg" labels are staggered vertically so they never
+      // overlap each other when the two means are close (e.g. ATU gap ≈ 0.43).
+      Plot.text([{
+        x: means.vals[estimandSelect][0],
+        label: estimandSelect === "Naive" ? "Avg untreated" : "Avg Y(0)"
+      }], {
+        x: "x",
+        frameAnchor: "top",
+        text: "label",
+        fill: estimandSelect === "Naive" ? pal.control : pal.muted,
+        fontSize: 11,
+        fontWeight: "bold",
+        textAnchor: "middle",
+        stroke: "white",
+        strokeWidth: 3,
+        paintOrder: "stroke",
+        dy: -6
+      }),
+      Plot.text([{
+        x: means.vals[estimandSelect][1],
+        label: estimandSelect === "Naive" ? "Avg treated" : "Avg Y(1)"
+      }], {
+        x: "x",
+        frameAnchor: "top",
+        text: "label",
+        fill: estimandSelect === "Naive" ? pal.treated : pal.muted,
+        fontSize: 11,
+        fontWeight: "bold",
+        textAnchor: "middle",
+        stroke: "white",
+        strokeWidth: 3,
+        paintOrder: "stroke",
+        dy: 8
+      }),
+      // The estimand contrast arrow sits in the top band (frameAnchor:"top")
+      // so it never overlaps Patient 8's dot or "?" mark in the data rows.
+      Plot.arrow([{
+        x1: means.vals[estimandSelect][0],
+        x2: means.vals[estimandSelect][1]
+      }], {
+        x1: "x1",
+        x2: "x2",
+        frameAnchor: "top",
+        dy: -22,
+        stroke: pal.ink,
+        strokeWidth: 2
+      }),
+      // Plot.arrow renders no text channel — print the headline value explicitly.
+      Plot.text([{
+        x: (means.vals[estimandSelect][0] + means.vals[estimandSelect][1]) / 2,
+        label: `${estimandSelect}: ${fmtSigned(means[estimandSelect])}`
+      }], {
+        x: "x",
+        frameAnchor: "top",
+        text: "label",
+        fill: pal.ink,
+        fontSize: 13,
+        fontWeight: "bold",
+        textAnchor: "middle",
+        stroke: "white",
+        strokeWidth: 3,
+        paintOrder: "stroke",
+        dy: -34
+      })
+    ] : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// On-chart color key for the estimand overlay (the color semantics were
+// previously explained only in the prose tour). Updates with the selection.
+html`<div style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${pal.axis};
+    margin-top: 0.35rem;
+    line-height: 1.4;">
+  ${estimandSelect === "None"
+    ? html`<span style="color:${pal.treated};font-weight:600;">&#9679; Treated</span> &nbsp;
+           <span style="color:${pal.control};font-weight:600;">&#9679; Control</span>
+           &nbsp;&mdash; solid dot = observed, hollow dot = counterfactual.`
+    : estimandSelect === "Naive"
+      ? html`Dashed lines compare the <em>observed</em> group averages:
+             <span style="color:${pal.treated};font-weight:600;">red = avg treated outcome</span>,
+             <span style="color:${pal.control};font-weight:600;">slate = avg untreated outcome</span>.`
+      : html`Grey dashed lines contrast the two <em>potential-outcome</em> averages,
+             Avg Y(0) vs Avg Y(1); the black arrow is the ${estimandSelect}.`}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Live numeric panel — the four summary quantities, with explicit signs,
+// driven directly from the `means` object so they can never drift from the chart.
+// Uses the half-up rounder so cards read -0.83 / -0.43 to match the prose.
+{
+  const item = (name, value, color) => html`<div style="
+      text-align: center;
+      min-height: 4rem;
+      padding: 0.5rem 0.25rem;
+      border-radius: 0.5rem;
+      background: ${pal.fill};">
+    <div style="
+        font-family: 'Inter', sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: ${pal.muted};">${name}</div>
+    <div style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: ${color};">${fmtSigned(value)}</div>
+  </div>`;
+  return html`<div style="
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.75rem;">
+    ${item("ATE", means.ATE, pal.ink)}
+    ${item("ATT", means.ATT, pal.ink)}
+    ${item("ATU", means.ATU, pal.ink)}
+    ${item("Naive", means.Naive, means.Naive >= 0 ? pal.bad : pal.ink)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Dot Plot
+
+Take a moment to build intuition with this visualization. Here is a guided tour:
+
+**Step 1: Observe what a researcher sees.** With "Reveal counterfactuals" *off*, each patient has one solid dot (the outcome we observe) and one question mark (the outcome we can never see). The dark-red dots are patients in the program; the slate dots are patients under standard care. This is what real data looks like.
+
+**Step 2: See the full picture.** Toggle **Reveal counterfactuals** *on*. Now each patient has *two* dots --- a solid one (observed) and a hollow one (the counterfactual). The gray arrow connecting them is the individual treatment effect $\tau_i$. Notice that for most patients, the arrow points *left*: the program lowers HbA1c (which is beneficial). But the magnitude varies --- Patient 3 benefits enormously ($\tau = -1.6$), Patient 2 barely at all ($\tau = -0.3$). Patient 8 actually has a slightly *higher* HbA1c under treatment ($\tau = +0.2$). This is treatment effect heterogeneity in action.
+
+**Step 3: Compare estimands.** Now that you know what ATE, ATT, and ATU mean, select each one from the radio buttons:
+
+- **ATE**: Two dashed vertical lines appear, showing the average of *all* $Y(1)$ values and *all* $Y(0)$ values. The gap ($-0.63$) is the average effect across the whole population --- a modest reduction in HbA1c.
+- **ATT**: The lines shift --- they now average only over the enrolled patients (Patients 1, 2, 3, 6). The gap is larger in magnitude ($-0.83$) because these patients happen to respond more strongly to the program.
+- **ATU**: The lines average over standard-care patients only. The gap is smaller ($-0.43$).
+
+This confirms what we said above: $|\text{ATT}| > |\text{ATE}| > |\text{ATU}|$. The patients who selected into the program are those who benefit most --- selection on gains.
+
+**Step 4: See where naive estimation goes wrong.** Select **Naive**. Now the dark-red dashed line shows the average *observed* outcome among enrolled patients, and the slate dashed line shows the average *observed* outcome among standard-care patients. The naive difference is *positive* ($+0.78$), suggesting the program actually *raises* HbA1c --- the opposite of the truth. Why? Because the enrolled patients had high HbA1c levels *even before the program* (they were sicker at baseline). The naive comparison confuses "the program is ineffective" with "sicker patients enrolled." This is **selection bias**, the subject of the next page.
+
+
+## Break It: Who Enrolls Changes Everything
+
+The scenario above was fixed. But the entire drama --- whether the naive estimate overstates the effect, understates it, or nails it --- is driven by *one thing*: the relationship between **who enrolls** and **who benefits**. In the lab below, you are the one who decides that relationship. Drag a single "selection strength" slider from negative to positive and watch the four estimands pull apart, cross, and snap back together. The keystone payoff is the **decomposition bar** at the bottom: it shows the identity $\text{Naive} = \text{ATT} + \text{Selection Bias}$ collapsing to pure ATT the instant you randomize.
+
+Start with the **"Randomized"** preset and confirm that all four numbers agree. Then switch to **"Positive selection on gains"** to recreate the textbook trap above, and **"Negative selection"** to make the naive estimate flip to the *wrong sign* in the other direction.
+
+::: {.glass-card .glass-card--warning}
+**Mind the sign convention.** Because *lower* HbA1c is better here, the direction in which selection bias distorts your conclusion is *flipped* relative to a "higher is better" setting. When the treated were sicker at baseline (positive bias), the naive comparison makes the program look *worse* than it truly is --- the opposite of the higher-is-better job-training case in Exercise 1, where positive bias makes a program look *better*. Same algebra ($\text{Naive} = \text{ATT} + \text{bias}$); the everyday reading of "good" and "bad" just runs the other way.
+:::
+
+::: {.interactive-container}
+
+#### The "Break It" Lab: Selection on Gains
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls.
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${pal.axis};
+    background: ${pal.fill};
+    border-left: 3px solid ${pal.treated};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> begin with the <em>Randomized</em> preset and watch
+  all four numbers agree, then drag <em>Selection strength</em> toward +1 and
+  watch them pull apart. Step-by-step tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof pob_preset = Inputs.radio(
+  [
+    "Randomized (no selection on gains)",
+    "Positive selection on gains",
+    "Negative selection on gains",
+    "Custom"
+  ],
+  {
+    label: "Scenario preset",
+    value: "Positive selection on gains"
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${pal.muted};
+    margin: -0.2rem 0 0.4rem;">
+  Heads up: switching presets <em>resets</em> the four sliders below. Use
+  <em>Custom</em> to dial in your own values and keep them while you explore.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Each preset pins the four control sliders to a sensible configuration.
+// "Custom" leaves the sliders alone so the reader can dial in their own
+// data-generating process. The values here are the *defaults* a preset
+// suggests; the sliders below read these to set their starting positions.
+pob_presetConfig = {
+  const table = {
+    "Randomized (no selection on gains)":
+      { baseSpread: 0.7, meanEffect: -0.6, hetero: 0.4, selStrength: 0.0 },
+    "Positive selection on gains":
+      { baseSpread: 0.7, meanEffect: -0.6, hetero: 0.4, selStrength: 0.9 },
+    "Negative selection on gains":
+      { baseSpread: 0.7, meanEffect: -0.6, hetero: 0.4, selStrength: -0.9 },
+    "Custom":
+      { baseSpread: 0.7, meanEffect: -0.6, hetero: 0.4, selStrength: 0.0 }
+  };
+  return table[pob_preset];
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Sliders are re-created (and thus re-defaulted) whenever the preset changes,
+// because each `viewof` cell references pob_presetConfig. Choosing "Custom"
+// frees the reader to explore any combination.
+viewof pob_selStrength = Inputs.range([-1, 1], {
+  value: pob_presetConfig.selStrength,
+  step: 0.05,
+  label: "Selection strength: how strongly being treated tracks who gains most"
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live selection-bias readout placed right beside its controlling slider so the
+// reader sees cause (selection strength) and effect (bias) in one spot.
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.8rem;
+    margin: -0.2rem 0 0.5rem;
+    color: ${Math.abs(pob_est.bias) < 0.005 ? pal.good : pal.bad};">
+  &#8627; Current selection bias =
+  <strong>${fmtSigned(pob_est.bias)}</strong>
+  ${Math.abs(pob_est.bias) < 0.005 ? "(no bias — Naive equals ATT)" : "percentage points of HbA1c"}
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof pob_meanEffect = Inputs.range([-1.5, 0.5], {
+  value: pob_presetConfig.meanEffect,
+  step: 0.05,
+  label: "Mean treatment effect (average τ, the τ-bar)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pob_hetero = Inputs.range([0, 1], {
+  value: pob_presetConfig.hetero,
+  step: 0.05,
+  label: "Effect heterogeneity (spread of τ)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof pob_baseSpread = Inputs.range([0, 1.5], {
+  value: pob_presetConfig.baseSpread,
+  step: 0.05,
+  label: "Baseline severity spread"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Deterministically generate 8 patients from the 4 controls. ──
+// Design goal (so the pedagogy is exact, not approximate):
+//   * 8 patients are built as 4 matched PAIRS. The two members of a pair
+//     share an identical baseline Y(0) and an identical individual effect τ,
+//     so any "balanced" assignment (one of each pair treated) gives the
+//     treated and control groups identical mean Y(0) AND identical mean τ.
+//     => at selStrength 0, ATE = ATT = ATU and selection bias = 0 exactly,
+//        so Naive lands exactly on the ATT. The bar's bias segment vanishes.
+//   * τ is correlated with baseline severity: sicker patients (higher Y(0))
+//     benefit MORE (more-negative τ). This is the realistic "sickest gain
+//     most" structure of the original fixed scenario.
+//   * selStrength then tilts assignment within each pair. At +1 the bigger
+//     gainer of every pair is treated (positive selection on gains): the
+//     program looks better for the treated (|ATT|>|ATE|>|ATU|) AND the
+//     treated were sicker at baseline, so Naive overstates / flips positive.
+//     At -1 the smaller gainer is treated (negative selection): the
+//     inequality reverses and Naive can flip to the wrong (too-negative) sign.
+pob_units = {
+  const baseSpread  = pob_baseSpread;
+  const meanEffect  = pob_meanEffect;
+  const hetero      = pob_hetero;
+  const sel         = pob_selStrength;
+
+  // Four fixed "severity anchors" (centred at a realistic HbA1c of ~8.1%),
+  // symmetric so the population means are clean. Index 0 = least severe.
+  const anchors = [-1.5, -0.5, 0.5, 1.5];      // standardized severity
+  const center  = 8.1;
+
+  const pairs = anchors.map((z, k) => {
+    const y0 = center + baseSpread * z;
+    // More-severe patients gain more (more-negative τ). hetero scales the
+    // severity-driven spread of effects around the mean effect.
+    const tau = meanEffect - hetero * z;
+    return { pairId: k, y0, tau, y1: y0 + tau };
+  });
+
+  // Build the 8 patients: each pair contributes one treated + one control.
+  // We open a SYMMETRIC within-pair gap (in both τ and baseline Y(0)) that
+  // grows with `sel`, and assign the bigger-gainer / sicker member to
+  // treatment when sel>0 (positive selection) or to control when sel<0.
+  //
+  // Why this gives the exact pedagogy:
+  //   * The ±gaps are symmetric inside every pair, so the *population* means
+  //     of Y(0), Y(1) and τ are independent of `sel`  =>  ATE never moves.
+  //   * ATT = ATE − mean(Δτ),  ATU = ATE + mean(Δτ).  With sel>0, Δτ pushes
+  //     the treated to a more-negative (bigger) benefit, so the magnitudes
+  //     order as |ATT| > |ATE| > |ATU|. sel<0 reverses the ordering.
+  //   * Selection bias = mean Y(0) of treated − controls = 2·mean(Δy0),
+  //     which is 0 at sel=0 and grows with |sel| (sign = sign(sel)).
+  //     Hence Naive = ATT + bias collapses to ATT exactly when sel = 0.
+  const dir = Math.sign(sel);                  // +1, 0, or -1
+  const out = [];
+  let id = 1;
+  for (const p of pairs) {
+    const z = anchors[p.pairId];               // pair severity (signed)
+    // Half-gaps scale with |sel| and with how severe the pair is. The
+    // coefficients are chosen large enough that at full positive selection the
+    // baseline gap (selection bias) actually OVERWHELMS the true benefit and
+    // flips the Naive estimate to the wrong (positive) sign — the textbook trap
+    // promised in the prose — while keeping all Y values inside the [5.5, 10.5]
+    // plot domain at |sel| = 1.
+    const dTau = dir * 0.70 * Math.abs(sel) * Math.abs(z);   // treated benefits more (sel>0)
+    const dY0  = dir * 1.10 * baseSpread * Math.abs(sel) * Math.abs(z); // treated sicker (sel>0)
+
+    const y0Treated = p.y0 + dY0;
+    const y0Control = p.y0 - dY0;
+    const tauTreated = p.tau - dTau;           // more-negative τ = bigger benefit
+    const tauControl = p.tau + dTau;
+
+    out.push({ id: id++, pairId: p.pairId, d: 1, y0: y0Treated, y1: y0Treated + tauTreated });
+    out.push({ id: id++, pairId: p.pairId, d: 0, y0: y0Control, y1: y0Control + tauControl });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Derived per-patient plot data — mirrors the original `plotData` shape.
+pob_plotData = pob_units.map(u => ({
+  ...u,
+  tau: u.y1 - u.y0,
+  y_obs: u.d ? u.y1 : u.y0,
+  y_miss: u.d ? u.y0 : u.y1,
+  type: u.d ? "Treated" : "Control"
+}))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Live estimands computed from the generated patients.
+pob_est = {
+  const u = pob_units;
+  const tr = u.filter(d => d.d === 1);
+  const ct = u.filter(d => d.d === 0);
+
+  const ATE = d3.mean(u, d => d.y1 - d.y0);
+  const ATT = d3.mean(tr, d => d.y1 - d.y0);
+  const ATU = d3.mean(ct, d => d.y1 - d.y0);
+
+  const y0_tr = d3.mean(tr, d => d.y0);   // baseline of the treated
+  const y0_ct = d3.mean(ct, d => d.y0);   // baseline of the controls
+  const yObsTr = d3.mean(tr, d => d.y1);  // observed (treated -> Y(1))
+  const yObsCt = d3.mean(ct, d => d.y0);  // observed (control -> Y(0))
+
+  const Naive = yObsTr - yObsCt;
+  const bias  = y0_tr - y0_ct;            // selection bias; identity: Naive = ATT + bias
+
+  return { ATE, ATT, ATU, Naive, bias };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live dot plot — same visual grammar as the fixed plot above, but reading
+// the generated data and always revealing the counterfactual arrows so the
+// reader can see the τ_i fan out as heterogeneity and selection change.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 300,
+  marginLeft: 70,
+  marginRight: 24,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: { label: "HbA1c (%)", domain: [5.5, 10.5] },
+  y: {
+    label: "Patient",
+    domain: pob_units.map(u => u.id),
+    tickFormat: d => `Patient ${d}`
+  },
+  color: {
+    domain: ["Treated", "Control"],
+    range: [pal.treated, pal.control]
+  },
+  marks: [
+    Plot.link(pob_plotData, {
+      x1: "y0", x2: "y1", y: "id",
+      stroke: pal.muted, strokeWidth: 2, markerEnd: "arrow"
+    }),
+    Plot.dot(pob_plotData, {
+      x: "y_obs", y: "id", fill: "type", r: 6,
+      title: d => `Patient ${d.id} (${d.type})\nObserved: ${d.y_obs.toFixed(2)}\nτ = ${d.tau.toFixed(2)}`
+    }),
+    Plot.dot(pob_plotData, {
+      x: "y_miss", y: "id", stroke: "type", fill: "white", strokeWidth: 2, r: 5,
+      title: d => `Patient ${d.id}\nCounterfactual: ${d.y_miss.toFixed(2)}`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live science table driven by the generated patients. Counterfactual cells
+// are always shown here (the lab is about manipulating the full DGP), with the
+// unobserved Y rendered in the muted "revealed" style.
+html`<table class="science-table">
+  <thead>
+    <tr>
+      <th>Patient</th>
+      <th>D</th>
+      <th>Y(0)</th>
+      <th>Y(1)</th>
+      <th>&tau;<sub>i</sub></th>
+    </tr>
+  </thead>
+  <tbody>
+    ${pob_units.map(u => {
+      const tau = u.y1 - u.y0;
+      const obs = (val, observed) => observed
+        ? html`<td>${val.toFixed(2)}</td>`
+        : html`<td><span class="revealed">${val.toFixed(2)}</span></td>`;
+      // Green = program helps (tau<0), red = harms (tau>0), neutral grey at ~0.
+      const tauColor = Math.abs(tau) < 0.005 ? pal.muted : (tau < 0 ? pal.good : pal.bad);
+      const tauText  = Math.abs(tau) < 0.005 ? "0.00" : `${tau > 0 ? "+" : ""}${tau.toFixed(2)}`;
+      return html`<tr>
+        <td>${u.id}</td>
+        <td>${u.d}</td>
+        ${obs(u.y0, u.d === 0)}
+        ${obs(u.y1, u.d === 1)}
+        <td><span style="color:${tauColor}; font-weight:600;">${tauText}</span></td>
+      </tr>`;
+    })}
+  </tbody>
+</table>`
+```
+
+```{ojs}
+//| echo: false
+
+// Live four-estimand panel. Under "Randomized" all four should read the same
+// (within rounding) and the Naive tile turns green to flag "no bias".
+{
+  const biasNearZero = Math.abs(pob_est.bias) < 0.005;
+  const item = (name, value, color, bg) => html`<div style="
+      text-align: center;
+      min-height: 4rem;
+      padding: 0.5rem 0.25rem;
+      border-radius: 0.5rem;
+      background: ${bg};">
+    <div style="
+        font-family: 'Inter', sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: ${pal.muted};">${name}</div>
+    <div style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: ${color};">${fmtSigned(value)}</div>
+  </div>`;
+  return html`<div style="
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.75rem;">
+    ${item("ATE", pob_est.ATE, pal.ink, pal.fill)}
+    ${item("ATT", pob_est.ATT, pal.ink, pal.fill)}
+    ${item("ATU", pob_est.ATU, pal.ink, pal.fill)}
+    ${item("Naive", pob_est.Naive,
+        biasNearZero ? pal.good : pal.bad,
+        biasNearZero ? "rgba(46, 111, 64, 0.08)" : "rgba(179, 0, 11, 0.06)")}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The keystone: the decomposition bar. ──
+// Visualizes the identity   Naive = ATT + Selection Bias   as a horizontal
+// stacked bar built from two signed segments laid out on a shared HbA1c axis.
+// When selection bias -> 0 (randomized), the orange bias segment collapses and
+// the bar IS the ATT. The black tick marks where the Naive total lands.
+{
+  const att  = pob_est.ATT;
+  const bias = pob_est.bias;
+  const naive = pob_est.Naive;
+
+  // Symmetric axis around 0 so positive/negative segments read intuitively.
+  const span = Math.max(0.6, Math.abs(att) + Math.abs(bias), Math.abs(naive)) * 1.15;
+  const segs = [
+    { label: "ATT (true effect on treated)", value: att,  fill: pal.treated },
+    { label: "Selection bias",               value: bias, fill: pal.ochre }
+  ];
+
+  // Cumulative starts so the two segments stack head-to-tail from 0.
+  let cursor = 0;
+  const stacked = segs.map(s => {
+    const x1 = cursor;
+    const x2 = cursor + s.value;
+    cursor = x2;
+    return { ...s, x1, x2 };
+  });
+
+  // Only label a segment in-bar when it is wide enough to hold the text;
+  // narrow segments get an outside label in the segment's own color (white
+  // text would be invisible on the warm-white background).
+  const inThreshold = 0.16 * span;
+  const inLabels  = stacked.filter(d => Math.abs(d.value) > inThreshold);
+  const outLabels = stacked.filter(d => Math.abs(d.value) > 0.04 && Math.abs(d.value) <= inThreshold);
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 160,
+    marginLeft: 12,
+    marginRight: 12,
+    marginTop: 44,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: {
+      label: "Effect on HbA1c (percentage points)  →",
+      domain: [-span, span],
+      grid: true
+    },
+    y: { axis: null, domain: ["bar"] },
+    marks: [
+      Plot.ruleX([0], { stroke: pal.ink, strokeWidth: 1.5 }),
+      // Stacked segments.
+      Plot.barX(stacked, {
+        x1: "x1", x2: "x2", y: () => "bar",
+        fill: "fill", fillOpacity: 0.9,
+        title: d => `${d.label}: ${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`,
+        insetTop: 18, insetBottom: 18
+      }),
+      // In-bar value labels (wide segments only) — white with a halo so they
+      // survive over either fill.
+      Plot.text(inLabels, {
+        x: d => (d.x1 + d.x2) / 2,
+        y: () => "bar",
+        text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`,
+        fill: "white", fontWeight: "bold", fontSize: 12,
+        stroke: pal.ink, strokeWidth: 2.5, paintOrder: "stroke"
+      }),
+      // Out-of-bar labels for narrow segments, drawn just above the bar in the
+      // segment color with a white halo.
+      Plot.text(outLabels, {
+        x: d => (d.x1 + d.x2) / 2,
+        y: () => "bar",
+        text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(2)}`,
+        fill: d => d.fill, fontWeight: "bold", fontSize: 11,
+        dy: -24, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The Naive total: a dark rule at the end of the stack marks the exact
+      // value; the label is pinned to the TOP-CENTER frame band (no x channel)
+      // so it can never clip at the frame edge even when the Naive tick travels
+      // close to the domain limit at |sel| = 1. The rule, not the label, carries
+      // the precise position.
+      Plot.ruleX([naive], { stroke: pal.ink, strokeWidth: 3 }),
+      Plot.text([`Naive = ${fmtSigned(naive)}`], {
+        frameAnchor: "top",
+        text: d => d,
+        fill: pal.ink, fontWeight: "bold", fontSize: 12,
+        dy: -28, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Micro-caption explaining how to read the signed stacked decomposition bar.
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${pal.axis};
+    margin: 0.3rem 0 0;
+    line-height: 1.45;">
+  Read the bar left to right: start at 0 &rarr; add the
+  <span style="color:${pal.treated};font-weight:600;">ATT (true effect)</span>
+  &rarr; add the <span style="color:${pal.ochre};font-weight:600;">selection bias</span>
+  &rarr; land at the <strong>Naive</strong> total (dark tick).
+  When bias collapses to 0, the bar <em>is</em> the ATT.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+// One-line plain-language verdict that updates with the sliders. All numbers
+// run through the half-up rounder so near-zero values display cleanly.
+{
+  const bias  = roundHalfUp(pob_est.bias);
+  const att   = roundHalfUp(pob_est.ATT);
+  const naive = roundHalfUp(pob_est.Naive);
+  let msg, color;
+  if (Math.abs(pob_est.bias) < 0.02) {
+    msg = "Selection bias ≈ 0 — the Naive comparison equals the ATT. This is what randomization buys you.";
+    color = pal.good;
+  } else if (bias > 0) {
+    // Positive bias = treated sicker (higher) at baseline. Lower HbA1c is
+    // better, so a positive bias pushes Naive UPWARD (less negative / toward
+    // positive), making the program look WORSE than it truly is for the treated.
+    const flip = naive > 0 && att < 0 ? " — it even flips to the wrong (harmful-looking) sign." : ".";
+    msg = `Selection bias = ${fmtSigned(bias)}: the treated were sicker at baseline, so the Naive comparison (${fmtSigned(naive)}) understates the benefit relative to the true ATT (${fmtSigned(att)})${flip}`;
+    color = pal.bad;
+  } else {
+    // Negative bias = treated healthier (lower) at baseline, pushing Naive
+    // DOWNWARD (more negative) and making the program look BETTER than it is.
+    const flip = att > 0 && naive < 0 ? " — it even flips a harmful program to look beneficial." : ".";
+    msg = `Selection bias = ${fmtSigned(bias)}: the treated were healthier at baseline, so the Naive comparison (${fmtSigned(naive)}) overstates the benefit relative to the true ATT (${fmtSigned(att)})${flip}`;
+    color = pal.bad;
+  }
+  return html`<div style="
+      margin-top: 0.75rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 0.5rem;
+      border-left: 3px solid ${color};
+      background: ${pal.fill};
+      font-family: 'Inter', sans-serif;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      color: ${pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the "Break It" Lab
+
+This lab generates eight patients *deterministically* from a handful of controls, so every change you make is reproducible --- and the four estimands recompute live. Work through it in order:
+
+**Step 1: Randomize and watch them converge.** Choose the **"Randomized (no selection on gains)"** preset (or drag **Selection strength** to exactly 0). Read the four tiles: ATE, ATT, and ATU all coincide, and the **Naive** tile turns *green* because it now equals the ATT. In the decomposition bar, the ochre **Selection bias** segment has vanished --- the bar *is* the red ATT. This is the whole promise of a randomized trial in one picture: with no selection on gains, the comparison you *can* compute (Naive) equals the causal quantity you *want* (ATT).
+
+**Step 2: Introduce positive selection.** Switch to **"Positive selection on gains"** (or push **Selection strength** toward +1). Now the patients who enroll are the ones who both *gain more* from the program and were *sicker to begin with*. Watch three things move together: (i) the estimand ordering becomes $|\text{ATT}| > |\text{ATE}| > |\text{ATU}|$, (ii) an ochre bias segment grows out of the red ATT in the decomposition bar, and (iii) the Naive total (dark tick) slides to the *right* of the true ATT --- often all the way to a misleading *positive* value, exactly the trap from the fixed scenario above.
+
+**Step 3: Flip the selection.** Switch to **"Negative selection on gains"** (or drag **Selection strength** below 0). Now the *healthier* patients enroll. The estimand inequality reverses, the bias segment points the other way, and the Naive estimate is dragged *past* the ATT in the negative direction --- it can overstate a benefit that is partly just a healthier comparison group. This is the mechanism behind Exercise 1, where a helpful program looks harmful.
+
+**Step 4: Untangle effect size from selection.** Set selection back to 0 and play with **Mean treatment effect** and **Effect heterogeneity**. Notice that with selection at 0, the estimands stay glued together *no matter how heterogeneous the effects are*: heterogeneity alone does not create bias. Bias appears only when heterogeneity (or baseline severity) is *correlated with who gets treated*. Both conditions from "Why the Three Estimands Can Differ" must hold at once.
+
+**Step 5: Make the identity click.** Keep one eye on the decomposition bar while you sweep the **Selection strength** slider slowly from $-1$ to $+1$. The red ATT segment barely moves; it is the ochre bias segment that swings, dragging the dark Naive tick with it. You are watching $\text{Naive} = \text{ATT} + \text{Selection Bias}$ in real time --- the exact decomposition we derive algebraically in the next section.
+
+
+## The Naive Difference: A Preview of Selection Bias
+
+Let's formalize what went wrong. The researcher computes the **naive difference in means**:
+
+$$
+\hat{\Delta}_{\text{naive}} = \underbrace{\bar{Y}_{\text{treated}}}_{\text{avg observed outcome, treated}} - \underbrace{\bar{Y}_{\text{untreated}}}_{\text{avg observed outcome, untreated}}
+$$
+
+In our example: $\bar{Y}_{\text{treated}} = 8.18$ and $\bar{Y}_{\text{untreated}} = 7.40$, giving $\hat{\Delta}_{\text{naive}} = +0.78$. The true ATE is $-0.63$ and the ATT is $-0.83$. The naive estimate has the *wrong sign* --- it suggests the program raises HbA1c when in fact it lowers it.
+
+Why does the naive difference miss the ATT so badly? Take the naive comparison and simply *add and subtract* the same quantity --- the average $Y_i(0)$ among the treated, $E[Y_i(0) \mid D_i = 1]$:
+
+$$
+\underbrace{E[Y_i \mid D_i = 1] - E[Y_i \mid D_i = 0]}_{\hat{\Delta}_{\text{naive}}} = \underbrace{E[Y_i(1) - Y_i(0) \mid D_i = 1]}_{\text{ATT}} + \underbrace{E[Y_i(0) \mid D_i = 1] - E[Y_i(0) \mid D_i = 0]}_{\text{selection bias}}
+$$
+
+The first group is the treated, so their observed outcome is $Y_i(1)$; the second group is untreated, so theirs is $Y_i(0)$. Adding and subtracting $E[Y_i(0) \mid D_i = 1]$ splits the difference into a genuine causal effect for the treated (the **ATT**) plus a contaminating term that compares the two groups' baseline ($Y(0)$) outcomes --- the **selection bias**. In our data the ATT is $-0.83$ and the selection bias is $E[Y_i(0)\mid D_i=1] - E[Y_i(0)\mid D_i=0] = 9.00 - 7.40 = +1.60$, so the identity reads $-0.83 + 1.60 = +0.78$ (up to rounding). The program truly helps the treated, but the treated were $1.60$ *percentage points* (not percent --- absolute points on the HbA1c scale) sicker at baseline, and that baseline gap swamps the effect and flips the sign.
+
+The colored figure below shows the add-and-subtract trick visually: the inserted term $E[Y_i(0)\mid D_i=1]$ appears once with a minus and once with a plus, so it *cancels* --- leaving the genuine effect (the <span style="color:#990000;font-weight:600;">ATT</span>) and a leftover baseline gap (the <span style="color:#9c7a33;font-weight:600;">selection bias</span>). The two colors match the live decomposition bar in the lab above.
+
+```{ojs}
+//| echo: false
+
+// ADDITIVE static figure: the add-and-subtract decomposition, color-matched to
+// the live decomposition bar (ATT = treated red, bias = ochre). Shows the
+// inserted E[Y(0)|D=1] term cancelling. Pure HTML; reuses the shared `pal`.
+html`<div style="
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.92rem;
+    line-height:2.0;
+    background:${pal.fill};
+    border:1px solid ${pal.hair};
+    border-radius:0.5rem;
+    padding:0.9rem 1.1rem;
+    margin:0.5rem 0 0.75rem;
+    overflow-x:auto;">
+  <div style="color:${pal.ink};">
+    Naive = E[Y | D=1] − E[Y | D=0]
+  </div>
+  <div style="color:${pal.muted}; padding-left:3.4em;">
+    = E[Y(1) | D=1]
+      <span style="color:${pal.good};">− E[Y(0) | D=1]</span>
+      <span style="color:${pal.good};">+ E[Y(0) | D=1]</span>
+      − E[Y(0) | D=0]
+  </div>
+  <div style="color:${pal.muted}; padding-left:3.4em; font-size:0.8rem; font-style:italic; font-family:'Inter',sans-serif;">
+    <span style="color:${pal.good};">↑ add and subtract the same term — it cancels ↑</span>
+  </div>
+  <div style="padding-left:3.4em;">
+    = <span style="background:rgba(153,0,0,0.10); color:${pal.treated}; font-weight:700; padding:0.05em 0.3em; border-radius:0.25rem;">ATT</span>
+      &nbsp;+&nbsp;
+      <span style="background:rgba(156,122,51,0.16); color:${pal.ochre}; font-weight:700; padding:0.05em 0.3em; border-radius:0.25rem;">Selection bias</span>
+  </div>
+  <div style="padding-left:3.4em; font-family:'Inter',sans-serif; font-size:0.82rem; color:${pal.muted}; margin-top:0.2rem;">
+    <span style="color:${pal.treated};font-weight:600;">ATT</span> = E[Y(1)−Y(0) | D=1]&nbsp;&nbsp;·&nbsp;&nbsp;
+    <span style="color:${pal.ochre};font-weight:600;">bias</span> = E[Y(0)|D=1] − E[Y(0)|D=0]
+  </div>
+</div>`
+```
+
+The problem is that treated and untreated patients are not comparable at baseline. The enrolled patients (Patients 1, 2, 3, 6) have $Y(0)$ values of 8.4, 9.2, 8.9, and 9.5 --- these are patients with poorly controlled diabetes. The standard-care patients (Patients 4, 5, 7, 8) have $Y(0)$ values of 7.8, 7.2, 7.5, and 7.1 --- patients whose blood sugar was already better managed. Even *without* the program, the enrolled group would have had higher HbA1c. This baseline difference contaminates the naive comparison.
+
+This contamination has a name: **selection bias**. We develop it fully on the next page.
+
+
+## SUTVA: The Assumption Hiding in the Notation
+
+Before we go further, we need to acknowledge a strong assumption that is silently embedded in the potential outcomes notation itself.
+
+When we write $Y_i(1)$, we assume that this quantity is *well-defined* --- that there is a single, clear answer to "what would patient $i$'s HbA1c be under the program?" This seems obvious, but it can fail in two distinct ways.
+
+::: {.glass-card .glass-card--assumption}
+The **Stable Unit Treatment Value Assumption** (SUTVA) requires two conditions:
+
+**1. No interference.** My potential outcomes depend only on *my* treatment status, not on whether anyone *else* is treated. Formally: $Y_i(D_1, D_2, \dots, D_N) = Y_i(D_i)$.
+
+*In words*: the notation $Y_i(1)$ makes sense only if patient $i$'s outcome under treatment is the same regardless of who else is treated. If treating patient $j$ changes patient $i$'s outcome, then $Y_i(1)$ is not a single number --- it depends on what happens to everyone else.
+
+**2. No hidden versions of treatment.** There is only one "version" of treatment, so $Y_i(1)$ is unambiguous.
+
+*In words*: if "the diabetes management program" can mean an intensive multidisciplinary intervention at a well-resourced vårdcentral or a monthly phone call from an overworked nurse, these are different treatments and should not both be called $D_i = 1$.
+:::
+
+### When SUTVA Fails
+
+SUTVA violations are not abstract curiosities --- they arise in many applied settings:
+
+**Interference example**: The diabetes management program trains dedicated *diabetessjuksköterskor* (diabetes nurses) at each vårdcentral. If patient $i$ is enrolled, their nurse receives specialized training and more resources --- which may spill over to improve the care that patient $j$ receives at the same center, even though $j$ is not formally enrolled. Patient $i$'s enrollment changes patient $j$'s outcome. More broadly, if the program changes clinic-level routines or staffing patterns, treating one patient may alter the care environment for all patients at that vårdcentral.
+
+**Hidden versions example**: Different regions implement the diabetes management program differently. Region A runs a comprehensive program with endocrinologist consultations, group education sessions, and digital monitoring. Region B offers only quarterly nurse check-ins. A patient assigned to $D_i = 1$ in Region A has different potential outcomes than the same patient in Region B. Writing $Y_i(1)$ obscures this distinction.
+
+When SUTVA fails, the potential outcomes framework can still be used, but we need to expand the notation. For interference, we write $Y_i(D_i, \mathbf{D}_{-i})$ to acknowledge that $i$'s outcome depends on everyone's treatment. For multiple versions, we write $Y_i(d, k)$ where $k$ indexes the treatment version. These extensions are beyond our scope here, but the key lesson is: before using the notation, verify that its assumptions are reasonable for your setting.
+
+The two ways SUTVA can break are easier to hold apart as a picture than as two paragraphs. The left panel shows *interference* (one patient's treatment leaks into another's outcome); the right panel shows *hidden versions* (one label, $D=1$, secretly stands for two different treatments).
+
+```{ojs}
+//| echo: false
+
+// ADDITIVE static two-panel figure for SUTVA's two failure modes.
+// Left  = "No interference" fails: patient i's treatment spills over to j.
+// Right = "No hidden versions" fails: D=1 fans into two different treatments.
+// Pure d3; depends only on d3 + the shared `pal`.
+p2_drawSUTVA = function ({ width = 680, height = 250 }) {
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  const mk = (id, col) => defs.append("marker")
+    .attr("id", id).attr("viewBox", "0 -5 10 10")
+    .attr("refX", 9).attr("refY", 0)
+    .attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  mk("p2-sutva-green", pal.good);
+  mk("p2-sutva-red", pal.bad);
+  mk("p2-sutva-ochre", pal.ochre);
+
+  const panelW = width / 2;
+  const pad = 14;
+
+  // Helper to draw a labelled node (circle).
+  const node = (g, x, y, label, sub, r = 22, fill = pal.fill, stroke = pal.ink) => {
+    g.append("circle").attr("cx", x).attr("cy", y).attr("r", r)
+      .attr("fill", fill).attr("stroke", stroke).attr("stroke-width", 2);
+    g.append("text").attr("x", x).attr("y", y).attr("text-anchor", "middle")
+      .attr("dominant-baseline", "central").attr("font-size", 13).attr("font-weight", 700)
+      .attr("fill", pal.ink).text(label);
+    if (sub) g.append("text").attr("x", x).attr("y", y + r + 14).attr("text-anchor", "middle")
+      .attr("font-size", 10).attr("font-weight", 600).attr("fill", pal.muted).text(sub);
+  };
+  const edge = (g, x1, y1, x2, y2, marker, col, dash) => {
+    g.append("line").attr("x1", x1).attr("y1", y1).attr("x2", x2).attr("y2", y2)
+      .attr("stroke", col).attr("stroke-width", 2.5)
+      .attr("stroke-dasharray", dash || null)
+      .attr("marker-end", `url(#${marker})`);
+  };
+
+  // ── Panel titles ──
+  const title = (x, txt, ok) => svg.append("text")
+    .attr("x", x).attr("y", 22).attr("text-anchor", "middle")
+    .attr("font-size", 12).attr("font-weight", 700).attr("fill", ok ? pal.ink : pal.bad)
+    .text(txt);
+  title(panelW / 2, "1. No interference  ✗", false);
+  title(panelW + panelW / 2, "2. No hidden versions  ✗", false);
+
+  // Divider
+  svg.append("line").attr("x1", panelW).attr("y1", 8).attr("x2", panelW).attr("y2", height - 8)
+    .attr("stroke", pal.hair).attr("stroke-width", 1);
+
+  // ── LEFT PANEL: interference (same vårdcentral; i's treatment spills to j) ──
+  const gL = svg.append("g");
+  const yi = 90, yj = 175, xi = 60, xj = 60;
+  // vårdcentral container
+  gL.append("rect").attr("x", pad).attr("y", 48).attr("width", panelW - 2 * pad).attr("height", height - 70)
+    .attr("rx", 8).attr("fill", "none").attr("stroke", pal.hair).attr("stroke-width", 1).attr("stroke-dasharray", "4,3");
+  gL.append("text").attr("x", panelW - pad - 6).attr("y", 62).attr("text-anchor", "end")
+    .attr("font-size", 9).attr("font-weight", 600).attr("fill", pal.muted).text("same vårdcentral");
+  node(gL, xi, yi, "Dᵢ=1", "patient i (enrolled)", 22, "rgba(46,111,64,0.10)", pal.good);
+  node(gL, xj, yj, "Dⱼ=0", "patient j (not enrolled)");
+  node(gL, panelW - 70, yi, "Yᵢ", null, 18);
+  node(gL, panelW - 70, yj, "Yⱼ", null, 18);
+  // i's own causal effect (green)
+  edge(gL, xi + 22, yi, panelW - 70 - 18, yi, "p2-sutva-green", pal.good);
+  // spillover: i's treatment leaks into j's outcome (red)
+  edge(gL, xi + 16, yi + 16, panelW - 70 - 14, yj - 14, "p2-sutva-red", pal.bad);
+  gL.append("text").attr("x", panelW / 2 + 6).attr("y", yi + 50).attr("text-anchor", "middle")
+    .attr("font-size", 9.5).attr("font-weight", 700).attr("fill", pal.bad)
+    .text("spillover →  Yⱼ depends on Dᵢ");
+
+  // ── RIGHT PANEL: hidden versions (D=1 fans into two different treatments) ──
+  const gR = svg.append("g");
+  const ox = panelW;
+  const xD = ox + 55, yD = height / 2;
+  node(gR, xD, yD, "D=1", "\"the program\"", 24, "rgba(156,122,51,0.12)", pal.ochre);
+  const yA = 95, yB = height - 75, xV = ox + panelW - 95;
+  node(gR, xV, yA, "v.A", "multidisciplinary", 20, pal.fill, pal.ink);
+  node(gR, xV, yB, "v.B", "monthly phone call", 20, pal.fill, pal.ink);
+  edge(gR, xD + 24, yD - 8, xV - 20, yA + 6, "p2-sutva-ochre", pal.ochre);
+  edge(gR, xD + 24, yD + 8, xV - 20, yB - 6, "p2-sutva-ochre", pal.ochre);
+  gR.append("text").attr("x", ox + panelW / 2).attr("y", height - 14).attr("text-anchor", "middle")
+    .attr("font-size", 9.5).attr("font-weight", 700).attr("fill", pal.bad)
+    .text("one label, two different treatments");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:flex; justify-content:center; margin:0.5rem 0 0.5rem;">
+  ${p2_drawSUTVA({ width: Math.min(680, width) })}
+</div>`
+```
+
+::: {.aside}
+**Left (interference):** patient $i$'s enrollment ($D_i=1$) has a legitimate green effect on $i$'s own outcome, but it *also* leaks (red) into patient $j$'s outcome at the same vårdcentral --- so $Y_j$ depends on $D_i$, and $Y_j(0)$ is no longer a single number. **Right (hidden versions):** the single label $D=1$ secretly fans out into two genuinely different treatments, so $Y_i(1)$ is ambiguous.
+:::
+
+
+::: {.glass-card .glass-card--insight}
+The potential outcomes framework forces precision. To make a causal claim, you must specify: (1) What is the treatment? (2) What is the control condition? (3) What is the outcome? (4) Over which population are you averaging? These questions may seem pedantic, but vague causal claims are almost always wrong causal claims.
+:::
+
+
+<details>
+<summary>Math Details: How the Estimands Relate to Each Other</summary>
+<div class="details-content">
+
+### ATE as a Weighted Average of ATT and ATU
+
+The ATE can be decomposed as a weighted average:
+
+$$
+\text{ATE} = P(D = 1) \cdot \text{ATT} + P(D = 0) \cdot \text{ATU}
+$$
+
+**How to read this**: "The average treatment effect across everyone equals the share of people who are treated times the average effect for the treated, plus the share who are untreated times the average effect for the untreated." This is just the law of total expectation --- read "$P(D=1)$" as "the probability that $D$ equals 1" or equivalently "the fraction of the population that is treated."
+
+**Let's verify with our data.** We have 4 enrolled patients out of 8, so $P(D=1) = 0.5$. Then:
+
+$$
+\text{ATE} = 0.5 \times (-0.83) + 0.5 \times (-0.43) = -0.63 \quad \checkmark
+$$
+
+(Using the exact estimands, $0.5 \times (-0.825) + 0.5 \times (-0.425) = -0.625$, which rounds to $-0.63$.)
+
+**Implication**: When $\text{ATT} = \text{ATU}$, the weighting doesn't matter and $\text{ATE} = \text{ATT} = \text{ATU}$. This happens when treatment effects are **constant** ($\tau_i = \tau$ for all $i$) or when selection into treatment is independent of the treatment effect.
+
+### The Naive Estimator's Bias
+
+What does the naive difference in means actually estimate? A bit of algebra reveals:
+
+$$
+\underbrace{E[Y_i \mid D_i = 1] - E[Y_i \mid D_i = 0]}_{\text{Naive difference}} = \underbrace{E[Y_i(1) - Y_i(0) \mid D_i = 1]}_{\text{ATT}} + \underbrace{E[Y_i(0) \mid D_i = 1] - E[Y_i(0) \mid D_i = 0]}_{\text{Selection bias}}
+$$
+
+**How to read the left-hand side**: "$E[Y_i \mid D_i = 1]$" means "the expected value (average) of $Y_i$ given that $D_i = 1$" --- i.e., the average observed outcome among treated individuals. The whole left side is: "average outcome of the treated minus average outcome of the untreated."
+
+**How to read the right-hand side**: The first term is the ATT --- the true average causal effect for treated individuals. The second term is the **selection bias**: it reads "the average of $Y_i(0)$ among the treated minus the average of $Y_i(0)$ among the untreated." In plain language, it asks: "even *without* treatment, would the treated group have had different outcomes than the untreated group?"
+
+If the answer is yes --- if the groups are different at baseline --- then the naive estimator does not recover the ATT. We develop this decomposition fully on the [Selection Bias](selection-bias.qmd) page.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+# Define potential outcomes (HbA1c) for 8 patients
+science_table <- tibble(
+  id = 1:8,
+  y0 = c(8.4, 9.2, 8.9, 7.8, 7.2, 9.5, 7.5, 7.1),
+  y1 = c(7.3, 8.9, 7.3, 7.3, 6.6, 9.2, 6.7, 7.3),
+  d  = c(  1,   1,   1,   0,   0,   1,   0,   0)
+) |>
+  mutate(
+    tau  = y1 - y0,       # Negative tau = program helps (lowers HbA1c)
+    yobs = if_else(d == 1, y1, y0)
+  )
+
+# Estimands (using complete potential outcomes — a luxury we never have)
+ATE <- mean(science_table$tau)
+ATT <- science_table |> filter(d == 1) |> summarise(mean(tau)) |> pull()
+ATU <- science_table |> filter(d == 0) |> summarise(mean(tau)) |> pull()
+
+# Naive difference in means (what we can actually compute)
+naive <- mean(science_table$yobs[science_table$d == 1]) -
+         mean(science_table$yobs[science_table$d == 0])
+
+# Selection bias
+bias <- naive - ATT
+
+cat("ATE:      ", ATE, "\n")
+cat("ATT:      ", ATT, "\n")
+cat("ATU:      ", ATU, "\n")
+cat("Naive:    ", naive, "\n")
+cat("Bias:     ", bias, "\n")
+```
+
+### Python
+
+```python
+import pandas as pd
+
+# Define potential outcomes (HbA1c) for 8 patients
+df = pd.DataFrame({
+    "id": range(1, 9),
+    "y0": [8.4, 9.2, 8.9, 7.8, 7.2, 9.5, 7.5, 7.1],
+    "y1": [7.3, 8.9, 7.3, 7.3, 6.6, 9.2, 6.7, 7.3],
+    "d":  [  1,   1,   1,   0,   0,   1,   0,   0],
+})
+
+df["tau"]  = df["y1"] - df["y0"]   # Negative tau = program helps
+df["yobs"] = df.apply(lambda r: r["y1"] if r["d"] == 1 else r["y0"], axis=1)
+
+# Estimands
+ATE = df["tau"].mean()
+ATT = df.loc[df.d == 1, "tau"].mean()
+ATU = df.loc[df.d == 0, "tau"].mean()
+
+# Naive difference in means
+naive = df.loc[df.d == 1, "yobs"].mean() - df.loc[df.d == 0, "yobs"].mean()
+
+print(f"ATE:    {ATE:.2f}")
+print(f"ATT:    {ATT:.2f}")
+print(f"ATU:    {ATU:.2f}")
+print(f"Naive:  {naive:.2f}")
+print(f"Bias:   {naive - ATT:.2f}")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Consider a job training program with the following potential outcomes for six individuals:
+
+| Unit | $Y(0)$ | $Y(1)$ | $D$ |
+|:----:|:------:|:------:|:---:|
+| 1    | 20     | 24     | 1   |
+| 2    | 18     | 20     | 1   |
+| 3    | 25     | 30     | 0   |
+| 4    | 22     | 22     | 0   |
+| 5    | 15     | 19     | 1   |
+| 6    | 30     | 32     | 0   |
+
+Compute the ATE, ATT, ATU, and naive difference in means. Verify that the naive difference equals the ATT plus the selection bias.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+First, compute individual treatment effects $\tau_i = Y_i(1) - Y_i(0)$:
+
+| Unit | $\tau_i$ | $D$ |
+|:----:|:--------:|:---:|
+| 1    | 4        | 1   |
+| 2    | 2        | 1   |
+| 3    | 5        | 0   |
+| 4    | 0        | 0   |
+| 5    | 4        | 1   |
+| 6    | 2        | 0   |
+
+**ATE** $= (4 + 2 + 5 + 0 + 4 + 2)/6 = 17/6 \approx 2.83$
+
+**ATT** (average $\tau_i$ for $D=1$: Units 1, 2, 5) $= (4 + 2 + 4)/3 = 10/3 \approx 3.33$
+
+**ATU** (average $\tau_i$ for $D=0$: Units 3, 4, 6) $= (5 + 0 + 2)/3 = 7/3 \approx 2.33$
+
+**Naive difference**: $\bar{Y}_{\text{treated}} = (24 + 20 + 19)/3 = 21.0$ and $\bar{Y}_{\text{untreated}} = (25 + 22 + 30)/3 = 25.67$, so $\hat{\Delta}_{\text{naive}} = 21.0 - 25.67 = -4.67$.
+
+The naive estimate is *negative* even though training helps everyone! Why?
+
+**Selection bias** $= E[Y(0)|D=1] - E[Y(0)|D=0] = (20 + 18 + 15)/3 - (25 + 22 + 30)/3 = 17.67 - 25.67 = -8.0$.
+
+**Verification**: Naive $= \text{ATT} + \text{Bias} = 3.33 + (-8.0) = -4.67$ $\checkmark$
+
+The treated units have *lower* baseline outcomes than the untreated (negative selection), so the naive estimator makes the program look harmful even though it helps everyone.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Suppose treatment effects are constant: $\tau_i = \tau$ for all $i$. Show that ATE = ATT = ATU. Does this mean the naive difference in means equals the ATE? Why or why not?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Part 1**: If $\tau_i = \tau$ for all $i$, then:
+
+- $\text{ATE} = E[\tau_i] = E[\tau] = \tau$
+- $\text{ATT} = E[\tau_i | D_i = 1] = E[\tau | D_i = 1] = \tau$
+- $\text{ATU} = E[\tau_i | D_i = 0] = E[\tau | D_i = 0] = \tau$
+
+All three are just $\tau$, since the expectation of a constant is the constant itself. So ATE = ATT = ATU = $\tau$.
+
+**Part 2**: No! Constant treatment effects do **not** eliminate selection bias. The naive difference is:
+
+$$
+\hat{\Delta}_{\text{naive}} = \text{ATT} + \underbrace{E[Y(0)|D=1] - E[Y(0)|D=0]}_{\text{selection bias}}
+$$
+
+Constant $\tau$ ensures ATT = ATE, but the selection bias term depends on differences in $Y(0)$ across groups --- it has nothing to do with $\tau$. If treated individuals have higher (or lower) baseline outcomes, the bias remains.
+
+**Key insight**: Constant effects eliminate *one* problem (ATT $\neq$ ATE) but not the other (selection bias). To get $\hat{\Delta}_{\text{naive}} = \text{ATE}$, you need the selection bias to be zero, which requires either random assignment or the mean independence condition $E[Y(0)|D=1] = E[Y(0)|D=0]$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher studies the effect of attending a selective university on future earnings. Give a concrete example of a SUTVA violation in this setting --- one for the no-interference condition and one for the no-hidden-versions condition. For each, explain what the notation $Y_i(1)$ would fail to capture.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**No-interference violation**: Student $i$ attends the selective university and forms a study group with student $j$, who is also attending. Their collaboration improves *both* of their earnings prospects. Here, $Y_i(1)$ depends not just on whether $i$ attends, but on whether $j$ also attends. If fewer students attended, $i$ might not have found that study partner and their outcomes would differ. The notation $Y_i(1)$ falsely assumes $i$'s outcome is the same whether 10 or 10,000 other students also attend.
+
+More broadly: alumni networks create interference. The value of attending a selective university depends partly on who else attends --- the network effect means each person's outcome is a function of everyone's treatment status.
+
+**No-hidden-versions violation**: "Attending the selective university" could mean studying engineering at MIT or studying literature at Stanford. These are dramatically different experiences with different earnings implications. Writing $D_i = 1$ (attended) lumps together all versions of the treatment. Student $i$'s $Y_i(1)$ at MIT might be SEK 600,000 while their $Y_i(1)$ at Stanford might be SEK 350,000 --- the single notation hides this variation.
+
+To fix this, we would need to write $Y_i(1, k)$ where $k$ indexes the specific university, making explicit that "attending a selective university" is not one treatment but many.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive dot plot, toggle "Reveal counterfactuals" and select each estimand in turn. The treated group in the data has higher $Y(0)$ values than the untreated group. Explain, in one paragraph, *why* this pattern causes the naive estimate to overstate the true effect. Would the naive estimate *understate* the effect if the pattern were reversed?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The naive estimate compares the average *observed* outcome of the treated (their $Y(1)$ values) to the average *observed* outcome of the untreated (their $Y(0)$ values). When the treated group has higher $Y(0)$ values, they would have earned more *even without training*. The naive comparison attributes this pre-existing advantage to the training itself. Formally, the selection bias term $E[Y(0)|D=1] - E[Y(0)|D=0]$ is positive, which inflates the naive estimate above the true ATT. In the visualization, you can see this: the solid dark-red dots (treated, observed) are far right partly because those people were already high-earners, not just because training helped them.
+
+Yes, if the pattern were reversed --- if the treated had *lower* $Y(0)$ values --- the selection bias would be negative, and the naive estimate would *understate* the true effect. This is exactly what happens in Exercise 1 above, where the naive estimate is negative despite a positive true effect. In that case, sick or disadvantaged people self-selected into treatment, making the program look ineffective (or even harmful) because the comparison group had better baseline outcomes.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Every patient has two potential outcomes, $Y_i(1)$ and $Y_i(0)$, but the switching equation lets us observe only one — the counterfactual is forever missing.
+- The individual effect $\tau_i$ is never identified; we instead target averages (ATE, ATT, ATU), and which one matters is a policy question, not a statistical one.
+- The three estimands diverge only when effects are heterogeneous *and* who gets treated is correlated with who benefits (selection on gains).
+- The naive difference equals ATT plus selection bias, $E[Y(0)\mid D=1] - E[Y(0)\mid D=0]$; a large enough baseline gap can flip its sign, as in the HbA1c example where it reads $+0.78$ while the true ATT is $-0.83$.
+- SUTVA is hiding in the notation: $Y_i(1)$ is well-defined only under no interference and no hidden versions of treatment.
+:::
+
+## What Comes Next
+
+The potential outcomes framework tells us *what we want to know* --- the causal effect --- and makes clear *why we usually cannot know it* --- the missing counterfactual. The next page examines the specific mechanism by which naive comparisons fail: **selection bias**.

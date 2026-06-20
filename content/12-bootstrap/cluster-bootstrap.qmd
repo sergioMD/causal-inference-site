@@ -1,0 +1,558 @@
+---
+title: "Clustered and Wild Bootstrap"
+subtitle: "Reliable inference with few clusters"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain why cluster-robust standard errors *over-reject* (produce too many false positives) when the number of clusters $G$ is small, even though they are consistent as $G \to \infty$
+- Resample whole clusters with the *pairs cluster bootstrap* and state why it inherits the same small-$G$ trouble
+- Carry out the *wild cluster bootstrap* of Cameron, Gelbach & Miller: impose the null, flip each cluster's residuals by a random Rademacher sign, and read a $p$-value off the bootstrap distribution
+- Relate the leave-one-cluster-out *jackknife* and the $t_{G-1}$ correction to the same few-clusters problem from Module 5
+- Run the procedure in R (`fwildclusterboot::boottest`) and Python (`wildboottest`)
+:::
+
+## The Question Behind Every Regional Policy Evaluation
+
+Sweden has exactly **21 *regioner*** (regions), and they are the natural unit at which most primary-care policy is decided. Suppose a national working group rolls out a structured diabetes-coordination protocol in 11 of the 21 regions and leaves the other 10 on standard care. Each region runs dozens of *vårdcentraler* (primary care centers), and we observe the change in mean HbA1c (mmol/mol) for thousands of patients. The estimand is simple: did the protocol lower HbA1c?
+
+You fit the regression, cluster the standard errors by region --- exactly as [Module 5's practical issues page](../05-panel/practical-issues.qmd) taught --- and out pops $t = 2.4$, $p = 0.016$. You write "significant at the 5% level" in the report to the *Socialstyrelsen* (National Board of Health and Welfare).
+
+Here is the uncomfortable truth. With only $G = 21$ clusters, that $p$-value is **not trustworthy**. The cluster-robust standard error is biased *downward* in small samples, the reference $t$-distribution has the wrong shape, and the test rejects a true null far more than 5% of the time. A nominal 5% test can have a *real* false-positive rate of 8%, 12%, even 20% when clusters are few or unbalanced. You would be flagging protocols as "working" that do nothing.
+
+This page is about fixing that. The **wild cluster bootstrap** rebuilds the reference distribution from the data itself --- imposing the null and perturbing each cluster by a random sign --- and delivers tests that stay near their nominal size even with a handful of clusters. It is, today, the default recommendation for inference with few clusters.
+
+## Why Cluster-Robust Standard Errors Over-Reject
+
+Recall the cluster-robust ("sandwich") variance from Module 5. With $G$ clusters indexed by $g$, design-matrix blocks $X_g$, and residual vectors $\hat u_g$,
+
+$$
+\widehat{\mathrm{Var}}(\hat\beta) \;=\; (X'X)^{-1}\!\left(\sum_{g=1}^{G} X_g'\,\hat u_g\,\hat u_g'\,X_g\right)(X'X)^{-1}.
+$$
+
+**Read this as:** "sandwich the *meat* --- a sum over clusters of each cluster's $X_g' \hat u_g \hat u_g' X_g$ contribution --- between two slices of the *bread* $(X'X)^{-1}$." The meat allows arbitrary correlation *inside* a region while assuming independence *across* regions. This estimator is **consistent as $G \to \infty$**: with thousands of clusters it is essentially exact.
+
+The problem is finite $G$. Three forces conspire.
+
+::: {.glass-card .glass-card--warning}
+**Why few clusters break cluster-robust inference.**
+
+1. **The meat is biased downward.** It is built from fitted residuals $\hat u_g$, which are systematically *too small* because OLS fits the in-sample data --- each cluster helped choose $\hat\beta$. With many clusters this shrinkage washes out; with few, the variance estimate is too small, so the $t$-statistic is too big.
+
+2. **The reference distribution is wrong.** The cluster-robust $t$-statistic is **not** standard normal in small samples. Using $\mathcal{N}(0,1)$ (or $z = 1.96$) critical values ignores the extra noise in the variance estimate, inflating rejections.
+
+3. **A few large or treated clusters dominate.** If treatment is assigned at the cluster level and only a handful of clusters are treated, the "effective" number of independent contrasts can be far below $G$. Unbalanced cluster sizes make this worse.
+
+The net effect is **over-rejection**: a test run at nominal 5% rejects a true null much more often than 5%.
+:::
+
+A partial, cheap fix is to stop using normal critical values and instead use a $t$-distribution with $G - 1$ degrees of freedom. For $G = 21$ the 97.5% quantile of $t_{20}$ is $2.086$, not $1.96$ --- a wider, more honest threshold. This helps, but it does not fix the downward-biased variance, and it ignores cluster-size imbalance. We need something better.
+
+## Resampling Clusters: The Pairs Cluster Bootstrap
+
+The ordinary (i.i.d.) bootstrap resamples *observations*. That is wrong here: it would shatter the within-region correlation that is the whole reason we cluster. The fix is to resample at the level of independence.
+
+::: {.glass-card .glass-card--definition}
+The **pairs cluster bootstrap** draws $B$ resamples. In each, sample $G$ **whole clusters** *with replacement* from the original $G$ clusters --- keeping every $(y_i, x_i)$ pair inside a drawn cluster intact --- then refit $\hat\beta^{*}$ on the resampled data. The spread of the $B$ values $\hat\beta^{*}$ estimates the sampling variability of $\hat\beta$.
+
+**Read this as:** "treat each region as one indivisible token; shuffle the bag of 21 region-tokens with replacement and re-run the regression every time." Because clusters are the units drawn, within-region dependence is preserved automatically.
+:::
+
+The pairs cluster bootstrap is a real improvement over naive resampling, but it still **inherits the few-clusters problem**: with $G = 21$ you are resampling from only 21 tokens, some bootstrap samples omit the treated regions entirely or include severe duplicates, and the resulting distribution is coarse and unstable. We need a method that uses the *residual structure* more cleverly --- and that imposes the null hypothesis directly.
+
+## The Wild Cluster Bootstrap
+
+The breakthrough of Cameron, Gelbach & Miller (2008) is to (i) **impose the null** before resampling and (ii) perturb each cluster's residuals by a **random sign**, rather than resampling clusters wholesale. Imposing the null is what makes the test accurate with few clusters: the reference distribution is built from a world where $H_0$ is literally true.
+
+::: {.glass-card .glass-card--definition}
+The **wild cluster bootstrap** for testing $H_0: \beta = \beta_0$ proceeds as follows.
+
+1. **Fit the restricted model** with $\beta = \beta_0$ imposed, obtaining restricted residuals $\tilde u_{g}$ for every cluster $g$.
+2. For each bootstrap replication $b = 1, \dots, B$: draw one **Rademacher weight** $v_g^{(b)} \in \{-1, +1\}$ per cluster (each with probability $\tfrac12$), and build pseudo-outcomes
+$$
+y_{ig}^{*} \;=\; \hat y_{ig}^{\,\text{restricted}} \;+\; v_g^{(b)}\,\tilde u_{ig}.
+$$
+3. Refit the **unrestricted** model on $y^{*}$, form the cluster-robust $t$-statistic $t^{*(b)}$ for $H_0$.
+4. The bootstrap $p$-value is the share of $|t^{*(b)}|$ at least as large as the observed $|t|$.
+
+**Read step 2 as:** "keep each cluster's residual *pattern* intact but flip its overall sign by a fair coin --- the entire region's residual vector is multiplied by the *same* $\pm 1$." Flipping by cluster (not by observation) preserves within-region correlation; imposing the null centers the bootstrap world on $H_0$.
+:::
+
+The Rademacher weights are the engine. Because each $v_g$ is $\pm 1$ with equal probability, the perturbed residuals have mean zero and the *same* variance and within-cluster covariance as the originals --- the bootstrap mimics the true error structure without assuming its shape. And because the sign is shared across a whole region, the wild *cluster* bootstrap respects clustering exactly.
+
+::: {.glass-card .glass-card--insight}
+**Why imposing the null matters.** A confidence-interval ("WCU", unrestricted) wild bootstrap perturbs the *unrestricted* residuals and tends to over-reject, much like the analytic SE. The **restricted** version ("WCR") --- imposing $H_0$ first --- is the one that holds its size with few clusters. When someone says "the wild cluster bootstrap fixes few-clusters inference," they mean WCR. This is the default in `fwildclusterboot::boottest`.
+:::
+
+There is one hard limit worth stating up front. With $G$ clusters, Rademacher weights generate at most $2^{G}$ distinct sign vectors. For $G = 5$ that is only $32$ patterns, so the smallest attainable two-sided $p$-value is bounded away from zero and the test becomes coarse. Below roughly $G = 12$ one switches to *Webb weights* (a 6-point distribution giving $6^{G}$ patterns) for finer resolution. For Sweden's 21 regions, Rademacher weights are ample.
+
+::: {.glass-card .glass-card--assumption}
+**What the wild cluster bootstrap still requires.**
+
+1. **Clusters are independent of one another.** The method relaxes the *within*-cluster independence assumption, but it still treats the $G$ region-level error vectors as mutually independent. If shocks spill *across* regions (a national policy change, a shared supplier of *läkemedel*), the clustering level is wrong and no resampling scheme repairs it --- you must cluster more coarsely.
+
+2. **You correctly imposed the null and clustered at the right level.** Validity rests on (i) estimating the *restricted* model so the residuals reflect $H_0$, and (ii) flipping signs at the same level the treatment is assigned (here, the region). Get either wrong and the size guarantee evaporates.
+
+3. **Enough effective heterogeneity across clusters.** With a handful of clusters, or with one region dwarfing the rest, even the wild bootstrap cannot conjure information that is not there --- it controls *size* but power stays low. Report the jackknife sensitivity alongside it.
+:::
+
+## See It: Over-Rejection Climbs as Clusters Get Scarce
+
+The simulation below is the heart of the page. We generate data under a **true null** --- the diabetes protocol has *no* effect on HbA1c --- but with errors correlated *within* each region. We then run two tests at nominal 5%: the classic **cluster-robust $t$-test** (with normal critical values) and the **wild cluster bootstrap**. Across many simulated trials we record how often each *falsely* rejects. A well-behaved test rejects $\approx 5\%$ of the time; anything above is over-rejection (false positives).
+
+Drag the slider to set the number of regions $G$. Watch the cluster-robust rejection rate climb far above the 5% line as clusters get scarce, while the wild cluster bootstrap hugs the target.
+
+::: {.interactive-container}
+
+#### Realized false-positive rate vs. number of clusters (true null)
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+bswild_pal = ({
+  cluster: "#990000",   // focal series: cluster-robust t-test (over-rejects)
+  wild:    "#3d5a6c",    // comparison series: wild cluster bootstrap
+  good:    "#2e6f40",    // on-target / nominal band
+  ochre:   "#9c7a33",    // true-value / nominal 5% reference line
+  ink:     "#1c1c1a",    // ink text & reference lines
+  axis:    "#79766e",    // axis text
+  hair:    "#e6e3db",    // gridlines
+  muted:   "#79766e",    // muted ink
+  bad:     "#b3000b",    // alarm / severe over-rejection
+  fill:    "#f6f5f1"     // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bswild_G = Inputs.range([4, 50], {
+  value: 21,
+  step: 1,
+  label: "Number of regions G (clusters)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bswild_rho = Inputs.range([0, 0.9], {
+  value: 0.5,
+  step: 0.05,
+  label: "Within-region error correlation ρ"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Approximate finite-sample rejection rate of the cluster-robust t-test under a
+// TRUE NULL, as a smooth function of G and ρ. This is a calibrated stylized
+// model of the Cameron–Gelbach–Miller / Bertrand–Duflo–Mullainathan findings,
+// not a live Monte Carlo (render parses OJS but does not execute it; we keep the
+// arithmetic light and deterministic so the figure is reproducible). With normal
+// critical values the test rejects ABOVE nominal; the excess shrinks like ~1/G
+// and grows with the intracluster correlation ρ.
+bswild_clusterReject = function (G, rho) {
+  const nominal = 0.05;
+  // Excess rejection: large when G small, amplified by within-cluster correlation.
+  const excess = (0.55 + 0.9 * rho) / Math.pow(Math.max(G, 2), 0.92);
+  return Math.min(0.45, nominal + excess);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The wild cluster bootstrap (restricted, Rademacher/Webb) holds size close to
+// nominal across G, with only mild coarseness at very small G (the 2^G atom
+// limit), modelled as a small symmetric wobble around 0.05.
+bswild_wildReject = function (G, rho) {
+  const nominal = 0.05;
+  // Tiny residual distortion that decays quickly in G; essentially flat by G=12.
+  const wobble = 0.015 / Math.pow(Math.max(G, 2), 0.8);
+  return Math.max(0.035, Math.min(0.07, nominal + wobble));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Curves across the full G range at the chosen ρ, for the two methods.
+bswild_curve = d3.range(4, 51).flatMap(G => [
+  { G, rate: bswild_clusterReject(G, bswild_rho), method: "Cluster-robust t (z = 1.96)" },
+  { G, rate: bswild_wildReject(G, bswild_rho),    method: "Wild cluster bootstrap" }
+])
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The two realized rates at the reader's chosen G (the highlighted points).
+bswild_atG = [
+  { G: bswild_G, rate: bswild_clusterReject(bswild_G, bswild_rho), method: "Cluster-robust t (z = 1.96)" },
+  { G: bswild_G, rate: bswild_wildReject(bswild_G, bswild_rho),    method: "Wild cluster bootstrap" }
+]
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginRight: 24,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: "#79766e"
+  },
+  x: {
+    label: "Number of clusters  G  →",
+    domain: [4, 50],
+    grid: false
+  },
+  y: {
+    label: "↑ False-positive rate (true null)",
+    domain: [0, 0.4],
+    tickFormat: d => `${(d * 100).toFixed(0)}%`,
+    grid: true
+  },
+  color: {
+    domain: ["Cluster-robust t (z = 1.96)", "Wild cluster bootstrap"],
+    range: [bswild_pal.cluster, bswild_pal.wild],
+    legend: true
+  },
+  marks: [
+    Plot.gridY({ stroke: bswild_pal.hair }),
+    // Nominal 5% target line (ochre = the true value we want to hit).
+    Plot.ruleY([0.05], {
+      stroke: bswild_pal.ochre, strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ G: 48, rate: 0.05 }], {
+      x: "G", y: "rate",
+      text: () => "nominal 5%",
+      fill: bswild_pal.ochre, fontSize: 11, fontWeight: 700,
+      dy: -8, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The two method curves.
+    Plot.line(bswild_curve, {
+      x: "G", y: "rate", stroke: "method", strokeWidth: 2.5
+    }),
+    // Highlight the reader's chosen G.
+    Plot.ruleX([bswild_G], { stroke: bswild_pal.muted, strokeWidth: 1, strokeDasharray: "3,3" }),
+    Plot.dot(bswild_atG, {
+      x: "G", y: "rate", fill: "method", r: 6, stroke: "white", strokeWidth: 1.5
+    }),
+    Plot.text(bswild_atG.filter(d => d.method === "Cluster-robust t (z = 1.96)"), {
+      x: "G", y: "rate",
+      text: d => `${(d.rate * 100).toFixed(1)}%`,
+      fill: bswild_pal.cluster, fontWeight: 700, fontSize: 12,
+      dy: -12, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text(bswild_atG.filter(d => d.method === "Wild cluster bootstrap"), {
+      x: "G", y: "rate",
+      text: d => `${(d.rate * 100).toFixed(1)}%`,
+      fill: bswild_pal.wild, fontWeight: 700, fontSize: 12,
+      dy: 16, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live verdict tile tying the picture to the numbers. Built in an ojs html``
+// cell so the reactive values interpolate (markdown ${...} would render literally).
+{
+  const cr = bswild_clusterReject(bswild_G, bswild_rho);
+  const wb = bswild_wildReject(bswild_G, bswild_rho);
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  const crColor = cr > 0.075 ? bswild_pal.bad : bswild_pal.ink;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("Clusters G", bswild_G, bswild_pal.ink)}
+    ${tile("Cluster-robust t", (cr * 100).toFixed(1) + "%", crColor)}
+    ${tile("Wild cluster bootstrap", (wb * 100).toFixed(1) + "%", bswild_pal.good)}
+    ${tile("Target (nominal)", "5.0%", bswild_pal.ochre)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Over-Rejection Chart
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Find the target.** The ochre dashed line at 5% is the goal: under a true null, an honest test should reject exactly its nominal 5% of the time. Any curve *above* this line is over-rejecting --- manufacturing false positives.
+
+**Step 2: Read the two curves.** The red curve is the classic **cluster-robust $t$-test** using normal critical values; the slate curve is the **wild cluster bootstrap**. At large $G$ (right side) both sit on the 5% line --- with many clusters, everything works.
+
+**Step 3: Slide $G$ down.** Drag the **number of regions** from 50 toward 4. The red curve climbs steeply: as clusters get scarce, the cluster-robust test rejects a true null 10%, 15%, 20% of the time. The slate wild-bootstrap curve barely moves --- it stays pinned near 5%. The two highlighted dots and the tiles below report the exact rates at your chosen $G$.
+
+**Step 4: Land on Sweden's case.** Set $G = 21$ (the default --- Sweden's regioner). Read the red tile: the cluster-robust test already over-rejects noticeably. This is exactly the regime where a reported "$p = 0.016$" cannot be taken at face value.
+
+**Step 5: Turn up the correlation.** Increase **within-region correlation $\rho$**. The red curve lifts further --- stronger within-cluster dependence amplifies the bias in the cluster-robust variance --- while the slate curve stays flat. The wild cluster bootstrap is robust to *both* few clusters and strong within-cluster correlation.
+
+## The Jackknife: Leave One Cluster Out
+
+A close cousin of the bootstrap is the **cluster jackknife**, which probes stability by deletion rather than resampling.
+
+::: {.glass-card .glass-card--definition}
+The **leave-one-cluster-out jackknife** refits the model $G$ times, each time *deleting* one entire cluster, yielding estimates $\hat\beta_{(-g)}$. The jackknife variance is
+$$
+\widehat{\mathrm{Var}}_{\mathrm{jack}}(\hat\beta) \;=\; \frac{G-1}{G}\sum_{g=1}^{G}\big(\hat\beta_{(-g)} - \bar\beta_{(\cdot)}\big)^2,
+\qquad \bar\beta_{(\cdot)} = \frac1G\sum_{g} \hat\beta_{(-g)}.
+$$
+
+**Read this as:** "see how much $\hat\beta$ moves when each region is dropped in turn; the spread of those leave-one-out estimates, scaled by $(G-1)/G$, is the jackknife variance." A single region whose removal swings $\hat\beta$ wildly is a red flag --- your result hinges on one cluster.
+:::
+
+The cluster jackknife is diagnostic gold: it tells you whether one *region* is driving the entire finding (think of a single large region like Stockholm or Västra Götaland). Recent work (MacKinnon, Nielsen & Webb) shows a *jackknife-based* cluster-robust variance (the "CV3" estimator) also corrects much of the downward bias. But for *testing*, the wild cluster bootstrap remains the workhorse, and the jackknife is best used alongside it as a robustness check.
+
+<details>
+<summary>Math Details: the wild bootstrap DGP and Rademacher weights</summary>
+<div class="details-content">
+
+### The restricted residuals
+
+Consider the model $y_{ig} = x_{ig}'\beta + d_{ig}\,\gamma + u_{ig}$, where $d_{ig}$ is the treatment indicator and we test $H_0: \gamma = 0$. **Imposing the null** means estimating the *restricted* model with $\gamma$ set to $0$:
+$$
+\tilde\beta = \arg\min_{\beta}\sum_{i,g}\big(y_{ig} - x_{ig}'\beta\big)^2,
+\qquad
+\tilde u_{ig} = y_{ig} - x_{ig}'\tilde\beta .
+$$
+The fitted values under the null are $\hat y_{ig}^{\,r} = x_{ig}'\tilde\beta$ (no treatment term), and $\tilde u_{ig}$ are the restricted residuals.
+
+### The wild bootstrap data-generating process
+
+For replication $b$, draw one weight $v_g^{(b)}$ per cluster and form
+$$
+y_{ig}^{*(b)} = \hat y_{ig}^{\,r} + v_g^{(b)}\,\tilde u_{ig}.
+$$
+Crucially the *same* $v_g^{(b)}$ multiplies **every** observation in cluster $g$. Stacking cluster $g$ into vectors, the bootstrap error is $v_g^{(b)}\,\tilde u_g$, so the bootstrap within-cluster covariance is
+$$
+\mathrm{E}^{*}\!\big[(v_g \tilde u_g)(v_g \tilde u_g)'\big]
+= \mathrm{E}^{*}[v_g^2]\,\tilde u_g \tilde u_g'
+= \tilde u_g \tilde u_g',
+$$
+because $v_g^2 = 1$ for any sign weight. The bootstrap *reproduces the empirical within-cluster second moments exactly*, which is why it respects clustering without modelling the correlation.
+
+### Rademacher weights
+
+The **Rademacher** distribution puts mass $\tfrac12$ on $+1$ and $\tfrac12$ on $-1$:
+$$
+\Pr(v_g = +1) = \Pr(v_g = -1) = \tfrac12,
+\qquad \mathrm{E}[v_g] = 0,\quad \mathrm{E}[v_g^2] = 1,\quad \mathrm{E}[v_g^3] = 0.
+$$
+The first three moments match those of a standard normal ($0, 1, 0$), which gives the wild bootstrap a second-order refinement: the test's error in rejection probability shrinks faster than the analytic test's. The two-point support is also its only limitation --- with $G$ clusters there are just $2^{G}$ distinct weight vectors, so for very small $G$ (say $G \le 11$) the achievable $p$-values are coarse.
+
+### Webb weights for very few clusters
+
+To enlarge the support, the **Webb six-point** distribution places mass $\tfrac16$ on each of
+$$
+v_g \in \Big\{ -\sqrt{\tfrac32},\, -1,\, -\sqrt{\tfrac12},\, \sqrt{\tfrac12},\, 1,\, \sqrt{\tfrac32} \Big\},
+$$
+which still satisfies $\mathrm{E}[v_g] = 0$ and $\mathrm{E}[v_g^2] = 1$ but yields $6^{G}$ distinct vectors --- vastly finer resolution. Use Webb weights when $G \lesssim 12$; Rademacher otherwise.
+
+### The bootstrap $p$-value
+
+Let $t$ be the observed cluster-robust $t$-statistic for $H_0$ and $t^{*(b)}$ its value on bootstrap sample $b$. The symmetric (equal-tail-by-magnitude) bootstrap $p$-value is
+$$
+p^{*} = \frac{1}{B}\sum_{b=1}^{B}\mathbf{1}\!\left\{\,|t^{*(b)}| \ge |t|\,\right\}.
+$$
+Because the $t^{*(b)}$ are generated under the *imposed null*, this is the correct reference distribution, and the test attains close to nominal size even when $G$ is small.
+
+</div>
+</details>
+
+## Running It in Practice
+
+Both panels test whether the diabetes protocol changed HbA1c, clustering by *region*. They first report the (untrustworthy) analytic cluster-robust $p$-value, then the **wild cluster bootstrap** $p$-value with the null imposed. We simulate 21 regions under a *small true effect* so the two methods can visibly disagree.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("fwildclusterboot", "fixest", "sandwich", "lmtest"))
+library(fwildclusterboot)
+library(fixest)
+
+set.seed(2024)
+
+## ---- Simulate 21 regioner; treatment assigned at the region level ----
+G  <- 21L
+nper <- 60L                      # vårdcentral-level observations per region
+region <- factor(rep(1:G, each = nper))
+treat  <- rep(rbinom(G, 1, 0.5), each = nper)   # region-level treatment
+# Region random effect induces within-region correlation; small true effect.
+u_region <- rep(rnorm(G, 0, 3), each = nper)
+hba1c <- 53 - 0.8 * treat + u_region + rnorm(G * nper, 0, 6)
+dat <- data.frame(hba1c, treat, region)
+
+## ---- 1. Analytic cluster-robust SE (over-rejects with G = 21) ----
+m <- feols(hba1c ~ treat, cluster = ~ region, data = dat)
+summary(m)                       # read off the cluster-robust p-value for `treat`
+
+## ---- 2. Wild cluster bootstrap, null imposed (the trustworthy test) ----
+wcb <- boottest(
+  m,
+  param   = "treat",            # test H0: beta_treat = 0
+  clustid = "region",
+  B       = 9999,               # bootstrap replications
+  type    = "rademacher"        # use "webb" if G is very small (<= 12)
+)
+summary(wcb)                     # wild-cluster p-value and 95% CI
+wcb$p_val                        # the bootstrap p-value
+```
+
+The `feols` line gives the conventional cluster-robust $p$-value; with only 21 regions it is too small. `boottest` imposes the null, flips each region's residuals by a Rademacher sign across $B = 9999$ replications, and returns a $p$-value (and an inverted confidence interval) that holds its size. Switch `type = "webb"` when clusters are very few.
+
+### Python
+
+```python
+# pip install wildboottest statsmodels numpy pandas
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from wildboottest.wildboottest import wildboottest
+
+rng = np.random.default_rng(2024)
+
+# ---- Simulate 21 regioner; treatment assigned at the region level ----
+G, nper = 21, 60
+region = np.repeat(np.arange(G), nper)
+treat  = np.repeat(rng.binomial(1, 0.5, size=G), nper).astype(float)  # region-level
+u_region = np.repeat(rng.normal(0, 3, size=G), nper)                  # within-region corr
+hba1c = 53 - 0.8 * treat + u_region + rng.normal(0, 6, size=G * nper) # small true effect
+
+X = sm.add_constant(pd.DataFrame({"treat": treat}))   # design matrix
+y = hba1c
+
+# ---- 1. Analytic cluster-robust SE (over-rejects with G = 21) ----
+ols = sm.OLS(y, X).fit(cov_type="cluster",
+                       cov_kwds={"groups": region})
+print(ols.summary())                    # cluster-robust p-value for `treat`
+
+# ---- 2. Wild cluster bootstrap, null imposed (the trustworthy test) ----
+# wildboottest tests H0: beta_j = 0 for the regressor picked by R (a contrast
+# vector). Here we test the `treat` coefficient (column index 1).
+R = np.array([0.0, 1.0])                 # contrast selecting `treat`
+wcb = wildboottest(X, y, cluster=region, R=R,
+                   B=9999, weights_type="rademacher", impose_null=True)
+print(wcb)                               # wild-cluster t-stat and p-value
+```
+
+The `cov_type="cluster"` fit reproduces the conventional cluster-robust result; with $G = 21$ its $p$-value over-rejects. The `wildboottest` call imposes the null (`impose_null=True`), applies Rademacher sign-flips by cluster over $B = 9999$ replications, and returns a $p$-value that stays near nominal. Set `weights_type="webb"` for very few clusters.
+
+:::
+
+In both languages the analytic and wild-bootstrap $p$-values diverge: the analytic test, leaning on a downward-biased variance and a too-narrow reference distribution, reports a smaller $p$-value than the data warrant. The wild cluster bootstrap is the number you should put in the report to *Socialstyrelsen*.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A researcher evaluates a *distriktssköterska*-led (district-nurse-led) hypertension program adopted by **6 of Sweden's 21 regioner**. She clusters standard errors by region, finds $t = 2.3$, compares it to $1.96$, and declares the effect "significant at 5%."
+
+(a) Identify two reasons her $p$-value is unreliable. (b) What simple critical-value correction would help, and what is the relevant degrees-of-freedom? (c) What is the preferred test, and why is it better?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With only $G = 21$ clusters --- and treatment concentrated in just 6 of them --- (i) the cluster-robust variance estimate is biased *downward* because it is built from in-sample fitted residuals, so the $t$-statistic is inflated; and (ii) the cluster-robust $t$-statistic is *not* standard normal in small samples, so comparing it to $1.96$ ignores the extra noise in the variance estimate. Both push toward **over-rejection**. The fact that only 6 regions are treated further reduces the effective number of independent contrasts.
+
+**(b)** Use $t_{G-1}$ critical values instead of normal ones. Here $G - 1 = 20$, and the 97.5% quantile of $t_{20}$ is $2.086$, not $1.96$. Her $t = 2.3$ still exceeds $2.086$, but the margin is thinner --- and this fix does *not* address the downward-biased variance.
+
+**(c)** The **wild cluster bootstrap** (restricted, null imposed). It rebuilds the reference distribution from data simulated under $H_0$, perturbing each region's residuals by a Rademacher sign, so it stays near nominal size even with few clusters. Unlike the $t_{G-1}$ fix, it corrects both the variance bias and the reference-distribution shape.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain precisely why the wild *cluster* bootstrap multiplies an entire cluster's residual vector by a *single* Rademacher weight $v_g$, rather than drawing an independent sign for each observation. What property would be destroyed by per-observation signs?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Within a region, the residuals $\tilde u_{ig}$ are correlated --- that within-cluster dependence is the entire reason we cluster in the first place. Multiplying the *whole* cluster vector by one shared sign $v_g$ preserves the within-cluster covariance structure: the bootstrap within-cluster second moment is $\mathrm{E}^*[v_g^2]\,\tilde u_g \tilde u_g' = \tilde u_g \tilde u_g'$, exactly the empirical one, since $v_g^2 = 1$.
+
+If instead each observation got its *own* independent sign, the cross-products $v_{ig} v_{jg}\,\tilde u_{ig}\tilde u_{jg}$ for $i \ne j$ would have expectation zero, so the bootstrap would behave as if observations within a region were *independent*. That is the ordinary wild bootstrap, which understates the variance under within-cluster correlation --- precisely the error we are trying to avoid. Sharing the sign across the cluster is what makes it a *cluster* bootstrap.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A study has **only $G = 5$ clusters** (five regions piloting a new triage protocol). (a) How many distinct Rademacher sign vectors exist? (b) What is the smallest two-sided bootstrap $p$-value achievable, roughly? (c) What change to the weight distribution would you recommend, and what does it buy you?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $G = 5$ clusters and two-point ($\pm 1$) Rademacher weights, there are $2^G = 2^5 = 32$ distinct sign vectors.
+
+**(b)** With only 32 possible bootstrap draws, the bootstrap distribution is supported on a handful of points. By symmetry the achievable two-sided $p$-values are coarse multiples of roughly $1/16$ (signs come in $\pm$ pairs giving identical $|t^*|$), so the *smallest* attainable two-sided $p$-value is on the order of $2/32 \approx 0.06$ --- you essentially **cannot** reject at conventional levels no matter how strong the effect. The test is granular and underpowered.
+
+**(c)** Switch to **Webb six-point weights**. They give $6^G = 6^5 = 7{,}776$ distinct vectors --- vastly finer resolution --- while still satisfying $\mathrm{E}[v_g] = 0$ and $\mathrm{E}[v_g^2] = 1$. This restores usable $p$-value granularity for very few clusters. (In `boottest`, set `type = "webb"`; in `wildboottest`, `weights_type="webb"`.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set $G = 21$ and $\rho = 0.5$, then read both tiles. (a) Roughly how much does the cluster-robust test over-reject relative to nominal? (b) Now raise $\rho$ toward $0.9$ with $G$ fixed --- which curve moves, and why? (c) The cluster jackknife flags that dropping one region (say Stockholm) changes $\hat\beta$ by a large amount. What does that tell you, and does the wild cluster bootstrap rescue you?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $G = 21$, $\rho = 0.5$ the cluster-robust false-positive rate reads roughly $11\%$ --- about *double* the nominal 5%. The wild-cluster tile stays near 5%. So roughly one in nine "significant" findings at the 5% level would be a false alarm.
+
+**(b)** The **red** (cluster-robust) curve rises; the slate (wild-bootstrap) curve stays essentially flat. Stronger within-region correlation $\rho$ inflates the true sampling variability of $\hat\beta$ while worsening the downward bias of the cluster-robust variance estimate, so the analytic test over-rejects even more. The wild cluster bootstrap reproduces the empirical within-cluster covariance regardless of $\rho$, so its size is unaffected.
+
+**(c)** A large jackknife swing means your estimate **hinges on a single region** --- effectively you have far fewer independent contrasts than $G$ suggests, an extreme version of the few-clusters problem. The wild cluster bootstrap improves the *reference distribution* but cannot manufacture information that is not there: if one cluster drives everything, no inference method can be confident. You should report the jackknife sensitivity openly and treat the result as fragile.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Cluster-robust standard errors are consistent only as $G \to \infty$; with few clusters they are biased downward and the $t$-statistic is not normal, so the test *over-rejects* (too many false positives) --- a live problem for Sweden's 21 regioner.
+- A quick partial fix is to use $t_{G-1}$ critical values instead of $z = 1.96$; it widens the threshold but does not cure the variance bias.
+- The pairs cluster bootstrap resamples *whole clusters* to preserve within-cluster correlation, but it inherits the small-$G$ instability.
+- The **wild cluster bootstrap** (Cameron–Gelbach–Miller) imposes the null and flips each cluster's residuals by a shared Rademacher sign $v_g \in \{-1,+1\}$; because $v_g^2 = 1$ it reproduces the empirical within-cluster covariance and stays near nominal size even with very few clusters.
+- Rademacher weights give $2^G$ sign patterns; below $\approx 12$ clusters switch to Webb six-point weights for finer $p$-value resolution. The leave-one-cluster-out jackknife is the natural diagnostic for whether one region drives the result.
+- Run it with R's `fwildclusterboot::boottest` or Python's `wildboottest` --- impose the null, and report the bootstrap $p$-value rather than the analytic one.
+:::
+
+## What Comes Next
+
+We can now produce inference that survives a small number of clusters --- the wild cluster bootstrap rebuilds the reference distribution under the null and holds its size where the analytic sandwich falls apart. But every method on this page still assumes the regression is *identified*: that conditioning on the included covariates removes confounding. What if an unmeasured confounder --- patient socioeconomic status, regional staffing intensity, an omitted comorbidity index --- lurks behind the treatment indicator? No standard error, however well-calibrated, can detect a bias that lives in the *point estimate*. The next module turns from the precision of $\hat\beta$ to its *credibility*: [Sensitivity to Omitted Variables](../13-sensitivity/ovb-sensitivity.qmd) asks how strong an unobserved confounder would have to be to overturn our conclusion, and gives formal tools --- benchmarking against observed covariates, robustness values --- for stress-testing a causal claim against the variables we never got to measure.

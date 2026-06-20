@@ -1,0 +1,778 @@
+---
+title: "MCMC: Sampling the Posterior"
+subtitle: "When you cannot write the posterior down"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain why most real posteriors have no closed form, and why *sampling* from them is the practical alternative to integrating them
+- State the Markov-chain idea behind MCMC: build a chain whose stationary distribution *is* the posterior, then summarize the draws
+- Run the Metropolis--Hastings algorithm by hand --- propose, compute the posterior ratio, accept or reject --- and recognize Gibbs sampling and HMC/NUTS as relatives
+- Tune the proposal step size by watching the trade-off between sticky high-autocorrelation chains and low-acceptance chains
+- Diagnose convergence with trace plots, burn-in, autocorrelation/effective sample size, and the $\hat R$ statistic across multiple chains
+:::
+
+## The Question Behind Every Posterior
+
+On the [previous page](bayes-basics.qmd) we combined a prior and a likelihood into a posterior and read summaries straight off it. That worked because we chose a *conjugate* prior: a Beta prior on a probability, paired with a Binomial likelihood, returns a Beta posterior --- a tidy formula we can evaluate, plot, and integrate by hand.
+
+Conjugacy is a luxury, and a rare one. Suppose Region Uppsala models the monthly count of avoidable hospital admissions from its *vårdcentraler* (primary care centers) with a Poisson regression, puts a sensible Normal prior on each coefficient, and adds a region-level random effect. The posterior over that bundle of parameters is a function we can *write down up to a constant* --- prior times likelihood --- but the normalizing constant is a high-dimensional integral with no closed form. We cannot plot it, we cannot integrate it to get a posterior mean, and we certainly cannot read a 95% credible interval off it.
+
+::: {.glass-card .glass-card--insight}
+**Bayes' rule is easy to state and hard to normalize.** The posterior is
+
+$$
+p(\theta \mid y) \;=\; \frac{p(y \mid \theta)\,p(\theta)}{p(y)}, \qquad p(y) = \int p(y\mid\theta)\,p(\theta)\,d\theta .
+$$
+
+The numerator --- likelihood times prior --- is cheap to evaluate at any $\theta$. The denominator $p(y)$, the *marginal likelihood*, is an integral over the entire parameter space. For all but a handful of models that integral is intractable. MCMC sidesteps it entirely: it generates samples from $p(\theta\mid y)$ using **only the unnormalized numerator**, never touching $p(y)$.
+:::
+
+The trick is to stop trying to *compute* the posterior and instead *draw samples* from it. If we can produce a large collection $\theta^{(1)}, \theta^{(2)}, \dots, \theta^{(S)}$ distributed according to $p(\theta\mid y)$, then every posterior summary becomes a simple average over the draws: the posterior mean is their sample mean, a credible interval is a pair of sample quantiles, the probability that a coefficient is positive is the fraction of draws above zero. **Monte Carlo turns hard integrals into easy averages.** The only remaining problem is *how* to draw from a distribution we can evaluate but not normalize. That is what Markov Chain Monte Carlo solves.
+
+## The Core Idea: A Random Walk That Settles on the Posterior
+
+Direct sampling from an arbitrary posterior is impossible. MCMC builds the samples *indirectly*. We construct a **Markov chain** --- a sequence of parameter values where each new value depends only on the current one --- engineered so that, after it has run long enough, the values it visits are distributed exactly according to the posterior.
+
+::: {.glass-card .glass-card--definition}
+A **Markov chain** is a sequence $\theta^{(0)}, \theta^{(1)}, \theta^{(2)}, \dots$ in which the distribution of the next state depends only on the current state, not on the full history:
+
+$$
+p\!\left(\theta^{(t+1)} \mid \theta^{(t)}, \theta^{(t-1)}, \dots, \theta^{(0)}\right) \;=\; p\!\left(\theta^{(t+1)} \mid \theta^{(t)}\right).
+$$
+
+A distribution $\pi$ is the chain's **stationary distribution** if, once the chain's state is distributed as $\pi$, every subsequent state is too --- the chain has "settled." **Read this as**: "where you go next depends only on where you are now, not on how you got there." MCMC designs the one-step rule so that the stationary distribution $\pi$ *equals the posterior* $p(\theta\mid y)$.
+:::
+
+Once such a chain exists, the recipe is mechanical: start anywhere, run the chain for many steps, discard an initial **burn-in** segment (while the chain is still finding the posterior from its arbitrary starting point), and treat the remaining states as posterior draws. The two questions that remain are practical: *how do we build a chain with the right stationary distribution?* (the Metropolis--Hastings and Gibbs algorithms), and *how do we know it has actually settled?* (convergence diagnostics).
+
+## The Metropolis--Hastings Algorithm
+
+The Metropolis--Hastings (MH) algorithm is the workhorse. It needs only one thing the posterior can supply: the ability to evaluate the unnormalized posterior $\tilde p(\theta) = p(y\mid\theta)\,p(\theta)$ at any candidate value. From the current state it *proposes* a nearby value, then *accepts or rejects* it by comparing posterior heights.
+
+::: {.glass-card .glass-card--definition}
+**One step of Metropolis--Hastings.** Given the current state $\theta^{(t)}$:
+
+1. **Propose** a candidate $\theta^\star$ from a proposal distribution $q(\theta^\star \mid \theta^{(t)})$ --- typically a Normal centered at the current value, $\theta^\star = \theta^{(t)} + \varepsilon$, with $\varepsilon \sim \mathcal N(0,\,\sigma_{\text{prop}}^2)$. The spread $\sigma_{\text{prop}}$ is the **step size**.
+2. **Compute the acceptance ratio**
+
+$$
+\alpha \;=\; \min\!\left(1,\; \frac{\tilde p(\theta^\star)\,q(\theta^{(t)}\mid\theta^\star)}{\tilde p(\theta^{(t)})\,q(\theta^\star\mid\theta^{(t)})}\right).
+$$
+
+3. **Accept or reject.** Draw $u \sim \text{Uniform}(0,1)$. If $u < \alpha$, set $\theta^{(t+1)} = \theta^\star$ (move). Otherwise set $\theta^{(t+1)} = \theta^{(t)}$ (stay put).
+
+**Read step 2 as**: "the acceptance probability is one, or the ratio of how plausible the candidate is to how plausible the current value is --- whichever is smaller."
+:::
+
+When the proposal is **symmetric** --- $q(\theta^\star\mid\theta^{(t)}) = q(\theta^{(t)}\mid\theta^\star)$, true for a Normal centered at the current point --- the proposal terms cancel and the ratio collapses to the original **Metropolis** form,
+
+$$
+\alpha \;=\; \min\!\left(1,\; \frac{\tilde p(\theta^\star)}{\tilde p(\theta^{(t)})}\right)
+\;=\; \min\!\left(1,\; \frac{p(y\mid\theta^\star)\,p(\theta^\star)}{p(y\mid\theta^{(t)})\,p(\theta^{(t)})}\right).
+$$
+
+The intractable normalizing constant $p(y)$ appears in both numerator and denominator and **cancels** --- this is the whole reason MH works without it. The rule is intuitive: always accept a move *uphill* (to higher posterior density, $\alpha = 1$); accept a move *downhill* only sometimes, with probability equal to the height ratio. The chain spends most of its time where the posterior is high and only occasionally wanders into the tails --- exactly mirroring the posterior's own shape.
+
+::: {.glass-card .glass-card--insight}
+**Downhill moves are a feature, not a bug.** A pure hill-climber would march to the posterior mode and stop --- giving you the MAP estimate but *nothing about uncertainty*. MH accepts some downhill moves precisely so the chain explores the full spread of the posterior. The frequency with which it visits each region is what encodes the posterior; rejecting *all* downhill moves would collapse the distribution to a point.
+:::
+
+## See It: A Metropolis Sampler Exploring a Posterior
+
+The lab below runs a Metropolis sampler on a concrete Swedish posterior. A national survey estimates the mean number of annual primary-care visits per resident; combining a weakly informative prior with the survey likelihood gives a posterior for the mean visit rate $\theta$ that is (for illustration) a clean bell shape centered near $2.8$ visits/year. The sampler does not know that shape --- it only evaluates the unnormalized posterior and walks.
+
+Drag the **step size** to feel the central tuning trade-off, then press **Take more steps** to accumulate draws and watch the sampled histogram fill in the true posterior curve.
+
+::: {.interactive-container}
+
+#### A Metropolis random walk on the visit-rate posterior
+
+```{ojs}
+//| echo: false
+// Concise "Start here" prompt above the controls (the fuller tour is below).
+html`<p style="
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.85rem;
+    color: ${baymcmc_pal.axis};
+    background: ${baymcmc_pal.fill};
+    border-left: 3px solid ${baymcmc_pal.focal};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave the step size near the middle and press
+  <em>Take more steps</em> a few times — watch the grey histogram grow into the
+  ochre target curve. Then push the step size to its extremes and see the trace
+  plot turn either flat-and-sticky or jagged-and-stuck. Full tour below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof baymcmc_stepSize = Inputs.range([0.05, 3.0], {
+  value: 0.7,
+  step: 0.05,
+  label: "Proposal step size σ (visits/year)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof baymcmc_batch = Inputs.range([200, 4000], {
+  value: 1500,
+  step: 100,
+  label: "Steps added per click"
+})
+```
+
+```{ojs}
+//| echo: false
+// Resampling button. Reading this reactive value re-runs the chain with a fresh
+// seed offset; the reduce accumulator guarantees a NEW value each click so the
+// downstream chain cell re-evaluates. (Never read+write one mutable in a cell —
+// this button pattern avoids that entirely.)
+viewof baymcmc_draw = Inputs.button("Take more steps", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+baymcmc_pal = ({
+  focal:   "#990000",   // focal / chain path (Uppsala red)
+  slate:   "#3d5a6c",   // secondary / second chain (slate)
+  good:    "#2e6f40",   // on-target / accepted
+  ochre:   "#9c7a33",   // true target / highlight
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis / muted label text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  bad:     "#b3000b",   // alarm / rejected / bad diagnostics
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The TARGET posterior the sampler is trying to recover. For a self-contained,
+// inspectable illustration we use a Normal(mean = 2.8, sd = 0.45) on the mean
+// annual primary-care visit rate θ. The sampler only ever calls the UNNORMALIZED
+// log-density below — it never sees this is a Normal. (One definition per cell.)
+baymcmc_targetMean = 2.8
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Standard deviation of the illustrative target posterior (visits/year).
+baymcmc_targetSd = 0.45
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Unnormalized log-posterior. MH needs only this (the normalizing constant
+// cancels in the acceptance ratio), so we deliberately drop the 1/√(2πσ²) factor.
+baymcmc_logTarget = function (theta) {
+  const z = (theta - baymcmc_targetMean) / baymcmc_targetSd;
+  return -0.5 * z * z;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Exact target density (normalized) — used ONLY to draw the reference curve the
+// histogram should converge to, never by the sampler itself.
+baymcmc_targetPdf = function (theta) {
+  const z = (theta - baymcmc_targetMean) / baymcmc_targetSd;
+  return Math.exp(-0.5 * z * z) / (baymcmc_targetSd * Math.sqrt(2 * Math.PI));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── The Metropolis sampler. ──
+// A symmetric Normal random-walk proposal, so the acceptance ratio is the plain
+// posterior-height ratio exp(logTarget(star) − logTarget(current)). Returns the
+// full trace, the running acceptance rate, and the lag-1 autocorrelation so the
+// downstream cells can show the tuning trade-off. Re-runs whenever the step size,
+// batch size, or the "Take more steps" button changes.
+baymcmc_run = {
+  baymcmc_draw;                                  // re-run on each button click
+  const n = baymcmc_batch;
+  const step = baymcmc_stepSize;
+  // A tiny seedable PRNG (mulberry32) so the picture is reproducible per click
+  // but advances with the click counter — no Math.random global-state surprises.
+  let s = (1234567 + baymcmc_draw * 7919 + Math.round(step * 1000)) >>> 0;
+  const rand = () => {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  // Box–Muller standard normal from the PRNG.
+  const randn = () => {
+    let u = 0, v = 0;
+    while (u === 0) u = rand();
+    while (v === 0) v = rand();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+
+  const trace = new Array(n);
+  let current = 5.0;                             // deliberately start in the tail
+  let logCur = baymcmc_logTarget(current);
+  let accepts = 0;
+  for (let i = 0; i < n; i++) {
+    const star = current + step * randn();        // symmetric proposal
+    const logStar = baymcmc_logTarget(star);
+    // Accept with prob min(1, exp(Δ logp)); always accept uphill (Δ ≥ 0).
+    if (Math.log(rand()) < logStar - logCur) {
+      current = star; logCur = logStar; accepts++;
+    }
+    trace[i] = current;
+  }
+  // Lag-1 autocorrelation of the post-burn-in trace (sticky chains → near 1).
+  const burn = Math.floor(n * 0.2);
+  const kept = trace.slice(burn);
+  const m = d3.mean(kept);
+  let num = 0, den = 0;
+  for (let i = 0; i < kept.length; i++) {
+    den += (kept[i] - m) ** 2;
+    if (i > 0) num += (kept[i] - m) * (kept[i - 1] - m);
+  }
+  const acf1 = den > 0 ? num / den : 0;
+  return {
+    trace, kept, burn,
+    accRate: accepts / n,
+    acf1,
+    // Crude effective sample size from lag-1 acf: n_eff ≈ N (1−ρ)/(1+ρ).
+    ess: Math.max(1, Math.round(kept.length * (1 - acf1) / (1 + acf1)))
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Density histogram of the kept draws: bin the post-burn-in trace, then convert
+// each bin count to a density (count ÷ [N × bin width]) so the bars integrate to
+// 1 and sit on the same vertical scale as the exact target density curve. d3.bin
+// gives [x0, x1] edges directly.
+baymcmc_hist = {
+  const kept = baymcmc_run.kept;
+  const bins = d3.bin().domain([1.2, 4.4]).thresholds(36)(kept);
+  const N = kept.length;
+  return bins
+    .filter(b => b.x1 > b.x0)
+    .map(b => ({
+      x0: b.x0,
+      x1: b.x1,
+      density: b.length / (N * (b.x1 - b.x0))
+    }));
+}
+```
+
+```{ojs}
+//| echo: false
+// ── Trace plot: the chain's value at each step. ──
+// A well-tuned chain looks like a "fuzzy caterpillar" hovering around 2.8.
+// Too-small step → slow drift (sticky); too-large step → long flat runs (stuck
+// after rejections). Burn-in region shaded; target mean drawn in ochre.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 240,
+  marginLeft: 60,
+  marginBottom: 45,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: baymcmc_pal.axis
+  },
+  x: { label: "Iteration t  →", grid: false },
+  y: { label: "↑ θ  (visits/year)", domain: [1.2, 5.3], grid: true },
+  marks: [
+    Plot.gridY({ stroke: baymcmc_pal.hair }),
+    // Burn-in shading.
+    Plot.rectX([{ x1: 0, x2: baymcmc_run.burn }], {
+      x1: "x1", x2: "x2", y1: 1.2, y2: 5.3,
+      fill: baymcmc_pal.ink, fillOpacity: 0.05
+    }),
+    // True posterior mean (ochre reference).
+    Plot.ruleY([baymcmc_targetMean], {
+      stroke: baymcmc_pal.ochre, strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ x: baymcmc_run.trace.length, y: baymcmc_targetMean }], {
+      x: "x", y: "y", text: () => "target mean 2.8",
+      fill: baymcmc_pal.ochre, fontSize: 11, fontWeight: 600,
+      textAnchor: "end", dy: -6,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The chain path (focal red).
+    Plot.line(baymcmc_run.trace.map((v, i) => ({ i, v })), {
+      x: "i", y: "v", stroke: baymcmc_pal.focal, strokeWidth: 1, strokeOpacity: 0.85
+    }),
+    // Label the burn-in band (white halo so it reads over the shading and chain).
+    Plot.text([{ x: baymcmc_run.burn / 2, y: 5.1 }], {
+      x: "x", y: "y", text: () => "burn-in (discarded)",
+      fill: baymcmc_pal.muted, fontSize: 10, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// ── Sampled histogram vs. the true target curve. ──
+// Post-burn-in draws as a density histogram (grey/slate), overlaid with the exact
+// target density (ochre). As you add steps the bars converge to the curve — the
+// visual proof that the chain's stationary distribution IS the posterior.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 260,
+  marginLeft: 60,
+  marginBottom: 45,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: baymcmc_pal.axis
+  },
+  x: { label: "θ  (visits/year)  →", domain: [1.2, 4.4], grid: false },
+  y: { label: "↑ density", grid: true },
+  marks: [
+    Plot.gridY({ stroke: baymcmc_pal.hair }),
+    // Histogram of the kept draws as a DENSITY (counts ÷ [total × bin width]),
+    // so the bar heights are directly comparable to the ochre target density
+    // curve below (both integrate to 1). Computed in baymcmc_hist.
+    Plot.rectY(baymcmc_hist, {
+      x1: "x0", x2: "x1", y: "density",
+      fill: baymcmc_pal.slate, fillOpacity: 0.28,
+      stroke: baymcmc_pal.slate, strokeOpacity: 0.4
+    }),
+    // The exact target density curve (ochre) the bars should match.
+    Plot.line(
+      d3.range(1.2, 4.4, 0.01).map(t => ({ t, d: baymcmc_targetPdf(t) })),
+      { x: "t", y: "d", stroke: baymcmc_pal.ochre, strokeWidth: 2.5 }
+    ),
+    Plot.text([{ t: baymcmc_targetMean, d: baymcmc_targetPdf(baymcmc_targetMean) }], {
+      x: "t", y: "d", text: () => "true posterior",
+      fill: baymcmc_pal.ochre, fontSize: 11, fontWeight: 600,
+      dy: -8, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live diagnostic readout: acceptance rate, lag-1 autocorrelation, effective
+// sample size, and a verdict on the tuning. Built in an ojs html`` cell so the
+// reactive values interpolate (markdown ${...} would render literally).
+{
+  const acc = baymcmc_run.accRate;
+  const acf = baymcmc_run.acf1;
+  const ess = baymcmc_run.ess;
+  // Rough "good zone" for a 1-D random walk: acceptance roughly 0.25–0.55.
+  const tuned = acc >= 0.25 && acc <= 0.55;
+  let verdict, vcolor;
+  if (acc > 0.7) {
+    verdict = "Step too SMALL: almost every tiny move is accepted, so the chain inches along — high autocorrelation, few effective samples.";
+    vcolor = baymcmc_pal.bad;
+  } else if (acc < 0.12) {
+    verdict = "Step too LARGE: most bold proposals land in the tails and are rejected, so the chain sits stuck for long runs — also high autocorrelation.";
+    vcolor = baymcmc_pal.bad;
+  } else if (tuned) {
+    verdict = "Well tuned: acceptance in the healthy 25–55% band, low autocorrelation, draws mix efficiently.";
+    vcolor = baymcmc_pal.good;
+  } else {
+    verdict = "Workable but not optimal — nudge the step size toward the 25–55% acceptance band for better mixing.";
+    vcolor = baymcmc_pal.ochre;
+  }
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${baymcmc_pal.fill}; border: 1px solid ${baymcmc_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${baymcmc_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+      ${tile("Acceptance rate", (acc * 100).toFixed(1) + "%", tuned ? baymcmc_pal.good : baymcmc_pal.ochre)}
+      ${tile("Lag-1 autocorr.", acf.toFixed(2), acf < 0.5 ? baymcmc_pal.good : baymcmc_pal.bad)}
+      ${tile("Eff. sample size", ess.toLocaleString(), ess > 300 ? baymcmc_pal.good : baymcmc_pal.bad)}
+      ${tile("Total kept draws", baymcmc_run.kept.length.toLocaleString(), baymcmc_pal.ink)}
+    </div>
+    <div style="margin-top:0.6rem; padding:0.55rem 0.85rem; border-radius:0.4rem;
+        border-left:3px solid ${vcolor}; background:${baymcmc_pal.fill};
+        font-family:'Inter',system-ui,sans-serif; font-size:0.86rem;
+        line-height:1.45; color:${baymcmc_pal.ink};">${verdict}</div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Metropolis Sampler
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the two charts.** The **top** chart is the *trace plot* --- the chain's value $\theta$ at each iteration. The **bottom** chart is the *histogram* of the kept draws (slate bars), with the exact posterior it should match drawn as the ochre curve. A healthy run has a trace that looks like a fuzzy horizontal caterpillar hovering around 2.8, and bars that hug the ochre curve.
+
+**Step 2: Watch the burn-in.** The chain starts at $\theta = 5.0$, far out in the tail. The shaded band on the left of the trace is the **burn-in**: the chain's transient march from its arbitrary start down to the posterior's bulk. Those early draws are *not* posterior samples --- they are discarded before the histogram is built. Notice the trace plunges from 5 toward 2.8 and then stays there.
+
+**Step 3: Accumulate draws.** Press **Take more steps** repeatedly. Each click runs a fresh chain with more iterations; watch the slate histogram sharpen and lock onto the ochre curve. This is the payoff: a pile of correlated random-walk steps, summarized, *is* the posterior.
+
+**Step 4: Make the step too small.** Drag **step size** down toward $0.1$. The acceptance rate shoots above 70% (almost every micro-move is accepted), but the trace now drifts in slow, snake-like sweeps and the lag-1 autocorrelation climbs toward 1. The chain is **sticky**: it accepts everything but moves so little that consecutive draws carry almost no new information --- the *effective* sample size collapses.
+
+**Step 5: Make the step too large.** Now drag **step size** up toward $2.5$. The trace develops long flat plateaus: most bold proposals leap into the low-density tails and get *rejected*, so the chain sits frozen on its current value for many iterations. Acceptance falls below 12% and autocorrelation is high again --- for the opposite reason. The sweet spot is in between, where acceptance sits in roughly the 25--55% band and the caterpillar is fuzziest.
+
+## Gibbs Sampling: Cycling Through Full Conditionals
+
+Metropolis--Hastings is general but can be inefficient in high dimensions: a single step size must compromise across all parameters at once. When the posterior's **full conditional distributions** --- the distribution of each parameter given the data and *all the other* parameters --- are themselves standard distributions we can sample from directly, **Gibbs sampling** is often far more efficient.
+
+::: {.glass-card .glass-card--definition}
+**Gibbs sampling** for parameters $(\theta_1, \theta_2, \dots, \theta_k)$ updates one component at a time by drawing each from its full conditional, holding the others at their current values. One sweep:
+
+$$
+\begin{aligned}
+\theta_1^{(t+1)} &\sim p\!\left(\theta_1 \mid \theta_2^{(t)}, \dots, \theta_k^{(t)},\, y\right),\\
+\theta_2^{(t+1)} &\sim p\!\left(\theta_2 \mid \theta_1^{(t+1)}, \theta_3^{(t)}, \dots, \theta_k^{(t)},\, y\right),\\
+&\;\;\vdots\\
+\theta_k^{(t+1)} &\sim p\!\left(\theta_k \mid \theta_1^{(t+1)}, \dots, \theta_{k-1}^{(t+1)},\, y\right).
+\end{aligned}
+$$
+
+**Read this as**: "update each parameter in turn by sampling it from its own distribution given the data and the latest values of everything else."
+:::
+
+Gibbs is a special case of Metropolis--Hastings in which every proposal is accepted (the acceptance ratio is identically 1), because it proposes from the exact conditional. Its classic use is the Normal model: a Normal prior on a mean and an Inverse-Gamma prior on a variance give full conditionals that are themselves Normal and Inverse-Gamma --- so each sweep is two direct draws, no rejection, no step size to tune. For a region modeling mean waiting times across its *vårdcentraler* with a hierarchical Normal, Gibbs cycles cleanly between the region-level mean, the clinic-level deviations, and the variance components.
+
+::: {.glass-card .glass-card--insight}
+**Hamiltonian Monte Carlo and NUTS (Stan).** Modern Bayesian software --- Stan, and by extension `rstanarm`, `brms`, and PyMC's default sampler --- rarely uses plain Metropolis. It uses **Hamiltonian Monte Carlo (HMC)** and its self-tuning extension the **No-U-Turn Sampler (NUTS)**. HMC uses the *gradient* of the log-posterior to propose long, informed trajectories that glide along the posterior's contours instead of taking blind random-walk steps. The result is dramatically lower autocorrelation in high dimensions and far higher effective sample size per iteration. The Metropolis sampler in the lab is the right thing to *understand*; HMC/NUTS is what you will actually *run*.
+:::
+
+## Did It Converge? Diagnostics You Must Run
+
+MCMC gives an *asymptotic* guarantee: run the chain long enough and the draws come from the posterior. "Long enough" is the catch. A chain can look stable while it is trapped in one region of a multimodal posterior, or it can be so autocorrelated that 10,000 draws carry the information of 50. Never trust an MCMC posterior without checking these.
+
+::: {.glass-card .glass-card--assumption}
+**Convergence diagnostics --- the standard battery:**
+
+1. **Trace plots.** Plot each parameter against iteration. A converged chain is a stationary "fuzzy caterpillar" with no trend, no drift, and good vertical coverage. Trends or slow wandering signal non-convergence.
+
+2. **Burn-in (warm-up).** Discard the initial transient where the chain is still travelling from its starting point to the posterior's bulk. What remains is treated as posterior draws.
+
+3. **Autocorrelation and effective sample size (ESS).** Successive MCMC draws are correlated. The **effective sample size** $n_{\text{eff}}$ is the number of *independent* draws your correlated sample is worth: $n_{\text{eff}} \approx N \big/ \big(1 + 2\sum_{k\ge 1}\rho_k\big)$, where $\rho_k$ is the lag-$k$ autocorrelation. Low ESS means imprecise posterior summaries.
+
+4. **Multiple chains and $\hat R$ (R-hat).** Run several chains from *different, overdispersed* starting points. If they have all converged to the same distribution, the variance *between* chains should match the variance *within* each chain. The **Gelman--Rubin statistic** $\hat R$ measures their ratio; values near $1.00$ indicate convergence. A common rule of thumb flags $\hat R > 1.01$ as a problem.
+:::
+
+The single most informative habit is **running multiple chains from dispersed starts and overlaying their trace plots**. If four chains launched from very different values all settle into the same band and become indistinguishable, you have strong visual evidence of convergence; if they settle into *different* bands, the posterior is multimodal or the chains have not mixed, and $\hat R$ will be well above 1.
+
+::: {.glass-card .glass-card--warning}
+**Convergence diagnostics can fail silently.** Passing every diagnostic is *necessary* but not *sufficient*: all your chains can agree and still be stuck together in the same wrong mode of a multimodal posterior, where between-chain variance looks fine because none of them ever found the other mode. Diagnostics catch the common failures, not the rare catastrophic ones. Treat a clean $\hat R$ as "no evidence against convergence," never as proof of it --- and always sanity-check the posterior against what you know about the problem.
+:::
+
+<details>
+<summary>Math Details: Detailed balance and why MH gives the right stationary distribution</summary>
+<div class="details-content">
+
+We want a Markov transition rule $P(\theta' \mid \theta)$ whose stationary distribution is the posterior $\pi(\theta) \equiv p(\theta \mid y)$. A *sufficient* condition is **detailed balance** (reversibility): for all states $\theta, \theta'$,
+
+$$
+\pi(\theta)\,P(\theta' \mid \theta) \;=\; \pi(\theta')\,P(\theta \mid \theta').
+$$
+
+**Why detailed balance gives stationarity.** Suppose the chain's current state is distributed as $\pi$. The marginal probability of landing at $\theta'$ on the next step is, integrating over where you came from,
+
+$$
+\int \pi(\theta)\,P(\theta'\mid\theta)\,d\theta
+\;=\; \int \pi(\theta')\,P(\theta\mid\theta')\,d\theta
+\;=\; \pi(\theta') \int P(\theta\mid\theta')\,d\theta
+\;=\; \pi(\theta'),
+$$
+
+using detailed balance in the first equality and $\int P(\theta\mid\theta')\,d\theta = 1$ in the last. So if the state starts distributed as $\pi$, it *remains* distributed as $\pi$ --- exactly the definition of a stationary distribution.
+
+**The Metropolis--Hastings transition satisfies detailed balance.** For $\theta' \neq \theta$ the MH kernel is "propose then accept,"
+
+$$
+P(\theta'\mid\theta) \;=\; q(\theta'\mid\theta)\,\alpha(\theta,\theta'),
+\qquad
+\alpha(\theta,\theta') = \min\!\left(1,\, \frac{\pi(\theta')\,q(\theta\mid\theta')}{\pi(\theta)\,q(\theta'\mid\theta)}\right).
+$$
+
+Check the balance condition by multiplying by $\pi(\theta)$:
+
+$$
+\pi(\theta)\,q(\theta'\mid\theta)\,\alpha(\theta,\theta')
+= \pi(\theta)\,q(\theta'\mid\theta)\,\min\!\left(1,\, \frac{\pi(\theta')\,q(\theta\mid\theta')}{\pi(\theta)\,q(\theta'\mid\theta)}\right).
+$$
+
+Pull the leading factor inside the $\min$:
+
+$$
+= \min\!\Big(\pi(\theta)\,q(\theta'\mid\theta),\; \pi(\theta')\,q(\theta\mid\theta')\Big).
+$$
+
+This expression is **symmetric** in $\theta$ and $\theta'$ --- swapping them leaves the $\min$ of the same two quantities unchanged. Running the identical algebra starting from $\pi(\theta')\,q(\theta\mid\theta')\,\alpha(\theta',\theta)$ yields the *same* symmetric expression. Therefore
+
+$$
+\pi(\theta)\,P(\theta'\mid\theta) \;=\; \pi(\theta')\,P(\theta\mid\theta'),
+$$
+
+so detailed balance holds and $\pi$ is stationary. $\checkmark$
+
+**The normalizing constant cancels.** Crucially, $\alpha$ depends on $\pi$ only through the *ratio* $\pi(\theta')/\pi(\theta)$. Writing $\pi(\theta) = \tilde\pi(\theta)/Z$ with $Z = p(y)$ the unknown constant,
+
+$$
+\frac{\pi(\theta')}{\pi(\theta)} = \frac{\tilde\pi(\theta')/Z}{\tilde\pi(\theta)/Z} = \frac{\tilde\pi(\theta')}{\tilde\pi(\theta)},
+$$
+
+so $Z$ never appears. MH needs only the unnormalized posterior $\tilde\pi(\theta) = p(y\mid\theta)\,p(\theta)$ --- the entire reason the method works when $p(y)$ is intractable.
+
+**From stationarity to "the draws are samples."** Detailed balance makes $\pi$ stationary; two further conditions make the chain *converge to* $\pi$ from any start and let time-averages stand in for expectations: the chain must be **irreducible** (it can reach any region of positive posterior probability) and **aperiodic** (it does not cycle deterministically). A random-walk Metropolis chain with a Normal proposal satisfies both whenever the posterior has connected support. Under these conditions the ergodic theorem guarantees $\frac1S\sum_{t} g(\theta^{(t)}) \to E_\pi[g(\theta)]$ --- which is why a sample average over the draws estimates any posterior summary.
+
+</div>
+</details>
+
+## Running MCMC in Practice
+
+Two panels below. Each first codes a **manual Metropolis sampler** from scratch --- so the algorithm is fully transparent --- on a small Poisson-mean problem (monthly avoidable admissions at a Swedish vårdcentral, prior + likelihood, no conjugacy assumed), then shows the **production tool** (`rstan` / PyMC) you would actually use, with the diagnostics built in.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# ---- Manual Metropolis sampler ----------------------------------------
+# Data: monthly counts of avoidable admissions at one vårdcentral.
+y <- c(7, 9, 4, 8, 11, 6, 5, 9, 7, 10)
+
+# Model:  y_i ~ Poisson(lambda),  prior  lambda ~ Gamma(2, 0.5)  (mean 4).
+# Unnormalized log-posterior = log-likelihood + log-prior (constants dropped).
+log_post <- function(lambda) {
+  if (lambda <= 0) return(-Inf)              # support guard
+  sum(dpois(y, lambda, log = TRUE)) +
+    dgamma(lambda, shape = 2, rate = 0.5, log = TRUE)
+}
+
+metropolis <- function(n_iter, step, start = 1) {
+  draws <- numeric(n_iter)
+  current <- start
+  lp_cur  <- log_post(current)
+  accept  <- 0
+  for (t in seq_len(n_iter)) {
+    proposal <- current + rnorm(1, 0, step)   # symmetric proposal
+    lp_prop  <- log_post(proposal)
+    # Accept with prob min(1, exp(Δ log-post)); log-uniform comparison.
+    if (log(runif(1)) < lp_prop - lp_cur) {
+      current <- proposal; lp_cur <- lp_prop; accept <- accept + 1
+    }
+    draws[t] <- current
+  }
+  list(draws = draws, acc_rate = accept / n_iter)
+}
+
+set.seed(2024)
+fit  <- metropolis(n_iter = 20000, step = 1.2)
+keep <- fit$draws[-(1:4000)]                  # discard burn-in
+
+cat("Acceptance rate:", round(fit$acc_rate, 3), "\n")
+cat("Posterior mean lambda:", round(mean(keep), 3), "\n")     # ~ 7.43
+cat("95% credible interval:",
+    round(quantile(keep, c(0.025, 0.975)), 3), "\n")
+
+# ---- The production tool: rstan (HMC/NUTS, diagnostics for free) -------
+# install.packages("rstan")
+library(rstan)
+stan_code <- "
+data   { int<lower=0> N; int<lower=0> y[N]; }
+parameters { real<lower=0> lambda; }
+model {
+  lambda ~ gamma(2, 0.5);     // same prior
+  y ~ poisson(lambda);        // same likelihood
+}"
+fit_stan <- stan(model_code = stan_code,
+                 data = list(N = length(y), y = y),
+                 chains = 4, iter = 2000, warmup = 1000, seed = 2024)
+
+print(fit_stan, pars = "lambda")              # posterior summary
+# The summary prints n_eff and Rhat per parameter — check Rhat ≈ 1.00.
+# traceplot(fit_stan, pars = "lambda")        # overlay the 4 chains
+```
+
+### Python
+
+```python
+import numpy as np
+
+# ---- Manual Metropolis sampler ----------------------------------------
+# Data: monthly counts of avoidable admissions at one vårdcentral.
+y = np.array([7, 9, 4, 8, 11, 6, 5, 9, 7, 10])
+
+# Model:  y_i ~ Poisson(lambda),  prior  lambda ~ Gamma(shape=2, scale=2)
+# (mean 4).  Unnormalized log-posterior = log-lik + log-prior, constants dropped.
+from scipy.stats import poisson, gamma
+
+def log_post(lam):
+    if lam <= 0:
+        return -np.inf                       # support guard
+    return poisson.logpmf(y, lam).sum() + gamma.logpdf(lam, a=2, scale=2)
+
+def metropolis(n_iter, step, start=1.0, seed=2024):
+    rng = np.random.default_rng(seed)
+    draws = np.empty(n_iter)
+    current, lp_cur, accept = start, log_post(start), 0
+    for t in range(n_iter):
+        proposal = current + rng.normal(0, step)      # symmetric proposal
+        lp_prop = log_post(proposal)
+        # Accept with prob min(1, exp(Δ log-post)); log-uniform comparison.
+        if np.log(rng.random()) < lp_prop - lp_cur:
+            current, lp_cur = proposal, lp_prop
+            accept += 1
+        draws[t] = current
+    return draws, accept / n_iter
+
+draws, acc = metropolis(20_000, step=1.2)
+keep = draws[4000:]                            # discard burn-in
+
+print(f"Acceptance rate:       {acc:.3f}")
+print(f"Posterior mean lambda: {keep.mean():.3f}")            # ~ 7.43
+print(f"95% credible interval: {np.percentile(keep, [2.5, 97.5]).round(3)}")
+
+# ---- The production tool: PyMC (NUTS, diagnostics for free) ------------
+# pip install pymc arviz
+import pymc as pm
+import arviz as az
+
+with pm.Model() as model:
+    lam = pm.Gamma("lambda", alpha=2, beta=0.5)   # same prior (rate = 0.5)
+    pm.Poisson("y_obs", mu=lam, observed=y)        # same likelihood
+    idata = pm.sample(draws=1000, tune=1000, chains=4,
+                      random_seed=2024, progressbar=False)
+
+print(az.summary(idata, var_names=["lambda"]))     # mean, hdi, ess, r_hat
+# az.plot_trace(idata)  # overlay the 4 chains; check r_hat ≈ 1.00
+```
+
+:::
+
+Both manual samplers land on a posterior mean near $\lambda \approx 7.4$ avoidable admissions per month (the closed-form Gamma--Poisson posterior is $\mathrm{Gamma}(2{+}76,\,0.5{+}10)$ with mean $78/10.5 \approx 7.43$; the data average of $7.6$ is pulled gently toward the prior mean of $4$), and `rstan` / PyMC reproduce it with $\hat R \approx 1.00$ and a large effective sample size --- now via gradient-based NUTS rather than a blind random walk. The manual code shows you *what* the sampler does; the production tools do it faster, in higher dimensions, with the diagnostics computed for you.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A Metropolis sampler targeting a posterior for mean monthly *sjukfrånvaro* (sick-leave rate, %) is at the current state $\theta^{(t)} = 4.0$. The unnormalized posterior takes the values $\tilde p(4.0) = 0.30$ and $\tilde p(\theta^\star) = 0.21$ at a symmetric Normal proposal $\theta^\star = 4.6$.
+
+(a) Compute the Metropolis acceptance ratio $\alpha$. (b) If the uniform draw is $u = 0.55$, is the move accepted? (c) What is $\theta^{(t+1)}$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The proposal is symmetric, so the proposal terms cancel and $\alpha$ is the plain posterior-height ratio:
+$$
+\alpha = \min\!\left(1,\, \frac{\tilde p(\theta^\star)}{\tilde p(\theta^{(t)})}\right)
+       = \min\!\left(1,\, \frac{0.21}{0.30}\right)
+       = \min(1,\, 0.70) = 0.70.
+$$
+The candidate is *downhill* (lower posterior density), so $\alpha = 0.70 < 1$.
+
+**(b)** Accept iff $u < \alpha$. Here $u = 0.55 < 0.70$, so the move **is accepted**.
+
+**(c)** Since the move is accepted, $\theta^{(t+1)} = \theta^\star = 4.6$. (Had $u$ been, say, $0.80 > 0.70$, the move would be rejected and the chain would *stay*: $\theta^{(t+1)} = 4.0$.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A colleague reports an MCMC run with a 92% acceptance rate and is delighted --- "almost every proposal accepted, the sampler loves the posterior!" Explain why a very high acceptance rate is *not* good news for a random-walk Metropolis sampler, and describe what the trace plot and autocorrelation would look like. What should they change?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+A 92% acceptance rate almost always means the **step size is far too small**. If nearly every proposal is accepted, the proposals must be tiny moves to points barely distinguishable from the current state --- so the chain *creeps* through the parameter space instead of exploring it.
+
+- **Trace plot**: a slow, snake-like drift that takes many iterations to cross the posterior, rather than a fast fuzzy caterpillar. It may not even traverse the full posterior within the run.
+- **Autocorrelation**: very high at all but the shortest lags, because consecutive draws are nearly identical. The lag-1 autocorrelation will be close to 1.
+- **Effective sample size**: tiny relative to the number of iterations --- thousands of draws may be worth only a handful of independent samples.
+
+**Fix:** *increase* the step size so the sampler proposes bolder moves. The target is acceptance in roughly the 25--55% band for a low-dimensional random walk (the theoretical optimum for high-dimensional Gaussian targets is about 0.234). Acceptance is a means to good *mixing*, not an end in itself --- you want the chain to move far *and* be accepted often enough, which is a compromise, not a maximum.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+You run four chains from overdispersed starting points to estimate a regional unemployment-rate parameter. Define the $\hat R$ (Gelman--Rubin) statistic conceptually in terms of within-chain and between-chain variance. (a) What value indicates convergence? (b) What does $\hat R = 1.4$ tell you, and what is the most likely cause? (c) Why is running a *single* long chain insufficient to compute $\hat R$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+$\hat R$ compares the variability of the draws *between* chains to the variability *within* chains. Loosely, $\hat R \approx \sqrt{\dfrac{\widehat{\text{Var}}^+(\theta)}{W}}$, where $W$ is the average within-chain variance and the numerator is a weighted blend of $W$ and the between-chain variance $B$. If all chains have converged to the same posterior, the spread between chains matches the spread within each, the numerator and denominator agree, and $\hat R \to 1$.
+
+**(a)** Convergence is indicated by $\hat R$ very close to $1.00$; the common rule of thumb flags anything above $1.01$ as not-yet-converged.
+
+**(b)** $\hat R = 1.4$ means the chains are spread *much* more widely between each other than within themselves --- they have settled into different regions and **have not mixed**. The most likely causes are too few iterations (chains still en route from their dispersed starts), a multimodal posterior with chains trapped in different modes, or a poorly tuned/poorly identified model. The draws are *not* trustworthy posterior samples; run longer and investigate the geometry.
+
+**(c)** $\hat R$ is fundamentally a *between-chain* comparison: it needs at least two independent chains from different starting points to have a between-chain variance $B$ to measure. A single chain provides no $B$. (Split-$\hat R$ partially addresses this by splitting one chain into halves, but the spirit --- and the robustness --- comes from genuinely independent, overdispersed starts.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive lab, set the step size small (around $0.1$) and note the acceptance rate and effective sample size; then set it large (around $2.5$) and note them again. Both extremes give *high* autocorrelation and *low* effective sample size. (a) Explain the distinct mechanism behind the high autocorrelation in each case. (b) Why does effective sample size, rather than raw iteration count, measure the quality of an MCMC run?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The two extremes are sticky for *opposite* reasons:
+
+- **Step too small (≈ 0.1):** acceptance is very high, but every accepted move is tiny. The chain *moves* almost every iteration yet barely travels, so consecutive draws are nearly equal --- high autocorrelation from *small steps*. The trace drifts slowly.
+- **Step too large (≈ 2.5):** acceptance is very low, because bold proposals usually land in the low-density tails and are rejected. On rejection the chain *repeats its current value*, producing long flat runs of identical draws --- high autocorrelation from *frequent rejection*. The trace shows plateaus.
+
+In both cases successive draws carry little new information, just via different routes (creeping vs. freezing). The cure is a step size in between, where the chain takes substantial moves *and* accepts a healthy fraction of them.
+
+**(b)** Raw iteration count overstates how much you know, because MCMC draws are *correlated* --- 10,000 highly autocorrelated draws may carry the information of only 50 independent ones. The **effective sample size** $n_{\text{eff}} \approx N/(1 + 2\sum_k \rho_k)$ discounts the iteration count by the autocorrelation, reporting how many *independent* draws your sample is worth. Because the Monte Carlo standard error of any posterior summary scales like $1/\sqrt{n_{\text{eff}}}$ (not $1/\sqrt{N}$), $n_{\text{eff}}$ --- not $N$ --- is what governs the precision of your estimates.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Most real posteriors have no closed form because the normalizing constant $p(y)$ is an intractable integral; MCMC sidesteps it by *sampling* and turning hard integrals into simple averages over draws.
+- MCMC builds a Markov chain whose stationary distribution *is* the posterior; once it has settled, the visited states are posterior samples and every summary is an average over them.
+- Metropolis--Hastings proposes a candidate and accepts it with probability $\min\!\big(1,\,\tilde p(\theta^\star)/\tilde p(\theta^{(t)})\big)$ (symmetric case); the normalizing constant cancels, so only the unnormalized posterior is needed. Gibbs samples each parameter from its full conditional, and HMC/NUTS (Stan, PyMC) uses gradients for far better mixing.
+- Step size is a trade-off: too small gives a sticky, all-accepted chain; too large gives a frozen, mostly-rejected one. Aim for roughly 25--55% acceptance and low autocorrelation.
+- Always diagnose convergence --- trace plots, burn-in, effective sample size, and $\hat R \approx 1.00$ across multiple overdispersed chains --- and remember the diagnostics are necessary but never sufficient.
+:::
+
+## What Comes Next
+
+We can now sample from a posterior we can only evaluate up to a constant, and we know how to check whether the sampler has actually converged. That unlocks the models that motivated all this machinery in the first place. The next page, [Bayesian Regression and Hierarchical Models](bayesian-regression-hierarchical.qmd), puts MCMC to work: it places priors on regression coefficients, builds *hierarchical* (multilevel) models that partially pool information across regions and *vårdcentraler*, and fits them with exactly the `rstanarm` / `brms` / PyMC tooling introduced here --- reading the resulting posteriors, credible intervals, and shrinkage straight off the MCMC draws.

@@ -1,0 +1,652 @@
+---
+title: "Bayesian Regression and Hierarchical Models"
+subtitle: "Priors, shrinkage, and pooling, done Bayesianly"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write the Bayesian linear regression model --- a likelihood for the data plus priors on the coefficient vector $\beta$ and the error variance $\sigma^2$ --- and read the posterior $p(\beta, \sigma^2 \mid y)$ as the object of inference
+- Show that a Gaussian prior on $\beta$ makes the posterior mode *identical* to ridge, and a Laplace prior makes it identical to LASSO, linking Module 23 to Bayes
+- Explain how a *hierarchical* (multilevel) model puts a prior on the group-level distribution, so partial pooling and shrinkage (Module 15) fall out of the posterior with full uncertainty attached
+- Interpret a posterior interval that *narrows and shrinks toward the group mean* as the between-group variance is tightened, distinguishing it from a frequentist confidence interval
+- Check a fitted model with posterior predictive checks and compare models with WAIC / LOO, in brief
+:::
+
+## From Point Estimates to a Distribution over Beliefs
+
+Every estimator in this book so far returns a *number*. Ordinary least squares hands you $\hat\beta$ and a standard error; maximum likelihood climbs to $\hat\theta_{\text{MLE}}$ and reads a confidence interval off the curvature; even the regularized estimators of [Module 23](../23-machine-learning/regularization.qmd) return one shrunken coefficient vector. The Bayesian asks a different question. Not *"what single value of $\beta$ best fits the data?"* but *"after seeing the data, what is my full probability distribution over $\beta$?"*
+
+The setting is the same one that has run through this whole book. A data analyst at *Region Uppsala* models 12-month follow-up HbA1c (mmol/mol) for diabetes patients at the region's *vårdcentraler* (primary care centers) as a function of baseline HbA1c, age, and BMI. OLS would report three coefficients and three standard errors. The Bayesian reports a *joint posterior distribution* over all three coefficients and the residual variance --- a cloud of plausible parameter vectors, weighted by how well each explains the data and how well each agrees with prior knowledge.
+
+This is not a cosmetic difference. The posterior is a genuine probability distribution over the unknowns, so every downstream quantity --- a predicted HbA1c for a new patient, a contrast between two clinics, the probability that a coefficient is positive --- inherits *full uncertainty* automatically, by the ordinary rules of probability. And, as we will see, the two ideas this book has returned to again and again --- **shrinkage** (Module 23) and **partial pooling** (Module 15) --- are not bolt-on tricks in the Bayesian world. They are what the posterior *does on its own* the moment you write down a prior.
+
+This is the final content page of the Econometrician's Toolkit. We will close the loop: the counterfactual question that opened the book, answered with the machinery that has been quietly assembling underneath every chapter.
+
+## Bayes' Rule for a Whole Model
+
+Recall the engine. Bayes' rule turns a prior belief into a posterior belief by reweighting it with the likelihood.
+
+::: {.glass-card .glass-card--definition}
+The **posterior** distribution of the parameters $\theta$ given data $y$ is the prior times the likelihood, renormalized:
+
+$$
+\underbrace{p(\theta \mid y)}_{\text{posterior}}
+\;=\;
+\frac{\overbrace{p(y \mid \theta)}^{\text{likelihood}}\;\overbrace{p(\theta)}^{\text{prior}}}{\underbrace{p(y)}_{\text{evidence}}}
+\;\propto\;
+p(y \mid \theta)\, p(\theta).
+$$
+
+**Read this as**: "the posterior probability of the parameters given the data is proportional to the likelihood of the data given the parameters, times the prior probability of the parameters." The denominator $p(y) = \int p(y\mid\theta)\,p(\theta)\,d\theta$ is a constant in $\theta$ --- it only rescales the curve so it integrates to 1 --- so for *finding the shape* of the posterior we can ignore it and work with the proportionality.
+:::
+
+For regression, $\theta$ is the whole bundle $(\beta, \sigma^2)$: the coefficient vector and the error variance. We need three ingredients: a likelihood (how the data are generated given the parameters), a prior on $\beta$, and a prior on $\sigma^2$.
+
+## The Bayesian Linear Regression Model
+
+Start from the same linear model as OLS, but state it as a generative story.
+
+::: {.glass-card .glass-card--definition}
+**Bayesian linear regression** specifies a likelihood and priors:
+
+$$
+\begin{aligned}
+y_i \mid \beta, \sigma^2 &\;\sim\; \mathcal{N}\!\big(x_i^{\top}\beta,\; \sigma^2\big), \qquad i = 1, \dots, n \quad &&\text{(likelihood)}\\[2pt]
+\beta &\;\sim\; \mathcal{N}\!\big(0,\; \tau^2 I_p\big) &&\text{(prior on coefficients)}\\[2pt]
+\sigma^2 &\;\sim\; \text{Inv-Gamma}(a_0, b_0) &&\text{(prior on error variance)}.
+\end{aligned}
+$$
+
+**Read this as**: "each outcome $y_i$ is Normal around the linear predictor $x_i^{\top}\beta$ with variance $\sigma^2$; the coefficients are, a priori, Normal around zero with prior variance $\tau^2$; and the error variance follows an inverse-Gamma distribution." The prior on $\beta$ encodes "I expect coefficients to be modest unless the data say otherwise"; the prior on $\sigma^2$ keeps the variance positive and lets it be learned.
+:::
+
+The likelihood line is *exactly* the model behind OLS --- Normal, homoskedastic errors. What is new is the prior. The prior variance $\tau^2$ is a tightness dial: a large $\tau^2$ is a *flat*, uninformative prior (let the data speak); a small $\tau^2$ is a *tight* prior that pulls $\beta$ toward zero. Hold that thought --- it is about to become ridge.
+
+The posterior over the whole coefficient vector is
+
+$$
+p(\beta, \sigma^2 \mid y) \;\propto\; \underbrace{\prod_{i=1}^{n} \mathcal{N}\!\big(y_i;\, x_i^{\top}\beta,\, \sigma^2\big)}_{\text{likelihood}} \;\times\; \underbrace{\mathcal{N}(\beta;\, 0, \tau^2 I_p)}_{\text{prior on }\beta} \;\times\; \underbrace{\text{Inv-Gamma}(\sigma^2;\, a_0, b_0)}_{\text{prior on }\sigma^2}.
+$$
+
+For known $\sigma^2$ and a Gaussian prior this posterior is itself Gaussian (the Gaussian is *conjugate* to the Gaussian likelihood), so it has a closed form --- derived in the Math Details. For the unknown-variance case or non-Gaussian priors, we sample it with the [MCMC](mcmc.qmd) machinery from the previous page. Either way, the deliverable is the same: a distribution, not a point.
+
+## Priors as Penalties: Ridge and LASSO, Reborn
+
+Here is the bridge to [Module 23](../23-machine-learning/regularization.qmd). Finding the *most probable* coefficient vector --- the posterior mode, also called the *maximum a posteriori* or MAP estimate --- means maximizing the log-posterior. Take logs of the proportionality $p(\beta\mid y) \propto p(y\mid\beta)\,p(\beta)$:
+
+$$
+\log p(\beta \mid y) \;=\; \underbrace{\log p(y \mid \beta)}_{\text{log-likelihood}} \;+\; \underbrace{\log p(\beta)}_{\text{log-prior}} \;+\; \text{const}.
+$$
+
+Maximizing this is the same as *minimizing* the negative: the negative log-likelihood (which, under Normal errors, is the residual sum of squares up to a constant) **plus** the negative log-prior (a *penalty* on $\beta$). The prior is the penalty. Two famous choices fall straight out.
+
+::: {.glass-card .glass-card--insight}
+**The prior is the penalty.**
+
+- A **Gaussian prior** $\beta_j \sim \mathcal{N}(0, \tau^2)$ has log-density $-\beta_j^2 / (2\tau^2) + \text{const}$. Summing over $j$, the negative log-prior is $\frac{1}{2\tau^2}\sum_j \beta_j^2$ --- an $L_2$ penalty. The MAP estimate is **exactly ridge** with $\lambda = \sigma^2/\tau^2$.
+
+- A **Laplace (double-exponential) prior** $\beta_j \sim \text{Laplace}(0, b)$ has log-density $-|\beta_j|/b + \text{const}$. The negative log-prior is $\frac{1}{b}\sum_j |\beta_j|$ --- an $L_1$ penalty. The MAP estimate is **exactly LASSO**.
+
+Ridge and LASSO are not ad hoc machine-learning hacks. They are the posterior modes of a Bayesian regression under a Gaussian and a Laplace prior. The penalty strength $\lambda$ that you tuned by cross-validation is, in Bayes, the *tightness of your prior*.
+:::
+
+This is more than a curiosity. It reframes regularization as an explicit statement of belief, and it hands you something cross-validation cannot: a full posterior, so instead of one shrunken $\hat\beta$ you get an *interval* around each coefficient that already accounts for the shrinkage. The Gaussian prior shrinks every coefficient smoothly toward zero (like ridge); the Laplace prior, with its sharp peak at zero, pulls small coefficients *all the way* to near-zero (like LASSO's variable selection). Heavier-tailed shrinkage priors --- the **horseshoe** prior is the modern workhorse --- shrink noise coefficients hard while leaving genuinely large ones almost untouched, which is exactly what you want when most predictors are irrelevant.
+
+::: {.glass-card .glass-card--assumption}
+**What the regression posterior assumes.**
+
+1. **The likelihood is right.** Linearity in $x_i^{\top}\beta$, and Normal, homoskedastic, independent errors --- the same backbone OLS rests on. A misspecified likelihood gives a confident-but-wrong posterior.
+2. **The prior is honest.** A tight prior centered far from the truth will bias the posterior in small samples; the data only overwhelm a bad prior as $n$ grows. State priors you can defend, and check sensitivity to them.
+3. **Standardized predictors for shrinkage priors.** A single $\tau^2$ (or $b$) applied to all coefficients only makes sense if the predictors are on comparable scales. Center and scale $x$ before imposing a common shrinkage prior, exactly as for ridge/LASSO.
+:::
+
+## The Bayesian's Native Habitat: Hierarchical Models
+
+Now to the heart of the page. In [Module 15](../15-multilevel/partial-pooling-shrinkage.qmd) we estimated one number per *vårdcentral* --- each center's true HbA1c target-attainment rate --- and discovered **partial pooling**: nudge each center's noisy own-rate toward the national average, with the nudge dictated by how noisy that center's data is relative to how much centers genuinely differ. There, the shrinkage weight was a formula we derived and then plugged in. In the Bayesian world, partial pooling is not something you engineer. It is what the posterior *is*, the instant you add one more line to the model.
+
+A *hierarchical* (or *multilevel*) model puts a **prior on the group-level distribution itself**, and then learns that distribution's parameters from the data.
+
+::: {.glass-card .glass-card--definition}
+A **Bayesian hierarchical model** for $J$ groups (vårdcentraler) with group means $\theta_j$ has three levels:
+
+$$
+\begin{aligned}
+y_{ij} \mid \theta_j &\;\sim\; \mathcal{N}(\theta_j,\; \sigma^2) && \text{(within-group likelihood)}\\[2pt]
+\theta_j \mid \mu, \tau &\;\sim\; \mathcal{N}(\mu,\; \tau^2) && \text{(group-level prior)}\\[2pt]
+\mu \sim \mathcal{N}(m_0, s_0^2), \quad \tau &\;\sim\; \text{Half-Normal}(0, r_0) && \text{(hyperpriors)}.
+\end{aligned}
+$$
+
+**Read this as**: "patient $i$ in center $j$ has an outcome Normal around that center's true level $\theta_j$; the center levels $\theta_j$ are themselves Normal around a *grand mean* $\mu$ with *between-center* spread $\tau$; and $\mu$ and $\tau$ get their own priors." The middle line is the crucial one: it says the centers are not islands and not identical --- they are *draws from a common population*, and $\tau$ measures how different that population lets them be.
+:::
+
+The middle line --- the prior on $\theta_j$ --- is the whole trick. It ties the groups together. When the data are sparse for a small center, the posterior for its $\theta_j$ leans on the other centers *through* this shared prior, pulling it toward $\mu$. When a center has abundant data, its own likelihood dominates and the prior barely moves it. That is partial pooling, and here it is *automatic*: a consequence of conditioning on the data in a model where the groups share a parent distribution.
+
+::: {.glass-card .glass-card--insight}
+**$\tau$ is the pooling dial, and the model learns it.** The between-group standard deviation $\tau$ controls how much pooling happens. As $\tau \to 0$, the prior insists all centers are identical: the posterior shrinks every $\theta_j$ to the grand mean $\mu$ --- *complete pooling*. As $\tau \to \infty$, the prior says nothing: each $\theta_j$ follows only its own data --- *no pooling*. Real data land in between, and the genius of the hierarchical model is that **$\tau$ is estimated from the data too**, with its own posterior. You do not pick the amount of shrinkage; the data tell you, and the uncertainty in $\tau$ propagates into the uncertainty in every $\theta_j$.
+:::
+
+And because everything is a posterior, the shrinkage comes *with full uncertainty*. A frequentist partial-pooling estimate gives a shrunken point and an approximate standard error that treats the estimated $\tau$ as if it were known. The Bayesian posterior interval for each $\theta_j$ already integrates over the uncertainty in $\mu$, $\tau$, and $\sigma$ --- it is honest about the fact that we *estimated* how much to pool. That is the payoff the interactive below makes visible.
+
+## See It: Hierarchical Shrinkage with Full Posterior Uncertainty
+
+Eight *vårdcentraler* in a Swedish region each report a noisy HbA1c target-attainment rate from a different number of patients. Small centers report wild rates; large centers report stable ones. The chart shows, for each center, its **raw (no-pooling) rate** as a hollow slate marker and its **Bayesian hierarchical posterior** as a red point with a thick 80% credible interval. The ochre line is the posterior grand mean $\mu$.
+
+Drag the **between-center SD $\tau$** slider. Tightening $\tau$ (small between-center variance --- a strong hyperprior that centers are alike) pulls every posterior toward the grand mean and *narrows* its interval; loosening $\tau$ lets each center follow its own data. Watch how the *small* centers swing far while the *large* centers barely budge --- shrinkage proportional to noise, with the uncertainty drawn explicitly.
+
+::: {.interactive-container}
+
+#### Hierarchical posterior shrinkage across vårdcentraler
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette shared by every mark on this page.
+bayhier_pal = ({
+  focal:  "#990000",   // posterior (focal series — Uppsala red)
+  slate:  "#3d5a6c",   // raw no-pooling rate (comparison)
+  good:   "#2e6f40",   // on-target / low-error
+  ochre:  "#9c7a33",   // grand mean / true-value highlight
+  ink:    "#1c1c1a",   // ink text & reference lines
+  axis:   "#79766e",   // axis text
+  hair:   "#e6e3db",   // gridlines
+  muted:  "#79766e",   // muted ink
+  bad:    "#b3000b",   // alarm
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+// Eight vårdcentraler: fixed "true" latent rate, patient count n_j, and an
+// observed (noisy) rate. Small n_j => noisy observed rate that swings far from
+// truth; large n_j => observed rate close to truth. Values are illustrative but
+// internally consistent (observed ≈ true + noise scaled by 1/sqrt(n_j)).
+bayhier_centers = [
+  { name: "Älvsby VC",     n: 34,  obs: 0.29, truth: 0.41 },
+  { name: "Boden VC",      n: 58,  obs: 0.37, truth: 0.43 },
+  { name: "Gränby VC",     n: 110, obs: 0.52, truth: 0.49 },
+  { name: "Luthagen VC",   n: 145, obs: 0.47, truth: 0.48 },
+  { name: "Sävja VC",      n: 76,  obs: 0.61, truth: 0.53 },
+  { name: "Tierp VC",      n: 41,  obs: 0.66, truth: 0.51 },
+  { name: "Gottsunda VC",  n: 205, obs: 0.44, truth: 0.45 },
+  { name: "Storvreta VC",  n: 90,  obs: 0.58, truth: 0.52 }
+]
+```
+
+```{ojs}
+//| echo: false
+viewof bayhier_tau = Inputs.range([0.01, 0.30], {
+  value: 0.10,
+  step: 0.005,
+  label: "Between-center SD  τ  (small = strong pooling)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof bayhier_showCI = Inputs.toggle({
+  label: "Show 80% credible intervals",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Patient-level sampling SD for a binary on-target outcome at p ≈ 0.5 is about
+// 0.5; the SE of a center's observed rate is then ~0.5/sqrt(n_j). We use this as
+// the within-center "measurement noise" sigma_j for the conjugate Normal model.
+bayhier_sigma = j => 0.5 / Math.sqrt(j.n)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Conjugate Normal-Normal hierarchical shrinkage with KNOWN between-center SD τ
+// (set by the slider) and grand mean μ estimated by precision-weighted pooling.
+// For each center j with observed rate y_j and sampling variance s_j^2:
+//   shrinkage weight  w_j = τ² / (τ² + s_j²)      (reliability)
+//   posterior mean    m_j = w_j·y_j + (1 - w_j)·μ
+//   posterior var     v_j = 1 / (1/s_j² + 1/τ²)   (then sd = sqrt(v_j))
+// This is the textbook Normal-Normal partial-pooling posterior; the slider on τ
+// lets the reader watch the whole shrinkage system respond.
+bayhier_fit = {
+  const tau2 = bayhier_tau * bayhier_tau;
+  // Precision-weighted grand mean μ (each center weighted by 1/(s_j²+τ²)).
+  let wsum = 0, wy = 0;
+  for (const c of bayhier_centers) {
+    const s2 = bayhier_sigma(c) ** 2;
+    const w = 1 / (s2 + tau2);
+    wsum += w; wy += w * c.obs;
+  }
+  const mu = wy / wsum;
+  const rows = bayhier_centers.map(c => {
+    const s2 = bayhier_sigma(c) ** 2;
+    const w = tau2 / (tau2 + s2);                 // shrinkage weight on own data
+    const m = w * c.obs + (1 - w) * mu;           // posterior mean
+    const v = 1 / (1 / s2 + 1 / tau2);            // posterior variance
+    const sd = Math.sqrt(v);
+    const z = 1.2816;                              // 80% interval half-width
+    return {
+      name: c.name, n: c.n, obs: c.obs, truth: c.truth,
+      mu, w, post: m, sd,
+      lo: m - z * sd, hi: m + z * sd
+    };
+  });
+  return ({ mu, rows });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sort centers by patient count so the eye reads "small/noisy (top) -> large/
+// stable (bottom)"; shrinkage is visibly stronger at the top.
+bayhier_rows = bayhier_fit.rows.slice().sort((a, b) => a.n - b.n)
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 420,
+  marginLeft: 110,
+  marginBottom: 48,
+  marginRight: 28,
+  marginTop: 28,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: bayhier_pal.axis
+  },
+  x: {
+    label: "HbA1c target-attainment rate  →",
+    domain: [0.15, 0.80],
+    grid: false,
+    tickFormat: d => d3.format(".0%")(d)
+  },
+  y: {
+    label: null,
+    domain: bayhier_rows.map(d => d.name)
+  },
+  marks: [
+    Plot.gridX({ stroke: bayhier_pal.hair }),
+    // Grand-mean reference (ochre, the value everything shrinks toward).
+    Plot.ruleX([bayhier_fit.mu], {
+      stroke: bayhier_pal.ochre, strokeWidth: 2, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ x: bayhier_fit.mu, name: bayhier_rows[bayhier_rows.length - 1].name }], {
+      x: "x", y: "name",
+      text: () => `grand mean μ = ${(bayhier_fit.mu * 100).toFixed(0)}%`,
+      fill: bayhier_pal.ochre, fontWeight: 700, fontSize: 11,
+      dy: -14, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Faint connector from raw rate to posterior mean: the shrinkage path.
+    Plot.link(bayhier_rows, {
+      x1: "obs", x2: "post", y: "name",
+      stroke: bayhier_pal.muted, strokeWidth: 1, strokeOpacity: 0.55
+    }),
+    // 80% posterior credible interval (focal red, thick).
+    bayhier_showCI ? Plot.ruleY(bayhier_rows, {
+      x1: "lo", x2: "hi", y: "name",
+      stroke: bayhier_pal.focal, strokeWidth: 6, strokeOpacity: 0.22
+    }) : null,
+    // Raw no-pooling rate (hollow slate marker).
+    Plot.dot(bayhier_rows, {
+      x: "obs", y: "name",
+      fill: "white", stroke: bayhier_pal.slate, strokeWidth: 2, r: 5,
+      title: d => `${d.name}\nRaw rate: ${(d.obs*100).toFixed(0)}%  (n = ${d.n})`
+    }),
+    // Posterior mean (solid red).
+    Plot.dot(bayhier_rows, {
+      x: "post", y: "name",
+      fill: bayhier_pal.focal, r: 6,
+      title: d => `${d.name}\nPosterior mean: ${(d.post*100).toFixed(1)}%\n80% CrI: [${(d.lo*100).toFixed(0)}%, ${(d.hi*100).toFixed(0)}%]\nshrinkage weight w = ${d.w.toFixed(2)}`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// On-chart legend + live one-line readout, built in an html`` cell so reactive
+// values interpolate (markdown ${...} would render literally).
+{
+  const meanW = d3.mean(bayhier_fit.rows, d => d.w);
+  const small = bayhier_fit.rows.reduce((a, b) => a.n < b.n ? a : b);
+  return html`<div style="font-family:'Inter',system-ui,sans-serif;
+      font-size:0.8rem; color:${bayhier_pal.axis}; margin-top:0.4rem;
+      line-height:1.5;">
+    <span style="color:${bayhier_pal.slate}; font-weight:700;">&#9675; raw rate (no pooling)</span> &nbsp;
+    <span style="color:${bayhier_pal.focal}; font-weight:700;">&#9679; posterior mean</span> &nbsp;
+    <span style="color:${bayhier_pal.focal}; font-weight:700;">&#9644; 80% credible interval</span> &nbsp;
+    <span style="color:${bayhier_pal.ochre}; font-weight:700;">&#9476; grand mean μ</span>
+    <div style="margin-top:0.4rem; padding:0.55rem 0.8rem; border-radius:0.4rem;
+        background:${bayhier_pal.fill}; border-left:3px solid ${bayhier_pal.focal};">
+      At τ = ${bayhier_tau.toFixed(3)}, the average shrinkage weight on own-data is
+      <strong>${meanW.toFixed(2)}</strong>
+      (1 = no pooling, 0 = complete pooling). The smallest center,
+      <strong>${small.name}</strong> (n = ${small.n}), keeps weight
+      <strong>${small.w.toFixed(2)}</strong> on its own rate, so its posterior is
+      pulled ${((small.obs - small.post) > 0 ? "down" : "up")} toward μ by
+      <strong>${(Math.abs(small.obs - small.post) * 100).toFixed(1)} pp</strong>.
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Hierarchical Shrinkage Chart
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the two markers.** Every row is a vårdcentral, sorted from fewest patients (top) to most (bottom). The hollow slate circle is the center's **raw rate** --- its own data, no pooling. The solid red dot is the **Bayesian posterior mean** after the hierarchical model has done its work. The thin grey line connecting them is the *shrinkage path*: how far the model moved that center.
+
+**Step 2: Find the anchor.** The ochre dashed vertical line is the **posterior grand mean $\mu$** --- the population center that the model estimates all clinics are drawn around. Every posterior mean is pulled *toward* this line, never away from it.
+
+**Step 3: See shrinkage proportional to noise.** Compare the top rows (small $n$) with the bottom rows (large $n$). The small centers' red dots sit far from their slate circles --- they are pulled hard toward $\mu$ because their own rate is noisy. The large centers barely move: their data is trustworthy, so the model leaves them alone. Same prior, different pull, set by each center's reliability.
+
+**Step 4: Read the uncertainty.** The thick translucent red bar is the **80% posterior credible interval** for each center's true rate. It is genuinely Bayesian: "there is an 80% posterior probability that this center's true rate lies in this band." Small centers have *wide* bands (we know little); large centers have *narrow* bands. Toggle the intervals off and on to isolate the point estimates from their uncertainty.
+
+**Step 5: Turn the pooling dial.** Drag **between-center SD $\tau$** toward its minimum. The prior now insists clinics are nearly identical: every red dot collapses onto the grand mean and every interval narrows --- *complete pooling*. Drag $\tau$ large and the red dots snap back onto the slate circles with wide intervals --- *no pooling*. The live readout shows the average shrinkage weight sliding between 0 and 1. In a real fit, you would not set $\tau$ by hand: the model would estimate it, with its own posterior, and the dot positions would carry that extra uncertainty too.
+
+## Posterior Predictive Checks and Model Comparison, in Brief
+
+Two questions remain for any Bayesian fit: *does the model describe the data it was fit on*, and *which of several models should I prefer*?
+
+The first is answered by a **posterior predictive check** (PPC). Draw parameter sets from the posterior, simulate replicated datasets $y^{\text{rep}}$ from the likelihood under each draw, and compare those simulated datasets to the observed data. If the model is adequate, real data should look like a typical draw from its own posterior predictive distribution; a systematic mismatch (e.g., the model never produces the heavy right tail of HbA1c values we actually see) is a red flag.
+
+::: {.glass-card .glass-card--definition}
+The **posterior predictive distribution** for new data $\tilde y$ averages the likelihood over the posterior:
+
+$$
+p(\tilde y \mid y) \;=\; \int p(\tilde y \mid \theta)\, p(\theta \mid y)\, d\theta.
+$$
+
+**Read this as**: "the probability of new data, given what we have seen, integrates the likelihood of the new data over all parameter values, weighted by their posterior probability." It propagates *parameter* uncertainty into *prediction* uncertainty --- the thing point estimates silently drop.
+:::
+
+The second question --- model comparison --- is answered by estimating each model's **expected out-of-sample predictive accuracy**. Two modern, nearly-equivalent tools dominate.
+
+::: {.glass-card .glass-card--insight}
+**WAIC and LOO estimate how well a model predicts new data.**
+
+- **WAIC** (Widely Applicable Information Criterion) computes the log posterior predictive density on the observed points and subtracts a penalty for *effective number of parameters* estimated from the variance of the log-likelihood across posterior draws.
+- **LOO** (Pareto-smoothed importance-sampling leave-one-out cross-validation) approximates leaving each observation out and predicting it from the rest --- without refitting --- reusing the posterior draws you already have.
+
+Both target the same quantity (expected log predictive density on new data) and are reported on a deviance-like scale where *lower is better*. They replace AIC/BIC for Bayesian models because they use the full posterior, not a single point, and LOO ships honest standard errors on the model-to-model difference. Prefer LOO; cross-check with WAIC.
+:::
+
+## R and Python
+
+Both panels fit the *same* Bayesian hierarchical model --- patient-level HbA1c partially pooled across vårdcentraler with an estimated between-center SD --- and then run a posterior predictive check and LOO. The R panel uses `rstanarm` (a drop-in Bayesian replacement for `lmer`); the Python panel uses `pymc`. We assume a long data frame with columns `hba1c`, `center`, and `baseline`.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("rstanarm", "loo", "bayesplot"))
+library(rstanarm)
+library(loo)
+library(bayesplot)
+
+# d: data.frame with hba1c (outcome), center (factor), baseline (numeric).
+# A varying-intercept model: each vårdcentral gets its own intercept, drawn
+# from a common Normal whose SD (between-center spread) is ESTIMATED. This is
+# the Bayesian hierarchical model — partial pooling falls out of the posterior.
+fit <- stan_glmer(
+  hba1c ~ baseline + (1 | center),
+  data    = d,
+  family  = gaussian(),
+  prior   = normal(0, 5),            # weakly-informative prior on fixed effects
+  prior_aux = exponential(1),        # prior on residual SD sigma
+  chains  = 4, iter = 2000, seed = 2024
+)
+
+print(fit, digits = 2)               # posterior medians + 50%/90% intervals
+
+# Each center's SHRUNKEN posterior intercept (deviation from grand mean) with
+# full uncertainty — the red dots + credible bars in the interactive above.
+center_effects <- ranef(fit)$center
+posterior_interval(fit, prob = 0.80, regex_pars = "b\\[")
+
+# --- Posterior predictive check: do simulated datasets look like the data? ---
+pp_check(fit, nreps = 50)            # overlay 50 y_rep densities on observed y
+
+# --- Model comparison via LOO (lower elpd-based looic = better prediction) ---
+fit_pool <- stan_glm(hba1c ~ baseline, data = d, family = gaussian())  # no pooling of centers
+loo_h  <- loo(fit)                   # hierarchical
+loo_cp <- loo(fit_pool)              # complete pooling
+loo_compare(loo_h, loo_cp)           # difference in elpd, with a standard error
+```
+
+### Python
+
+```python
+# pip install pymc arviz
+import numpy as np
+import pandas as pd
+import pymc as pm
+import arviz as az
+
+# d: DataFrame with columns hba1c, center (categorical), baseline.
+centers, center_idx = np.unique(d["center"], return_inverse=True)
+J = len(centers)
+
+with pm.Model() as model:
+    # Hyperpriors: grand mean mu and between-center SD tau (ESTIMATED, not fixed).
+    mu     = pm.Normal("mu", mu=50, sigma=10)
+    tau    = pm.HalfNormal("tau", sigma=5)          # between-center spread
+    beta   = pm.Normal("beta", mu=0, sigma=5)       # baseline slope
+    sigma  = pm.HalfNormal("sigma", sigma=10)       # within-center residual SD
+
+    # Non-centered parameterization: theta_j = mu + tau * z_j  (samples better).
+    z      = pm.Normal("z", mu=0, sigma=1, shape=J)
+    theta  = pm.Deterministic("theta", mu + tau * z)   # per-center intercepts
+
+    eta    = theta[center_idx] + beta * d["baseline"].values
+    y      = pm.Normal("y", mu=eta, sigma=sigma, observed=d["hba1c"].values)
+
+    idata  = pm.sample(2000, tune=2000, chains=4, target_accept=0.95,
+                       random_seed=2024, idata_kwargs={"log_likelihood": True})
+
+# Each center's shrunken posterior intercept with an 80% credible interval —
+# the red dots + bars in the interactive above.
+print(az.summary(idata, var_names=["theta", "tau", "mu"], hdi_prob=0.80))
+
+# --- Posterior predictive check ---
+with model:
+    idata.extend(pm.sample_posterior_predictive(idata, random_seed=2024))
+az.plot_ppc(idata, num_pp_samples=50)               # y_rep overlaid on observed y
+
+# --- Model comparison via LOO (higher elpd_loo = better out-of-sample fit) ---
+loo_h = az.loo(idata)
+print(loo_h)                                        # elpd_loo, p_loo, Pareto-k
+# Compare against a complete-pooling model fit the same way: az.compare({...}).
+```
+
+:::
+
+In both languages the line `(1 | center)` / `theta = mu + tau * z` is the hierarchy: it declares that center intercepts are *exchangeable draws from a common distribution* whose spread $\tau$ is itself learned. Everything else --- the partial pooling, the shrinkage, the per-center credible intervals, the honest uncertainty on $\tau$ --- follows from sampling the posterior.
+
+<details>
+<summary>Math Details: Gaussian-prior = ridge, and the hierarchical posterior</summary>
+<div class="details-content">
+
+### Gaussian prior gives the ridge estimator
+
+Take the regression with **known** error variance $\sigma^2$, likelihood $y_i \sim \mathcal{N}(x_i^\top\beta, \sigma^2)$, and prior $\beta \sim \mathcal{N}(0, \tau^2 I_p)$. The log-posterior in $\beta$ is the log-likelihood plus the log-prior, dropping constants:
+
+$$
+\log p(\beta \mid y) = -\frac{1}{2\sigma^2}\sum_{i=1}^n (y_i - x_i^\top\beta)^2 \;-\; \frac{1}{2\tau^2}\sum_{j=1}^p \beta_j^2 \;+\; \text{const}.
+$$
+
+The **MAP estimate** maximizes this, equivalently it *minimizes* the negative:
+
+$$
+\hat\beta_{\text{MAP}} = \arg\min_\beta \; \sum_{i=1}^n (y_i - x_i^\top\beta)^2 \;+\; \underbrace{\frac{\sigma^2}{\tau^2}}_{\lambda}\sum_{j=1}^p \beta_j^2.
+$$
+
+This is *exactly* the ridge objective with penalty $\lambda = \sigma^2/\tau^2$. A tighter prior (smaller $\tau^2$) means a larger $\lambda$ and more shrinkage. Solving the first-order condition $X^\top(y - X\beta)/\sigma^2 - \beta/\tau^2 = 0$ in matrix form gives the closed-form posterior mean (and mode, since the posterior is Gaussian):
+
+$$
+\hat\beta_{\text{MAP}} = \Big(X^\top X + \tfrac{\sigma^2}{\tau^2} I_p\Big)^{-1} X^\top y,
+$$
+
+the textbook ridge solution. Replacing the Gaussian prior with a Laplace prior $p(\beta_j) \propto \exp(-|\beta_j|/b)$ swaps the $\sum_j \beta_j^2$ term for $\frac{1}{b}\sum_j |\beta_j|$, giving the LASSO objective; its non-differentiable kink at zero is what drives coefficients to exact zeros. The Bayesian posterior is *fully* Gaussian (ridge) or a continuous distribution (LASSO) --- the penalized point estimate is just its mode.
+
+### The Normal-Normal hierarchical posterior
+
+Take the two-level model with **known** $\sigma^2$ and **known** between-group SD $\tau$ for transparency (a real fit puts priors on both). Group $j$ has $n_j$ observations with mean $\bar y_j$, so the group mean has sampling variance $s_j^2 = \sigma^2/n_j$. The model is
+
+$$
+\bar y_j \mid \theta_j \sim \mathcal{N}(\theta_j, s_j^2), \qquad \theta_j \mid \mu, \tau \sim \mathcal{N}(\mu, \tau^2).
+$$
+
+By conjugacy (Normal likelihood, Normal prior), the posterior for each $\theta_j$ is Normal. Completing the square in $\theta_j$:
+
+$$
+p(\theta_j \mid \bar y_j) \;\propto\; \exp\!\Big(-\frac{(\bar y_j - \theta_j)^2}{2 s_j^2}\Big)\exp\!\Big(-\frac{(\theta_j - \mu)^2}{2\tau^2}\Big),
+$$
+
+which collapses to $\theta_j \mid \bar y_j \sim \mathcal{N}(m_j, v_j)$ with **precision-weighted** mean and variance
+
+$$
+m_j = \frac{\tfrac{1}{s_j^2}\,\bar y_j + \tfrac{1}{\tau^2}\,\mu}{\tfrac{1}{s_j^2} + \tfrac{1}{\tau^2}}
+= w_j\,\bar y_j + (1 - w_j)\,\mu, \qquad
+v_j = \Big(\tfrac{1}{s_j^2} + \tfrac{1}{\tau^2}\Big)^{-1},
+$$
+
+where the **shrinkage weight** is the *reliability*
+
+$$
+w_j = \frac{\tau^2}{\tau^2 + s_j^2} = \frac{\tau^2}{\tau^2 + \sigma^2/n_j}.
+$$
+
+This is *identical* to the partial-pooling weight derived in [Module 15](../15-multilevel/partial-pooling-shrinkage.qmd) --- but here it drops out of conjugate Bayes' rule, and the posterior gives the *full distribution* $\mathcal{N}(m_j, v_j)$, not just the point $m_j$. As $\tau \to 0$, $w_j \to 0$ and $m_j \to \mu$ (complete pooling); as $\tau \to \infty$, $w_j \to 1$ and $m_j \to \bar y_j$ (no pooling); large $n_j$ shrinks $s_j^2$ and pushes $w_j \to 1$ (big groups trust themselves). The interactive computes exactly these $m_j$, $v_j$, and $w_j$. In a full hierarchical fit you place hyperpriors on $\mu$ and $\tau$ and integrate over their uncertainty too, which widens the per-group intervals --- the honest version of the picture.
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region fits a Bayesian linear regression of HbA1c on five standardized predictors with a Gaussian prior $\beta_j \sim \mathcal{N}(0, \tau^2)$ and known residual variance $\sigma^2 = 49$. The analyst sets $\tau^2 = 4$.
+
+(a) What ridge penalty $\lambda$ does this prior correspond to? (b) If the analyst instead believed the coefficients could be large and set $\tau^2 = 100$, what happens to $\lambda$ and to the amount of shrinkage? (c) What prior would reproduce LASSO instead?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The Gaussian-prior/ridge equivalence gives $\lambda = \sigma^2/\tau^2 = 49/4 = 12.25$.
+
+**(b)** A larger prior variance means a *flatter*, less informative prior: $\lambda = 49/100 = 0.49$, far smaller. Less penalty means less shrinkage --- the coefficients are pulled toward zero only weakly, and the posterior mode sits close to OLS. As $\tau^2 \to \infty$ the prior vanishes and $\lambda \to 0$, recovering OLS exactly.
+
+**(c)** A **Laplace (double-exponential) prior** $p(\beta_j) \propto \exp(-|\beta_j|/b)$ on each coefficient. Its negative log-density is the $L_1$ penalty $\frac{1}{b}\sum_j|\beta_j|$, so the posterior mode is the LASSO estimate; the kink at zero is what produces exact zeros (variable selection).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the hierarchical interactive, the conjugate posterior mean for a center is $m_j = w_j \bar y_j + (1-w_j)\mu$ with weight $w_j = \tau^2/(\tau^2 + s_j^2)$ and $s_j^2 = \sigma^2/n_j$. Take $\sigma = 0.5$, grand mean $\mu = 0.45$, and between-center SD $\tau = 0.10$.
+
+(a) Compute the shrinkage weight and posterior mean for a small center with $n = 34$ and raw rate $\bar y = 0.29$. (b) Do the same for a large center with $n = 205$ and raw rate $\bar y = 0.44$. (c) Which center moved more, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Small center.** $s_j^2 = 0.5^2/34 = 0.25/34 = 0.007353$, and $\tau^2 = 0.01$.
+$$
+w_j = \frac{0.01}{0.01 + 0.007353} = \frac{0.01}{0.017353} = 0.576.
+$$
+$$
+m_j = 0.576(0.29) + 0.424(0.45) = 0.1670 + 0.1908 = 0.358.
+$$
+The posterior pulls the raw 29% up to about **36%**, a move of roughly 7 percentage points toward the grand mean.
+
+**(b) Large center.** $s_j^2 = 0.25/205 = 0.001220$.
+$$
+w_j = \frac{0.01}{0.01 + 0.001220} = \frac{0.01}{0.011220} = 0.891.
+$$
+$$
+m_j = 0.891(0.44) + 0.109(0.45) = 0.3920 + 0.0491 = 0.441.
+$$
+The posterior barely moves: from 44% to about **44.1%**.
+
+**(c)** The small center moved far more (about 7 pp vs. 0.1 pp). Its sampling variance $s_j^2$ is six times larger (fewer patients), so its reliability $w_j$ is lower (0.58 vs. 0.89) and the model leans more on the grand mean. Shrinkage is proportional to noise: noisy estimates get pulled hard, precise ones are left alone.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague says: "Your Bayesian credible interval and my frequentist confidence interval are the same thing with different names." For the per-center estimates in this page, explain (a) what the 80% *credible* interval literally claims, (b) how that differs from an 80% *confidence* interval, and (c) one practical advantage the hierarchical posterior interval has over a plug-in frequentist partial-pooling interval.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The 80% credible interval claims: *given the data and the model, there is an 80% posterior probability that this center's true target-attainment rate $\theta_j$ lies in the interval.* It is a direct probability statement about the unknown parameter.
+
+**(b)** The 80% confidence interval makes no probability statement about $\theta_j$ for *this* sample. Its guarantee is about the *procedure*: across hypothetical repeated samples, 80% of the intervals the procedure produces would cover the true $\theta_j$. The parameter is fixed; the interval is random. The Bayesian flips this --- the data are fixed, the parameter is described by a distribution.
+
+**(c)** The frequentist partial-pooling interval typically plugs in an *estimated* $\hat\tau$ (and $\hat\sigma$) and treats them as known, understating uncertainty --- especially with few groups, where $\tau$ is poorly estimated. The Bayesian hierarchical posterior puts a prior on $\tau$ and *integrates over its uncertainty*, so the per-center intervals are honestly wider. It propagates the "we don't know exactly how much to pool" uncertainty into every group estimate.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+You fit three models to the same vårdcentral HbA1c data: (i) complete pooling (one intercept), (ii) no pooling (a free intercept per center, unpenalized), (iii) the hierarchical model. (a) On LOO, why does the no-pooling model often predict *worse* than the hierarchical model despite fitting the training data better? (b) What does a posterior predictive check add that LOO does not? (c) If `loo_compare` reports the hierarchical model ahead by an elpd difference of 8 with a standard error of 12, what do you conclude?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** No pooling fits each center with its own unconstrained intercept, so it chases the noise in small centers (overfitting). LOO scores *out-of-sample* prediction: those overfit intercepts predict held-out patients poorly. The hierarchical model regularizes the small centers toward the grand mean, trading a little in-sample fit for much better out-of-sample prediction --- the bias-variance tradeoff of [Module 23](../23-machine-learning/regularization.qmd), now automatic. This is the James-Stein lesson restated: shrinkage lowers total predictive error.
+
+**(b)** LOO gives a single accuracy number; it does not tell you *how* a model is wrong. A posterior predictive check compares simulated datasets to the observed data and can reveal *structural* misfit --- e.g., the model under-produces extreme HbA1c values, or fails to capture skew --- pointing to which part of the likelihood to fix. LOO ranks; PPC diagnoses.
+
+**(c)** The difference (8) is *smaller* than its standard error (12), so it is not statistically distinguishable from zero. You cannot confidently say the hierarchical model predicts better on this evidence. You might still prefer it on principled grounds (it nests the alternatives and gives honest per-center uncertainty), but LOO alone does not declare a winner here.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Bayesian regression replaces the point estimate $\hat\beta$ with a *posterior distribution* over $(\beta, \sigma^2)$: prior times likelihood, renormalized. Every downstream quantity inherits full uncertainty automatically.
+- The prior is the penalty: a Gaussian prior makes the posterior mode *identical to ridge* ($\lambda = \sigma^2/\tau^2$), a Laplace prior makes it *identical to LASSO*. Regularization is Bayesian shrinkage with an explicit belief attached.
+- A hierarchical model puts a prior on the group-level distribution, so *partial pooling and shrinkage emerge from the posterior*. The between-group SD $\tau$ is the pooling dial --- and the model estimates it, propagating its uncertainty into every group estimate.
+- Bayesian credible intervals make a direct probability statement about the parameter; the hierarchical posterior gives honest per-group intervals that frequentist plug-in methods understate.
+- Check fit with posterior predictive checks; compare models with LOO / WAIC (lower deviance-scale = better out-of-sample prediction). LOO ranks, PPC diagnoses.
+:::
+
+## What Comes Next
+
+You have reached the end of the Econometrician's Toolkit. It is worth pausing to see the arc whole.
+
+The book opened with a single, stubborn idea: a causal effect is a comparison between what happened and what *would have* happened --- a contrast between [potential outcomes](../01-fundamental-problem/potential-outcomes.qmd) we can never both observe. Everything after that was a campaign against the missing counterfactual. We drew the assumptions as [DAGs](../02-dags/basics.qmd); we earned identification through randomization, [regression](../04-regression/ols-mechanics.qmd), [panel data](../05-panel/fixed-effects.qmd), [difference-in-differences](../06-did/classic-2x2.qmd), [instruments](../07-iv/two-stage-least-squares.qmd), [discontinuities](../08-rdd/sharp-rd.qmd), [matching](../09-matching/matching-methods.qmd), and [synthetic controls](../10-synthetic-control/method.qmd). We built the inferential engine --- [maximum likelihood](../11-mle-gmm/likelihood.qmd), [the bootstrap](../12-bootstrap/randomization-inference.qmd), [sensitivity analysis](../13-sensitivity/ovb-sensitivity.qmd) --- and then widened the lens to [multilevel models](../15-multilevel/partial-pooling-shrinkage.qmd), [discrete](../16-discrete-choice/binary-outcomes.qmd) and [count](../17-count-data/poisson-regression.qmd) outcomes, [selection](../18-selection-models/heckman-selection.qmd), [survival](../19-survival/cox-proportional-hazards.qmd), [quantiles](../20-quantile/quantile-regression.qmd), [time series](../21-time-series/stationarity-arima.qmd), [nonparametrics](../22-nonparametric/kernel-local-regression.qmd), [machine learning](../23-machine-learning/double-ml.qmd), and finally [Bayesian inference](mcmc.qmd).
+
+This last module reveals the secret thread. **Shrinkage** appeared as a machine-learning device in Module 23, as partial pooling in Module 15, and here as the natural behavior of a posterior under a prior --- three faces of one idea. **Uncertainty** ran from the confidence intervals of Module 3 to the credible intervals of this page, where it finally became a full distribution over everything we did not know. And the **counterfactual** that opened the book is, in the end, just another unknown the posterior can carry: a Bayesian model predicts the outcome a patient *would have had* under the other treatment, complete with its uncertainty, by integrating over the parameters.
+
+The toolkit is not a list of recipes. It is one disciplined habit of mind: state your assumptions, write down a model that takes them seriously, confront it with data, and report what you have learned *together with how sure you are*. Whether you reach for OLS or a hierarchical Stan model, that habit is the whole of the craft.
+
+From here, the path is practice. Take a real Swedish dataset --- *vårdcentral* outcomes, regional waiting times, *sjukfrånvaro* by municipality --- pose a causal question, and walk it through the toolkit. Return to the [book home](../index.qmd) to revisit any module, follow the references each page cites into the primary literature, and build. You now have the tools. Go ask better questions.

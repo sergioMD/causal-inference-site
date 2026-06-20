@@ -1,0 +1,1259 @@
+---
+title: "Modern Estimators"
+subtitle: "Callaway-Sant'Anna, Sun-Abraham, and the heterogeneity-robust toolkit"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define the group-time average treatment effect $\text{ATT}(g,t)$ and identify each cell with a clean difference against never-treated or not-yet-treated controls
+- Distinguish never-treated from not-yet-treated control groups and weigh their power-versus-credibility trade-off
+- Aggregate the $\text{ATT}(g,t)$ grid into an overall ATT or an event study using non-negative, deliberately chosen weights
+- Explain why the Sun-Abraham interaction-weighted estimator fixes the contaminated dynamic TWFE regression
+- Compare the heterogeneity-robust family (Callaway-Sant'Anna, Sun-Abraham, de Chaisemartin-D'Haultfoeuille, Borusyak-Jaravel-Spiess) by estimand, treatment type, and efficiency
+:::
+
+## The Repair Job Ahead
+
+On the [previous page](staggered.qmd) we watched the workhorse two-way fixed-effects (TWFE) regression betray us. When Sweden's 21 *regioner* adopt a *Diabetessamordning* (diabetes coordination program) in different years, and the program's effect grows over time, the single TWFE coefficient is a weighted average of all the little $2\times2$ comparisons buried in the panel --- and some of those weights are **negative**. The fatal ones are the *forbidden comparisons*: regions that adopted early are used as the "control" group for regions that adopt later, even though the early adopters are *already treated* and their effects are still changing. Subtracting a moving treated trend masquerades as a clean counterfactual, and the estimate can shrink, vanish, or flip sign.
+
+This page is the repair job. A new generation of estimators --- Callaway & Sant'Anna (2021), Sun & Abraham (2021), de Chaisemartin & D'Haultfoeuille (2020), and Borusyak, Jaravel & Spiess (2024) --- all share one disciplined idea. They refuse to let an already-treated unit serve as a counterfactual. Instead they:
+
+1. **Disaggregate.** Estimate a separate treatment effect for each adoption cohort $g$ at each calendar time $t$ --- the **group-time average treatment effect** $\text{ATT}(g,t)$.
+2. **Use only clean controls.** Each $\text{ATT}(g,t)$ is identified against units that are *never treated* or *not yet treated*, never against units already exposed.
+3. **Aggregate with honest weights.** Combine the building blocks into a single headline number, an event-study path, or a calendar-time series --- using weights that are guaranteed **non-negative** and that correspond to a quantity you actually care about.
+
+::: {.glass-card .glass-card--insight}
+TWFE asks one regression to do identification *and* aggregation simultaneously, and lets ordinary least squares pick the weights. The modern estimators **separate the two steps**: first identify clean, interpretable building blocks ($\text{ATT}(g,t)$); then choose the aggregation weights deliberately. Once you see this split, every estimator on this page is just a different recipe for the same two steps.
+:::
+
+Throughout, our running data set is a balanced panel of the 21 regioner observed annually from 2011 to 2020. The outcome is the regional mean **HbA1c** (%) among Type 2 diabetes patients --- lower is better. The program rolls out in three waves: an early cohort adopts in **2014**, a middle cohort in **2017**, a late cohort in **2019**, and a handful of regioner never adopt and serve as pure controls. We report every effect in **percentage points (pp)** --- an *absolute* change in the HbA1c level (e.g. moving from 7.8% to 7.6% is $-0.2$ pp), not a percent of the starting value.
+
+
+## The Building Block: ATT(g,t)
+
+Let $G_i$ denote the year unit $i$ first becomes treated (its *cohort*), and let $C_i = 1$ if the unit is never treated. The fundamental object is the average treatment effect for cohort $g$ at calendar time $t$.
+
+::: {.glass-card .glass-card--definition}
+The **group-time average treatment effect** is
+
+$$
+\text{ATT}(g, t) = E\big[\, Y_t(g) - Y_t(0) \,\mid\, G = g \,\big],
+$$
+
+where $Y_t(g)$ is the outcome at time $t$ for a unit first treated in year $g$, and $Y_t(0)$ is the *never-treated* potential outcome at time $t$.
+
+**How to read this**: "ATT-of-g-comma-t is the average effect, among units that first adopted in year $g$, of having adopted in year $g$ rather than never --- measured at calendar time $t$." It is one number per cohort per year. With three cohorts and ten years, the program generates a whole *grid* of such effects, not a single scalar.
+:::
+
+Under a parallel-trends assumption that holds relative to the **never-treated** group, each cell is identified by a clean long difference:
+
+$$
+\widehat{\text{ATT}}(g, t) = \underbrace{\big( \bar Y_{g,t} - \bar Y_{g,\,g-1} \big)}_{\text{change for cohort } g} \;-\; \underbrace{\big( \bar Y_{C,t} - \bar Y_{C,\,g-1} \big)}_{\text{change for never-treated}} .
+$$
+
+**How to read this**: "The estimated effect for cohort $g$ at time $t$ is how much cohort $g$ moved between the year *before* it adopted ($g-1$) and time $t$, minus how much the never-treated comparison group moved over the exact same window." This is just a difference-in-differences --- but a *clean* one, because the comparison group ($C$) is never contaminated by treatment. The baseline period $g-1$ is the last pre-treatment year for cohort $g$, so the comparison starts from a genuine counterfactual baseline.
+
+The picture below makes that long difference concrete for a single cohort: it draws the four means that enter the formula, the two within-group changes that the underbraces label, and --- crucially --- the *counterfactual* trajectory the cohort would have followed if it had merely tracked the never-treated group. The single $\text{ATT}(g,t)$ is the vertical gap between where the cohort actually landed and that counterfactual.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static illustration of ONE clean long difference (the ATT(g,t) building
+// block). Self-contained demo numbers — not tied to the live widget below.
+// Cohort g adopts at g=3 (baseline year g-1=2); we read the effect at t=5.
+p2_ld_years = d3.range(0, 7)
+p2_ld_gAdopt = 3                    // adoption year (so baseline = year 2)
+p2_ld_tEval  = 5                    // calendar time we read ATT(g,t) at
+p2_ld = {
+  const base = p2_ld_gAdopt - 1;   // last pre-treatment year
+  const cTrend  = y => 7.8 - 0.05 * y;                 // never-treated path
+  const cAtBase = cTrend(base);
+  // Cohort g sits a touch above the controls pre-period, then the program
+  // pulls it DOWN (HbA1c falls = good) by a growing amount after adoption.
+  const gPre    = y => cTrend(y) + 0.25;
+  const gAtBase = gPre(base);
+  const rows = [];
+  for (const y of p2_ld_years) {
+    const treated = y >= p2_ld_gAdopt;
+    const effect  = treated ? -0.18 * (y - p2_ld_gAdopt + 1) : 0;
+    rows.push({ year: y, group: "Control (never-treated)", y: cTrend(y) });
+    rows.push({ year: y, group: "Cohort g (treated)",     y: gPre(y) + effect });
+    // Counterfactual = cohort baseline shifted by the control's change.
+    rows.push({ year: y, group: "Cohort g counterfactual", y: gAtBase + (cTrend(y) - cAtBase) });
+  }
+  return rows;
+}
+p2_ld_marks = {
+  const base = p2_ld_gAdopt - 1;
+  const get = (grp, yr) => p2_ld.find(d => d.group === grp && d.year === yr).y;
+  const gActual = get("Cohort g (treated)", p2_ld_tEval);
+  const gCf     = get("Cohort g counterfactual", p2_ld_tEval);
+  return { base, gActual, gCf };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(580, width),
+  height: 320,
+  marginLeft: 62,
+  marginBottom: 48,
+  marginRight: 18,
+  marginTop: 30,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Calendar time", tickFormat: "d", grid: false, domain: [0, 6.4] },
+  y: { label: "HbA1c (%) — lower is better", grid: true },
+  color: {
+    domain: ["Cohort g (treated)", "Control (never-treated)", "Cohort g counterfactual"],
+    range: ["#990000", "#3d5a6c", "#9c7a33"],
+    legend: true
+  },
+  marks: [
+    // adoption rule
+    Plot.ruleX([p2_ld_gAdopt - 0.5], { stroke: "#79766e", strokeDasharray: "4,4" }),
+    Plot.text([{ x: p2_ld_gAdopt - 0.5, y: 7.95 }], {
+      x: "x", y: "y", text: () => "cohort g adopts", fill: "#79766e",
+      fontSize: 10, dx: 4, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // the three trajectories
+    Plot.line(p2_ld.filter(d => d.group === "Control (never-treated)"),
+      { x: "year", y: "y", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+    Plot.line(p2_ld.filter(d => d.group === "Cohort g counterfactual"),
+      { x: "year", y: "y", stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "5,4" }),
+    Plot.line(p2_ld.filter(d => d.group === "Cohort g (treated)"),
+      { x: "year", y: "y", stroke: "#990000", strokeWidth: 2.5 }),
+    Plot.dot(p2_ld, { x: "year", y: "y", fill: "group", r: 3 }),
+    // the ATT gap at t (treated actual vs counterfactual)
+    Plot.ruleX([p2_ld_tEval], {
+      y1: p2_ld_marks.gActual, y2: p2_ld_marks.gCf,
+      stroke: "#2e6f40", strokeWidth: 3
+    }),
+    Plot.text([{ x: p2_ld_tEval, y: (p2_ld_marks.gActual + p2_ld_marks.gCf) / 2 }], {
+      x: "x", y: "y", text: () => "ATT(g,t)", fill: "#2e6f40",
+      fontSize: 11, fontWeight: 700, dx: 8, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+The **dashed ochre** line is the counterfactual: where cohort $g$ would have ended up if, from its baseline year $g-1$, it had only moved as much as the never-treated controls (slate). The cohort's **actual** path (red) drops faster because the program works. The **green** vertical bar at calendar time $t$ is $\text{ATT}(g,t)$ --- the gap between the actual outcome and the counterfactual. Algebraically that gap is exactly $(\bar Y_{g,t} - \bar Y_{g,g-1}) - (\bar Y_{C,t} - \bar Y_{C,g-1})$.
+:::
+
+The grid of $\text{ATT}(g,t)$ values is the raw material. Everything else is aggregation.
+
+
+## Choosing the Control Group
+
+Callaway & Sant'Anna give you two flavors of comparison group, and the choice has real consequences.
+
+::: {.glass-card .glass-card--assumption}
+**Never-treated controls.** Identify each $\text{ATT}(g,t)$ against units that are *never* treated in the sample ($C_i = 1$). This requires a parallel-trends assumption holding over *all* periods relative to the never-treated, plus enough never-treated units to estimate stable comparison trends.
+
+**Not-yet-treated controls.** Identify each $\text{ATT}(g,t)$ against all units not yet treated by time $t$ --- this pools the never-treated *and* cohorts whose adoption year is still in the future. It requires parallel trends to hold relative to this larger, time-varying comparison set.
+:::
+
+The trade-off is statistical power versus credibility:
+
+- **Not-yet-treated** uses a larger comparison pool (it borrows future cohorts before they switch on), so standard errors are smaller. It is the only option when there are few or no never-treated units. The cost: the comparison group changes composition as time advances, and you must believe parallel trends for those future cohorts too.
+- **Never-treated** uses a fixed, transparent comparison group --- the cleanest possible counterfactual --- at the price of discarding information and demanding that genuine never-treated units exist and are comparable.
+
+::: {.glass-card .glass-card--warning}
+If your design has **no never-treated units** (every unit eventually adopts), the never-treated estimator is undefined and you must use not-yet-treated controls --- and the *last* cohort to adopt can never be cleanly identified, because by the time they switch on there is no one left who is "not yet treated." This is a structural limitation of staggered designs, not a bug in any one estimator.
+:::
+
+
+## See It: From the ATT(g,t) Grid to an Aggregate
+
+The interactive below simulates our 21-region diabetes program. Each region's HbA1c drifts downward over the decade (medicine improves for everyone), the program delivers a *real* benefit that **grows the longer a region has been enrolled**, and the three cohorts adopt in 2014, 2017, and 2019. You can read off the full $\text{ATT}(g,t)$ grid, collapse it into an event study, and compare the honest aggregate to the biased TWFE number.
+
+::: {.interactive-container}
+
+#### The Callaway-Sant'Anna grid, aggregated
+
+```{ojs}
+//| echo: false
+html`<p style="margin:0 0 0.75rem; font-size:0.85rem; color:#79766e;"><strong style="color:#1c1c1a;">Start here:</strong> pick a <em>View</em> below, then drag the effect-growth slider and watch how the honest estimate (green/slate) stays on target while TWFE (red) drifts. Full walkthrough in <em>How to Read the Interactive</em> just below the chart.</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof mod_controlType = Inputs.radio(
+  ["Never-treated", "Not-yet-treated"],
+  { label: "Control group (active in the empty-control edge case — see Step 5)", value: "Never-treated" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof mod_effectSlope = Inputs.range([0, 0.25], {
+  value: 0.12,
+  step: 0.01,
+  label: "How fast the benefit grows (pp/year)"
+})
+```
+
+```{ojs}
+//| echo: false
+html`<p style="margin:-0.25rem 0 0.5rem; font-size:0.8rem; color:#79766e;">Drag right to make the program's benefit accumulate faster — watch TWFE's bias grow. <em>pp</em> = percentage points of HbA1c.</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof mod_aggView = Inputs.radio(
+  ["Grid: ATT(g,t)", "Event study", "Overall ATT vs TWFE"],
+  { label: "View", value: "Grid: ATT(g,t)" }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Simulation constants ───────────────────────────────────────────
+mod_years = d3.range(2011, 2021)            // 2011..2020
+mod_cohorts = [2014, 2017, 2019]            // adoption years
+mod_baselineHbA1c = 7.8                     // 2011 regional mean
+mod_secularSlope = -0.04                    // everyone improves ~0.04 pp/yr
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Build the panel of 21 regions ─────────────────────────────────
+// 6 regions per treated cohort (18) + 3 never-treated = 21.
+// HbA1c(i,t) = baseline + secular drift + program effect (if treated) + region FE.
+// The TRUE program effect is a REDUCTION that grows with years since adoption:
+//   effect(g,t) = -slope * (t - g + 1)   for t >= g, else 0   (negative = good)
+mod_panel = {
+  const slope = mod_effectSlope;
+  const rows = [];
+  // region fixed effects: small, deterministic spread so the demo is stable
+  const regionFE = i => (((i * 37) % 11) - 5) * 0.05;
+  let id = 0;
+  const cohortOf = [];
+  for (const g of mod_cohorts) {
+    for (let k = 0; k < 6; k++) { cohortOf.push(g); }
+  }
+  for (let k = 0; k < 3; k++) cohortOf.push(Infinity); // never-treated
+  for (let i = 0; i < cohortOf.length; i++) {
+    const g = cohortOf[i];
+    for (const t of mod_years) {
+      const treated = (g !== Infinity) && (t >= g);
+      const yearsSince = treated ? (t - g + 1) : 0;
+      const effect = treated ? -slope * yearsSince : 0; // negative = improvement
+      const y = mod_baselineHbA1c
+        + mod_secularSlope * (t - 2011)
+        + effect
+        + regionFE(i);
+      rows.push({
+        id, region: i, cohort: g, year: t,
+        treated: treated ? 1 : 0,
+        gLabel: g === Infinity ? "Never" : String(g),
+        y
+      });
+    }
+    id++;
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Helper: mean outcome for a set of rows ────────────────────────
+mod_meanY = (rows) => d3.mean(rows, d => d.y)
+
+// ── Comparison-group rows at a given (g, t): clean controls only ──
+// Never-treated: cohort === Infinity.
+// Not-yet-treated: cohort === Infinity OR cohort > t (future adopters).
+mod_controlRows = function(t) {
+  if (mod_controlType === "Never-treated") {
+    return mod_panel.filter(d => d.cohort === Infinity && d.year === t);
+  }
+  return mod_panel.filter(d => (d.cohort === Infinity || d.cohort > t) && d.year === t);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The ATT(g,t) grid ─────────────────────────────────────────────
+// ATT(g,t) = [Ybar(g,t) - Ybar(g,g-1)] - [Ybar(C,t) - Ybar(C,g-1)]
+// Only post-treatment cells (t >= g) are reported as effects;
+// pre-treatment cells (t < g) are computed too, as a placebo/pre-trend check.
+mod_attGrid = {
+  const out = [];
+  for (const g of mod_cohorts) {
+    const base = g - 1; // last pre-treatment year
+    const gRowsBase = mod_panel.filter(d => d.cohort === g && d.year === base);
+    const cRowsBase = mod_controlRows(base);
+    const ybar_g_base = mod_meanY(gRowsBase);
+    const ybar_c_base = mod_meanY(cRowsBase);
+    for (const t of mod_years) {
+      if (t === base) continue;
+      const gRows = mod_panel.filter(d => d.cohort === g && d.year === t);
+      const cRows = mod_controlRows(t);
+      // not-yet-treated control set may be empty at late t — guard it
+      if (cRows.length === 0) continue;
+      const att = (mod_meanY(gRows) - ybar_g_base) - (mod_meanY(cRows) - ybar_c_base);
+      out.push({
+        cohort: g, gLabel: String(g), year: t,
+        eventTime: t - g,           // relative time
+        post: t >= g ? 1 : 0,
+        att
+      });
+    }
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Aggregation 1: Overall ATT (simple mean of post-treatment cells)
+// Callaway-Sant'Anna's "simple" overall ATT weights each post cell by its
+// cohort size; cohorts are equal-sized here (6 each), so a plain mean is
+// the cohort-size-weighted mean.
+mod_overallATT = {
+  const post = mod_attGrid.filter(d => d.post === 1);
+  return d3.mean(post, d => d.att);
+}
+
+// ── Aggregation 2: Event-study (dynamic) effects ──────────────────
+// Average ATT(g,t) across cohorts within each event time e = t - g.
+mod_eventStudy = {
+  const byE = d3.group(mod_attGrid, d => d.eventTime);
+  const out = [];
+  for (const [e, rows] of byE) {
+    // require at least one cohort observed at this event time
+    out.push({ eventTime: e, att: d3.mean(rows, r => r.att), n: rows.length });
+  }
+  return out.sort((a, b) => a.eventTime - b.eventTime)
+            .filter(d => d.eventTime >= -3 && d.eventTime <= 5);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── The BIASED TWFE estimate on the same data ─────────────────────
+// Static TWFE: regress y on region FE, year FE, and the treatment dummy.
+// We solve it by within-transformation (two-way demeaning) + simple OLS of
+// the demeaned outcome on the demeaned treatment indicator.
+mod_twfe = {
+  const rows = mod_panel.map(d => ({ ...d }));
+  const grand = d3.mean(rows, d => d.y);
+  const grandD = d3.mean(rows, d => d.treated);
+  const byRegion = d3.group(rows, d => d.region);
+  const byYear = d3.group(rows, d => d.year);
+  const regMeanY = new Map(), regMeanD = new Map();
+  for (const [r, rs] of byRegion) {
+    regMeanY.set(r, d3.mean(rs, d => d.y));
+    regMeanD.set(r, d3.mean(rs, d => d.treated));
+  }
+  const yrMeanY = new Map(), yrMeanD = new Map();
+  for (const [yr, rs] of byYear) {
+    yrMeanY.set(yr, d3.mean(rs, d => d.y));
+    yrMeanD.set(yr, d3.mean(rs, d => d.treated));
+  }
+  // two-way within transform
+  let sxx = 0, sxy = 0;
+  for (const d of rows) {
+    const yt = d.y - regMeanY.get(d.region) - yrMeanY.get(d.year) + grand;
+    const dt = d.treated - regMeanD.get(d.region) - yrMeanD.get(d.year) + grandD;
+    sxx += dt * dt;
+    sxy += dt * yt;
+  }
+  return sxy / sxx; // TWFE coefficient on the treatment dummy
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Render: switch among the three views ──────────────────────────
+mod_aggView === "Grid: ATT(g,t)"
+  ? Plot.plot({
+      width: Math.min(640, width),
+      height: 280,
+      marginLeft: 70,
+      style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+      x: { label: "Calendar year", tickFormat: "d", domain: mod_years },
+      y: { label: "Adoption cohort", domain: mod_cohorts.map(String), type: "band" },
+      color: {
+        type: "diverging",
+        // Uppsala palette: green = improvement (good), red = worsening.
+        range: ["#2e6f40", "#f6f5f1", "#990000"],
+        // Symmetric around 0, scaled to the data so the deepest cells at the
+        // maximum slider value (~-1.75 pp) do not all clamp to the same green.
+        domain: (() => {
+          const m = Math.max(0.6, d3.max(mod_attGrid, d => Math.abs(d.att)) || 0.6);
+          return [-m, m];
+        })(),
+        pivot: 0,
+        label: "ATT (pp HbA1c) — green = improvement",
+        legend: true
+      },
+      marks: [
+        Plot.cell(mod_attGrid, {
+          x: "year", y: "gLabel", fill: "att",
+          stroke: d => d.post ? "#1c1c1a" : "#e6e3db",
+          strokeWidth: d => d.post ? 1.5 : 0.5,
+          title: d => `Cohort ${d.gLabel}, ${d.year}\nevent time ${d.eventTime}\nATT = ${d.att.toFixed(3)} pp${d.post ? "" : "  (pre — placebo)"}`
+        }),
+        Plot.text(mod_attGrid, {
+          x: "year", y: "gLabel",
+          text: d => d.att.toFixed(2),
+          fill: d => Math.abs(d.att) > 0.35 ? "white" : "#1c1c1a",
+          fontSize: 9
+        })
+      ]
+    })
+  : mod_aggView === "Event study"
+  ? Plot.plot({
+      width: Math.min(640, width),
+      height: 300,
+      marginLeft: 64,
+      marginRight: 20,
+      marginTop: 28,
+      style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+      x: { label: "Event time (years since adoption)", tickFormat: "d", grid: true },
+      y: {
+        label: "Aggregated ATT (pp HbA1c)",
+        grid: true,
+        // Adaptive: at the maximum slider the path reaches ~-1.5, so a fixed
+        // floor would clip it. Pad the observed range and always include 0.
+        domain: [
+          Math.min(-0.2, (d3.min(mod_eventStudy, d => d.att) ?? -0.2) * 1.15),
+          Math.max(0.4, (d3.max(mod_eventStudy, d => d.att) ?? 0.2) + 0.2)
+        ]
+      },
+      marks: [
+        Plot.ruleY([0], { stroke: "#1c1c1a", strokeOpacity: 0.4 }),
+        Plot.ruleX([-0.5], { stroke: "#9c7a33", strokeDasharray: "4,4" }),
+        Plot.areaY(mod_eventStudy.filter(d => d.eventTime >= 0), {
+          x: "eventTime", y: "att", fill: "#990000", fillOpacity: 0.08
+        }),
+        Plot.line(mod_eventStudy, {
+          x: "eventTime", y: "att", stroke: "#990000", strokeWidth: 2
+        }),
+        Plot.dot(mod_eventStudy, {
+          x: "eventTime", y: "att",
+          fill: d => d.eventTime < 0 ? "#9c7a33" : "#990000",
+          r: 5,
+          title: d => `event time ${d.eventTime}\nATT = ${d.att.toFixed(3)} pp`
+        }),
+        Plot.text(["pre-treatment\nplacebo ≈ 0"], {
+          frameAnchor: "top-left", dx: 8, dy: 6,
+          text: d => d, fill: "#9c7a33", fontSize: 11, textAnchor: "start",
+          lineHeight: 1.1, fontWeight: 600,
+          stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+        }),
+        Plot.text(["post-treatment dose-response"], {
+          frameAnchor: "bottom-right", dx: -8, dy: -6,
+          text: d => d, fill: "#990000", fontSize: 11, textAnchor: "end",
+          fontWeight: 600,
+          stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+        })
+      ]
+    })
+  : Plot.plot({
+      width: Math.min(640, width),
+      height: 240,
+      marginLeft: 130,
+      marginRight: 40,
+      style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+      x: {
+        label: "Estimated effect (pp HbA1c, negative = improvement)",
+        grid: true,
+        // Pad both ends so the bar-tip value labels (anchored just outside the
+        // bar end) never clip the frame, even at the maximum slider where the
+        // deepest bar reaches ~-0.8 pp. Always keep 0 inside the domain.
+        domain: (() => {
+          const vals = mod_compareData.map(d => d.value);
+          const lo = Math.min(0, d3.min(vals) ?? 0);
+          const hi = Math.max(0, d3.max(vals) ?? 0);
+          const pad = Math.max(0.15, (hi - lo) * 0.22);
+          return [lo - pad, hi + pad];
+        })()
+      },
+      y: { label: null, domain: ["TWFE (static)", "CS overall ATT", "True overall ATT"] },
+      marks: [
+        Plot.ruleX([0], { stroke: "#1c1c1a", strokeOpacity: 0.4 }),
+        Plot.barX(mod_compareData, {
+          x: "value", y: "label",
+          fill: d => d.kind === "twfe" ? "#990000" : (d.kind === "true" ? "#2e6f40" : "#3d5a6c"),
+          fillOpacity: 0.85
+        }),
+        Plot.text(mod_compareData, {
+          x: "value", y: "label",
+          text: d => `${d.value >= 0 ? "+" : ""}${d.value.toFixed(3)}`,
+          textAnchor: d => d.value < 0 ? "end" : "start",
+          dx: d => d.value < 0 ? -6 : 6,
+          fontWeight: "bold", fontSize: 12, fill: "#1c1c1a",
+          stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+        })
+      ]
+    })
+```
+
+```{ojs}
+//| echo: false
+// ── Live caption + on-chart color key (echoes current control state) ──
+html`<div style="margin-top:0.5rem; font-family:'Inter',sans-serif; font-size:0.8rem; color:#79766e;">
+  <div style="margin-bottom:0.35rem;">
+    Slope = <strong style="color:#1c1c1a;">${mod_effectSlope.toFixed(2)} pp/yr</strong>
+    &nbsp;→&nbsp; TWFE bias =
+    <strong style="color:#990000;">${(mod_twfe - mod_trueOverall >= 0 ? "+" : "") + (mod_twfe - mod_trueOverall).toFixed(3)} pp</strong>
+    (TWFE minus truth); CS error =
+    <strong style="color:#3d5a6c;">${(mod_overallATT - mod_trueOverall >= 0 ? "+" : "") + (mod_overallATT - mod_trueOverall).toFixed(3)} pp</strong>.
+  </div>
+  <div style="display:flex; flex-wrap:wrap; gap:0.9rem; align-items:center;">
+    ${mod_aggView === "Grid: ATT(g,t)"
+      ? html`<span><span style="display:inline-block; width:0.7rem; height:0.7rem; background:#2e6f40; border-radius:2px; vertical-align:middle;"></span> negative number = HbA1c fell = program helped (green)</span>
+             <span><span style="display:inline-block; width:0.7rem; height:0.7rem; background:#990000; border-radius:2px; vertical-align:middle;"></span> positive = worse (red)</span>
+             <span><span style="display:inline-block; width:0.9rem; height:0; border-top:2px solid #1c1c1a; vertical-align:middle;"></span> bold outline = post-treatment</span>`
+      : html`<span><span style="display:inline-block; width:0.9rem; height:0; border-top:2px solid #990000; vertical-align:middle;"></span> CS / honest estimate</span>
+             <span><span style="display:inline-block; width:0.7rem; height:0.7rem; background:#9c7a33; border-radius:50%; vertical-align:middle;"></span> pre-treatment placebo</span>
+             <span><span style="display:inline-block; width:0.7rem; height:0.7rem; background:#2e6f40; border-radius:2px; vertical-align:middle;"></span> true value</span>
+             <span><span style="display:inline-block; width:0.7rem; height:0.7rem; background:#990000; border-radius:2px; vertical-align:middle;"></span> TWFE (biased)</span>`}
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── True overall ATT: average of the simulated effects on post cells ──
+// effect(g,t) = -slope*(t-g+1); average over all post (g,t) with equal cohorts.
+mod_trueOverall = {
+  const slope = mod_effectSlope;
+  const vals = [];
+  for (const g of mod_cohorts) {
+    for (const t of mod_years) {
+      if (t >= g) vals.push(-slope * (t - g + 1));
+    }
+  }
+  return d3.mean(vals);
+}
+
+mod_compareData = [
+  { label: "True overall ATT", value: mod_trueOverall, kind: "true" },
+  { label: "CS overall ATT",   value: mod_overallATT,  kind: "cs" },
+  { label: "TWFE (static)",    value: mod_twfe,        kind: "twfe" }
+]
+```
+
+```{ojs}
+//| echo: false
+
+// ── Headline numbers under the chart ──────────────────────────────
+html`<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr)); gap:0.5rem; margin-top:0.6rem; font-family:'Inter',sans-serif; font-size:0.82rem;">
+  <div style="padding:0.5rem 0.75rem; border-radius:0.5rem; min-height:3.5rem; background:rgba(46,111,64,0.07); border:1px solid rgba(46,111,64,0.2);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">True ATT</div>
+    <div style="font-size:1.15rem; font-weight:700; color:#2e6f40;">${mod_trueOverall.toFixed(3)} pp</div>
+  </div>
+  <div style="padding:0.5rem 0.75rem; border-radius:0.5rem; min-height:3.5rem; background:rgba(61,90,108,0.07); border:1px solid rgba(61,90,108,0.2);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">CS ATT</div>
+    <div style="font-size:1.15rem; font-weight:700; color:#3d5a6c;">${mod_overallATT.toFixed(3)} pp</div>
+  </div>
+  <div style="padding:0.5rem 0.75rem; border-radius:0.5rem; min-height:3.5rem; background:rgba(153,0,0,0.06); border:1px solid rgba(153,0,0,0.2);">
+    <div style="font-weight:600; color:#79766e; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em;">TWFE (biased)</div>
+    <div style="font-size:1.15rem; font-weight:700; color:#990000;">${mod_twfe.toFixed(3)} pp</div>
+  </div>
+</div>`
+```
+
+:::
+
+### How to Read the Interactive
+
+Work through these steps in order; each builds the intuition the modern estimators are designed to deliver.
+
+**Step 1: Read the grid.** With the **View** set to *Grid: ATT(g,t)*, each cell is one $\text{ATT}(g,t)$ --- a cohort (row) at a calendar year (column). Green means the program lowered HbA1c (good); the number printed inside is the effect in percentage points (a *negative* number means HbA1c fell, i.e. the program helped). Cells with a bold dark outline are *post-treatment* (the real effects); faintly outlined cells are *pre-treatment placebos*. Notice two things: the pre-treatment cells hover near zero (clean controls, parallel trends satisfied), and within each row the green **deepens to the right** --- the program's benefit accumulates the longer a region has been enrolled.
+
+**Step 2: Watch the late cohort.** The 2019 cohort (bottom row) has only two post-treatment years and shallow effects, because they only just switched on. This is exactly the cohort that TWFE *mishandles*: it tries to use these barely-treated late adopters as part of a control group for the deeply-treated 2014 cohort.
+
+**Step 3: Collapse to an event study.** Switch **View** to *Event study*. Each $\text{ATT}(g,t)$ is now repositioned by its *event time* $e = t - g$ (years since adoption) and averaged across cohorts. The ochre dots at negative event times are the pre-treatment placebos --- they sit on zero, confirming no differential pre-trends. The red path climbs (in magnitude) after adoption: the dynamic, heterogeneity-robust dose-response curve. This is the picture TWFE event-study coefficients *try* to show but contaminate.
+
+**Step 4: Confront TWFE.** Switch **View** to *Overall ATT vs TWFE*. Because this is a simulation we *know* the real answer --- the green bar is the true average post-treatment effect baked into the data (in real data you never see this, which is exactly why an estimator that recovers it matters). The slate bar is the Callaway-Sant'Anna overall ATT --- it lands essentially on top of the truth. The red bar is the static TWFE coefficient on the same data: it is **attenuated** (too close to zero), because the negative-weight forbidden comparisons pull it toward zero. Crank the **effect-growth slider** up: the more the effect grows over time, the worse TWFE's bias becomes, while CS stays locked on the truth.
+
+**Step 5: Switch the control group.** Flip **Control group** between *Never-treated* and *Not-yet-treated*. The grid barely moves and every cell stays populated --- both give valid, clean comparisons here. The reason both work even in 2020 is that this panel keeps three genuinely *never-treated* regioner, and those never-treated units remain inside the not-yet-treated pool at every calendar year, so there is always *someone* clean to compare against. The structural limitation of not-yet-treated controls --- the disappearing late-cohort cells --- only bites when there are **no** never-treated units at all, so that once the final cohort switches on, the comparison pool empties. That scenario is the subject of the Caution card above and Exercise 3; here, the never-treated regioner quietly rescue the design.
+
+
+## Sun & Abraham: Fixing the Event Study Directly
+
+Callaway & Sant'Anna build the event study from scratch out of clean $\text{ATT}(g,t)$ blocks. Sun & Abraham (2021) take a complementary route that fits naturally if you already live in the regression world. They show *why* the standard "dynamic" TWFE event-study regression is contaminated, and then fix it.
+
+The usual event-study specification regresses the outcome on a set of relative-time dummies $\mathbb{1}[t - G_i = e]$:
+
+$$
+Y_{it} = \alpha_i + \lambda_t + \sum_{e \neq -1} \beta_e \, \mathbb{1}[t - G_i = e] + \varepsilon_{it}.
+$$
+
+**How to read this**: "Outcome equals a region fixed effect, a year fixed effect, and a coefficient $\beta_e$ for being $e$ years away from one's own adoption date, leaving out $e = -1$ as the omitted baseline." You would *hope* $\beta_e$ is the average effect $e$ years after adoption.
+
+It is not. Sun & Abraham prove that each $\beta_e$ is a linear combination of $\text{ATT}(g,e)$ values from *many cohorts*, and --- crucially --- the coefficient at relative time $e$ can load with **non-zero (even negative) weights on effects from other relative times**. A pre-period coefficient can be polluted by post-period effects of other cohorts, so even the "pre-trend test" is corrupted.
+
+The figure below makes that backward contamination visible. Both event studies are drawn on the *same* data, in which the true pre-trend is exactly flat (parallel trends genuinely holds). The clean Sun-Abraham / Callaway-Sant'Anna path (green) sits on zero before adoption, as it should. The standard dynamic TWFE path (red) does **not**: post-treatment effects from other cohorts leak *backward* through the contaminated weights, bending the pre-period coefficients away from zero --- a "pre-trend violation" that is a pure estimation artifact. This is the exact contradiction Exercise 4 asks you to reconcile.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static schematic of contaminated TWFE vs clean SA/CS event-study coefficients
+// on data with a GENUINELY FLAT pre-trend. Illustrative shape, not the live DGP.
+p2_es = {
+  const es = d3.range(-3, 6);   // event times -3..5
+  const trueEffect = e => e < 0 ? 0 : -0.12 * (e + 1);   // flat pre, growing post
+  const rows = [];
+  for (const e of es) {
+    const clean = trueEffect(e);
+    // TWFE contamination: post effects bleed backward (nonzero pre) AND the
+    // post path is attenuated toward zero. Simple illustrative distortion.
+    const contaminate = e < 0 ? 0.09 * (e + 3.4) : 0;     // upward-biased pre dip
+    const twfe = e < 0 ? contaminate : clean * 0.55;       // attenuated post
+    rows.push({ e, estimator: "Clean (SA / CS)", val: clean });
+    rows.push({ e, estimator: "Standard TWFE",   val: twfe });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(620, width),
+  height: 300,
+  marginLeft: 62,
+  marginBottom: 48,
+  marginTop: 28,
+  marginRight: 18,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Event time (years since adoption)", tickFormat: "d", grid: true },
+  y: { label: "Event-study coefficient (pp)", grid: true },
+  color: {
+    domain: ["Clean (SA / CS)", "Standard TWFE"],
+    range: ["#2e6f40", "#990000"],
+    legend: true
+  },
+  marks: [
+    Plot.ruleY([0], { stroke: "#1c1c1a", strokeOpacity: 0.4 }),
+    Plot.ruleX([-0.5], { stroke: "#9c7a33", strokeDasharray: "4,4" }),
+    Plot.line(p2_es, { x: "e", y: "val", stroke: "estimator", strokeWidth: 2.5 }),
+    Plot.dot(p2_es, { x: "e", y: "val", fill: "estimator", r: 4,
+      title: d => `${d.estimator}\nevent time ${d.e}\ncoef = ${d.val.toFixed(3)} pp` }),
+    Plot.text([{ x: -2.6, y: 0.16 }], {
+      x: "x", y: "y", text: () => "TWFE: spurious\npre-trend (contaminated)",
+      fill: "#990000", fontSize: 10, fontWeight: 600, textAnchor: "start",
+      lineHeight: 1.1, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ x: 2.5, y: 0.03 }], {
+      x: "x", y: "y", text: () => "clean pre-trend = 0",
+      fill: "#2e6f40", fontSize: 10, fontWeight: 600, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Same data, two estimators. The true pre-trend is flat (parallel trends holds). **Green (SA / CS):** pre-period coefficients sit on zero and the post path traces the real dose-response. **Red (standard TWFE):** post-treatment effects of other cohorts bleed *backward* into the pre-period coefficients (a fake "pre-trend") and *attenuate* the post coefficients. Trust the green one --- the red "violation" is the contamination Sun-Abraham was built to remove.
+:::
+
+::: {.glass-card .glass-card--definition}
+The **interaction-weighted (IW) estimator** of Sun & Abraham replaces the contaminated specification with a *fully saturated* one that interacts every cohort with every relative time:
+
+$$
+Y_{it} = \alpha_i + \lambda_t + \sum_{g}\sum_{e \neq -1} \gamma_{g,e}\,\big(\mathbb{1}[G_i = g]\cdot \mathbb{1}[t - G_i = e]\big) + \varepsilon_{it}.
+$$
+
+Each $\gamma_{g,e}$ is a *cohort-specific* relative-time effect --- a clean $\text{ATT}(g, g+e)$. The event-study estimate at relative time $e$ is then the cohort-share-weighted average
+
+$$
+\hat\beta_e^{\,\text{IW}} = \sum_g \widehat{\Pr}(G = g \mid G \in \text{cohorts present at } e)\;\hat\gamma_{g,e}.
+$$
+:::
+
+**How to read the aggregation**: "The effect $e$ years after adoption is the average of the cohort-specific effects $\hat\gamma_{g,e}$, weighted by each cohort's share among the cohorts that are actually observable at event time $e$." The weight $\widehat{\Pr}(G = g \mid \dots)$ looks intimidating but is just a *fraction*: of all the treated regions you can still observe $e$ years out from their own adoption, what share belong to cohort $g$? Because the weights are observed cohort shares --- all non-negative, summing to one --- there are no forbidden comparisons and no contamination across relative times. In practice the *saturated* regression (one that includes a separate dummy for every cohort-by-relative-time cell, so nothing is forced to be equal) plus this weighting is exactly what `fixest::sunab()` automates.
+
+::: {.glass-card .glass-card--insight}
+Sun-Abraham and Callaway-Sant'Anna almost always land on the same numbers when both are applicable. The difference is packaging: CS is a two-step estimator built around explicit $\text{ATT}(g,t)$ blocks and flexible aggregation schemes; SA is a single saturated regression with a principled post-estimation weighting. CS handles not-yet-treated controls and covariates more flexibly; SA slots into an existing `feols` workflow with one function call.
+:::
+
+
+## The Rest of the Family
+
+Two more members of the heterogeneity-robust family round out the toolkit. They reach the same destination by different mathematical roads.
+
+::: {.glass-card .glass-card--definition}
+**de Chaisemartin & D'Haultfoeuille (2020), the `DID_multiplegt` estimator.** Targets the average, across all treated cells, of the *instantaneous* treatment effect, by averaging only the $2\times2$ DiDs that compare a switching unit to a not-yet-switching unit between consecutive periods. It is especially valuable when treatment can **turn on and off** (non-absorbing treatment) --- a case the cohort-based estimators above do not handle, since they assume treatment, once adopted, stays on.
+
+**Borusyak, Jaravel & Spiess (2024), the imputation estimator.** Fit the two-way fixed-effects model on the **untreated observations only** (all never-treated cells plus all pre-treatment cells of eventual adopters). Use that fitted model to *impute* each treated cell's never-treated counterfactual $\hat Y_{it}(0)$, then average the imputed gaps $Y_{it} - \hat Y_{it}(0)$ over whatever cells define your estimand. Because the FE model is never estimated on contaminated treated data, it is the **most efficient** estimator under *homoskedasticity* (the error term having the same variance for every observation), and aggregation weights are whatever you choose.
+:::
+
+All four estimators --- CS, SA, dCDH, BJS --- agree on the diagnosis (TWFE's negative weights) and on the cure (clean controls + honest aggregation). They differ in their default **estimand** (the specific quantity each one targets --- the well-defined "thing you are trying to estimate" *before* any data is touched), how they handle covariates and on/off treatment, and their efficiency. For an absorbing-treatment staggered rollout like our diabetes program, CS and SA are the standard choices; BJS is the efficient alternative; dCDH is the tool to reach for when treatment is reversible.
+
+The table below lines up the family side by side --- exactly the comparison "by estimand, treatment type, and efficiency" promised in the learning objectives.
+
+| Estimator | Default estimand | Clean-control logic | On/off (reversible) treatment? | Covariates | Efficiency | Software |
+|:--|:--|:--|:--:|:--|:--|:--|
+| **Callaway-Sant'Anna** (2021) | $\text{ATT}(g,t)$ grid → flexible aggregations (overall / dynamic / calendar / group) | Explicit DiD vs never-treated *or* not-yet-treated | No (absorbing) | Flexible (doubly-robust: regression, IPW, or both) | Good | R `did::att_gt`; Py `differences` |
+| **Sun-Abraham** (2021) | Event-study $\hat\beta_e^{\text{IW}}$ (and overall ATT) | Saturated cohort × relative-time regression; clean reference cohort | No (absorbing) | Via the regression (interactions) | Good (matches CS) | R `fixest::sunab`; Py by hand / `did2s` |
+| **de Chaisemartin-D'Haultfoeuille** (2020) | Average *instantaneous* effect over treated cells | Consecutive-period $2\times2$ vs not-yet-switchers | **Yes** (its signature strength) | Yes | Moderate | R/Stata `DID_multiplegt` |
+| **Borusyak-Jaravel-Spiess** (2024) | Imputed gaps $Y_{it}-\hat Y_{it}(0)$, any chosen weights | Fit FE on *untreated* cells only, then impute counterfactuals | No (absorbing) | Yes (in the imputation model) | **Highest** (efficient under homoskedasticity) | R `didimputation`; Py `did2s` |
+
+: Comparing the heterogeneity-robust family. All four refuse already-treated controls and use deliberate, non-negative weights; they differ mainly in default estimand, reversible-treatment support, and efficiency. {.science-table}
+
+::: {.aside}
+Two table terms worth a plain gloss. **Doubly-robust** (the CS covariate option): you may model the outcome trend, *or* model who-gets-treated (a propensity/IPW weighting), and the estimate stays consistent as long as *at least one* of those two models is right --- two chances to be correct, hence "doubly" robust. **IPW** = inverse-probability weighting: reweight units by one over their probability of their observed treatment status, so the comparison group is rebalanced to look like the treated group.
+:::
+
+
+<details>
+<summary>Math Details: Why TWFE Underweights Late Cohorts and How CS Repairs It</summary>
+<div class="details-content">
+
+### The Goodman-Bacon decomposition in one paragraph
+
+Goodman-Bacon (2021) showed that the static TWFE coefficient $\hat\beta^{\text{TWFE}}$ is a weighted average of all possible $2\times2$ DiD comparisons in the panel:
+
+$$
+\hat\beta^{\text{TWFE}} = \sum_{k} s_k \, \hat\beta_k^{\,2\times2},
+$$
+
+where the weights $s_k$ are proportional to each comparison's group sizes and to the **variance of the treatment dummy** within that comparison. Read this as: "TWFE is a weighted average of every clean and not-so-clean two-group, two-period DiD you could form, with weights driven by treatment-variance, not by anything you care about."
+
+The comparisons come in three types: (i) treated vs. never-treated --- always clean; (ii) early adopters vs. *later, not-yet-treated* adopters --- clean; and (iii) **late adopters vs. earlier, already-treated adopters** --- the *forbidden comparison*. In type (iii), the "control" group's outcome is already moving because of its own evolving treatment effect. Subtracting that moving trend means $\hat\beta_k^{2\times2}$ no longer estimates a treatment effect; with dynamic effects it can be negative even when every true effect is beneficial.
+
+The two panels below contrast a clean type-(ii) comparison with the forbidden type-(iii) one. In both, the late cohort (red) adopts at the dashed line and improves by the same *true* amount. On the left the comparison group (slate) is genuinely **not yet treated**, so its line is flat across the window and the DiD recovers the true effect. On the right the comparison group is an **already-treated early cohort** whose own benefit is *still growing* --- a sloping "control." Differencing against that moving trend subtracts improvement that belongs to the control, so the estimated effect is *smaller* (attenuated) than the truth: the green-to-red gap is the bias.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static schematic of the clean (type ii) vs forbidden (type iii) 2x2 DiD.
+// Demo numbers only — illustrative, not from the live widget.
+p2_gb = {
+  const yrs = [0, 1, 2, 3];           // 2 pre, adoption at 2, 1 post
+  const adopt = 2;
+  const trueEffect = -0.4;            // late cohort's real improvement (good)
+  const rows = [];
+  // ── Panel A: CLEAN. Control is not-yet-treated → flat over the window.
+  for (const y of yrs) {
+    rows.push({ panel: "A — clean (not-yet-treated control)", who: "Late cohort (treated)",
+      year: y, val: 7.6 + (y >= adopt ? trueEffect : 0) });
+    rows.push({ panel: "A — clean (not-yet-treated control)", who: "Control trend",
+      year: y, val: 7.3 });
+    rows.push({ panel: "A — clean (not-yet-treated control)", who: "Counterfactual",
+      year: y, val: 7.6 });
+  }
+  // ── Panel B: FORBIDDEN. "Control" is an already-treated early cohort whose
+  //    own effect keeps growing → its line slopes DOWN across the window.
+  for (const y of yrs) {
+    rows.push({ panel: "B — forbidden (already-treated control)", who: "Late cohort (treated)",
+      year: y, val: 7.6 + (y >= adopt ? trueEffect : 0) });
+    rows.push({ panel: "B — forbidden (already-treated control)", who: "Control trend",
+      year: y, val: 7.3 - 0.18 * y });           // already-treated, still improving
+    // Counterfactual implied by DiD = late baseline + control's change.
+    rows.push({ panel: "B — forbidden (already-treated control)", who: "Counterfactual",
+      year: y, val: 7.6 + (-0.18 * y - (-0.18 * adopt)) * (y >= adopt ? 1 : 0) });
+  }
+  return rows;
+}
+p2_gb_gaps = {
+  const at = (p, who, y) => p2_gb.find(d => d.panel === p && d.who === who && d.year === y).val;
+  const pa = "A — clean (not-yet-treated control)";
+  const pb = "B — forbidden (already-treated control)";
+  return [
+    { panel: pa, year: 3, actual: at(pa, "Late cohort (treated)", 3), cf: at(pa, "Counterfactual", 3) },
+    { panel: pb, year: 3, actual: at(pb, "Late cohort (treated)", 3), cf: at(pb, "Counterfactual", 3) }
+  ];
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 300,
+  marginLeft: 60,
+  marginBottom: 50,
+  marginTop: 30,
+  marginRight: 16,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+  fx: { label: null, domain: ["A — clean (not-yet-treated control)", "B — forbidden (already-treated control)"] },
+  x: { label: "Time", tickFormat: "d", domain: [0, 3], ticks: [0, 1, 2, 3] },
+  y: { label: "Outcome", grid: true },
+  color: {
+    domain: ["Late cohort (treated)", "Control trend", "Counterfactual"],
+    range: ["#990000", "#3d5a6c", "#9c7a33"],
+    legend: true
+  },
+  marks: [
+    Plot.ruleX([1.5], { fx: "panel", stroke: "#79766e", strokeDasharray: "4,4" }),
+    Plot.line(p2_gb.filter(d => d.who === "Control trend"),
+      { fx: "panel", x: "year", y: "val", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+    Plot.line(p2_gb.filter(d => d.who === "Counterfactual"),
+      { fx: "panel", x: "year", y: "val", stroke: "#9c7a33", strokeWidth: 2, strokeDasharray: "5,4" }),
+    Plot.line(p2_gb.filter(d => d.who === "Late cohort (treated)"),
+      { fx: "panel", x: "year", y: "val", stroke: "#990000", strokeWidth: 2.5 }),
+    Plot.dot(p2_gb, { fx: "panel", x: "year", y: "val", fill: "who", r: 3 }),
+    // estimated-effect gap (treated actual vs implied counterfactual at t=3)
+    Plot.ruleX(p2_gb_gaps, {
+      fx: "panel", x: "year", y1: "actual", y2: "cf",
+      stroke: "#2e6f40", strokeWidth: 3
+    }),
+    Plot.text(p2_gb_gaps, {
+      fx: "panel", x: "year", y: d => (d.actual + d.cf) / 2,
+      text: () => "DiD", fill: "#2e6f40", fontSize: 10, fontWeight: 700,
+      dx: -6, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Both panels share the same true treatment effect (the red drop after the dashed adoption line). **Left (clean):** the control (slate) is flat, so the green DiD gap equals the true effect. **Right (forbidden):** the "control" is an already-treated early cohort still improving on its own (downward-sloping slate), so its implied counterfactual (dashed ochre) drifts down with it; the green DiD gap is *shorter* than the true drop --- that shortfall is the attenuation TWFE bakes in when it includes forbidden comparisons.
+:::
+
+The line charts above show the *symptom* (a moving control trend); the small causal diagram below shows the *cause*. A DiD is clean only when the comparison group's outcome over the window is driven by nothing but the shared secular trend. In the **clean** comparison (left) the not-yet-treated control's outcome $Y_C$ has no treatment feeding into it, so there is no extra path that distorts the difference. In the **forbidden** comparison (right) the early control is *already treated*: its own program effect $\text{TE}_C$ is still growing and flows into $Y_C$, opening a red **biasing path** that the late cohort's DiD cannot tell apart from the shared trend. (A *path* here is just a chain of arrows linking two variables; a biasing one carries movement that does not belong to the treatment effect you want.)
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static DAG component for THIS page only (me_ prefix). Pure function of its
+// arguments + global d3; builds an SVG via d3.create and returns the node.
+//   nodes: [{id, x, y, label}] with x,y normalized to [0,1] (padded so nothing
+//          clips). conditioned ids are drawn as rounded SQUARES; all others as
+//          circles (fill #eef0ee, stroke #1c1c1a).
+//   edges: [{source, target, kind}]  kind ∈
+//          "causal"  → green  #2e6f40 (an ordinary causal arrow)
+//          "biasing" → red    #b3000b (a path that contaminates the comparison)
+//          "blocked" → grey   #79766e dashed (a path that is shut)
+me_drawDAG = function ({ nodes, edges, width = 320, height = 210, conditioned = [] }) {
+  const pad = 30;
+  const r = 21;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" : k === "biasing" ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "me-arrow-green" : k === "biasing" ? "me-arrow-red" : "me-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["me-arrow-green", "#2e6f40"], ["me-arrow-red", "#b3000b"], ["me-arrow-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 13).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Two small DAGs side by side: the clean comparison vs the forbidden one.
+// Node T_g = late cohort's own treatment; the control's structure differs.
+html`<div style="display:flex; flex-wrap:wrap; gap:1.25rem; justify-content:center; align-items:flex-start; margin:0.5rem 0 0.25rem;">
+  <figure style="margin:0; text-align:center;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.04em; color:#2e6f40; font-weight:700; margin-bottom:0.2rem;">Clean control (not-yet-treated)</figcaption>
+    ${me_drawDAG({
+      width: Math.max(220, Math.min(320, width / 2 - 14)),
+      height: 200,
+      nodes: [
+        { id: "Sec", x: 0.5,  y: 0.10, label: "Trend" },
+        { id: "Yc",  x: 0.5,  y: 0.85, label: "Y_C" }
+      ],
+      edges: [
+        { source: "Sec", target: "Yc", kind: "causal" }
+      ]
+    })}
+  </figure>
+  <figure style="margin:0; text-align:center;">
+    <figcaption style="font-family:'Inter',sans-serif; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.04em; color:#b3000b; font-weight:700; margin-bottom:0.2rem;">Forbidden control (already-treated)</figcaption>
+    ${me_drawDAG({
+      width: Math.max(220, Math.min(320, width / 2 - 14)),
+      height: 200,
+      nodes: [
+        { id: "Sec", x: 0.5,  y: 0.10, label: "Trend" },
+        { id: "Dc",  x: 0.08, y: 0.50, label: "D_C" },
+        { id: "TEc", x: 0.55, y: 0.50, label: "TE_C" },
+        { id: "Yc",  x: 0.5,  y: 0.88, label: "Y_C" }
+      ],
+      edges: [
+        { source: "Sec", target: "Yc",  kind: "causal" },
+        { source: "Dc",  target: "TEc", kind: "biasing" },
+        { source: "TEc", target: "Yc",  kind: "biasing" }
+      ]
+    })}
+  </figure>
+</div>`
+```
+
+::: {.aside}
+Two pictures of the *control* unit. **Left (clean):** the not-yet-treated control's outcome $Y_C$ moves only with the shared secular *Trend* (green) --- exactly what a DiD assumes, so differencing it out is legitimate. **Right (forbidden):** the control is an early adopter, so its own treatment $D_C$ drives a growing program effect $\text{TE}_C$ that also flows into $Y_C$ (red biasing path). When the late cohort differences against this control, it unknowingly subtracts $\text{TE}_C$ as if it were trend --- the structural reason the forbidden $2\times2$ is attenuated. Green = ordinary causal arrow; red = the contaminating path; nodes use the page's Inter labels.
+:::
+
+### Where the negative weights come from
+
+Because the weights $s_k$ scale with within-comparison treatment-dummy variance, comparisons where treatment status barely varies get tiny weight, and the forbidden comparisons enter with weights that can be **negative** once you express $\hat\beta^{\text{TWFE}}$ as a weighted sum of the underlying $\text{ATT}(g,t)$ cells. Formally,
+
+$$
+\hat\beta^{\text{TWFE}} = \sum_{g}\sum_{t \geq g} w_{g,t}\,\text{ATT}(g,t), \qquad \sum_{g,t} w_{g,t} = 1, \quad \text{but some } w_{g,t} < 0 .
+$$
+
+**How to read this**: "TWFE is a weighted average of the clean building blocks, but although the weights sum to one, some are negative." A negative weight on a *beneficial* (negative-signed) effect contributes a *positive* amount to the estimate, dragging it toward zero or past it. This is the entire mechanism behind the red TWFE bar in the interactive.
+
+### What Callaway-Sant'Anna does instead
+
+CS never forms a single regression. It estimates each $\text{ATT}(g,t)$ separately against clean controls, then aggregates with weights *you* specify and that are non-negative by construction. The **simple overall ATT** weights each post-treatment cell by its cohort's share of treated units:
+
+$$
+\theta^{\text{O}} = \sum_{g} \sum_{t \geq g} \; \underbrace{\frac{\mathbb{1}[t \geq g]\,\Pr(G = g)}{\sum_{g'}\sum_{t'\geq g'} \mathbb{1}[t' \geq g']\,\Pr(G = g')}}_{w_{g,t}\;\geq\;0}\;\text{ATT}(g,t).
+$$
+
+**How to read this**: "The overall ATT is a weighted average of every post-treatment group-time effect, where each cell's weight is its cohort's population share normalized so all weights sum to one --- and every weight is non-negative." With three equal-sized cohorts (six regions each) and an absorbing rollout, this reduces to a plain average over the post-treatment cells, which is exactly what the interactive computes. Because no weight is negative, a beneficial effect can never be turned into apparent harm.
+
+### The dynamic (event-study) aggregation
+
+For the event study, CS groups cells by event time $e = t - g$ and averages within each:
+
+$$
+\theta^{\text{D}}(e) = \sum_{g} \Pr\!\big(G = g \mid g + e \in [\,\text{sample}\,]\big)\;\text{ATT}(g, g+e).
+$$
+
+This is the same cohort-share weighting Sun-Abraham use for $\hat\beta_e^{\text{IW}}$ --- which is why the two estimators agree.
+
+</div>
+</details>
+
+
+## Code: Estimating It Both Ways
+
+The code below builds the same staggered diabetes panel and estimates the effect three ways: the biased TWFE benchmark, Callaway-Sant'Anna (`did`), and Sun-Abraham (`fixest::sunab`). The Python tab mirrors this with `pyfixest` and the `differences` package.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(fixest)
+library(did)
+
+# ── Simulate the 21-region diabetes panel ─────────────────────────
+set.seed(2021)
+cohorts <- c(rep(2014, 6), rep(2017, 6), rep(2019, 6), rep(Inf, 3))
+slope   <- 0.12                       # per-year effect growth (pp)
+panel <- expand_grid(region = 1:21, year = 2011:2020) |>
+  mutate(
+    cohort      = cohorts[region],
+    region_fe   = ((region * 37) %% 11 - 5) * 0.05,
+    treated     = as.integer(is.finite(cohort) & year >= cohort),
+    years_since = if_else(treated == 1, year - cohort + 1, 0),
+    effect      = -slope * years_since,            # negative = improvement
+    hba1c       = 7.8 - 0.04 * (year - 2011) + effect + region_fe +
+                  rnorm(n(), 0, 0.05),
+    # did::att_gt wants 0 for never-treated, not Inf.
+    # Use 0 (double) on both branches: dplyr::if_else is strict about types,
+    # and `cohort` is a double, so `0L` (integer) would raise a type error.
+    gvar        = if_else(is.finite(cohort), cohort, 0)
+  )
+
+# ── (1) The BIASED static TWFE benchmark ─────────────────────────
+twfe <- feols(hba1c ~ treated | region + year, data = panel)
+cat("Static TWFE coefficient:", round(coef(twfe)["treated"], 3), "pp\n")
+
+# ── (2) Callaway & Sant'Anna group-time ATTs ─────────────────────
+cs <- att_gt(
+  yname   = "hba1c",
+  tname   = "year",
+  idname  = "region",
+  gname   = "gvar",
+  data    = panel,
+  control_group = "nevertreated",   # or "notyettreated"
+  bstrap  = TRUE, cband = TRUE
+)
+
+# Overall ATT (simple aggregation), and the event-study path
+agg_overall <- aggte(cs, type = "simple")
+agg_dynamic <- aggte(cs, type = "dynamic")   # effect by event time
+summary(agg_overall)
+ggdid(agg_dynamic)                            # clean dynamic event study
+
+# ── (3) Sun & Abraham interaction-weighted event study ───────────
+# sunab(cohort, period) builds the saturated cohort x relative-time design.
+# sunab() treats the cohort value that never appears as a `year` as the
+# never-treated reference, so recode never-treated (0) to a far-future year.
+sa <- feols(
+  hba1c ~ sunab(gvar, year) | region + year,
+  data = panel |> mutate(gvar = if_else(gvar == 0, 10000, gvar))
+)
+summary(sa, agg = "att")     # overall ATT, IW-aggregated
+iplot(sa)                    # event-study plot, contamination-free
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import pyfixest as pf
+from differences import ATTgt   # pip install differences
+
+# ── Simulate the 21-region diabetes panel ─────────────────────────
+rng = np.random.default_rng(2021)
+cohorts = [2014]*6 + [2017]*6 + [2019]*6 + [np.inf]*3
+slope = 0.12
+rows = []
+for region in range(1, 22):
+    g = cohorts[region - 1]
+    region_fe = (((region * 37) % 11) - 5) * 0.05
+    for year in range(2011, 2021):
+        treated = int(np.isfinite(g) and year >= g)
+        yrs = (year - g + 1) if treated else 0
+        effect = -slope * yrs
+        hba1c = 7.8 - 0.04*(year - 2011) + effect + region_fe + rng.normal(0, 0.05)
+        rows.append(dict(region=region, year=year,
+                         cohort=(0 if not np.isfinite(g) else int(g)),
+                         treated=treated, hba1c=hba1c))
+panel = pd.DataFrame(rows)
+
+# ── (1) The BIASED static TWFE benchmark ─────────────────────────
+twfe = pf.feols("hba1c ~ treated | region + year", data=panel)
+print("Static TWFE coefficient:", round(twfe.coef()["treated"], 3), "pp")
+
+# ── (2) Heterogeneity-robust event study via pyfixest ────────────
+# NOTE: pyfixest has no R-style sunab() formula helper. Its built-in,
+# staggered-robust event_study() API (Gardner's two-stage estimator; it agrees
+# with Sun-Abraham on this clean, absorbing design) keeps the never-treated
+# (coded 0 in `gname`) as the comparison group:
+es = pf.event_study(
+    data=panel, yname="hba1c", idname="region",
+    tname="year", gname="cohort",          # never-treated coded 0
+    estimator="did2s",
+)
+pf.etable(es)                              # overall heterogeneity-robust ATT
+
+# You can also build the Sun-Abraham saturated regression by hand. Keep the
+# never-treated rows (they anchor the FEs) by parking them at the omitted base
+# period e = -1, then interact relative time with cohort via i(..., ref=-1):
+sa_df = panel.copy()
+sa_df["rel_year"] = np.where(sa_df["cohort"] == 0, -1,        # never-treated -> base
+                             sa_df["year"] - sa_df["cohort"])
+sa = pf.feols(
+    "hba1c ~ i(rel_year, cohort, ref=-1.0) | region + year",
+    data=sa_df
+)
+print(sa.tidy())                           # cohort x event-time coefficients
+
+# ── (3) Callaway & Sant'Anna via the `differences` package ───────
+att = ATTgt(data=panel.set_index(["region", "year"]), cohort_name="cohort")
+att.fit(formula="hba1c", control_group="never_treated")
+print(att.aggregate("simple"))      # overall ATT
+print(att.aggregate("event"))       # dynamic / event-time effects
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A staggered design has three cohorts. The true group-time effects (in pp HbA1c, negative = improvement) for the post-treatment cells are:
+
+| Cohort $g$ | $\text{ATT}(g,g)$ | $\text{ATT}(g,g+1)$ | $\text{ATT}(g,g+2)$ |
+|:----------:|:-----------------:|:-------------------:|:-------------------:|
+| 2014       | $-0.10$           | $-0.22$             | $-0.34$             |
+| 2017       | $-0.10$           | $-0.22$             | $-0.34$             |
+| 2019       | $-0.10$           | --- (not observed)  | --- (not observed)  |
+
+Cohort 2014 contributes all three cells; cohort 2017 contributes all three; cohort 2019 contributes only $\text{ATT}(2019, 2019) = -0.10$ (the panel ends in 2020). All cohorts are equal-sized.
+
+(a) Compute the Callaway-Sant'Anna **simple overall ATT** (equal-weighted average over all *observed* post-treatment cells).
+(b) Compute the **dynamic** (event-study) effects at event times $e = 0, 1, 2$.
+(c) Explain in one sentence why the event-study effect at $e = 0$ differs from the overall ATT.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** List every observed post-treatment cell:
+
+- Cohort 2014: $-0.10, -0.22, -0.34$
+- Cohort 2017: $-0.10, -0.22, -0.34$
+- Cohort 2019: $-0.10$
+
+That is 7 cells. Their sum is $(-0.10 - 0.22 - 0.34)\times 2 + (-0.10) = (-0.66)\times 2 - 0.10 = -1.32 - 0.10 = -1.42$.
+
+$$
+\theta^{\text{O}} = \frac{-1.42}{7} \approx -0.203 \text{ pp.}
+$$
+
+**(b)** Group by event time $e = t - g$:
+
+- $e = 0$: cells $\text{ATT}(2014,2014), \text{ATT}(2017,2017), \text{ATT}(2019,2019) = -0.10, -0.10, -0.10$. Average $= -0.10$.
+- $e = 1$: cells from cohorts 2014 and 2017 only $= -0.22, -0.22$. Average $= -0.22$.
+- $e = 2$: cells from cohorts 2014 and 2017 only $= -0.34, -0.34$. Average $= -0.34$.
+
+So the dynamic path is $\theta^{\text{D}}(0) = -0.10$, $\theta^{\text{D}}(1) = -0.22$, $\theta^{\text{D}}(2) = -0.34$ --- a clean, monotone dose-response.
+
+**(c)** The overall ATT averages over *all* observed cells regardless of event time, so it is dominated by the more numerous early-event-time cells and the late cohort's single shallow cell; the $e=0$ effect averages only the impact-year cells, so it isolates the first-year effect ($-0.10$) rather than blending in the larger later-year effects.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the interactive, set the **per-year effect-growth** slider to its maximum and switch to the *Overall ATT vs TWFE* view. The TWFE bar is closer to zero than both the true and the Callaway-Sant'Anna bars. Using the Goodman-Bacon logic, explain *mechanically* why a larger effect-growth slope makes TWFE's attenuation worse. Would TWFE be unbiased if the slope were exactly zero?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Why larger slope → worse attenuation.** TWFE includes *forbidden comparisons* in which a late-adopting cohort is differenced against an early cohort that is *already treated*. The early cohort's outcome is still falling because its own treatment effect keeps growing. When the slope is large, that already-treated "control" trend is steep, so the forbidden $2\times2$ DiD subtracts a big downward movement that has nothing to do with the late cohort's treatment. Expressed as weights on the clean $\text{ATT}(g,t)$ blocks, this puts increasingly *negative* weights on the deeply-treated late-event-time cells. A negative weight on a beneficial (negative) effect adds a positive contribution, pulling the average toward zero. The steeper the slope, the larger the already-treated trend, the more negative the weights, the worse the attenuation.
+
+**Slope = 0?** If the slope were exactly zero, the treatment effect would be *constant* over time (a flat $\text{ATT}(g,t) = 0$ in this parameterization, or any constant). With homogeneous, time-invariant effects, the forbidden comparisons still difference one treated trend against another, but those trends are *flat*, so they cancel and contribute no bias. TWFE is unbiased for the ATT precisely when treatment effects are homogeneous across cohorts *and* constant over event time. Heterogeneity in either dimension breaks it; the slider controls the event-time dimension.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A region has *every* unit eventually adopting the diabetes program --- there are **no never-treated regions**. A colleague proposes running Callaway-Sant'Anna with `control_group = "nevertreated"`.
+
+(a) What goes wrong?
+(b) What is the fix, and which $\text{ATT}(g,t)$ cells can *never* be identified even after the fix?
+(c) Which estimator from "The Rest of the Family" would you reach for if the program could be *discontinued* in some regions partway through, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With no never-treated units, the never-treated comparison group is *empty*. Every $\text{ATT}(g,t)$ that relies on differencing against never-treated controls is undefined; `att_gt` will error or drop all cells. There is simply no unit that stays untreated across the whole window to anchor the counterfactual.
+
+**(b)** The fix is `control_group = "notyettreated"`, which compares each cohort $g$ at time $t$ against all units **not yet treated by time $t$** (cohorts with adoption year $> t$). This is well-defined as long as some cohort adopts *later*. The cells that can **never** be identified are those of the **last-adopting cohort** at and after its own adoption year: once the final cohort switches on, there is no one left who is "not yet treated" to serve as a control. So $\text{ATT}(g_{\max}, t)$ for $t \geq g_{\max}$ is lost. (More generally, any post-treatment cell at a calendar time when *everyone* is already treated is unidentified.)
+
+**(c)** **de Chaisemartin & D'Haultfoeuille (`DID_multiplegt`)**. The cohort-based estimators (CS, SA, BJS) assume treatment is *absorbing* --- once adopted, it stays on --- so they cannot handle a region that turns the program off. dCDH is built on consecutive-period switches and explicitly accommodates **non-absorbing (on-and-off) treatment**, making it the right tool when the program can be discontinued.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A researcher reports a Sun-Abraham event study and notes that the *pre-treatment* coefficients are all close to zero, concluding "parallel trends holds." A second researcher reports a *standard* dynamic TWFE event study on the same data and finds *non-zero* pre-treatment coefficients, concluding "parallel trends is violated." Both used the identical panel. Reconcile the contradiction. Which conclusion should you trust?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The two event studies estimate *different things* despite sharing a panel. In the **standard dynamic TWFE** specification, Sun & Abraham proved that the coefficient at relative time $e$ is a contaminated combination of $\text{ATT}(g, e')$ across *many* relative times and cohorts --- including, crucially, **post-treatment effects of other cohorts leaking into pre-treatment coefficients**. So a non-zero "pre-trend" coefficient in TWFE can be an artifact of genuine *post*-treatment heterogeneity bleeding backward through the contaminated weights, not evidence of an actual differential pre-trend.
+
+The **Sun-Abraham IW estimator** uses a fully saturated cohort $\times$ relative-time design and aggregates each relative time with clean, non-negative cohort-share weights. Its pre-treatment coefficients are genuine cohort-averaged pre-period placebos, uncontaminated by post-treatment effects. So when SA shows flat pre-trends but TWFE shows non-zero ones, the most likely explanation is that the TWFE pre-coefficients are *spuriously* non-zero due to contamination from real, growing post-treatment effects.
+
+**Trust the Sun-Abraham conclusion**: parallel trends appears to hold. The TWFE "violation" is an estimation artifact, exactly the pathology the modern estimators were built to eliminate. (A careful analyst would still report the SA pre-trends with confidence bands and, ideally, a sensitivity analysis --- the subject of the next page --- rather than treating a visual flat line as proof.)
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The modern estimators separate identification from aggregation: first build clean $\text{ATT}(g,t)$ blocks, then choose non-negative weights deliberately --- never letting OLS pick them.
+- An already-treated unit is never used as a control; each $\text{ATT}(g,t)$ is identified against never-treated or not-yet-treated units.
+- Not-yet-treated controls give more power but demand parallel trends for future cohorts; with no never-treated units the last-adopting cohort can never be cleanly identified.
+- Sun-Abraham's interaction-weighted estimator shows the standard dynamic TWFE event study contaminates each relative-time coefficient (even pre-period ones) with effects from other cohorts and relative times.
+- CS, SA, dCDH, and BJS agree on the diagnosis and cure; they differ in default estimand, handling of on/off treatment and covariates, and efficiency --- dCDH is the one for reversible treatment.
+:::
+
+## What Comes Next
+
+We now have estimators that recover honest group-time effects and aggregate them with non-negative weights --- but every one of them still rests on a **parallel-trends assumption** that we cannot verify directly. The flat pre-treatment placebos in the event study are reassuring, yet a clean pre-trend does not guarantee a clean post-trend, and a noisy pre-trend does not necessarily doom the design. The next page, [Diagnostics](diagnostics.qmd), develops the tools for interrogating these assumptions: event-study specifications and what they really test, the logic and limits of pre-trend testing, placebo strategies, and the Rambachan-Roth (2023) framework for asking *how wrong* parallel trends can be before your conclusions change.

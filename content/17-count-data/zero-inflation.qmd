@@ -1,0 +1,682 @@
+---
+title: "Excess Zeros: Hurdle and Zero-Inflated Models"
+subtitle: "Two processes, one count"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Diagnose *excess zeros* by comparing the observed zero count against what a fitted Poisson or negative-binomial model predicts
+- Specify a **zero-inflated** model as a mixture of a logit "structural-zero" process and a count process, and write down its likelihood
+- Specify a **hurdle** model as a zero-vs-positive gate followed by a zero-truncated count, and explain how it differs from zero-inflation
+- Interpret the two parts of each model separately --- who is a never-visitor versus how often visitors visit --- and report effects on the correct scale
+- Choose between hurdle and zero-inflated specifications using the structure of the data-generating story, and fit both in R (`pscl`) and Python (`statsmodels`)
+:::
+
+## The Question Behind the Spike at Zero
+
+A *vårdcentral* (primary care center) in Region Värmland is reviewing one year of utilisation data: the number of visits each enrolled patient made to a *distriktssköterska* (district nurse) for chronic-disease follow-up. The *verksamhetschef* (clinic manager) plots the counts and sees something the textbook Poisson cannot explain. The bar at **zero is enormous** --- more than half the panel never came in at all --- while the rest of the distribution looks like a perfectly ordinary count: a hump at one or two visits, a thin tail out to a dozen.
+
+A single Poisson cannot be both. If the mean is high enough to produce the long tail, it predicts almost no zeros. If the mean is low enough to produce many zeros, it cannot generate the tail. The data are telling us there is not *one* process here but **two**: one that decides whether a patient engages with the nurse *at all*, and another that decides *how often* an engaged patient comes back.
+
+The [previous page](overdispersion-negbin.qmd) loosened the Poisson's mean-equals-variance straitjacket with the negative binomial, which absorbs extra variance from unobserved heterogeneity. Extra zeros are a *specific* and common form of that excess --- but they deserve their own machinery, because the substantive story is different. Overdispersion says "patients vary in their rate." Excess zeros say "some patients are simply *not in the market* for visits." This page builds the two model families that take that story seriously: **zero-inflated** models and **hurdle** models. Both are estimated by [maximum likelihood](../11-mle-gmm/likelihood.qmd); we will write the likelihood explicitly.
+
+## Where Do Zeros Come From?
+
+Start with the substantive distinction, because it drives the entire choice of model.
+
+A patient can record **zero visits** for two genuinely different reasons:
+
+- **Structural zero.** The patient is a *never-visitor*. Perhaps they manage their condition entirely through a private *läkare*, or have moved away, or are simply not the kind of patient who will ever engage with nurse-led follow-up. For them, zero is not a low draw from a count process --- it is a certainty. No amount of "rate" reasoning applies.
+- **Sampling zero.** The patient *is* in the market for visits --- they would come in if a flare-up occurred --- but over this particular year they happened to need none. This is an ordinary zero from a Poisson or negative-binomial count process: a low draw that could just as easily have been a one or a two.
+
+::: {.glass-card .glass-card--definition}
+A count distribution exhibits **excess zeros** when the observed proportion of zeros exceeds what a fitted single-process model (Poisson or negative binomial) predicts. Formally, with a fitted Poisson rate $\hat\lambda$, the model expects a fraction $e^{-\hat\lambda}$ of zeros; excess zeros means
+
+$$
+\underbrace{\widehat{\Pr}(Y = 0)_{\text{observed}}}_{\text{empirical zero share}} \;\gg\; \underbrace{e^{-\hat\lambda}}_{\text{Poisson-predicted zero share}}.
+$$
+
+**Read this as**: "the share of patients with zero visits that we actually see is far greater than $e$ to the minus $\hat\lambda$, the share a Poisson with the same mean would produce." The gap between the two is the spike the single-process model cannot reach.
+:::
+
+The two model families differ in *how* they explain that spike, and the difference is not cosmetic --- it changes what the parameters mean.
+
+::: {.glass-card .glass-card--insight}
+**Two zeros vs. one gate.** A **zero-inflated** model says zeros arise *two ways*: a structural-zero process contributes certain zeros, and the count process *also* contributes its own sampling zeros on top. A **hurdle** model says there is *one* gate: you are either a zero (for any reason) or a positive, and once you clear the hurdle your positive count follows a *zero-truncated* distribution. Zero-inflation mixes; the hurdle partitions.
+:::
+
+## Zero-Inflated Models: A Mixture of Two Stories
+
+The zero-inflated model is a **mixture**. With probability $\pi$ a patient is a structural never-visitor (a guaranteed zero); with probability $1-\pi$ the patient is "at risk" and their visit count follows an ordinary count distribution $g(y)$ --- Poisson for the **ZIP** model, negative binomial for the **ZINB** model. Crucially, the at-risk patients can *also* produce zeros, so a zero observation is consistent with *both* regimes.
+
+::: {.glass-card .glass-card--definition}
+The **zero-inflated Poisson (ZIP)** probability mass function splits the zero from the positives:
+
+$$
+\Pr(Y_i = y_i) =
+\begin{cases}
+\pi_i + (1 - \pi_i)\, e^{-\lambda_i}, & y_i = 0,\\[4pt]
+(1 - \pi_i)\,\dfrac{e^{-\lambda_i}\,\lambda_i^{\,y_i}}{y_i!}, & y_i = 1, 2, 3, \dots
+\end{cases}
+$$
+
+**Read the top line as**: "the probability of a zero is the chance $\pi_i$ that the patient is a structural never-visitor, *plus* the chance $(1-\pi_i)$ that they are at risk but happened to draw a Poisson zero, $e^{-\lambda_i}$." **Read the bottom line as**: "the probability of any positive count $y_i$ is the chance $(1-\pi_i)$ of being at risk, times the ordinary Poisson probability of that count." Positive counts can come *only* from the at-risk regime --- a structural never-visitor can never be a one.
+:::
+
+The two parameters are modelled with their own link functions and (typically) their own covariates:
+
+$$
+\operatorname{logit}(\pi_i) = \mathbf{z}_i^{\top}\boldsymbol{\gamma}
+\qquad\text{(inflation / never-visitor model)},
+$$
+$$
+\log(\lambda_i) = \mathbf{x}_i^{\top}\boldsymbol{\beta}
+\qquad\text{(count / how-often model)}.
+$$
+
+**Read these as**: "the log-odds of being a structural never-visitor is a linear function $\mathbf{z}_i^{\top}\boldsymbol{\gamma}$ of inflation covariates, and the log of the expected visit rate among the at-risk is a linear function $\mathbf{x}_i^{\top}\boldsymbol{\beta}$ of count covariates." The vectors $\mathbf{z}_i$ and $\mathbf{x}_i$ may overlap, differ, or coincide --- a patient's distance to the clinic might drive *whether* they ever engage, while their HbA1c drives *how often*.
+
+::: {.glass-card .glass-card--warning}
+**The sign trap in the inflation part.** The logit models the probability of being a **never-visitor** (a structural *zero*), not the probability of visiting. A *positive* inflation coefficient pushes $\pi_i$ up, meaning **more** structural zeros and therefore **fewer** expected visits. It is the opposite direction from the count-part coefficients, where a positive $\beta$ raises the rate. Mixing up these two signs is the single most common error in reading `zeroinfl` output --- always state explicitly which event each part predicts.
+:::
+
+The unconditional mean of a ZIP makes the two pieces concrete:
+
+$$
+\mathbb{E}[Y_i] = (1 - \pi_i)\,\lambda_i.
+$$
+
+**Read this as**: "the expected number of visits is the at-risk probability times the at-risk rate." Only the $(1-\pi_i)$ fraction can generate visits at all, and each of them visits at rate $\lambda_i$ on average.
+
+## Hurdle Models: One Gate, Then a Truncated Count
+
+The hurdle model tells a cleaner two-stage story. **Stage one** is a binary gate: did the patient cross the hurdle from zero to at-least-one visit? **Stage two**, *only for those who crossed*, models how many visits they made using a **zero-truncated** count distribution --- a distribution that has had its zero removed and renormalised, because by construction everyone past the hurdle has $y \ge 1$.
+
+::: {.glass-card .glass-card--definition}
+The **hurdle Poisson** model uses $\theta_i = \Pr(Y_i > 0)$ for the probability of clearing the hurdle:
+
+$$
+\Pr(Y_i = y_i) =
+\begin{cases}
+1 - \theta_i, & y_i = 0,\\[6pt]
+\theta_i \cdot \dfrac{e^{-\lambda_i}\lambda_i^{\,y_i}/y_i!}{1 - e^{-\lambda_i}}, & y_i = 1, 2, 3, \dots
+\end{cases}
+$$
+
+**Read the top line as**: "the probability of a zero is just $1-\theta_i$, the probability of failing to clear the hurdle." **Read the bottom line as**: "the probability of a positive count is the probability $\theta_i$ of clearing the hurdle, times a *zero-truncated* Poisson probability --- the ordinary Poisson mass $e^{-\lambda_i}\lambda_i^{y_i}/y_i!$ divided by $1 - e^{-\lambda_i}$ to renormalise it over the positive integers only." The divisor $1-e^{-\lambda_i}$ is exactly the Poisson probability of being positive, so the truncated masses sum to one.
+:::
+
+Both stages get their own model, usually a logit (or complementary log-log) for the gate and a log link for the truncated count:
+
+$$
+\operatorname{logit}(\theta_i) = \mathbf{z}_i^{\top}\boldsymbol{\gamma}
+\qquad\text{(hurdle / any-visit model)},\qquad
+\log(\lambda_i) = \mathbf{x}_i^{\top}\boldsymbol{\beta}
+\qquad\text{(positive-count model)}.
+$$
+
+::: {.glass-card .glass-card--insight}
+**The decisive difference: can the count process emit a zero?** In a **hurdle** model, *all* zeros come from the gate and *none* from the count process (it is zero-truncated). In a **zero-inflated** model, zeros come from *both* the inflation process *and* the count process. Operationally: the hurdle is the right frame when crossing-the-threshold is a genuinely distinct act (the first contact with the clinic) and you do not want to attribute *any* zero to the count side; zero-inflation is the right frame when you believe a distinct sub-population is structurally immune to the outcome while the rest follow a count law that itself includes some zeros.
+:::
+
+A practical consequence: hurdle models always fit data with *too few* zeros as comfortably as too many (the gate is free to set $\theta_i$ anywhere), whereas standard zero-inflation only adds mass at zero --- it cannot model *zero-deflation*. For the over-zeroed visit data both work; the choice is about the story.
+
+## See It: The Spike at Zero
+
+The interactive lets you create excess zeros and watch two fitted models respond. The slider injects structural never-visitors into a simulated cohort of $N$ chronic-disease patients at a Region Värmland *vårdcentral*. A plain Poisson --- forced to match the overall mean --- is laid over the histogram in slate, and a zero-inflated fit in Uppsala red. Watch the Poisson bar at zero fall hopelessly short of the spike while it *over*-predicts the ones and twos, and watch the zero-inflated fit split its probability to capture both.
+
+::: {.interactive-container}
+
+#### Excess zeros: where Poisson breaks and zero-inflation repairs
+
+```{ojs}
+//| echo: false
+// Shared Uppsala-academic palette for every mark on this page. Defined once;
+// every chart and tile reads these tokens so colors can never drift.
+ctzi_pal = ({
+  count:   "#990000",   // focal series — the count / zero-inflated fit (Uppsala red)
+  poisson: "#3d5a6c",   // comparison series — the plain Poisson fit (slate)
+  good:    "#2e6f40",   // on-target / good agreement (green)
+  truth:   "#9c7a33",   // highlight / true value (ochre)
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis text (Uppsala muted ink)
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+viewof ctzi_pi = Inputs.range([0, 0.7], {
+  value: 0.45,
+  step: 0.01,
+  label: "Structural never-visitor share  π  (excess zeros)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof ctzi_lambda = Inputs.range([0.6, 6], {
+  value: 2.6,
+  step: 0.1,
+  label: "At-risk visit rate  λ  (visits/year among engaged patients)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof ctzi_N = Inputs.range([200, 4000], {
+  value: 1500,
+  step: 100,
+  label: "Cohort size  N  (patients)"
+})
+```
+
+```{ojs}
+//| echo: false
+// A draw counter: pressing the button bumps an integer that downstream cells
+// depend on, forcing a fresh resample WITHOUT ever reading+writing a mutable.
+viewof ctzi_draw = Inputs.button("Resample cohort", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Factorial and Poisson pmf helpers (small counts only, so a direct product
+// is fine and avoids importing a special-function library).
+ctzi_fact = function (k) {
+  let f = 1;
+  for (let j = 2; j <= k; j++) f *= j;
+  return f;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+ctzi_dpois = (k, lam) => Math.exp(-lam) * Math.pow(lam, k) / ctzi_fact(k)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Simulate the cohort: each patient is a structural zero with prob π, else an
+// at-risk patient drawing a Poisson(λ) visit count. Re-runs whenever a slider
+// or the resample button changes (ctzi_draw is referenced so it is a dependency).
+ctzi_sample = {
+  ctzi_draw; // dependency: pressing "Resample cohort" re-runs this cell
+  const N = ctzi_N, pi = ctzi_pi, lam = ctzi_lambda;
+  const poissonDraw = () => {
+    // Knuth's algorithm for a Poisson(λ) variate.
+    const L = Math.exp(-lam);
+    let k = 0, p = 1;
+    do { k++; p *= Math.random(); } while (p > L);
+    return k - 1;
+  };
+  const counts = [];
+  for (let i = 0; i < N; i++) {
+    if (Math.random() < pi) counts.push(0);     // structural never-visitor
+    else counts.push(poissonDraw());            // at-risk patient
+  }
+  return counts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Bin the simulated counts into a histogram of empirical proportions, capping
+// the display at 12+ so a stray long tail never stretches the x-axis.
+ctzi_maxK = 12
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+ctzi_hist = {
+  const N = ctzi_sample.length;
+  const bins = d3.range(0, ctzi_maxK + 1).map(k => ({ k, n: 0 }));
+  for (const c of ctzi_sample) {
+    const idx = Math.min(c, ctzi_maxK);
+    bins[idx].n += 1;
+  }
+  return bins.map(b => ({ k: b.k, prop: b.n / N }));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The observed sample mean — the single moment the plain Poisson is forced to
+// match. (A method-of-moments Poisson fit sets λ̂ = ȳ.)
+ctzi_ybar = d3.mean(ctzi_sample)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Plain-Poisson predicted proportions at λ̂ = ȳ. Mass at and beyond 12 is pooled
+// into the final "12+" bar so the curves and bars share the same support.
+ctzi_poisPred = d3.range(0, ctzi_maxK + 1).map(k => {
+  if (k < ctzi_maxK) return { k, prop: ctzi_dpois(k, ctzi_ybar) };
+  // tail bar: 1 minus everything below it
+  let below = 0;
+  for (let j = 0; j < ctzi_maxK; j++) below += ctzi_dpois(j, ctzi_ybar);
+  return { k, prop: Math.max(0, 1 - below) };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// "Oracle" zero-inflated predicted proportions using the TRUE π and λ the
+// reader dialled in (this is what a correctly specified ZIP recovers in large
+// samples). Zero bar gets the mixture mass; positive bars get (1−π)·Poisson.
+ctzi_zipPred = d3.range(0, ctzi_maxK + 1).map(k => {
+  const pi = ctzi_pi, lam = ctzi_lambda;
+  if (k === 0) return { k, prop: pi + (1 - pi) * ctzi_dpois(0, lam) };
+  if (k < ctzi_maxK) return { k, prop: (1 - pi) * ctzi_dpois(k, lam) };
+  let below = pi + (1 - pi) * ctzi_dpois(0, lam);
+  for (let j = 1; j < ctzi_maxK; j++) below += (1 - pi) * ctzi_dpois(j, lam);
+  return { k, prop: Math.max(0, 1 - below) };
+})
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 380,
+  marginLeft: 62,
+  marginBottom: 48,
+  marginTop: 28,
+  marginRight: 18,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: ctzi_pal.axis
+  },
+  x: {
+    label: "Visits to the distriktssköterska in one year  →",
+    domain: d3.range(0, ctzi_maxK + 1),
+    tickFormat: d => d === ctzi_maxK ? `${d}+` : `${d}`
+  },
+  y: {
+    label: "↑ Proportion of patients",
+    grid: true,
+    domain: [0, Math.max(d3.max(ctzi_hist, d => d.prop), d3.max(ctzi_zipPred, d => d.prop)) * 1.12]
+  },
+  marks: [
+    Plot.gridY({ stroke: ctzi_pal.hair }),
+    Plot.ruleY([0], { stroke: ctzi_pal.ink, strokeWidth: 1 }),
+    // Observed histogram — neutral grey bars; the fits are the focus.
+    Plot.barY(ctzi_hist, {
+      x: "k", y: "prop",
+      fill: ctzi_pal.hair, stroke: ctzi_pal.muted, strokeWidth: 0.5,
+      inset: 2,
+      title: d => `${d.k === ctzi_maxK ? d.k + "+" : d.k} visits\nobserved ${(100 * d.prop).toFixed(1)}%`
+    }),
+    // Plain Poisson fit — slate dots + line. UNDER-predicts the zero spike and
+    // OVER-predicts the low positives.
+    Plot.line(ctzi_poisPred, {
+      x: "k", y: "prop", stroke: ctzi_pal.poisson, strokeWidth: 2, curve: "monotone-x"
+    }),
+    Plot.dot(ctzi_poisPred, {
+      x: "k", y: "prop", fill: ctzi_pal.poisson, r: 4,
+      title: d => `Poisson(ȳ): ${(100 * d.prop).toFixed(1)}%`
+    }),
+    // Zero-inflated fit — Uppsala red. Captures the spike AND the positives.
+    Plot.line(ctzi_zipPred, {
+      x: "k", y: "prop", stroke: ctzi_pal.count, strokeWidth: 2.5, curve: "monotone-x"
+    }),
+    Plot.dot(ctzi_zipPred, {
+      x: "k", y: "prop", fill: ctzi_pal.count, r: 4.5,
+      title: d => `Zero-inflated: ${(100 * d.prop).toFixed(1)}%`
+    }),
+    // Label the zero bar gap — Poisson's shortfall at zero, with a white halo.
+    Plot.text([{ k: 0, prop: ctzi_hist[0].prop }], {
+      x: "k", y: "prop",
+      text: d => `${(100 * d.prop).toFixed(0)}% at zero`,
+      fill: ctzi_pal.ink, fontWeight: 700, fontSize: 11,
+      dy: -10, dx: 14, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Legend + live readout tying the picture to numbers. Built in an html`` cell so
+// reactive values interpolate (a markdown ${...} would render literally). The
+// "zero gap" is how badly the plain Poisson under-predicts the zero spike.
+{
+  const obsZero = ctzi_hist[0].prop;
+  const poisZero = ctzi_poisPred[0].prop;
+  const gap = obsZero - poisZero;
+  const swatch = (c, label) => html`<span style="display:inline-flex;align-items:center;gap:0.35rem;margin-right:1rem;">
+    <span style="width:0.85rem;height:0.85rem;border-radius:50%;background:${c};display:inline-block;"></span>
+    <span style="font-family:'Inter',system-ui,sans-serif;font-size:0.78rem;color:${ctzi_pal.axis};">${label}</span></span>`;
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${ctzi_pal.fill}; border:1px solid ${ctzi_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${ctzi_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div></div>`;
+  return html`<div>
+    <div style="margin:0.4rem 0 0.6rem;">
+      ${swatch(ctzi_pal.hair, "Observed counts")}
+      ${swatch(ctzi_pal.poisson, "Plain Poisson (λ̂ = ȳ)")}
+      ${swatch(ctzi_pal.count, "Zero-inflated fit")}
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+      ${tile("Observed % zeros", (100 * obsZero).toFixed(1) + "%", ctzi_pal.ink)}
+      ${tile("Poisson % zeros", (100 * poisZero).toFixed(1) + "%", ctzi_pal.poisson)}
+      ${tile("Zero gap (excess)", (100 * gap).toFixed(1) + " pp", gap > 0.05 ? ctzi_pal.truth : ctzi_pal.good)}
+      ${tile("Sample mean ȳ", ctzi_ybar.toFixed(2), ctzi_pal.ink)}
+    </div></div>`;
+}
+```
+
+:::
+
+### How to Read the Excess-Zeros Chart
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the bars.** The grey bars are the observed share of patients with $0, 1, 2, \dots$ visits in the simulated cohort. The tallest is almost always the bar at zero. Hover any bar for its exact proportion.
+
+**Step 2: Watch the plain Poisson fail.** The slate line and dots are a Poisson forced to match the sample mean ($\hat\lambda = \bar y$). Look at zero: the slate dot sits *far below* the grey bar. The "Zero gap (excess)" tile reports the shortfall in percentage points. Now look at one and two visits --- the slate dots sit *above* the bars. A single Poisson cannot put enough mass at zero without stealing it from the low positives.
+
+**Step 3: Watch zero-inflation repair both.** The red line and dots are the zero-inflated fit. Its zero dot rises to meet the grey bar, and its low-positive dots drop down onto theirs. By letting a fraction $\pi$ be structural zeros, the count part is freed to describe only the at-risk patients, so it stops over-predicting the ones and twos.
+
+**Step 4: Push the excess-zeros slider.** Drag $\pi$ from $0$ up toward $0.7$. At $\pi = 0$ the grey histogram is an ordinary Poisson and the slate and red curves nearly coincide --- there is nothing for zero-inflation to fix. As $\pi$ grows, the zero bar towers, the slate dot falls ever further behind, and the "Zero gap" tile climbs. This is excess zeros being manufactured in front of you.
+
+**Step 5: Separate the two knobs.** Now hold $\pi$ fixed and drag the at-risk rate $\lambda$. The zero bar barely moves (most zeros are structural now), but the *positive* part of the histogram slides right as engaged patients visit more often. This is the whole point: $\pi$ governs *whether* patients engage, $\lambda$ governs *how often* --- two processes, one count. Press **Resample cohort** to confirm the pattern is structural, not a fluke of one draw.
+
+## Reading the Two Parts
+
+Both model families hand you *two* sets of coefficients, and they answer different questions. Discipline in reporting is everything.
+
+- **Inflation / hurdle part (the binary process).** In a ZIP/ZINB this is a logit for being a *structural never-visitor*; in a hurdle it is a logit for *clearing the hurdle* (any visit). Report these as odds ratios or as marginal effects on the probability, and *say which event they predict* --- the ZIP inflation part predicts the **zero**, the hurdle gate predicts the **positive**, so their signs run in opposite directions for the same covariate.
+- **Count part (the intensity process).** In both families this is a log-linear rate model. A coefficient $\beta_j$ means $e^{\beta_j}$ is the multiplicative effect on the expected number of visits *among the relevant sub-population* --- the at-risk patients (ZIP) or the patients who crossed the hurdle (hurdle). It is **not** the effect on the overall mean, because the overall mean also moves through the binary part.
+
+::: {.glass-card .glass-card--assumption}
+**What these models assume:**
+
+1. **A correct mixture / gate story.** Zero-inflation assumes a genuine latent class of structural zeros; the hurdle assumes a single threshold separates zeros from positives. If the real data-generating process is, say, pure negative-binomial overdispersion with *no* special zero mechanism, both can overfit the zero and mislead.
+2. **Correct count distribution for the positives.** If the at-risk / post-hurdle counts are themselves overdispersed, a ZIP or hurdle-Poisson will be too tight; switch to ZINB or hurdle-negative-binomial.
+3. **Covariates correctly assigned to each part.** A variable that drives engagement (distance to clinic) and one that drives intensity (disease severity) belong in different equations; forcing one specification on both parts is a misspecification.
+:::
+
+<details>
+<summary>Math Details: the zero-inflated likelihood</summary>
+<div class="details-content">
+
+### Building the ZIP likelihood
+
+Let $g(y;\lambda) = e^{-\lambda}\lambda^{y}/y!$ be the Poisson mass. The ZIP mixes a degenerate "always zero" component (weight $\pi$) with a Poisson component (weight $1-\pi$). The mass function is
+
+$$
+\Pr(Y = y) =
+\begin{cases}
+\pi + (1-\pi)\,g(0;\lambda), & y = 0,\\
+(1-\pi)\,g(y;\lambda), & y \ge 1.
+\end{cases}
+$$
+
+For observation $i$ write $\mathbb{1}\{y_i = 0\}$ for the zero indicator. The contribution of patient $i$ to the likelihood is
+
+$$
+L_i =
+\Big[\pi_i + (1-\pi_i)e^{-\lambda_i}\Big]^{\mathbb{1}\{y_i = 0\}}
+\;\Big[(1-\pi_i)\,\tfrac{e^{-\lambda_i}\lambda_i^{y_i}}{y_i!}\Big]^{\mathbb{1}\{y_i > 0\}}.
+$$
+
+**Read this as**: "if $y_i = 0$, the contribution is the bracketed mixture zero-probability; if $y_i > 0$, it is the at-risk-times-Poisson term." Exactly one exponent is 1 and the other is 0, so each patient contributes the right piece. Taking logs over the whole sample and splitting into the zero set $\mathcal{Z} = \{i : y_i = 0\}$ and the positive set $\mathcal{P} = \{i : y_i > 0\}$,
+
+$$
+\ell(\boldsymbol{\gamma},\boldsymbol{\beta})
+= \sum_{i \in \mathcal{Z}} \log\!\Big[\pi_i + (1-\pi_i)e^{-\lambda_i}\Big]
+\;+\; \sum_{i \in \mathcal{P}} \Big[\log(1-\pi_i) - \lambda_i + y_i\log\lambda_i - \log(y_i!)\Big].
+$$
+
+Substituting the link functions $\pi_i = \dfrac{1}{1 + e^{-\mathbf{z}_i^{\top}\boldsymbol{\gamma}}}$ and $\lambda_i = e^{\mathbf{x}_i^{\top}\boldsymbol{\beta}}$ makes $\ell$ a function of $(\boldsymbol{\gamma}, \boldsymbol{\beta})$ alone. There is no closed form for the maximiser --- the zero term couples $\boldsymbol{\gamma}$ and $\boldsymbol{\beta}$ nonlinearly --- so the estimates are obtained numerically (the [EM algorithm](../11-mle-gmm/likelihood.qmd) treats the latent class membership as missing data, or a quasi-Newton optimiser maximises $\ell$ directly). The ZINB version replaces $g(y;\lambda)$ with the negative-binomial mass and adds a dispersion parameter.
+
+### Why the hurdle likelihood *separates*
+
+Contrast the hurdle. Because none of its zeros come from the count process, the log-likelihood splits cleanly into two pieces that share no parameters:
+
+$$
+\ell = \underbrace{\sum_{i} \Big[\mathbb{1}\{y_i>0\}\log\theta_i + \mathbb{1}\{y_i=0\}\log(1-\theta_i)\Big]}_{\text{a plain binary (logit) likelihood}}
+\;+\;
+\underbrace{\sum_{i \in \mathcal{P}} \log\frac{g(y_i;\lambda_i)}{1 - e^{-\lambda_i}}}_{\text{a zero-truncated count likelihood}}.
+$$
+
+The first sum is maximised by an ordinary logistic regression on the zero/positive indicator; the second by a zero-truncated count regression on the positives only. They can be fit **separately** and the results stacked --- a tidy computational advantage of the hurdle over the entangled ZIP zero term. $\checkmark$
+
+</div>
+</details>
+
+## Fitting Both in R and Python
+
+Both panels simulate a cohort with structural zeros, then fit a plain Poisson, a zero-inflated Poisson, and a hurdle Poisson, and compare them. The scenario is the Region Värmland nurse-visit panel: an indicator `distance_far` (lives far from the *vårdcentral*) drives *whether* a patient ever engages, and centred `hba1c` drives *how often* an engaged patient visits.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("pscl", "MASS"))   # if needed
+library(pscl)   # zeroinfl(), hurdle()
+
+set.seed(2024)
+n <- 1500
+
+# --- Covariates ---
+distance_far <- rbinom(n, 1, 0.45)          # 1 = far from the vårdcentral
+hba1c        <- rnorm(n, 0, 1)              # standardized HbA1c
+
+# --- True data-generating process: zero-inflated Poisson ---
+# Inflation (never-visitor) part: living far raises P(structural zero).
+eta_pi <- -0.4 + 1.3 * distance_far
+pi_i   <- plogis(eta_pi)
+struct_zero <- rbinom(n, 1, pi_i)
+
+# Count (how-often) part: worse control -> more visits among the at-risk.
+lambda_i <- exp(0.7 + 0.45 * hba1c)
+visits   <- ifelse(struct_zero == 1, 0L, rpois(n, lambda_i))
+
+dat <- data.frame(visits, distance_far, hba1c)
+cat("Share of zeros:", round(mean(dat$visits == 0), 3), "\n")
+
+# --- 1) Plain Poisson (the wrong model) ---
+m_pois <- glm(visits ~ distance_far + hba1c, family = poisson, data = dat)
+# Predicted vs observed zeros: the Poisson badly under-predicts the spike.
+p0_hat <- mean(dpois(0, fitted(m_pois)))
+cat("Poisson predicted zeros:", round(p0_hat, 3),
+    " observed:", round(mean(dat$visits == 0), 3), "\n")
+
+# --- 2) Zero-inflated Poisson: count part | inflation part ---
+# Formula syntax: count_covariates | inflation_covariates
+m_zip <- zeroinfl(visits ~ hba1c | distance_far, data = dat, dist = "poisson")
+summary(m_zip)
+# Inflation coef on distance_far should be POSITIVE (more structural zeros);
+# count coef on hba1c should be POSITIVE (more visits among the at-risk).
+
+# --- 3) Hurdle Poisson: positive-count part | zero-hurdle part ---
+m_hurdle <- hurdle(visits ~ hba1c | distance_far, data = dat, dist = "poisson")
+summary(m_hurdle)
+
+# --- Compare on fit + a Vuong test of ZIP vs plain Poisson ---
+AIC(m_pois, m_zip, m_hurdle)
+vuong(m_zip, m_pois)        # favors the zero-inflated model
+
+# Multiplicative effect of HbA1c on the at-risk visit rate:
+exp(coef(m_zip))["count_hba1c"]    # e.g. ~1.57  => +57% visits per SD of HbA1c
+```
+
+### Python
+
+```python
+# pip install statsmodels numpy pandas
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.discrete.count_model import ZeroInflatedPoisson
+
+rng = np.random.default_rng(2024)
+n = 1500
+
+# --- Covariates ---
+distance_far = rng.binomial(1, 0.45, n)        # 1 = far from the vårdcentral
+hba1c        = rng.normal(0, 1, n)             # standardized HbA1c
+
+# --- True DGP: zero-inflated Poisson ---
+pi_i  = 1 / (1 + np.exp(-(-0.4 + 1.3 * distance_far)))   # never-visitor prob
+lam_i = np.exp(0.7 + 0.45 * hba1c)                        # at-risk visit rate
+struct_zero = rng.binomial(1, pi_i)
+visits = np.where(struct_zero == 1, 0, rng.poisson(lam_i))
+
+df = pd.DataFrame({"visits": visits, "distance_far": distance_far, "hba1c": hba1c})
+print("Share of zeros:", round((df.visits == 0).mean(), 3))
+
+# --- 1) Plain Poisson (the wrong model) ---
+Xc = sm.add_constant(df[["distance_far", "hba1c"]])
+m_pois = sm.Poisson(df.visits, Xc).fit(disp=0)
+p0_hat = np.exp(-m_pois.predict(Xc)).mean()    # mean of e^{-λ̂_i}
+print("Poisson predicted zeros:", round(p0_hat, 3),
+      " observed:", round((df.visits == 0).mean(), 3))
+
+# --- 2) Zero-inflated Poisson ---
+# exog       = count-part design (how often, among the at-risk)
+# exog_infl  = inflation-part design (P of being a structural zero)
+X_count = sm.add_constant(df[["hba1c"]])           # count part
+X_infl  = sm.add_constant(df[["distance_far"]])    # inflation part
+m_zip = ZeroInflatedPoisson(df.visits, X_count,
+                            exog_infl=X_infl,
+                            inflation="logit").fit(disp=0)
+print(m_zip.summary())
+# inflate_distance_far > 0  => far patients more likely to be structural zeros;
+# hba1c > 0                 => more visits among the at-risk.
+
+# Multiplicative effect of one SD of HbA1c on the at-risk rate:
+print("rate ratio (hba1c):", round(np.exp(m_zip.params["hba1c"]), 3))
+
+# --- 3) Hurdle: fit the two stages separately (the likelihood factorizes) ---
+# Stage 1 — logit gate: any visit vs none.
+df["any_visit"] = (df.visits > 0).astype(int)
+gate = sm.Logit(df.any_visit, X_infl).fit(disp=0)
+# Stage 2 — zero-truncated Poisson on the positives only.
+pos = df[df.visits > 0]
+trunc = sm.Poisson(pos.visits, sm.add_constant(pos[["hba1c"]])).fit(
+    disp=0)   # truncated GLM: see statsmodels TruncatedLFPoisson for exact fit
+print("Gate (any visit) coefs:\n", gate.params)
+print("Positive-count coefs:\n", trunc.params)
+```
+
+:::
+
+In both languages the zero-inflated fit recovers the two stories the plain Poisson conflated: `distance_far` drives the inflation (never-visitor) part with a positive coefficient, and `hba1c` drives the count part with a positive coefficient. The Poisson's predicted zero share falls well short of the observed share --- the numeric signature of the spike you saw in the interactive --- while a Vuong test (R) or a likelihood-ratio / information-criterion comparison favours the zero-inflated specification.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A *vårdcentral* in Region Skåne fits a plain Poisson to its annual count of *läkare* (GP) visits per patient and obtains $\hat\lambda = 1.20$. In the data, $52\%$ of patients made zero visits.
+
+(a) What share of zeros does the fitted Poisson predict? (b) By how many percentage points does the model under-predict the zeros? (c) What does this gap suggest about the data-generating process?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** A Poisson predicts $\Pr(Y=0) = e^{-\hat\lambda} = e^{-1.20} \approx 0.301$, i.e. about $30.1\%$ zeros.
+
+**(b)** Observed minus predicted $= 0.52 - 0.301 = 0.219$, an under-prediction of about **21.9 percentage points**.
+
+**(c)** The observed zero share vastly exceeds what a single Poisson with this mean can produce --- a textbook signature of **excess zeros**. It suggests a distinct mechanism generating zeros (a never-visitor sub-population, or a separate any-visit hurdle) on top of the ordinary count process, motivating a zero-inflated or hurdle model.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In a zero-inflated Poisson for *distriktssköterska* visits, the inflation (never-visitor) part has $\hat\pi_i = 0.40$ for a particular patient and the count part gives $\hat\lambda_i = 3.0$.
+
+(a) What is the model's predicted probability that this patient records zero visits? (b) What is the patient's expected number of visits, $\mathbb{E}[Y_i]$? (c) Of the total predicted probability of a zero, what fraction is "structural" versus "sampling"?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\Pr(Y_i=0) = \pi_i + (1-\pi_i)e^{-\lambda_i} = 0.40 + 0.60\,e^{-3.0} = 0.40 + 0.60(0.0498) = 0.40 + 0.0299 = \mathbf{0.430}$.
+
+**(b)** $\mathbb{E}[Y_i] = (1-\pi_i)\lambda_i = 0.60 \times 3.0 = \mathbf{1.80}$ visits.
+
+**(c)** Structural share of the zero probability $= 0.40 / 0.430 \approx 0.930$, so about **93%** of this patient's zero probability is structural (a guaranteed never-visitor) and only about **7%** ($0.0299/0.430 \approx 0.070$) is a sampling zero from the at-risk Poisson. With $\lambda_i = 3$ the at-risk patients almost never draw a zero, so nearly all the zero mass is structural.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Explain the key structural difference between a hurdle model and a zero-inflated model. Then describe one substantive scenario in Swedish primary care where the **hurdle** framing is clearly the more natural choice, and say why.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Structural difference.** In a **hurdle** model there is a single gate: zeros come *only* from failing to cross the hurdle, and the positive counts follow a *zero-truncated* distribution that *cannot* emit a zero. In a **zero-inflated** model, zeros arise *two ways* --- from the structural-zero (inflation) class *and* from the ordinary count process, which retains its own sampling zeros. Equivalently: the hurdle's count process is zero-truncated; the zero-inflated model's count process is not.
+
+**Natural hurdle scenario.** Consider visits to a physiotherapist after a *remiss* (referral). A patient first has to make contact at all --- booking a first appointment is a distinct administrative act (the hurdle). Once they have engaged, the number of follow-up sessions is governed by their recovery and follows a count process over the positives ($\ge 1$). Here every zero is "never engaged," and there is no notion of an at-risk patient who engaged but happened to draw zero sessions --- so the hurdle's clean separation (all zeros from the gate, none from the count) matches the mechanism better than a zero-inflated mixture.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive, set the never-visitor share to $\pi = 0$ and observe the plain-Poisson and zero-inflated curves. Then raise $\pi$ toward $0.6$.
+
+(a) What happens to the two fitted curves at $\pi = 0$, and why? (b) As $\pi$ rises, describe what happens to the plain Poisson's predictions *both* at zero and at the low positive counts (1, 2). (c) A colleague proposes simply fitting a *negative binomial* instead of a zero-inflated model to handle the spike. Give one reason this may be inadequate.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $\pi = 0$ there are no structural zeros, so the data *are* an ordinary Poisson. The zero-inflated mixture collapses to a plain Poisson (its inflation weight is zero), and the slate and red curves nearly coincide --- there is nothing for zero-inflation to repair.
+
+**(b)** As $\pi$ rises, the observed zero bar towers above the plain Poisson's zero prediction (the slate dot falls further and further behind), while the plain Poisson *over*-predicts the ones and twos: forced to match the inflated overall zero share by lowering $\hat\lambda$, it cannot simultaneously match the still-substantial positive counts. It is squeezed at both ends.
+
+**(c)** A negative binomial adds variance via a single dispersion parameter to absorb *general* overdispersion, but it ties the extra zeros to the *same* heavy right tail. If the zeros come from a genuinely distinct never-visitor sub-population (a point mass at zero) rather than from a fat-tailed rate distribution, the NB can still under-fit the precise zero spike while distorting the tail --- and, crucially, it gives you *no separate parameter* for "who never engages," which is often the policy quantity of interest.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Excess zeros mean the observed zero share far exceeds a fitted single-process model's prediction ($e^{-\hat\lambda}$ for a Poisson) --- a single mean cannot match both the spike at zero and the positive counts.
+- A **zero-inflated** model is a mixture: zeros arise both from a logit structural-zero class (probability $\pi$) and from the count process itself, so $\Pr(Y=0) = \pi + (1-\pi)e^{-\lambda}$ and $\mathbb{E}[Y] = (1-\pi)\lambda$.
+- A **hurdle** model uses one gate: all zeros come from failing the hurdle, and the positives follow a zero-truncated count; its likelihood factorises into a logit plus a truncated count regression that can be fit separately.
+- Each family yields *two* coefficient sets --- a binary process and a count process --- and the inflation (never-visitor) signs run *opposite* to the count signs, so always state which event each part predicts.
+- Choose by the data-generating story: zero-inflation for a distinct structurally-immune sub-population, the hurdle for a genuine cross-the-threshold act; fit with `pscl::zeroinfl`/`pscl::hurdle` in R or `statsmodels` `ZeroInflatedPoisson` in Python.
+:::
+
+## What Comes Next
+
+Zero-inflated and hurdle models handle outcomes that pile up at zero because two processes generate the count. But piling up at a boundary is a more general phenomenon, and zero is not the only boundary: incomes are recorded only above a threshold, durations are *censored* when a study ends, and we observe an outcome only for the *selected* units who chose to participate. The same logical move --- a *selection* process gating a *level* process --- recurs throughout econometrics. The next page, [Censoring, Truncation, and the Tobit Model](../18-selection-models/censoring-truncation-tobit.qmd), generalises it to censored and truncated outcomes, and from there the [Heckman selection model](../18-selection-models/heckman-selection.qmd) treats the very act of being observed as its own equation to be estimated.

@@ -1,0 +1,687 @@
+---
+title: "Censoring, Truncation, and the Tobit Model"
+subtitle: "When the outcome is observed only partly"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Distinguish *censoring* (the outcome is recorded but pinned at a limit) from *truncation* (observations past the limit are absent from the sample)
+- Explain why ordinary least squares on a censored or truncated outcome is biased *toward zero* (attenuated), and predict the direction of the bias
+- Write the latent-variable model $y^* = \mathbf{x}'\boldsymbol\beta + \varepsilon$ with $y = \max(0, y^*)$ and read the Tobit likelihood as a *mixture* of a density (uncensored) and a CDF mass (censored)
+- Separate the marginal effect on the *latent* $y^*$ from the marginal effect on the *observed* $y$, and report the right one for a given question
+- Fit a Tobit by maximum likelihood and a truncated regression in both R (`AER::tobit`, `censReg`, `truncreg`) and Python (`statsmodels`, manual MLE)
+:::
+
+## The Question Behind a Pile-Up at Zero
+
+A *vårdcentral* (primary care center) in Region Östergötland is studying patients' annual **out-of-pocket spending** on prescriptions, measured in SEK. Sweden runs a *högkostnadsskydd* (high-cost ceiling), but well below that ceiling lies a more mundane fact: many patients in a given year spend **exactly zero kronor** --- they collected no prescriptions at all. The spending variable does not trail off smoothly toward small positive numbers; it *piles up* at the boundary 0.
+
+A health economist regresses out-of-pocket spending on a *frailty index* built from age, number of chronic diagnoses, and recent *läkarbesök* (physician visits). The expectation is clear: frailer patients should spend more. Yet the ordinary least squares (OLS) slope comes back suspiciously *flat* --- much flatter than the clinicians' lived experience suggests. Nothing is wrong with the arithmetic. The problem is the boundary: a large clump of patients sits at exactly 0, and OLS, which assumes the outcome can range freely above and below the line, is fooled by that clump.
+
+This page is about outcomes we observe only *partly*. There are two distinct ways partial observation happens, and they call for two different fixes.
+
+::: {.glass-card .glass-card--definition}
+Two forms of partial observation of an outcome $y$ at a limit $L$ (here $L = 0$):
+
+- **Censoring.** Every unit stays in the sample, but any latent value below the limit is *recorded as the limit itself*. We see $y = \max(L,\, y^*)$. The pile-up at $L$ is real data: those patients exist, we just cannot see *how far below* the limit they would have gone. (Top-coded income --- "≥ 1{,}000{,}000 SEK" --- is the mirror image: censoring from *above*.)
+
+- **Truncation.** Units whose latent value falls beyond the limit are *missing from the sample entirely*. We never even know they existed. We observe $y$ only when $y^* > L$, and the count of dropped units is unknown.
+
+Censoring throws away the *value*; truncation throws away the *whole observation*.
+:::
+
+Both distortions bias OLS, and --- this is the key intuition --- they bias it in the **same direction**: toward zero. The slope is *attenuated*. The rest of the page builds the model that repairs it: the **Tobit** model (Tobin, 1958), estimated by maximum likelihood, which you met in the [Maximum Likelihood module](../11-mle-gmm/likelihood.qmd).
+
+## The Latent-Variable Model
+
+The cleanest way to think about censoring is to imagine a complete, well-behaved outcome that we only get to see through a clouded window. Call the complete outcome the **latent variable** $y^*$.
+
+::: {.glass-card .glass-card--definition}
+The **Tobit model** (Type I, left-censored at zero) posits a latent linear model and an observation rule:
+
+$$
+y_i^* = \mathbf{x}_i'\boldsymbol\beta + \varepsilon_i, \qquad \varepsilon_i \sim \mathcal{N}(0,\sigma^2),
+$$
+
+$$
+y_i = \max(0,\; y_i^*) =
+\begin{cases}
+y_i^* & \text{if } y_i^* > 0 \quad (\text{uncensored}),\\[2pt]
+0 & \text{if } y_i^* \le 0 \quad (\text{censored}).
+\end{cases}
+$$
+
+**Read the first line as**: "the latent out-of-pocket spending of patient $i$ equals a linear index of their characteristics $\mathbf{x}_i'\boldsymbol\beta$ plus a normal error." **Read the second as**: "we observe the latent value when it is positive; otherwise we observe exactly zero." A general censoring point $L$ replaces $0$ with $L$ throughout; top-coding flips the $\max$ to a $\min$.
+:::
+
+The latent $y_i^*$ can be negative --- mathematically, it represents how *strongly below the threshold* a patient sits (a patient who would "spend $-300$ SEK" is one with no demand for prescriptions at all). We never see those negatives; the observation rule flattens them all to $0$. That flattening is exactly what bends the OLS line.
+
+::: {.glass-card .glass-card--insight}
+**Why OLS attenuates.** OLS fits a line through the *observed* $y$. For the censored units it sees $0$ instead of the (more negative) latent value, so the cloud of points on the low end is lifted *up* toward the boundary. A line forced through a cloud whose bottom has been pushed up must rotate *flatter* --- its slope shrinks toward zero. The more censoring, the flatter the line. Tobit instead models the *latent* line and treats each zero as the statement "$y^* \le 0$," recovering the true slope.
+:::
+
+## See It: Censoring Bends the OLS Line
+
+The laboratory below makes the attenuation visible. A true latent relationship --- frailty index on the $x$-axis, latent out-of-pocket SEK spending on the $y$-axis --- is drawn once. You then slide a **censoring threshold** upward: every point below it is clamped to the threshold (the pile-up you would see in real data). Three lines compete: the **true latent line** (ochre, the data-generating truth), the **naive OLS line fit to the censored data** (slate, what a careless analyst reports), and the **Tobit line** (red, the MLE that undoes the damage). Watch the slate line flatten as the threshold climbs, while the red Tobit line stays locked onto the ochre truth.
+
+::: {.interactive-container}
+
+#### Censoring attenuates OLS; Tobit recovers the latent slope
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette shared across this page's interactives.
+seltob_pal = ({
+  latent:  "#9c7a33",   // true / latent line (ochre highlight)
+  ols:     "#3d5a6c",   // naive OLS on censored data (slate comparison)
+  tobit:   "#990000",   // Tobit / latent-consistent fit (Uppsala red, focal)
+  good:    "#2e6f40",   // on-target / agreement (green)
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis label text (Uppsala muted)
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+viewof seltob_threshold = Inputs.range([0, 2200], {
+  value: 0,
+  step: 50,
+  label: "Censoring threshold L (SEK): values below are clamped to L"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof seltob_noise = Inputs.range([200, 1400], {
+  value: 600,
+  step: 50,
+  label: "Error spread σ (SEK)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof seltob_draw = Inputs.button("Resample patients", {
+  value: 0,
+  reduce: v => v + 1
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// True data-generating process for latent out-of-pocket spending (SEK):
+//   y* = beta0 + beta1 * frailty + N(0, sigma^2)
+// These are the TRUTH the Tobit must recover. Frailty index runs 0..10.
+seltob_truth = ({ beta0: -900, beta1: 360 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Generate n patients. seltob_draw is read so the button forces a fresh sample;
+// d3.randomNormal supplies the noise. Each patient has a latent y* and an
+// OBSERVED y that is clamped up to the current threshold (left-censoring).
+seltob_data = {
+  seltob_draw;                                  // dependency: reshuffle on click
+  const n = 120;
+  const rnd = d3.randomNormal(0, seltob_noise);
+  const rx = d3.randomUniform(0, 10);
+  return Array.from({ length: n }, () => {
+    const frailty = rx();
+    const ystar = seltob_truth.beta0 + seltob_truth.beta1 * frailty + rnd();
+    const yobs  = Math.max(seltob_threshold, ystar);
+    return { frailty, ystar, yobs, censored: ystar <= seltob_threshold };
+  })
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Ordinary least squares slope+intercept for an array of {x,y} pairs.
+seltob_ols = function (rows, xkey, ykey) {
+  const n = rows.length;
+  const mx = d3.mean(rows, d => d[xkey]);
+  const my = d3.mean(rows, d => d[ykey]);
+  let sxx = 0, sxy = 0;
+  for (const r of rows) {
+    sxx += (r[xkey] - mx) ** 2;
+    sxy += (r[xkey] - mx) * (r[ykey] - my);
+  }
+  const b1 = sxy / sxx;
+  const b0 = my - b1 * mx;
+  return { b0, b1 };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Naive OLS fit to the CENSORED (observed) outcome — the biased line.
+seltob_olsFit = seltob_ols(seltob_data, "frailty", "yobs")
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// A practical Tobit estimator via the EM / iterated-expectation idea, kept light
+// for the browser: we recover the latent slope by imputing each censored point's
+// conditional expectation E[y* | y* <= L] under the current fit and re-running
+// OLS to convergence. This is a faithful, didactic stand-in for full Tobit MLE
+// and lands on the latent truth as censoring grows. (Production code uses
+// AER::tobit / censReg / statsmodels — see the code tabs.)
+seltob_tobitFit = {
+  const L = seltob_threshold;
+  const rows = seltob_data;
+  // Standard normal pdf and cdf.
+  const phi = z => Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
+  const Phi = z => 0.5 * (1 + seltob_erf(z / Math.SQRT2));
+  // Initialise from OLS on the observed data, plus a residual-based sigma.
+  let { b0, b1 } = seltob_ols(rows, "frailty", "yobs");
+  let sigma = Math.max(50, d3.deviation(rows, d => d.yobs) || seltob_noise);
+  for (let iter = 0; iter < 60; iter++) {
+    const imputed = rows.map(r => {
+      const mu = b0 + b1 * r.frailty;            // current latent mean
+      if (!r.censored) return { frailty: r.frailty, z: r.yobs };
+      // E[y* | y* <= L]  =  mu - sigma * phi(a)/Phi(a),  a = (L - mu)/sigma.
+      const a = (L - mu) / sigma;
+      const lam = phi(a) / Math.max(Phi(a), 1e-9);   // inverse Mills (lower tail)
+      const cond = mu - sigma * lam;
+      return { frailty: r.frailty, z: cond };
+    });
+    const fit = seltob_ols(imputed, "frailty", "z");
+    // Update sigma from imputed residuals (kept positive, gently regularised).
+    const rss = d3.mean(imputed, d => (d.z - (fit.b0 + fit.b1 * d.frailty)) ** 2);
+    const newSigma = Math.max(50, Math.sqrt(rss));
+    const moved = Math.abs(fit.b1 - b1) + Math.abs(fit.b0 - b0);
+    b0 = fit.b0; b1 = fit.b1; sigma = 0.5 * sigma + 0.5 * newSigma;
+    if (moved < 1e-4) break;
+  }
+  return { b0, b1, sigma };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Abramowitz-Stegun rational approximation to the error function (max abs error
+// ~1.5e-7), so the Tobit imputation has a self-contained normal CDF.
+seltob_erf = function (x) {
+  const s = Math.sign(x);
+  const ax = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * ax);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+            - 0.284496736) * t + 0.254829592) * t * Math.exp(-ax * ax);
+  return s * y;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Endpoints for drawing each fitted line across the full frailty range.
+seltob_linePts = function (fit) {
+  return [0, 10].map(f => ({ frailty: f, y: fit.b0 + fit.b1 * f }));
+}
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 420,
+  marginLeft: 72,
+  marginBottom: 48,
+  marginTop: 16,
+  marginRight: 18,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: seltob_pal.axis
+  },
+  x: {
+    label: "Frailty index  (0 = robust, 10 = very frail)  →",
+    domain: [0, 10]
+  },
+  y: {
+    label: "↑ Out-of-pocket spending (SEK)",
+    domain: [-2400, 4000]
+  },
+  marks: [
+    Plot.gridY({ stroke: seltob_pal.hair }),
+    Plot.ruleY([0], { stroke: seltob_pal.hair, strokeWidth: 1 }),
+    // The censoring threshold itself (dashed ink line).
+    Plot.ruleY([seltob_threshold], {
+      stroke: seltob_pal.ink, strokeWidth: 1.2, strokeDasharray: "3,3"
+    }),
+    Plot.text([{ x: 0.1, y: seltob_threshold }], {
+      x: "x", y: "y", text: () => `L = ${seltob_threshold} SEK`,
+      fill: seltob_pal.ink, fontSize: 11, fontWeight: 600,
+      textAnchor: "start", dy: -7,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Censored observations: small hollow markers sitting on the threshold line.
+    Plot.dot(seltob_data.filter(d => d.censored), {
+      x: "frailty", y: "yobs",
+      fill: "white", stroke: seltob_pal.muted, strokeWidth: 1.2, r: 3
+    }),
+    // Uncensored observations: solid ink dots.
+    Plot.dot(seltob_data.filter(d => !d.censored), {
+      x: "frailty", y: "yobs",
+      fill: seltob_pal.ink, fillOpacity: 0.55, r: 3
+    }),
+    // True latent line (ochre). seltob_truth carries {beta0, beta1}; map it to
+    // the {b0, b1} shape seltob_linePts expects.
+    Plot.line(seltob_linePts({ b0: seltob_truth.beta0, b1: seltob_truth.beta1 }), {
+      x: "frailty", y: "y", stroke: seltob_pal.latent, strokeWidth: 3
+    }),
+    // Naive OLS on censored data (slate, dashed).
+    Plot.line(seltob_linePts(seltob_olsFit), {
+      x: "frailty", y: "y", stroke: seltob_pal.ols,
+      strokeWidth: 2.5, strokeDasharray: "6,4"
+    }),
+    // Tobit fit (Uppsala red).
+    Plot.line(seltob_linePts(seltob_tobitFit), {
+      x: "frailty", y: "y", stroke: seltob_pal.tobit, strokeWidth: 2.5
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live legend + slope readout. Built in an html`` cell so the reactive values
+// interpolate (a markdown ${...} would render literally).
+{
+  const truth = seltob_truth.beta1;
+  const ols   = seltob_olsFit.b1;
+  const tob   = seltob_tobitFit.b1;
+  const nCens = seltob_data.filter(d => d.censored).length;
+  const pct   = (100 * nCens / seltob_data.length).toFixed(0);
+  const swatch = (color, dash) => `display:inline-block;width:1.5rem;height:0;
+      border-top:3px ${dash ? "dashed" : "solid"} ${color};
+      vertical-align:middle;margin-right:0.4rem;`;
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${seltob_pal.fill}; border:1px solid ${seltob_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${seltob_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.8rem;
+        color:${seltob_pal.axis}; margin:0.6rem 0 0.5rem; line-height:1.6;">
+      <span style="${swatch(seltob_pal.latent, false)}"></span>True latent slope &nbsp;&nbsp;
+      <span style="${swatch(seltob_pal.ols, true)}"></span>Naive OLS (censored) &nbsp;&nbsp;
+      <span style="${swatch(seltob_pal.tobit, false)}"></span>Tobit MLE
+      &nbsp;&middot;&nbsp; ${nCens} of ${seltob_data.length} patients censored (${pct}%)
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+      ${tile("True slope β₁", truth.toFixed(0) + " SEK", seltob_pal.latent)}
+      ${tile("Naive OLS slope", ols.toFixed(0) + " SEK", seltob_pal.ols)}
+      ${tile("Tobit slope", tob.toFixed(0) + " SEK", seltob_pal.tobit)}
+      ${tile("OLS attenuation", "−" + Math.max(0, 100 * (1 - ols / truth)).toFixed(0) + "%",
+          Math.abs(ols / truth - 1) < 0.08 ? seltob_pal.good : seltob_pal.ols)}
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Censoring Lab
+
+Work through these in order; each isolates one mechanism.
+
+**Step 1: Read the scene with no censoring.** Leave the **threshold at 0** SEK. (The true line dips below zero for low-frailty patients --- that latent region is where censoring will bite.) With $L=0$, only the genuinely negative latent points get clamped. Note where the three lines lie: the ochre latent truth, the slate OLS, and the red Tobit. Read the four tiles --- the slopes are already close.
+
+**Step 2: Turn up the censoring.** Drag the **threshold $L$ upward**. Hollow markers march up onto the dashed threshold line --- those are patients whose true spending we can no longer see; we only know it was "$\le L$." The censored share in the caption climbs.
+
+**Step 3: Watch OLS flatten.** As $L$ rises, the **slate OLS line rotates flatter** and its slope tile falls below the ochre truth. The "OLS attenuation" tile shows the percentage of the true slope that OLS has thrown away --- it grows with censoring. This is the bias in the opening puzzle.
+
+**Step 4: Watch Tobit hold.** The **red Tobit line stays glued to the ochre truth** even as half the sample piles onto the threshold. Tobit does not treat the zeros as real spending of $0$; it reads each as "the latent value fell below $L$" and integrates over that region. Its slope tile stays near the true 360 SEK, and its attenuation reads near $-0\%$ (green).
+
+**Step 5: Stress-test with noise and resampling.** Raise the **error spread $\sigma$**: more noise pushes more points below the threshold, so censoring (and OLS bias) worsens, yet Tobit remains roughly centered on the truth. Click **Resample patients** a few times to confirm the pattern is structural, not a lucky draw.
+
+## The Tobit Likelihood: A Mixture of Density and Mass
+
+Why does Tobit work where OLS fails? Because it writes the *correct* probability statement for each observation, and maximizes that likelihood (the machinery of the [Maximum Likelihood module](../11-mle-gmm/likelihood.qmd)). The trick is that censored and uncensored observations contribute *different kinds* of terms.
+
+For an **uncensored** patient ($y_i = y_i^* > 0$), we observed the exact value, so they contribute the usual normal **density** evaluated at the residual:
+
+$$
+\frac{1}{\sigma}\,\phi\!\left(\frac{y_i - \mathbf{x}_i'\boldsymbol\beta}{\sigma}\right),
+$$
+
+where $\phi$ is the standard normal probability density. **Read this as**: "how probable is it that the latent value landed exactly here?" --- the same term OLS implicitly uses.
+
+For a **censored** patient ($y_i = 0$, meaning $y_i^* \le 0$), we did *not* observe a value; we observed only the *event* "$y^*$ fell at or below the limit." The probability of that whole event is a **CDF mass**:
+
+$$
+\Pr(y_i^* \le 0) = \Phi\!\left(\frac{0 - \mathbf{x}_i'\boldsymbol\beta}{\sigma}\right) = \Phi\!\left(-\frac{\mathbf{x}_i'\boldsymbol\beta}{\sigma}\right),
+$$
+
+where $\Phi$ is the standard normal cumulative distribution function. **Read this as**: "the probability that this patient's latent spending was at or below the threshold" --- a single lump of probability, not a density at a point.
+
+::: {.glass-card .glass-card--definition}
+The **Tobit log-likelihood** sums a density term over the uncensored units and a CDF-mass term over the censored units. With $d_i = \mathbf{1}\{y_i > 0\}$ marking the uncensored,
+
+$$
+\ell(\boldsymbol\beta,\sigma) =
+\sum_{i:\,d_i=1} \log\!\left[\frac{1}{\sigma}\,\phi\!\left(\frac{y_i - \mathbf{x}_i'\boldsymbol\beta}{\sigma}\right)\right]
+\;+\;
+\sum_{i:\,d_i=0} \log\!\left[\Phi\!\left(-\frac{\mathbf{x}_i'\boldsymbol\beta}{\sigma}\right)\right].
+$$
+
+**Read this as**: "add up the log normal-density for everyone we measured exactly, plus the log probability-of-being-censored for everyone pinned at the limit." The maximum-likelihood estimates $\hat{\boldsymbol\beta},\hat\sigma$ are the values that make this mixed surface as high as possible. The first sum is OLS-like; the second sum is the *probit-like* piece that corrects the attenuation.
+:::
+
+This mixture is the heart of the model. OLS keeps only the first sum and pretends the censored zeros are exact measurements of $0$ --- which is precisely the lie that flattens its line. Tobit's second sum says, honestly, "I do not know how far below the limit these patients sit; I only know they are below it," and weighs that statement correctly.
+
+## Marginal Effects: Latent versus Observed
+
+A subtlety trips up almost everyone the first time. In OLS, $\beta_1$ *is* the marginal effect --- end of story. In Tobit there are **two** marginal effects, and reporting the wrong one is a common error.
+
+::: {.glass-card .glass-card--definition}
+For the Tobit model there are two distinct marginal effects of a regressor $x_k$:
+
+- **Effect on the latent outcome** $y^*$: simply $\dfrac{\partial \mathrm{E}[y^* \mid \mathbf{x}]}{\partial x_k} = \beta_k$. This is the slope of the underlying line --- "how much would *latent* spending change."
+
+- **Effect on the observed outcome** $y$: scaled by the probability of being uncensored,
+$$
+\frac{\partial \mathrm{E}[y \mid \mathbf{x}]}{\partial x_k} = \beta_k \cdot \Phi\!\left(\frac{\mathbf{x}'\boldsymbol\beta}{\sigma}\right),
+$$
+which is *smaller in magnitude* than $\beta_k$ because $\Phi(\cdot) \in (0,1)$. This is "how much would *actual recorded* spending change."
+:::
+
+**Read the second formula aloud**: "the marginal effect on observed spending equals the latent coefficient times the probability that a patient with these characteristics is uncensored." The factor $\Phi(\mathbf{x}'\boldsymbol\beta/\sigma)$ is the share of such patients who are above the limit; for those clamped at the boundary, a small nudge in $x$ does nothing to their recorded $0$. So the observed-$y$ effect is always *attenuated relative to* $\beta_k$ --- but, crucially, it is attenuated *for a known, modeled reason*, not by accident as in OLS.
+
+::: {.glass-card .glass-card--warning}
+**Report the effect that answers your question.** If a region asks "how does frailty drive *underlying* demand for prescriptions?" report the latent $\beta_k$. If it asks "if we make patients frailer-on-paper, how much will *actually-recorded* out-of-pocket SEK move on average?" report the observed-$y$ effect $\beta_k\,\Phi(\mathbf{x}'\boldsymbol\beta/\sigma)$. Quoting the raw Tobit coefficient as if it were an OLS slope on observed spending overstates the change in recorded SEK.
+:::
+
+## Truncation: When the Observation Vanishes
+
+Censoring keeps the unit and loses the value. **Truncation** is harsher: the unit disappears. Suppose the Östergötland study had instead been built from a *pharmacy* register that only logs patients who filled *at least one* prescription. Then every patient with $y^* \le 0$ is simply absent --- not recorded as $0$, but *gone*. We do not even know how many are missing.
+
+For truncated data, the density must be *renormalized* to integrate to one over the observed region only. A patient observed with spending $y_i > 0$ contributes the **truncated normal density**:
+
+$$
+f(y_i \mid y_i > 0) = \frac{\dfrac{1}{\sigma}\,\phi\!\left(\dfrac{y_i - \mathbf{x}_i'\boldsymbol\beta}{\sigma}\right)}{\Phi\!\left(\dfrac{\mathbf{x}_i'\boldsymbol\beta}{\sigma}\right)}.
+$$
+
+**Read this as**: "the ordinary normal density, divided by the probability of being above the threshold, so that it sums to one over the part of the distribution we can actually see." The denominator $\Phi(\mathbf{x}_i'\boldsymbol\beta/\sigma)$ is exactly the survival-into-the-sample probability. **Truncated regression** maximizes the sum of the logs of these renormalized densities --- it is *not* the same model as Tobit, because there is no CDF-mass term (no censored units exist to contribute one).
+
+::: {.glass-card .glass-card--assumption}
+**Both Tobit and truncated regression lean hard on two assumptions:**
+
+1. **Normality of the latent error.** The density and CDF terms are *specifically* normal. Unlike OLS --- whose slope stays consistent under non-normal errors --- Tobit and truncated regression are **inconsistent** if $\varepsilon$ is not normal. A skewed cost distribution (very common for SEK spending) can break them.
+
+2. **Homoskedasticity.** A single $\sigma$ enters every term. If the error variance grows with $\mathbf{x}$ (heteroskedasticity), the censoring/truncation probabilities are mis-stated and the estimates are biased. Both assumptions are testable and frequently fail for skewed health-cost data --- consider a log transform, a two-part model, or robust alternatives.
+:::
+
+<details>
+<summary>Math Details: Building and signing the Tobit likelihood</summary>
+<div class="details-content">
+
+### Why a censored observation is a CDF, not a density
+
+A continuous random variable places *zero* probability on any single point, so a density $\phi$ measures probability *per unit length*, not probability itself. For an uncensored patient we observed an exact value, and the likelihood contribution is the density there (this is standard MLE). But a censored patient at the limit is fundamentally different: we did **not** observe a point. We observed the *interval event* $\{y^* \le 0\}$, which carries genuine, non-infinitesimal probability
+
+$$
+\Pr(y^* \le 0) = \Pr(\mathbf{x}'\boldsymbol\beta + \varepsilon \le 0) = \Pr\!\left(\frac{\varepsilon}{\sigma} \le -\frac{\mathbf{x}'\boldsymbol\beta}{\sigma}\right) = \Phi\!\left(-\frac{\mathbf{x}'\boldsymbol\beta}{\sigma}\right).
+$$
+
+Mixing a *density* (for the exactly-observed) with a *probability mass* (for the interval-observed) in one likelihood is the defining move of the Tobit model. The full likelihood is the product
+
+$$
+L(\boldsymbol\beta,\sigma) = \prod_{i:\,d_i=1} \frac{1}{\sigma}\,\phi\!\left(\frac{y_i - \mathbf{x}_i'\boldsymbol\beta}{\sigma}\right)
+\;\times\;
+\prod_{i:\,d_i=0} \Phi\!\left(-\frac{\mathbf{x}_i'\boldsymbol\beta}{\sigma}\right),
+$$
+
+and taking logs gives the additive $\ell(\boldsymbol\beta,\sigma)$ in the main text.
+
+### The observed-outcome expectation (and its derivative)
+
+Write $z = \mathbf{x}'\boldsymbol\beta/\sigma$. A standard result for the left-censored-at-zero model is
+
+$$
+\mathrm{E}[y \mid \mathbf{x}] = \Phi(z)\,\mathbf{x}'\boldsymbol\beta + \sigma\,\phi(z).
+$$
+
+**Read it as**: "expected recorded spending equals the probability of being uncensored times the latent mean, plus a term for the truncated upper tail." Differentiating with respect to $x_k$, the $\phi$ and $\Phi$ pieces cancel in a tidy way (McDonald & Moffitt, 1980), leaving the clean
+
+$$
+\frac{\partial \mathrm{E}[y \mid \mathbf{x}]}{\partial x_k} = \beta_k\,\Phi(z),
+$$
+
+the observed-$y$ marginal effect quoted above. Because $0 < \Phi(z) < 1$, this is always *smaller in magnitude* than the latent $\beta_k$ --- the model's principled attenuation, decomposable into an effect on the *probability of being uncensored* and an effect on the *level among the uncensored*.
+
+### Why OLS attenuates, formally
+
+Regressing observed $y = \max(0, y^*)$ on $x$ estimates $\partial \mathrm{E}[y\mid x]/\partial x = \beta\,\Phi(z) < \beta$. So even the *probability limit* of the censored-data OLS slope is the latent slope multiplied by the (sub-one) uncensored share --- OLS is not merely noisy here, it is *biased toward zero*, and consistently so. More censoring (smaller $\Phi(z)$) means more attenuation. Tobit removes the $\Phi(z)$ factor by modeling the latent line directly.
+
+</div>
+</details>
+
+## Fitting It: Tobit and Truncated Regression in Code
+
+Both panels fit (1) a Tobit to the censored out-of-pocket spending and (2) a truncated regression to the subset of positive spenders, then contrast the Tobit slope against the naive-OLS slope to expose the attenuation. We simulate so the truth ($\beta_1 = 360$ SEK per frailty point) is known.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("AER", "censReg", "truncreg"))
+library(AER)        # AER::tobit (wraps survival::survreg)
+library(censReg)    # censReg::censReg — direct Tobit MLE
+library(truncreg)   # truncreg::truncreg — truncated regression
+
+set.seed(2024)
+n       <- 600
+frailty <- runif(n, 0, 10)
+ystar   <- -900 + 360 * frailty + rnorm(n, 0, 600)   # latent SEK; truth = 360
+y       <- pmax(0, ystar)                              # left-censored at 0
+d       <- data.frame(y, frailty)
+
+## ---- Naive OLS on the censored outcome: attenuated ----
+ols <- lm(y ~ frailty, data = d)
+coef(ols)["frailty"]                  # well below 360 — the bias
+
+## ---- Tobit (left-censored at 0) via AER ----
+fit_tobit <- tobit(y ~ frailty, left = 0, right = Inf, data = d)
+summary(fit_tobit)
+coef(fit_tobit)["frailty"]            # ~ 360 — recovers the latent slope
+
+## ---- Same model via censReg (identical estimates) ----
+fit_creg <- censReg(y ~ frailty, left = 0, data = d)
+summary(fit_creg)
+
+## ---- Observed-y marginal effect: beta * Phi(xb / sigma) ----
+xb     <- predict(fit_tobit, type = "lp")           # linear predictor x'beta
+sigma  <- fit_tobit$scale                           # estimated sigma
+me_obs <- coef(fit_tobit)["frailty"] * mean(pnorm(xb / sigma))
+cat("Latent effect   :", round(coef(fit_tobit)["frailty"]), "SEK\n")
+cat("Observed-y effect:", round(me_obs), "SEK (always smaller)\n")
+
+## ---- Truncated regression: only positive spenders are in the sample ----
+d_trunc <- subset(d, y > 0)
+fit_tr  <- truncreg(y ~ frailty, point = 0, direction = "left", data = d_trunc)
+summary(fit_tr)                       # also ~ 360, unlike OLS on this subset
+```
+
+### Python
+
+```python
+# pip install numpy scipy statsmodels
+import numpy as np
+from scipy.optimize import minimize
+from scipy.stats import norm
+import statsmodels.api as sm
+
+rng     = np.random.default_rng(2024)
+n       = 600
+frailty = rng.uniform(0, 10, n)
+ystar   = -900 + 360 * frailty + rng.normal(0, 600, n)   # latent; truth = 360
+y       = np.maximum(0.0, ystar)                          # left-censored at 0
+X       = sm.add_constant(frailty)                        # design matrix
+
+# ---- Naive OLS on the censored outcome: attenuated ----
+ols = sm.OLS(y, X).fit()
+print("OLS slope (biased):", round(ols.params[1], 1))    # well below 360
+
+# ---- Tobit via direct MLE: density for uncensored + CDF mass for censored ----
+def neg_loglik_tobit(theta, X, y, L=0.0):
+    b0, b1, log_sigma = theta
+    sigma = np.exp(log_sigma)                  # keep sigma > 0
+    xb    = b0 + b1 * X[:, 1]
+    unc   = y > L
+    # Uncensored: log normal density of the residual.
+    ll_unc = norm.logpdf(y[unc], loc=xb[unc], scale=sigma).sum()
+    # Censored: log P(y* <= L) = log Phi((L - xb)/sigma).
+    ll_cen = norm.logcdf((L - xb[~unc]) / sigma).sum()
+    return -(ll_unc + ll_cen)
+
+start = [ols.params[0], ols.params[1], np.log(y.std())]
+res   = minimize(neg_loglik_tobit, start, args=(X, y, 0.0), method="BFGS")
+b0, b1, sigma = res.x[0], res.x[1], np.exp(res.x[2])
+print("Tobit slope (consistent):", round(b1, 1))         # ~ 360
+
+# ---- Observed-y marginal effect: beta * mean Phi(xb / sigma) ----
+xb     = b0 + b1 * frailty
+me_obs = b1 * norm.cdf(xb / sigma).mean()
+print(f"Latent effect    : {b1:8.1f} SEK")
+print(f"Observed-y effect: {me_obs:8.1f} SEK (always smaller)")
+
+# ---- Truncated regression: only positive spenders enter the likelihood ----
+def neg_loglik_trunc(theta, X, y, L=0.0):
+    b0, b1, log_sigma = theta
+    sigma = np.exp(log_sigma)
+    xb    = b0 + b1 * X[:, 1]
+    # Renormalised (truncated-normal) density: pdf / P(y* > L).
+    ll = (norm.logpdf(y, loc=xb, scale=sigma)
+          - norm.logcdf((xb - L) / sigma)).sum()
+    return -ll
+
+mask  = y > 0
+res_t = minimize(neg_loglik_trunc, start,
+                 args=(X[mask], y[mask], 0.0), method="BFGS")
+print("Truncreg slope:", round(res_t.x[1], 1))           # ~ 360, not the OLS bias
+```
+
+:::
+
+In both languages the naive OLS slope lands well below 360 SEK (the attenuation), while Tobit and truncated regression recover the true latent slope. The observed-$y$ marginal effect sits between the two: smaller than the latent $\beta_1$, but for a *known and reportable* reason.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region records each patient's annual number of physician *läkarbesök*, but the booking system caps the recorded value at **12** (any patient with more visits is logged as exactly 12). An analyst regresses recorded visits on a chronic-illness score using OLS.
+
+(a) Is this censoring or truncation, and from above or below? (b) In which direction is the OLS slope biased? (c) What single change to the Tobit setup adapts it to this case?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** **Censoring from above** (right-censoring / top-coding). Every patient is still in the sample --- nobody is dropped --- but anyone whose true visit count exceeds 12 has their value *replaced by the limit* 12. (If instead patients above 12 visits were *omitted from the dataset entirely*, that would be truncation.)
+
+**(b)** **Toward zero (attenuated).** The high-visit patients have their outcome pulled *down* to 12, compressing the top of the cloud. A line fit to that compressed cloud rotates *flatter*, so the OLS slope understates the true effect of the illness score --- the same attenuation as the left-censored case, mirror-imaged.
+
+**(c)** Flip the observation rule to a **maximum at the upper limit**: model $y = \min(12, y^*)$ instead of $y = \max(0, y^*)$. In the likelihood, the uncensored units (visits $< 12$) keep the normal *density* term, and the censored units (recorded $= 12$) contribute the upper-tail mass $\Pr(y^* \ge 12) = \Phi\!\big((\mathbf{x}'\boldsymbol\beta - 12)/\sigma\big) = 1 - \Phi\!\big((12 - \mathbf{x}'\boldsymbol\beta)/\sigma\big)$. In code, set `right = 12, left = -Inf` in `AER::tobit`.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain in your own words why a censored observation contributes a *cumulative distribution function* term $\Phi(\cdot)$ to the Tobit likelihood, while an uncensored observation contributes a *density* term $\phi(\cdot)$. Why can we not simply plug the censored value (e.g. 0) into the density and proceed?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+For an **uncensored** patient we observed the *exact* latent value, so the relevant quantity is "how probable is a value right here?" --- the normal density $\phi$ evaluated at the residual. That is the ordinary MLE contribution.
+
+For a **censored** patient we did *not* observe a value at all; we observed only the *event* "the latent outcome fell at or below the limit." The probability of that whole interval event is the cumulative mass $\Pr(y^* \le L) = \Phi\big((L - \mathbf{x}'\boldsymbol\beta)/\sigma\big)$ --- a genuine, non-infinitesimal probability, not a density.
+
+Plugging the clamped value (say 0) into the *density* would falsely assert "we measured exactly 0," treating a whole censored region as a single precise point. That is exactly the mistake OLS makes, and it is what flattens the OLS line. Tobit's CDF term encodes the honest statement "we only know it is below the limit," which is why it recovers the latent slope.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A Tobit fit of out-of-pocket SEK spending on a frailty index returns $\hat\beta_{\text{frailty}} = 360$, $\hat\sigma = 600$. For a patient with linear predictor $\mathbf{x}'\hat{\boldsymbol\beta} = 300$ SEK:
+
+(a) Compute the marginal effect of frailty on the *latent* outcome. (b) Compute the marginal effect on the *observed* outcome. (c) Interpret the gap. (Use $\Phi(0.5) \approx 0.691$.)
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The marginal effect on the **latent** outcome is just the coefficient:
+$$
+\frac{\partial \mathrm{E}[y^*\mid\mathbf{x}]}{\partial\,\text{frailty}} = \hat\beta_{\text{frailty}} = 360 \text{ SEK per frailty point.}
+$$
+
+**(b)** The marginal effect on the **observed** outcome scales by $\Phi(\mathbf{x}'\hat{\boldsymbol\beta}/\hat\sigma)$. Here $z = 300/600 = 0.5$, so $\Phi(0.5) \approx 0.691$:
+$$
+\frac{\partial \mathrm{E}[y\mid\mathbf{x}]}{\partial\,\text{frailty}} = 360 \times 0.691 \approx 249 \text{ SEK per frailty point.}
+$$
+
+**(c)** A one-point rise in frailty raises *latent* demand by 360 SEK, but raises *actually-recorded* spending by only about 249 SEK on average. The shortfall (about 111 SEK) is the share of the effect "absorbed" by patients who remain pinned at the 0 limit --- a nudge in frailty does not move their recorded spending off the boundary. Report 360 SEK for underlying demand, 249 SEK for the change a budget-holder would actually see in recorded out-of-pocket costs.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the Censoring Lab, set the threshold to 0 and note the three slopes, then raise the threshold to about 1500 SEK and raise $\sigma$ to 1200. (a) What happens to the naive OLS slope and the "OLS attenuation" tile, and why? (b) Why does the Tobit slope stay near 360 SEK? (c) Name one realistic feature of Swedish out-of-pocket cost data that would *break* the Tobit model even at this threshold.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The **naive OLS slope falls** and the **attenuation tile grows** (more negative). Raising the threshold clamps more low-frailty patients onto the limit, and raising $\sigma$ pushes still more points below it. The bottom of the point cloud is lifted toward the boundary, so the least-squares line rotates flatter and a larger fraction of the true 360-SEK slope is lost. The probability limit of the OLS slope is $\beta\,\Phi(z)$ with $\Phi(z)$ shrinking as censoring grows.
+
+**(b)** Tobit does not treat the clamped values as real spending of $L$. For each censored patient it contributes the CDF mass $\Phi\big((L - \mathbf{x}'\boldsymbol\beta)/\sigma\big)$ --- the probability that the latent value fell below the limit --- rather than a density at $L$. Modeling the *latent* line directly, it removes the $\Phi(z)$ attenuation factor, so its slope stays near the data-generating 360 SEK regardless of how many points pile up.
+
+**(c)** Skewed, non-normal costs (a heavy right tail of a few very expensive patients), or heteroskedasticity (cost variance rising with frailty). Tobit's likelihood is built on a *normal, homoskedastic* latent error; unlike OLS, its consistency depends on those holding. Real SEK health-cost distributions are typically right-skewed, which can bias the Tobit estimates --- motivating a log transform, a two-part model, or robust alternatives.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- *Censoring* records every unit but pins out-of-range values at a limit ($y=\max(0,y^*)$); *truncation* drops out-of-range units from the sample entirely. Both attenuate OLS *toward zero*.
+- The Tobit model assumes a latent normal $y^* = \mathbf{x}'\boldsymbol\beta + \varepsilon$ and an observation rule, and is estimated by maximum likelihood.
+- Its log-likelihood is a *mixture*: a normal **density** term for uncensored units plus a normal **CDF mass** term, $\Phi(-\mathbf{x}'\boldsymbol\beta/\sigma)$, for censored units --- the latter is what repairs OLS's attenuation.
+- There are *two* marginal effects: on the latent $y^*$ it is $\beta_k$; on the observed $y$ it is $\beta_k\,\Phi(\mathbf{x}'\boldsymbol\beta/\sigma)$, always smaller in magnitude. Report the one your question asks for.
+- Truncated regression renormalizes the density by $\Phi(\mathbf{x}'\boldsymbol\beta/\sigma)$ (no CDF-mass term); both Tobit and truncated regression are *inconsistent under non-normal or heteroskedastic errors*, unlike OLS.
+:::
+
+## What Comes Next
+
+The Tobit model assumes a *single* equation governs both whether we see a positive value and how large it is --- the same $\mathbf{x}'\boldsymbol\beta$ decides censoring and level. But often the *selection* into being observed is a genuinely *separate* decision from the *outcome* we care about: a patient first chooses whether to seek care at all, and only then incurs a cost; a worker first chooses whether to work, and only then earns a wage. When the unobserved drivers of *selection* are correlated with the unobserved drivers of the *outcome*, even Tobit is not enough. The next page, [Sample Selection: The Heckman Model](heckman-selection.qmd), splits the problem into two equations --- a probit *selection* equation and a linear *outcome* equation --- and shows how the inverse Mills ratio you glimpsed in the truncated density becomes the explicit correction term that makes the outcome equation consistent.

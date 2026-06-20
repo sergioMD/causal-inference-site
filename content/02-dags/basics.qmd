@@ -1,0 +1,1002 @@
+---
+title: "DAG Basics"
+subtitle: "Nodes, edges, and the three elemental structures"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Read a directed acyclic graph, interpreting what each node, each arrow, and each *missing* arrow asserts about causation
+- Distinguish the three elemental structures --- chain (mediation), fork (confounding), and collider (common effect) --- by their arrow patterns
+- Predict how conditioning on the middle variable changes the association in each structure: blocking open paths in chains and forks, but *opening* a path in a collider
+- Trace causal and backdoor paths between treatment and outcome, and identify which adjustment blocks the backdoor without disturbing the causal path
+- Explain why "controlling for everything" is dangerous when a collider is in the mix
+:::
+
+## From Assumptions to Pictures
+
+In Module 1, we established that naive comparisons fail because of selection bias. The treated and untreated groups differ at baseline, and those baseline differences contaminate the estimate. But we left a critical question unanswered: *why* do the groups differ?
+
+Consider a Swedish researcher studying whether a new physiotherapy protocol ($D$) reduces chronic pain scores ($Y$) among patients at a rehabiliteringsklinik (rehabilitation clinic). She notices that patients who receive the new protocol have better outcomes on average, but also that the referring physicians tend to assign the protocol to patients they judge to be *more likely to benefit* --- patients who are younger, more motivated, and have fewer comorbidities. These patient characteristics ($X$) affect both who gets treated and the outcome itself.
+
+This web of cause and effect is hard to reason about verbally. How many such confounding pathways exist? Does adjusting for $X$ fix the problem? What if we also adjust for a variable that is *caused* by treatment --- could that make things worse?
+
+A **Directed Acyclic Graph** (DAG) is a diagram that makes these causal relationships explicit. Once drawn, the rules of the graph tell you precisely which comparisons are valid and which adjustments are needed.
+
+
+## Anatomy of a DAG
+
+A DAG has two ingredients:
+
+- **Nodes** (circles or letters): each one represents a variable. In our example: $D$ (treatment), $Y$ (pain score), and $X$ (patient characteristics).
+- **Directed edges** (arrows): an arrow from $A$ to $B$ means "$A$ is a direct cause of $B$." The direction matters --- $A \rightarrow B$ is not the same as $B \rightarrow A$.
+
+::: {.glass-card .glass-card--definition}
+A **Directed Acyclic Graph** (DAG) is a graph where:
+
+1. Every edge has a direction (an arrow pointing from cause to effect).
+2. There are no cycles --- you cannot follow the arrows and return to where you started.
+
+**How to read this**: "Directed" means every arrow has a clear source and target. "Acyclic" means no feedback loops. If $A$ causes $B$ and $B$ causes $C$, then $C$ cannot also cause $A$.
+
+The **acyclic** condition is important. It means the graph represents a snapshot of causal relationships at one point in time. Feedback loops (e.g., pain → inactivity → more pain) can be represented by expanding the time dimension, but the basic DAG assumes a one-directional flow of causation.
+:::
+
+### What an Arrow Means (and What It Does Not)
+
+An arrow $A \rightarrow B$ is a *claim*: "$A$ has a direct causal effect on $B$." This claim is made by the researcher based on domain knowledge, prior studies, or institutional understanding. It is *not* something the data can confirm or deny (though the data can sometimes refute the implications of the graph).
+
+Equally important is what a *missing* arrow means. If there is no arrow between $A$ and $B$, the researcher is claiming that $A$ does not directly cause $B$ and $B$ does not directly cause $A$. Missing arrows are the strong assumptions --- the ones most worth scrutinizing.
+
+
+## The Three Elemental Structures
+
+Every DAG, no matter how complex, is built from combinations of just three elemental structures. Understanding these three is the key to understanding any graph.
+
+### 1. The Chain (Mediation)
+
+$$
+A \rightarrow M \rightarrow B
+$$
+
+$A$ causes $M$, and $M$ causes $B$. The variable $M$ is a **mediator** --- it lies on the causal pathway from $A$ to $B$.
+
+**Healthcare example**: A hospital implements a hygiene protocol ($A$), which increases handwashing compliance ($M$), which reduces surgical site infections ($B$).
+
+$$
+\text{Protocol} \rightarrow \text{Handwashing} \rightarrow \text{Infections}
+$$
+
+**Key property of chains**: $A$ and $B$ are associated (information flows from $A$ to $B$ through $M$). But if you **condition on** $M$ --- for example, by comparing only patients whose handwashing compliance was equal --- the association between $A$ and $B$ disappears. Conditioning on the mediator *blocks* the path.
+
+*Intuition*: If you hold handwashing constant, the protocol has no remaining effect on infections --- because the protocol *works through* handwashing. You have effectively cut the mechanism.
+
+The picture below draws this chain. Read it left to right: the green arrows trace the open causal pipeline carrying information from the protocol all the way to infections.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Shared DAG drawing component (used by all three structure figures
+// below AND the live "Information Flow" interactive further down). ──
+// Pure function of its arguments: depends only on the global d3. Builds an
+// SVG with d3.create (robust against DOM-timing issues) and returns the node.
+//   nodes:  [{id, x, y, label, caption}]  with x,y in normalized [0,1].
+//           `label` is a SHORT token drawn inside the circle (fits the 48px
+//           node); optional `caption` is the full word drawn BELOW the node so
+//           long Swedish/English terms never spill past the circle.
+//   edges:  [{source, target, status}]  status ∈
+//             "open-causal"    → green  (#2e6f40)  an open causal edge
+//             "open-noncausal" → red    (#b3000b)  an open back-door / opened-collider edge
+//             "blocked"        → grey   (#79766e, dashed) a blocked edge
+//   conditioned: [id, ...]  nodes drawn as a boxed (rounded-square, thick) node
+bdag_drawDAG = function ({ nodes, edges, width = 440, height = 230, conditioned = [] }) {
+  const pad = 46;                       // keep nodes (and labels) off the edges
+  const r = 24;                         // node radius
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = s =>
+    s === "open-causal" ? "#2e6f40" :
+    s === "open-noncausal" ? "#b3000b" : "#79766e";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  // One arrowhead marker per color, declared once in <defs>.
+  const defs = svg.append("defs");
+  const markers = [
+    ["bdag-arrow-green", "#2e6f40"],
+    ["bdag-arrow-red", "#b3000b"],
+    ["bdag-arrow-gray", "#79766e"]
+  ];
+  const markerId = s =>
+    s === "open-causal" ? "bdag-arrow-green" :
+    s === "open-noncausal" ? "bdag-arrow-red" : "bdag-arrow-gray";
+  for (const [id, col] of markers) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9)
+      .attr("refY", 0)
+      .attr("markerWidth", 7)
+      .attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path")
+        .attr("d", "M0,-5L10,0L0,5")
+        .attr("fill", col);
+  }
+
+  // ── Edges first (drawn underneath the nodes) ──
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    // Trim the segment so it starts/ends at the node circles, not their centers.
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya)
+      .attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.status))
+      .attr("stroke-width", e.status === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.status === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.status)})`);
+  }
+
+  // ── Nodes on top ──
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const boxed = condSet.has(n.id);
+    const g = ng.append("g");
+    if (boxed) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#f6f5f1")
+        .attr("stroke", "#1c1c1a")
+        .attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#f6f5f1")
+        .attr("stroke", "#1c1c1a")
+        .attr("stroke-width", 2);
+    }
+    // Short token inside the node (always fits the 48px circle).
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "central")
+      .attr("font-size", 15)
+      .attr("font-weight", 700)
+      .attr("fill", "#1c1c1a")
+      .text(n.label);
+    // Full term drawn BELOW the node so long words never spill past the circle.
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "central")
+        .attr("font-size", 11)
+        .attr("font-weight", 600)
+        .attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+bdag_drawDAG({
+  width: Math.min(440, width),
+  height: 175,
+  nodes: [
+    { id: "A", x: 0.06, y: 0.45, label: "A", caption: "Protocol" },
+    { id: "M", x: 0.5,  y: 0.45, label: "M", caption: "Handwashing" },
+    { id: "B", x: 0.94, y: 0.45, label: "B", caption: "Infection" }
+  ],
+  edges: [
+    { source: "A", target: "M", status: "open-causal" },
+    { source: "M", target: "B", status: "open-causal" }
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = open causal path, <span style="color:#b3000b; font-weight:700;">red</span> = open spurious/back-door path, <span style="color:#79766e; font-weight:700;">grey dashed</span> = blocked.
+:::
+
+
+### 2. The Fork (Common Cause / Confounding)
+
+$$
+A \leftarrow C \rightarrow B
+$$
+
+$C$ causes both $A$ and $B$. The variable $C$ is a **confounder** --- a common cause of treatment and outcome.
+
+**Healthcare example**: A patient's socioeconomic status ($C$) affects both whether they attend follow-up appointments ($A$) and their health outcomes ($B$).
+
+$$
+\text{Attendance} \leftarrow \text{SES} \rightarrow \text{Health}
+$$
+
+**Key property of forks**: $A$ and $B$ are associated even though neither causes the other --- the association is *spurious*, created by the common cause $C$. If you **condition on** $C$ (compare patients within the same SES level), the spurious association vanishes.
+
+*Intuition*: Among patients with the same SES, attendance and health are no longer correlated (unless there's a real causal effect of attendance on health). Conditioning on the confounder *blocks* the spurious path.
+
+This is the structure that generates **selection bias** from Module 1. The common cause creates a backdoor path from treatment to outcome, making the naive comparison biased.
+
+In the picture below, both arrows point *outward* from SES (the common cause) at the top down to attendance and health. That shared origin is what manufactures the spurious correlation.
+
+```{ojs}
+//| echo: false
+
+bdag_drawDAG({
+  width: Math.min(440, width),
+  height: 200,
+  nodes: [
+    { id: "C", x: 0.5,  y: 0.12, label: "C", caption: "SES" },
+    { id: "A", x: 0.08, y: 0.80, label: "A", caption: "Närvaro" },
+    { id: "B", x: 0.92, y: 0.80, label: "B", caption: "Hälsa" }
+  ],
+  edges: [
+    { source: "C", target: "A", status: "open-noncausal" },
+    { source: "C", target: "B", status: "open-noncausal" }
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = open causal path, <span style="color:#b3000b; font-weight:700;">red</span> = open spurious/back-door path, <span style="color:#79766e; font-weight:700;">grey dashed</span> = blocked. (C = socioeconomic status, A = närvaro/attendance, B = hälsa/health.)
+:::
+
+
+### 3. The Collider (Common Effect)
+
+$$
+A \rightarrow C \leftarrow B
+$$
+
+Both $A$ and $B$ cause $C$. The variable $C$ is a **collider** --- a common effect of $A$ and $B$.
+
+**Healthcare example**: Both a patient's genetic risk ($A$) and their diet quality ($B$) affect whether they develop heart disease ($C$).
+
+$$
+\text{Genetics} \rightarrow \text{Heart disease} \leftarrow \text{Diet}
+$$
+
+**Key property of colliders**: $A$ and $B$ are *not* associated (they are independent). But if you **condition on** $C$ --- for example, by restricting the analysis to patients who have heart disease --- a *spurious* association between $A$ and $B$ appears. Among heart disease patients, those with low genetic risk must have had bad diets (otherwise why do they have heart disease?), creating an artificial negative correlation.
+
+*Intuition*: Conditioning on a collider *opens* a path that was previously blocked. This is the opposite of what happens with chains and forks, where conditioning *closes* paths.
+
+Now both arrows point *inward*, colliding at heart disease at the bottom. As drawn, no information flows between genetics and diet --- the path through the collider is blocked until you condition on it (which we visualize in the live interactive below).
+
+```{ojs}
+//| echo: false
+
+bdag_drawDAG({
+  width: Math.min(440, width),
+  height: 200,
+  nodes: [
+    { id: "A", x: 0.08, y: 0.12, label: "A", caption: "Gener" },
+    { id: "B", x: 0.92, y: 0.12, label: "B", caption: "Kost" },
+    { id: "C", x: 0.5,  y: 0.80, label: "C", caption: "Hjärtsjukdom" }
+  ],
+  edges: [
+    { source: "A", target: "C", status: "blocked" },
+    { source: "B", target: "C", status: "blocked" }
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = open causal path, <span style="color:#b3000b; font-weight:700;">red</span> = open spurious/back-door path, <span style="color:#79766e; font-weight:700;">grey dashed</span> = blocked. (A = gener/genetics, B = kost/diet, C = hjärtsjukdom/heart disease.)
+:::
+
+**Seeing "explaining away".** The picture below makes the manufactured correlation concrete. Each point is a person: horizontal axis = genetic risk, vertical axis = poor diet (higher = worse diet). In the **full population** (faint grey) the two are unrelated — a shapeless cloud. But heart disease strikes people with *high genetic risk* **or** *poor diet*, so the patients who actually develop it (highlighted **red**) sit along an *either/or* band: among them, low genetic risk all but forces a bad diet, and vice-versa. Restricting to that red subgroup — conditioning on the collider — tilts the cloud downward and conjures a negative correlation that was never in the population.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Self-contained illustration of "explaining away" (collider selection).
+// Independent of the live widget's simData — purely a static figure.
+bdag_explainAway = {
+  const rng = mulberry32(7);
+  const n = 520;
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const gene = randn(rng);                 // A: genetic risk (independent)
+    const diet = randn(rng);                 // B: poor-diet risk (independent, higher = worse diet)
+    // Heart disease rises with genetic risk AND with poor diet (both push risk UP),
+    // so the two causes act in the same direction — the canonical collider setup.
+    const score = gene + diet + randn(rng) * 0.6;
+    const selected = score > 1.1;            // "has heart disease" subgroup
+    rows.push({ gene, diet, selected });
+  }
+  return rows;
+}
+
+bdag_selected = bdag_explainAway.filter(d => d.selected)
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(520, width),
+  height: 320,
+  marginLeft: 64,
+  marginBottom: 46,
+  x: { label: "Genetic risk (A) →", grid: true },
+  y: { label: "↑ Poor diet (B)", grid: true },
+  marks: [
+    // Full population: unrelated grey cloud.
+    Plot.dot(bdag_explainAway, { x: "gene", y: "diet", fill: "#79766e", fillOpacity: 0.18, r: 2.4 }),
+    // Heart-disease subgroup (conditioning on the collider).
+    Plot.dot(bdag_selected, { x: "gene", y: "diet", fill: "#b3000b", fillOpacity: 0.7, r: 3 }),
+    // Trend within the selected subgroup: a manufactured negative slope.
+    Plot.linearRegressionY(bdag_selected, { x: "gene", y: "diet", stroke: "#b3000b", strokeWidth: 2.5 }),
+    Plot.text(
+      [{ x: 0, y: 2.55, t: "Among heart-disease patients (red): low genetic risk ⇒ poor diet" }],
+      { x: "x", y: "y", text: "t", fill: "#b3000b", fontSize: 11, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+    )
+  ]
+})
+```
+
+::: {.aside}
+Grey = the full population (genetic risk and poor diet independent, no trend). Red = patients who developed heart disease; within that selected subgroup an artificial **negative** correlation between genetic risk and poor diet appears (higher genetic risk goes with *less* dietary risk, since either alone can trigger the disease). This is collider bias made visible.
+:::
+
+::: {.glass-card .glass-card--warning}
+The collider is the structure that trips up even experienced researchers. It is the reason why "controlling for everything" is dangerous. Adding a collider to your regression can *create* bias where none existed. The solution is not to adjust for every available variable --- it is to draw a DAG and use d-separation (next page) to determine the correct adjustment set.
+:::
+
+
+## See It: Building Intuition with the Three Structures
+
+Use the interactive below to explore how conditioning changes the association between two variables. Select a structure and toggle conditioning: the **DAG redraws live** --- its edges recolor (green = open causal, red = open back-door, gray dashed = blocked) and the node you condition on is **boxed** --- right above a scatter plot and correlation readout that move in lockstep with the graph.
+
+Two terms to have in hand before you start. A **back-door path** is any non-causal route linking the two variables --- here, the one that runs *through* the middle node M --- and it is the source of spurious association. **Conditioning on M** here means *removing the part of A and B that M can explain, then looking at what is left over* (the "residuals"); this is the same idea as holding M fixed, but it uses all the data at once so the number is stable.
+
+::: {.interactive-container}
+
+#### Information Flow in DAGs
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.85rem; line-height:1.5; color:#44443f; background:#f6f5f1; border-left:3px solid #990000; border-radius:0 0.35rem 0.35rem 0; padding:0.6rem 0.85rem; margin-bottom:0.9rem;">
+  <strong style="color:#990000;">Start here:</strong> pick a structure, read the correlation, then flip <em>Condition on …</em> on and watch the same number change. The full 5-step tour is just below the chart.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof dagType = Inputs.radio(
+  ["Fork (Confounding)", "Chain (Mediation)", "Collider"],
+  {
+    label: "Structure",
+    value: "Fork (Confounding)"
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+midVarName = dagType === "Fork (Confounding)" ? "SES"
+  : dagType === "Chain (Mediation)" ? "Handwashing"
+  : "Heart disease"
+```
+
+```{ojs}
+//| echo: false
+
+viewof conditionOn = Inputs.toggle({
+  label: `Condition on ${midVarName}`,
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randn(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+simData = {
+  const rng = mulberry32(99);
+  const n = 400;
+  const obs = [];
+
+  for (let i = 0; i < n; i++) {
+    let A, B, M;
+
+    if (dagType === "Fork (Confounding)") {
+      // C -> A, C -> B
+      const C = randn(rng);
+      A = C * 0.7 + randn(rng) * 0.5;
+      B = C * 0.7 + randn(rng) * 0.5;
+      M = C;
+    } else if (dagType === "Chain (Mediation)") {
+      // A -> M -> B
+      A = randn(rng);
+      M = A * 0.7 + randn(rng) * 0.5;
+      B = M * 0.7 + randn(rng) * 0.5;
+    } else {
+      // Collider: A -> M, B -> M
+      A = randn(rng);
+      B = randn(rng);
+      M = A * 0.5 + B * 0.5 + randn(rng) * 0.4;
+    }
+
+    obs.push({ A, B, M, id: i });
+  }
+
+  // ── Conditioning by RESIDUALIZATION ──
+  // The conditional association of A and B given M is the correlation of
+  // their residuals after regressing each on M (Frisch–Waugh–Lovell).
+  // This uses all n points, so the conditional correlation is stable —
+  // unlike slicing a thin band of M, which is noisy and sample-dependent.
+  const meanM = d3.mean(obs, d => d.M);
+  const meanA0 = d3.mean(obs, d => d.A);
+  const meanB0 = d3.mean(obs, d => d.B);
+  const ssM = d3.sum(obs, d => (d.M - meanM) ** 2);
+  // OLS slopes of A on M and B on M
+  const slopeAM = d3.sum(obs, d => (d.M - meanM) * (d.A - meanA0)) / ssM;
+  const slopeBM = d3.sum(obs, d => (d.M - meanM) * (d.B - meanB0)) / ssM;
+  const interceptAM = meanA0 - slopeAM * meanM;
+  const interceptBM = meanB0 - slopeBM * meanM;
+
+  return obs.map(d => ({
+    ...d,
+    // residuals = the part of A (and B) not explained by M
+    resA: d.A - (interceptAM + slopeAM * d.M),
+    resB: d.B - (interceptBM + slopeBM * d.M)
+  }));
+}
+
+// Pearson correlation helper
+function pearson(d, fx, fy) {
+  if (d.length < 3) return 0;
+  const mx = d3.mean(d, fx);
+  const my = d3.mean(d, fy);
+  const num = d3.sum(d, v => (fx(v) - mx) * (fy(v) - my));
+  const den = Math.sqrt(d3.sum(d, v => (fx(v) - mx) ** 2)) *
+              Math.sqrt(d3.sum(d, v => (fy(v) - my) ** 2));
+  return den === 0 ? 0 : num / den;
+}
+
+// Unconditional correlation of A and B
+corrAll = pearson(simData, v => v.A, v => v.B)
+
+// Conditional correlation of A and B given M, via residuals
+corrResidual = pearson(simData, v => v.resA, v => v.resB)
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.4rem; border-left: 4px solid #990000;">
+    <div style="font-family: 'Inter', sans-serif; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Unconditional Corr(A,B)</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #1c1c1a;">${corrAll.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.4rem; border-left: 4px solid ${conditionOn ? '#3d5a6c' : '#79766e'};">
+    <div style="font-family: 'Inter', sans-serif; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Conditional Corr(A,B&#8201;|&#8201;M)</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: ${conditionOn ? '#3d5a6c' : '#79766e'};">${conditionOn ? corrResidual.toFixed(3) : "n/a (toggle on)"}</div>
+    <div style="font-family: 'Inter', sans-serif; font-size: 0.6rem; color: #79766e; margin-top: 0.15rem;">active only when conditioning is on</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Dynamic verdict: same arithmetic, different MEANING per structure. Teaches
+// the interpretation the prose makes — that blocking a fork removes a spurious
+// association, blocking a chain destroys a real effect, and conditioning on a
+// collider manufactures an association from nothing.
+verdict = {
+  if (!conditionOn) {
+    return { text: "Toggle conditioning on to see what changes — and what it means.", color: "#79766e", bg: "#f6f5f1", border: "#79766e" };
+  }
+  if (dagType === "Fork (Confounding)")
+    return { text: "You just removed a SPURIOUS association — good. The link between A and B was an artefact of the common cause.", color: "#2e6f40", bg: "rgba(46,111,64,0.06)", border: "#2e6f40" };
+  if (dagType === "Chain (Mediation)")
+    return { text: "You just blocked a REAL causal effect — you usually do NOT want this. The mechanism runs through M.", color: "#9c7a33", bg: "rgba(156,122,51,0.08)", border: "#9c7a33" };
+  return { text: "You just CREATED a spurious association out of nothing — collider bias. The path was closed until you conditioned.", color: "#b3000b", bg: "rgba(179,0,11,0.06)", border: "#b3000b" };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem; line-height:1.45; font-weight:600; color:${verdict.color}; background:${verdict.bg}; border-left:3px solid ${verdict.border}; border-radius:0 0.35rem 0.35rem 0; padding:0.55rem 0.8rem; margin-bottom:0.75rem;">${verdict.text}</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Live DAG spec for the selected structure + conditioning state. ──
+// Derived from the SAME path logic the prose teaches above. M is the middle
+// variable; conditioning on it boxes the node and recolors the two edges:
+//   Fork    A ← M → B : open back-door (red) → blocked (gray) when conditioned
+//   Chain   A → M → B : open causal  (green) → blocked (gray) when conditioned
+//   Collider A → M ← B: blocked (gray) → opened back-door (red) when conditioned
+bdag_flowDAG = {
+  const boxed = conditionOn ? ["M"] : [];
+
+  if (dagType === "Fork (Confounding)") {
+    const status = conditionOn ? "blocked" : "open-noncausal";
+    return {
+      conditioned: boxed,
+      nodes: [
+        { id: "M", x: 0.5,  y: 0.12, label: "M", caption: "SES" },
+        { id: "A", x: 0.08, y: 0.80, label: "A", caption: "Närvaro" },
+        { id: "B", x: 0.92, y: 0.80, label: "B", caption: "Hälsa" }
+      ],
+      edges: [
+        { source: "M", target: "A", status },
+        { source: "M", target: "B", status }
+      ]
+    };
+  } else if (dagType === "Chain (Mediation)") {
+    const status = conditionOn ? "blocked" : "open-causal";
+    return {
+      conditioned: boxed,
+      nodes: [
+        { id: "A", x: 0.06, y: 0.45, label: "A", caption: "Protocol" },
+        { id: "M", x: 0.5,  y: 0.45, label: "M", caption: "Handwashing" },
+        { id: "B", x: 0.94, y: 0.45, label: "B", caption: "Infection" }
+      ],
+      edges: [
+        { source: "A", target: "M", status },
+        { source: "M", target: "B", status }
+      ]
+    };
+  } else {
+    // Collider: conditioning OPENS the path (red); otherwise it is blocked.
+    const status = conditionOn ? "open-noncausal" : "blocked";
+    return {
+      conditioned: boxed,
+      nodes: [
+        { id: "A", x: 0.08, y: 0.12, label: "A", caption: "Gener" },
+        { id: "B", x: 0.92, y: 0.12, label: "B", caption: "Kost" },
+        { id: "M", x: 0.5,  y: 0.80, label: "M", caption: "Hjärtsjukdom" }
+      ],
+      edges: [
+        { source: "A", target: "M", status },
+        { source: "B", target: "M", status }
+      ]
+    };
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Render the live DAG above the scatter so the topology and the correlation
+// readout move together as the reader toggles conditioning.
+html`<div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 0.5rem;">
+  <div style="font-family: 'Inter', sans-serif; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; color: #79766e; font-weight: 700; margin-bottom: 0.25rem;">
+    ${dagType} ${conditionOn ? "— conditioning on the middle node (boxed)" : "— nothing conditioned"}
+  </div>
+  ${bdag_drawDAG(bdag_flowDAG)}
+  <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; font-family: 'Inter', sans-serif; font-size: 0.68rem; color: #79766e; margin-top: 0.35rem;">
+    <span style="color:#2e6f40; font-weight:700; white-space:nowrap;">━ open causal</span>
+    <span style="color:#b3000b; font-weight:700; white-space:nowrap;">━ open back-door (non-causal)</span>
+    <span style="color:#79766e; font-weight:700; white-space:nowrap;">┄ blocked</span>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Structure-aware names for the two plotted variables (A and B), so the
+// scatter axes reconnect to the named DAG nodes the intro promises move
+// "in lockstep" with the graph.
+abNames = dagType === "Fork (Confounding)" ? { a: "Närvaro", b: "Hälsa" }
+  : dagType === "Chain (Mediation)" ? { a: "Protocol", b: "Infection" }
+  : { a: "Gener", b: "Kost" }
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(500, width),
+  height: 300,
+  marginLeft: 64,
+  marginBottom: 42,
+  x: {
+    label: conditionOn ? `${abNames.a} residual (A)` : `${abNames.a} (A)`,
+    grid: true
+  },
+  y: {
+    label: conditionOn ? `${abNames.b} residual (B)` : `${abNames.b} (B)`,
+    grid: true
+  },
+  marks: [
+    // When conditioning, plot the residuals (A and B with M's influence removed);
+    // otherwise plot the raw variables. Every point is used either way.
+    Plot.dot(simData, {
+      x: conditionOn ? "resA" : "A",
+      y: conditionOn ? "resB" : "B",
+      fill: conditionOn ? "#3d5a6c" : "#990000",
+      fillOpacity: 0.4,
+      r: 2.5
+    }),
+    Plot.linearRegressionY(simData, {
+      x: conditionOn ? "resA" : "A",
+      y: conditionOn ? "resB" : "B",
+      stroke: conditionOn ? "#3d5a6c" : "#990000",
+      strokeWidth: 2.5
+    })
+  ]
+})
+```
+
+:::
+
+### How to Read This Interactive
+
+Here is a guided tour that ties the DAG picture to the scatter and the correlation numbers:
+
+**Step 1: Start with the Fork, nothing conditioned.** The structure is set to "Fork (Confounding)" with the toggle *off*. In the DAG, SES sits at the top with two **red** arrows fanning down to attendance (*närvaro*) and health (*hälsa*) --- a back-door path is open, so the scatter shows a strong positive cloud and Corr(A, B) reads about $+0.6$.
+
+**Step 2: Condition on the middle node.** Turn the toggle *on*. SES is now drawn as a **boxed** node and both arrows turn **gray and dashed** --- the back-door path is blocked. The scatter switches to residuals and the conditional correlation collapses to near zero. Conditioning on the common cause removed the spurious association.
+
+**Step 3: Switch to the Chain.** Choose "Chain (Mediation)". The arrows are now **green** (protocol → handwashing → infection): an open *causal* pipeline. The unconditional correlation is again about $+0.6$. Toggle conditioning on: the mediator box appears, the edges go gray, and the correlation drops --- but here you have *blocked a real mechanism*, not a spurious one. Same statistics, different meaning.
+
+**Step 4: Switch to the Collider --- watch the colors flip.** Choose "Collider". With the toggle *off*, both arrows point *into* heart disease (*hjärtsjukdom*) and are drawn **gray dashed**: the path is blocked, and the scatter shows no correlation ($\approx 0$). Now toggle conditioning *on*: the collider node becomes boxed and the edges turn **red** --- conditioning has *opened* a back-door path that did not exist before. The scatter develops a clear negative tilt ($\approx -0.6$). This is collider bias, manufactured by the very act of controlling for the wrong variable.
+
+**Step 5: Tie it together.** Notice the rule the colors encode: for chains and forks, conditioning turns open edges *gray* (blocks the path); for the collider, conditioning turns blocked edges *red* (opens the path). The graph and the correlation always agree.
+
+### What to Notice
+
+Conditioning here is done by **residualization**: to get the association of $A$ and $B$ holding $M$ fixed, we regress each of $A$ and $B$ on $M$ and correlate the leftover *residuals* (a residual is simply the part of a variable that $M$ cannot predict — what is "left over" after subtracting $M$'s best linear guess). That residuals-of-residuals correlation equals the conditional correlation; this equivalence is the **Frisch–Waugh–Lovell** theorem (the "partial out, then regress" rule). Because it uses all the data (rather than slicing a thin band of $M$), the conditional correlation is stable. The live readout below tracks the structure and conditioning state you have selected above.
+
+```{ojs}
+//| echo: false
+
+html`<p style="margin: 0;">For the <strong>${dagType}</strong> with conditioning <strong>${conditionOn ? "on" : "off"}</strong>, the displayed conditional correlation is <strong>${corrResidual.toFixed(3)}</strong>.</p>`
+```
+
+Try each structure and toggle conditioning:
+
+- **Fork**: Strong positive correlation unconditionally ($\approx 0.6$). Toggle conditioning → the conditional correlation drops to near zero. *Conditioning on the common cause removes the spurious association.*
+
+- **Chain**: Strong positive correlation ($\approx 0.6$). Toggle conditioning → the conditional correlation drops to near zero. *Conditioning on the mediator blocks the causal pathway.* (Statistically the same as the fork, but the substantive interpretation differs — here you're removing a real causal effect, not a spurious one.)
+
+- **Collider**: Near-zero correlation unconditionally ($\approx 0.0$). Toggle conditioning → a *negative* conditional correlation appears (around $-0.6$). *Conditioning on the common effect creates a spurious association out of nothing.* This is collider bias.
+
+
+## Paths and Path Types
+
+A **path** in a DAG is any route between two nodes, following edges in *either* direction (ignoring the arrows temporarily). Paths are the channels through which information flows, and they come in two types:
+
+::: {.glass-card .glass-card--definition}
+**Causal paths** (or **directed paths**): paths where every arrow points in the same direction, from treatment to outcome. These are the pathways through which the treatment *actually affects* the outcome.
+
+**Non-causal paths** (or **backdoor paths**): paths that connect treatment and outcome but include at least one arrow pointing "backwards" (toward the treatment). These are the pathways that create spurious association --- they are the source of confounding bias.
+
+The goal of causal identification is to **keep the causal paths open** while **blocking all the backdoor paths**.
+:::
+
+Return to our running example: a study of how the new physiotherapy protocol ($D$) affects chronic pain scores ($Y$). The protocol works by improving exercise adherence, and the patient characteristics ($X$) that referring physicians use to assign treatment also affect pain directly:
+
+$$
+D \rightarrow \text{Exercise adherence} \rightarrow Y
+$$
+$$
+D \leftarrow \text{Patient characteristics } (X) \rightarrow Y
+$$
+
+There are two paths from $D$ to $Y$:
+
+1. $D \rightarrow \text{Exercise adherence} \rightarrow Y$ — This is the **causal path**. The protocol raises exercise adherence, which lowers pain scores. We want to keep this open.
+
+2. $D \leftarrow \text{Patient characteristics } (X) \rightarrow Y$ — This is a **backdoor path**. Younger, more motivated patients with fewer comorbidities are both more likely to be assigned the protocol *and* more likely to improve anyway. This creates a spurious association between the protocol and recovery.
+
+To identify the causal effect, we condition on patient characteristics $X$. This blocks the backdoor path (it's a fork) without touching the causal path.
+
+The picture below draws this whole example with the same component used above. The **green** route ($D \rightarrow$ adherence $\rightarrow Y$) is the causal path we want to keep open; the **red** route ($D \leftarrow X \rightarrow Y$) is the back-door path. Toggle the adjustment: conditioning on $X$ **boxes** that node and turns the back-door **grey/dashed** (blocked) while the green causal pipeline is left untouched — exactly the goal of identification.
+
+```{ojs}
+//| echo: false
+
+viewof bdag_adjustX = Inputs.toggle({
+  label: "Condition on (adjust for) X",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Static figure of the page's motivating example, drawn with the shared
+// component. Purely additive: its own toggle, no shared mutable state.
+bdag_drawDAG({
+  width: Math.min(520, width),
+  height: 230,
+  conditioned: bdag_adjustX ? ["X"] : [],
+  nodes: [
+    { id: "D", x: 0.06, y: 0.78, label: "D", caption: "Protokoll" },
+    { id: "E", x: 0.5,  y: 0.78, label: "E", caption: "Följsamhet" },
+    { id: "Y", x: 0.94, y: 0.78, label: "Y", caption: "Smärta" },
+    { id: "X", x: 0.5,  y: 0.12, label: "X", caption: "Patientegenskaper" }
+  ],
+  edges: [
+    { source: "D", target: "E", status: "open-causal" },
+    { source: "E", target: "Y", status: "open-causal" },
+    { source: "X", target: "D", status: bdag_adjustX ? "blocked" : "open-noncausal" },
+    { source: "X", target: "Y", status: bdag_adjustX ? "blocked" : "open-noncausal" }
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = open causal path, <span style="color:#b3000b; font-weight:700;">red</span> = open spurious/back-door path, <span style="color:#79766e; font-weight:700;">grey dashed</span> = blocked. (D = protokoll/protocol, E = följsamhet/exercise adherence, Y = smärta/pain score, X = patientegenskaper/patient characteristics.)
+:::
+
+
+## Terminology Reference
+
+| Term | Meaning | Example |
+|:-----|:--------|:--------|
+| **Parent** | Direct cause (arrow from parent to child) | SES is a parent of Health |
+| **Child** | Direct effect | Health is a child of SES |
+| **Ancestor** | Indirect cause (following arrows forward) | A grandparent variable |
+| **Descendant** | Indirect effect | A grandchild variable |
+| **Confounder** | Common cause of treatment & outcome | Creates a fork |
+| **Mediator** | Lies on the causal path | Creates a chain |
+| **Collider** | Common effect of two variables | Both arrows point *into* it |
+
+All seven terms live on a single graph. In the picture below, every arrow is a causal claim (green). Read the roles off one shared structure: $W$ is a common cause of $D$ and $Y$ (a **confounder** / fork); $M$ sits on the path $D \rightarrow M \rightarrow Y$ (a **mediator** / chain); and $S$ is a common effect of $D$ and $Y$ (a **collider** — note both arrows point *into* it).
+
+```{ojs}
+//| echo: false
+
+// One annotated anatomy graph that exhibits every relational term in the
+// table at once. Purely static; every edge is a (green) causal claim.
+bdag_drawDAG({
+  width: Math.min(540, width),
+  height: 250,
+  nodes: [
+    { id: "W", x: 0.06, y: 0.12, label: "W", caption: "Confounder" },
+    { id: "D", x: 0.06, y: 0.70, label: "D", caption: "Treatment" },
+    { id: "M", x: 0.5,  y: 0.70, label: "M", caption: "Mediator" },
+    { id: "Y", x: 0.94, y: 0.70, label: "Y", caption: "Outcome" },
+    { id: "S", x: 0.5,  y: 0.96, label: "S", caption: "Collider" }
+  ],
+  edges: [
+    { source: "W", target: "D", status: "open-causal" },
+    { source: "W", target: "Y", status: "open-causal" },
+    { source: "D", target: "M", status: "open-causal" },
+    { source: "M", target: "Y", status: "open-causal" },
+    { source: "D", target: "S", status: "open-causal" },
+    { source: "Y", target: "S", status: "open-causal" }
+  ]
+})
+```
+
+::: {.aside}
+Reading the roles off the shared graph: **$W$** is a *parent* of both $D$ and $Y$ and an *ancestor* of $M$ and $S$; **$D$** and $Y$ are *children* of $W$; **$M$** is a *child* of $D$, a *parent* of $Y$, and a *descendant* of both $W$ and $D$; **$S$** is a *descendant* of $D$ and $Y$. $W$ is the **confounder** (fork $D \leftarrow W \rightarrow Y$), $M$ is the **mediator** (chain $D \rightarrow M \rightarrow Y$), and $S$ is the **collider** (both arrows point into it).
+:::
+
+::: {.glass-card .glass-card--insight}
+A DAG is not a statistical model --- it is a set of *qualitative causal claims*. It says which variables cause which, but says nothing about the functional form or the magnitude of effects. The power of DAGs lies in this simplicity: they reduce complex causal reasoning to path-tracing, which can be done visually or algorithmically. The next page formalizes this with d-separation.
+:::
+
+
+<details>
+<summary>Math Details: DAGs and Conditional Independence</summary>
+<div class="details-content">
+
+### The Markov Condition
+
+A DAG encodes a set of conditional independence relationships through the **local Markov condition**:
+
+$$
+X_i \perp\!\!\!\perp \text{NonDescendants}(X_i) \mid \text{Parents}(X_i)
+$$
+
+**How to read this**: "Each variable $X_i$ is independent of all its non-descendants, given (conditional on) its parents." The symbol "$\perp\!\!\!\perp$" means "is statistically independent of." The "$\mid$" means "conditional on."
+
+*In words*: once you know the direct causes of $X_i$, knowing anything else that isn't caused by $X_i$ gives you no additional information about $X_i$.
+
+### From DAG to Joint Distribution
+
+The Markov condition implies that the joint distribution of all variables in the DAG factors as:
+
+$$
+P(X_1, X_2, \dots, X_n) = \prod_{i=1}^{n} P(X_i \mid \text{Parents}(X_i))
+$$
+
+**How to read this**: "The joint probability of all variables equals the product of each variable's probability given its parents." This is a compact representation: instead of specifying the full joint distribution (which grows exponentially), you only need to specify each variable's relationship to its direct causes.
+
+### Example: The Fork $A \leftarrow C \rightarrow B$
+
+The factorization gives: $P(A, B, C) = P(C) \cdot P(A \mid C) \cdot P(B \mid C)$.
+
+From this, you can show that $A \perp\!\!\!\perp B \mid C$ (A and B are independent given C), but $A \not\perp\!\!\!\perp B$ (they are marginally dependent through C). This is exactly the confounding structure: the spurious association between A and B disappears once you condition on the common cause C.
+
+### Example: The Collider $A \rightarrow C \leftarrow B$
+
+The factorization gives: $P(A, B, C) = P(A) \cdot P(B) \cdot P(C \mid A, B)$.
+
+Since $P(A)$ and $P(B)$ appear as separate factors, $A \perp\!\!\!\perp B$ marginally. But conditioning on $C$ introduces a dependence: $A \not\perp\!\!\!\perp B \mid C$. The intuition is "explaining away" --- if $C$ is high, and $A$ is low, then $B$ must be high to account for the observed $C$.
+
+</div>
+</details>
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Draw the DAG implied by the following story: In a Swedish region (*region*), primary care centers (*vårdcentraler*) that serve wealthier neighborhoods have both more resources and healthier patient populations. A researcher wants to estimate the effect of a new diabetes prevention program (offered by some centers) on patient HbA1c levels. Wealthier centers are more likely to adopt the program, and neighborhood wealth also directly affects HbA1c through diet and exercise opportunities. Identify: which variable is the treatment? The outcome? The confounder? Is there a backdoor path?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The DAG is:
+
+$$
+\text{Program} \leftarrow \text{Neighborhood wealth} \rightarrow \text{HbA1c}
+$$
+$$
+\text{Program} \rightarrow \text{HbA1c}
+$$
+
+- **Treatment**: Program adoption ($D$)
+- **Outcome**: HbA1c ($Y$)
+- **Confounder**: Neighborhood wealth ($W$)
+
+This is a **fork** with $W$ as the common cause. The backdoor path is $D \leftarrow W \rightarrow Y$. Because wealthier neighborhoods both adopt the program more and have better HbA1c outcomes anyway, the naive comparison will overstate the program's effect (positive selection bias).
+
+To identify the causal effect, condition on $W$: compare centers with similar neighborhood wealth that differ in program adoption.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+For each of the following, identify the elemental structure (chain, fork, or collider) and state whether conditioning on the middle variable would increase, decrease, or create bias in the treatment-outcome relationship:
+
+a) Exercise → Weight loss → Blood pressure
+b) Age → Vaccination status, Age → COVID severity
+c) Smoking → Lung cancer, Air pollution → Lung cancer
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Exercise → Weight loss → Blood pressure**: This is a **chain** (mediation). Conditioning on Weight loss would *remove* the indirect effect of exercise that operates through weight loss, giving you only the direct effect. If you want the total effect of exercise on blood pressure, do NOT condition on weight loss.
+
+**(b) Age → Vaccination, Age → Severity**: This is a **fork** (confounding). Age is a common cause. Conditioning on Age *removes the spurious association* and reduces bias. You should condition on Age.
+
+**(c) Smoking → Lung cancer, Pollution → Lung cancer**: This is a **collider**. Lung cancer is caused by both smoking and air pollution. Conditioning on lung cancer (e.g., studying only lung cancer patients) would *create a spurious negative association* between smoking and pollution --- among cancer patients, those who don't smoke must have had more pollution exposure. Do NOT condition on lung cancer if you want the effect of smoking on some other outcome (or of pollution on some other outcome).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Using the interactive above, set the structure to "Collider" and observe the unconditional correlation between A and B (it should be near zero). Now toggle conditioning: the conditional correlation — the correlation of A and B after residualizing both on M — becomes clearly negative (around $-0.6$). Explain, in your own words, *why* conditioning on a collider creates an association. Use the "explaining away" intuition.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+When A and B both cause M, knowing M's value provides information about the relative contributions of A and B. If M is high, and we learn that A is low, we can infer that B must be high (since something had to produce the high M). This is "explaining away": each cause partially explains the effect, so learning about one cause changes our beliefs about the other.
+
+Formally: $A \perp\!\!\!\perp B$ marginally, but $A \not\perp\!\!\!\perp B \mid M$. Without conditioning, A and B are independent --- knowing someone's genetics tells you nothing about their diet. But among people who all have heart disease (conditioning on M), genetic risk and diet quality become negatively correlated: low-risk genes + bad diet, or high-risk genes + good diet, are both paths to the same outcome.
+
+This is why restricting your sample to a specific outcome (e.g., studying only hospitalized patients, only published studies, only survivors) can introduce bias that wasn't there in the population.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A Swedish hospital wants to evaluate whether a new surgical technique ($D$) reduces post-operative infection rates ($Y$). They notice that surgeons who use the new technique also tend to operate on younger patients. A colleague suggests "controlling for patient age." Draw two different DAGs where this advice is (a) correct and (b) incorrect. For (b), explain how age could be a collider or a mediator rather than a confounder.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a) Age as a confounder (controlling is correct):**
+
+$$
+D \leftarrow \text{Age} \rightarrow Y
+$$
+
+If younger patients are preferentially assigned the new technique, and younger patients also heal better regardless, then Age is a common cause (fork). Conditioning on Age blocks the backdoor path and is correct.
+
+**(b) Age as a collider (controlling is WRONG):**
+
+$$
+D \rightarrow \text{Age (of patient selected)} \leftarrow Y_{\text{expected}}
+$$
+
+Imagine surgeons choose the new technique for patients they think will do well, and they also prefer younger patients. If both the technique decision and the patient's expected outcome influence which patients end up in the sample (e.g., only patients meeting certain criteria are eligible), then "patient age in the sample" is a collider. Conditioning on it would *create* a spurious association.
+
+**Age as a mediator (controlling answers the wrong question):**
+
+$$
+D \rightarrow \text{Recovery pace} \rightarrow Y
+$$
+
+If the new technique causes faster initial recovery (captured by some age-related healing variable), and this faster recovery reduces infection, then the "age-related healing capacity" variable is a mediator. Conditioning on it would block the causal mechanism and understate the total effect.
+
+The lesson: "control for everything" is not a strategy. The correct action depends on the *causal structure*, not on whether a variable is correlated with treatment and outcome.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A DAG encodes *qualitative causal claims* --- arrows are assertions made from domain knowledge, and missing arrows are the strong assumptions most worth scrutinizing; the data cannot confirm them.
+- Every graph is built from three structures: the chain $A \rightarrow M \rightarrow B$ (mediation), the fork $A \leftarrow C \rightarrow B$ (confounding), and the collider $A \rightarrow C \leftarrow B$ (common effect).
+- Conditioning on a chain middle or a fork center *blocks* the path; conditioning on a collider (or its descendant) *opens* a path that was closed --- the opposite behavior.
+- Forks manufacture spurious association through a common cause; colliders manufacture it through selection ("explaining away"). Both look like correlation but neither is causation.
+- Identification means keeping causal paths open while blocking every backdoor path --- which is why adjusting for the wrong variable can create bias rather than remove it.
+:::
+
+## What Comes Next
+
+We now have the vocabulary: nodes, edges, chains, forks, colliders, causal paths, and backdoor paths. The next page formalizes the rules for reading conditional independencies from a DAG. The algorithm is called **d-separation**, and it is the key tool for determining whether a causal effect is identified --- and if so, what to condition on.

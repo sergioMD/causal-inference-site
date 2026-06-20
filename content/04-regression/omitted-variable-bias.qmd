@@ -1,0 +1,855 @@
+---
+title: "Omitted Variable Bias"
+subtitle: "The bias formula and its implications for research design"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Distinguish the true (long) model from the short model and explain why omitting a relevant confounder pushes it into the error term, violating OLS's key assumption
+- Derive the omitted-variable-bias formula $\operatorname{plim}\hat\alpha_1 = \beta_1 + \beta_2\delta$ and read the bias as a product of two interpretable pieces
+- Predict the direction of bias from the signs of $\beta_2$ and $\delta$ alone, and classify the result as attenuation, amplification, or wrong-sign bias
+- Diagnose why "control for everything" is wrong advice, since variables with $\beta_2 = 0$ or $\delta = 0$ add no bias and some controls (colliders, mediators) create it
+- Recognize OVB as the algebraic twin of confounding (an open backdoor path) and of selection bias
+:::
+
+## A Tempting Regression
+
+A Swedish *region* wants to know whether staffing matters for diabetes care. Across its 160 *vårdcentraler* (primary care centers), it has two numbers for each center: the staffing intensity --- *distriktssköterskor* (district nurses) per 1,000 listed patients --- and the share of enrolled Type 2 diabetes patients who reached the HbA1c target of below 53 mmol/mol last year. The analyst runs the obvious regression: target-attainment on nurse staffing. The slope comes back positive and large. More nurses, better control. The slide deck practically writes itself.
+
+But there is a problem hiding in plain sight. Vårdcentraler are not randomly assigned their staffing levels. Centers in affluent, well-resourced catchment areas tend to attract and retain more staff *and* serve patients who are easier to bring to target --- patients with more education, stable housing, fewer competing health problems, and better health literacy. Centers in deprived areas struggle on both fronts. The catchment area's **socioeconomic deprivation** --- captured in Sweden by indices like the *Care Need Index* (CNI) --- affects both the regressor (staffing) and the outcome (target attainment), but it never appears in the regression.
+
+When a variable like this is left out, the slope on the variable that *is* included absorbs part of the omitted variable's influence. The estimate is **biased**. This page derives exactly how much, in which direction, and what it implies for how you should design and read regressions. It is the single most important failure mode in all of applied regression --- and, as we will see, it is just confounding wearing a regression's clothes.
+
+
+## The Setup: A True Model and a Short One
+
+Suppose the world is genuinely described by a model with two regressors:
+
+$$
+y_i = \beta_0 + \beta_1 x_i + \beta_2 w_i + \varepsilon_i, \qquad E[\varepsilon_i \mid x_i, w_i] = 0
+$$
+
+Here $y_i$ is the outcome (diabetes target attainment at center $i$), $x_i$ is the regressor we care about (nurse staffing), and $w_i$ is a second variable (area deprivation). The error $\varepsilon_i$ is mean-independent of *both* regressors --- this is what makes it the **true** or **long** model: if we could run it, OLS would consistently recover $\beta_1$, the causal effect of staffing holding deprivation fixed.
+
+The trouble is that the analyst omits $w_i$ --- perhaps because the CNI data were not linked, or because nobody thought of it --- and instead estimates the **short** model:
+
+$$
+y_i = \alpha_0 + \alpha_1 x_i + u_i
+$$
+
+The short regression has its own slope $\alpha_1$ and its own error $u_i = \beta_2 w_i + \varepsilon_i$. Notice what has happened: the omitted term $\beta_2 w_i$ has been swept into the short-model error. **Read this as:** "the leftover error in the short regression contains everything the true model attributed to deprivation, plus the genuine noise." If deprivation is correlated with staffing --- and it is --- then this new error is correlated with the regressor, OLS's key assumption fails, and the slope is no longer estimating $\beta_1$.
+
+::: {.aside}
+**Notation at a glance.** This page juggles several Greek letters across two models; here is the whole cast in one place.
+
+| Symbol | Lives in | Plain meaning |
+|:--|:--|:--|
+| $\beta_1$ | true (long) model | the effect we want: $x$ on $y$, holding $w$ fixed |
+| $\beta_2$ | true (long) model | effect of the omitted variable $w$ on the outcome $y$ |
+| $\varepsilon_i$ | true (long) model | genuine noise (well-behaved: mean-independent of $x,w$) |
+| $\alpha_1$ | short model | the slope you actually estimate when $w$ is omitted |
+| $u_i$ | short model | the short-model error $=\beta_2 w_i + \varepsilon_i$ (contaminated) |
+| $\delta$ | auxiliary regression | slope of the omitted $w$ *on* the included $x$: $\operatorname{Cov}(x,w)/\operatorname{Var}(x)$ |
+| $\beta_2\delta$ | the result | the **bias**: $\operatorname{plim}\hat\alpha_1-\beta_1$ |
+:::
+
+::: {.glass-card .glass-card--definition}
+**Omitted Variable Bias (OVB)** is the difference between what the short regression's slope converges to and the true coefficient on the included regressor:
+
+$$
+\text{Bias}(\hat\alpha_1) = \operatorname{plim} \hat\alpha_1 - \beta_1.
+$$
+
+**How to read this:** "the bias is the gap between the number the short-regression slope settles down to as the sample grows ($\operatorname{plim}\hat\alpha_1$) and the true effect $\beta_1$ we wanted." The notation $\operatorname{plim}$ is the *probability limit* --- the value an estimator converges to in large samples; read it loosely as the estimator's long-run, settled-down value. (We use $\operatorname{plim}$ rather than the plain average $E[\hat\alpha_1]$ because the slope is a *ratio* of sample quantities, which only behaves cleanly once the sample is large.) OVB is an **asymptotic** statement --- "asymptotic" just means "in the limit as the sample grows" --- so it does not vanish by collecting more data. It is a flaw in *what* you are estimating, not in *how precisely* you estimate it.
+:::
+
+
+## The OVB Formula
+
+The central result of this page is a single, compact equation. Let $\delta$ be the slope coefficient you would get by regressing the *omitted* variable $w$ on the *included* variable $x$ --- an "auxiliary" regression:
+
+$$
+w_i = \gamma_0 + \delta\, x_i + r_i.
+$$
+
+Then the probability limit of the short-regression slope is:
+
+$$
+\boxed{\;\operatorname{plim} \hat\alpha_1 \;=\; \beta_1 \;+\; \beta_2 \cdot \delta\;}
+$$
+
+and therefore the bias is exactly $\beta_2 \cdot \delta$.
+
+**Read this aloud:** "the slope you get from the short regression equals the true effect of $x$, *plus* the effect of the omitted variable on the outcome ($\beta_2$) times the slope of the omitted variable on the included one ($\delta$)." The short slope is contaminated by the part of $w$'s influence that travels through $x$.
+
+There is a clean algebraic identity for $\delta$ in terms of moments:
+
+$$
+\delta = \frac{\operatorname{Cov}(x, w)}{\operatorname{Var}(x)}.
+$$
+
+**Read this as:** "$\delta$ is the covariance between the included and omitted variables, scaled by the variance of the included variable" --- precisely the formula for a simple-regression slope of $w$ on $x$.
+
+::: {.glass-card .glass-card--insight}
+**The mnemonic.** Memorize the bias as a product of two pieces:
+
+$$
+\text{Bias} \;=\; \underbrace{\beta_2}_{\substack{\text{effect of omitted}\\ \text{on the outcome}}} \;\times\; \underbrace{\delta}_{\substack{\text{relationship of omitted}\\ \text{with the included}}}
+$$
+
+"**Bias equals (effect of the omitted variable on the outcome) times (the relationship of the omitted variable with the included regressor).**" Both pieces must be nonzero for bias to exist. If the omitted variable has no effect on $y$ ($\beta_2 = 0$), or is uncorrelated with $x$ ($\delta = 0$), then leaving it out costs you nothing --- you may lose precision, but the slope on $x$ is still unbiased. This is why "control for everything" is wrong advice: a variable that is unrelated to $x$, or unrelated to $y$, does not bias $\hat\alpha_1$ whether you include it or not.
+:::
+
+
+## The Sign of the Bias: A 2×2 Table
+
+Because the bias is a *product* of two terms, its sign is determined by the signs of $\beta_2$ and $\delta$ via ordinary multiplication of signs. There are four cases:
+
+| Sign of $\beta_2$ <br> (omitted → outcome) | Sign of $\delta$ <br> (omitted ↔ included) | Sign of Bias $(\beta_2\delta)$ | Effect on $\hat\alpha_1$ |
+|:---:|:---:|:---:|:---|
+| $+$ | $+$ | $+$ | Biased **upward** (too positive) |
+| $-$ | $-$ | $+$ | Biased **upward** (too positive) |
+| $+$ | $-$ | $-$ | Biased **downward** (too negative) |
+| $-$ | $+$ | $-$ | Biased **downward** (too negative) |
+
+**Read this table as:** "when the two terms share a sign, the bias is positive and the short slope overshoots the truth; when they have opposite signs, the bias is negative and the short slope undershoots." This is just the rule "same signs multiply to plus, opposite signs to minus." You do not need data to predict the *direction* of bias --- you only need to reason about the *signs* of two relationships, both of which are usually settled by domain knowledge.
+
+::: {.glass-card .glass-card--warning}
+"Upward" and "downward" describe movement along the number line, **not** magnitude. Upward bias on a negative true effect can push the estimate *toward zero* (attenuation) or even *past zero* into positive territory (a wrong-sign estimate). Always translate "the bias is positive" into "the estimate is more positive than the truth," then ask separately what that does to the magnitude and sign. We unpack this next.
+:::
+
+
+## Attenuation, Amplification, and Wrong-Sign Bias
+
+Knowing the sign of the bias is not the same as knowing what it does to your conclusion. Three qualitatively different things can happen, depending on whether the bias pushes the estimate toward zero, away from zero, or clean across it.
+
+- **Attenuation (bias toward zero).** The bias has the *opposite* sign to $\beta_1$, shrinking the estimate's magnitude. A real effect looks weaker than it is; you may wrongly conclude "no effect."
+- **Amplification (bias away from zero).** The bias has the *same* sign as $\beta_1$, inflating the magnitude. A modest effect looks impressive; you overstate the policy's value.
+- **Wrong-sign bias.** The bias is larger in magnitude than $\beta_1$ and points the other way, so $\operatorname{plim}\hat\alpha_1$ ends up on the opposite side of zero. The estimate says "helps" when the truth is "harms," or vice versa. This is the most dangerous case, and it is exactly what we saw in the naive-comparison example back in Module 1.
+
+The picture below puts all three on one number line. The true effect $\beta_1$ sits at $+1.5$; each arrow shows where the *same* bias term carries the estimate, depending on the bias's sign and size relative to $\beta_1$.
+
+```{ojs}
+//| echo: false
+
+// Static number-line figure: where the bias carries the estimate relative to
+// the true β₁ = +1.5. Three illustrative cases — attenuation (toward 0),
+// amplification (away from 0), wrong-sign (across 0). Purely a figure.
+p2_numberLine = {
+  const b1 = 1.5;
+  const cases = [
+    { row: 2, label: "Amplification", note: "bias same sign as β₁ → magnitude inflated",
+      est: 3.3, color: "#9c7a33" },
+    { row: 1, label: "Attenuation", note: "bias opposite sign → shrinks toward 0",
+      est: 0.5, color: "#3d5a6c" },
+    { row: 0, label: "Wrong sign", note: "bias opposite & larger → crosses 0",
+      est: -1.6, color: "#b3000b" }
+  ];
+  const arrows = cases.map(c => ({ ...c, x1: b1, x2: c.est }));
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 230,
+    marginLeft: 64,
+    marginRight: 24,
+    marginTop: 24,
+    marginBottom: 45,
+    x: { domain: [-2.6, 4.2], label: "Estimated slope on staffing →", grid: true },
+    y: { domain: [-0.6, 2.6], axis: null },
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent", color: "#1c1c1a" },
+    marks: [
+      Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1, strokeDasharray: "3,3" }),
+      Plot.ruleX([b1], { stroke: "#2e6f40", strokeWidth: 2 }),
+      Plot.text([{ x: 0, y: 2.55, t: "zero" }], { x: "x", y: "y", text: "t", fill: "#79766e", fontSize: 10 }),
+      Plot.text([{ x: b1, y: 2.55, t: "true β₁ = +1.5" }], { x: "x", y: "y", text: "t", fill: "#2e6f40", fontWeight: 700, fontSize: 11, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.arrow(arrows, { x1: "x1", y1: "row", x2: "x2", y2: "row", stroke: d => d.color, strokeWidth: 2.5, headLength: 9 }),
+      Plot.dot(arrows, { x: "est", y: "row", fill: d => d.color, r: 5 }),
+      Plot.text(arrows, { x: "est", y: "row", text: d => `α̂₁ ≈ ${d.est.toFixed(1)}`, dy: -12, fill: d => d.color, fontWeight: 700, fontSize: 11, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text(arrows, { x: -2.55, y: "row", text: "label", dy: -11, textAnchor: "start", fill: d => d.color, fontWeight: 700, fontSize: 11.5 }),
+      Plot.text(arrows, { x: -2.55, y: "row", text: "note", dy: 5, textAnchor: "start", fill: "#79766e", fontSize: 9.5 })
+    ]
+  });
+}
+```
+
+::: {.aside}
+"Upward" (more positive) and "downward" (more negative) describe *direction on the line*, not magnitude. The same upward bias **amplifies** a positive truth, but on a negative truth it would instead **attenuate** or **flip** it. Always read the bias as a move along this line first, then ask what it does to size and sign.
+:::
+
+The interactive below lets you produce all three outcomes by hand --- including driving the staffing estimate to the wrong sign.
+
+
+## See It: The OVB Sandbox
+
+Below is a simulated regional dataset. The true model is fixed: a genuine, modest *positive* effect of nurse staffing on target attainment, $\beta_1 = 1.5$ (one extra nurse per 1,000 patients raises the target-attainment rate by 1.5 percentage points --- i.e. from, say, 55% to 56.5%, an additive move on the rate itself, not a 1.5% relative increase --- holding deprivation fixed). You control two things: how strongly area deprivation depresses the outcome ($\beta_2$) and how deprivation co-moves with staffing ($\delta$, the auxiliary slope). The plot shows the simulated centers, the **short** regression line (staffing only) and the **long** regression line (staffing controlling for deprivation), and the readouts report the true $\beta_1$, the biased short slope, and the bias.
+
+::: {.interactive-container}
+
+#### Driving a Regression Estimate to the Wrong Sign
+
+```{ojs}
+//| echo: false
+html`<p style="margin:0 0 0.6rem; font-size:0.9rem; color:#79766e;"><strong style="color:#1c1c1a;">Start here:</strong> leave β₂ negative (deprivation hurts outcomes) and slide δ from 0 outward — watch the solid red short line peel away from the dashed slate truth, then read the bias cards. Follow the 6-step tour below to manufacture amplification, attenuation, and a wrong-sign flip.</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof ovb_beta2 = Inputs.range([-4, 4], {
+  value: -2.5,
+  step: 0.1,
+  label: "β₂: effect of deprivation on outcome"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ovb_delta = Inputs.range([-3, 3], {
+  value: 0.2,
+  step: 0.1,
+  label: "δ: do deprived areas get MORE (+) or FEWER (−) nurses? (auxiliary slope)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ovb_noise = Inputs.range([1, 12], {
+  value: 4,
+  step: 0.5,
+  label: "Idiosyncratic noise (SD of ε)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ovb_reseed = Inputs.button("Resample centers", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<p style="margin:-0.1rem 0 0.4rem; font-size:0.82rem; color:#79766e;">Click <em>Resample centers</em> to draw a fresh sample — watch <strong>Bias (empirical)</strong> jitter around the fixed <strong>Formula β₂·δ</strong>. <span style="font-style:italic;">Note: the data are built so that deprivation <em>w</em> trends with staffing at exactly your δ (we set w = δ·(x − x̄) + noise), which is why an auxiliary regression of w on x recovers the δ you dialed in.</span></p>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed truth for the page
+ovb_beta0 = 55      // baseline target-attainment rate (%)
+ovb_beta1 = 1.5     // TRUE effect of staffing (held fixed)
+ovb_nCenters = 160
+ovb_xMean = 6       // avg nurses per 1,000 patients
+ovb_xSD = 1.6
+ovb_wSD = 2.2       // residual spread of deprivation around its δ·x trend
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Simulate the centers. w is generated as δ·(x - x̄) plus its own residual,
+// so the auxiliary regression of w on x has population slope ≈ δ.
+ovb_data = {
+  ovb_reseed; // reactive dependency: clicking "Resample" redraws
+  const rnorm = d3.randomNormal.source(d3.randomLcg(Math.random()));
+  const xN = rnorm(0, ovb_xSD);
+  const wN = rnorm(0, ovb_wSD);
+  const eN = rnorm(0, ovb_noise);
+  const rows = [];
+  for (let i = 0; i < ovb_nCenters; i++) {
+    const x = ovb_xMean + xN();                       // staffing
+    const w = ovb_delta * (x - ovb_xMean) + wN();     // deprivation, trends with x
+    const y = ovb_beta0 + ovb_beta1 * x + ovb_beta2 * w + eN();
+    rows.push({ x, w, y });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Simple-regression slope + intercept of ykey on xkey
+ovb_slope = function (rows, xkey, ykey) {
+  const xb = d3.mean(rows, d => d[xkey]);
+  const yb = d3.mean(rows, d => d[ykey]);
+  let sxy = 0, sxx = 0;
+  for (const r of rows) {
+    sxy += (r[xkey] - xb) * (r[ykey] - yb);
+    sxx += (r[xkey] - xb) * (r[xkey] - xb);
+  }
+  const slope = sxy / sxx;
+  return { slope, intercept: yb - slope * xb };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Long-model slope on x via Frisch–Waugh–Lovell: partial w out of x and y.
+ovb_longSlopeX = function (rows) {
+  const wb = d3.mean(rows, d => d.w);
+  const xb = d3.mean(rows, d => d.x);
+  const yb = d3.mean(rows, d => d.y);
+  let swx = 0, sww = 0, swy = 0;
+  for (const r of rows) {
+    const wc = r.w - wb;
+    swx += wc * (r.x - xb);
+    swy += wc * (r.y - yb);
+    sww += wc * wc;
+  }
+  const dxw = swx / sww;   // slope of x on w
+  const dyw = swy / sww;   // slope of y on w
+  let num = 0, den = 0;
+  for (const r of rows) {
+    const xres = (r.x - xb) - dxw * (r.w - wb);
+    const yres = (r.y - yb) - dyw * (r.w - wb);
+    num += xres * yres;
+    den += xres * xres;
+  }
+  return num / den;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+ovb_fit = {
+  const short = ovb_slope(ovb_data, "x", "y");   // y ~ x only
+  const aux   = ovb_slope(ovb_data, "x", "w");   // w ~ x  (estimates δ)
+  const longB = ovb_longSlopeX(ovb_data);        // y ~ x + w  (recovers β₁)
+  return {
+    shortSlope: short.slope,
+    shortInt: short.intercept,
+    longSlope: longB,
+    auxDelta: aux.slope,
+    bias: short.slope - longB,           // empirical bias
+    predBias: ovb_beta2 * ovb_delta      // formula prediction β₂·δ
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 340,
+  marginLeft: 64,
+  marginRight: 16,
+  marginTop: 28,
+  grid: true,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent", color: "#1c1c1a" },
+  x: { label: "Nurse staffing (per 1,000 patients) →", domain: [ovb_xMean - 3.5*ovb_xSD, ovb_xMean + 3.5*ovb_xSD] },
+  y: { label: "↑ Target attainment (%)" },
+  color: { type: "linear", range: ["#3d5a6c", "#f6f5f1", "#990000"], label: "Deprivation (w): red = more deprived", legend: true },
+  marks: [
+    Plot.dot(ovb_data, {
+      x: "x", y: "y", fill: "w", r: 4, fillOpacity: 0.85, stroke: "#1c1c1a", strokeWidth: 0.6,
+      title: d => `staffing: ${d.x.toFixed(2)}\ndeprivation: ${d.w.toFixed(2)}\noutcome: ${d.y.toFixed(1)}`
+    }),
+    // SHORT regression line (biased): solid red, drawn over the full fixed domain
+    Plot.line(
+      [ovb_xMean - 3.5*ovb_xSD, ovb_xMean + 3.5*ovb_xSD].map(xx => ({
+        x: xx,
+        y: ovb_fit.shortInt + ovb_fit.shortSlope * xx
+      })),
+      { x: "x", y: "y", stroke: "#990000", strokeWidth: 3 }
+    ),
+    // LONG (true) slope line through the data centroid: dashed slate
+    Plot.line(
+      [ovb_xMean - 3.5*ovb_xSD, ovb_xMean + 3.5*ovb_xSD].map(xx => ({
+        x: xx,
+        y: d3.mean(ovb_data, d => d.y) + ovb_fit.longSlope * (xx - d3.mean(ovb_data, d => d.x))
+      })),
+      { x: "x", y: "y", stroke: "#3d5a6c", strokeWidth: 3, strokeDasharray: "7,4" }
+    ),
+    // Fixed-frame legend anchored top-left, with white halo so it never clips the data
+    Plot.text(["— Short (biased)"], {
+      frameAnchor: "top-left", dx: 8, dy: 6, fill: "#990000", fontWeight: 600,
+      textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text(["-- Long (true β₁)"], {
+      frameAnchor: "top-left", dx: 8, dy: 22, fill: "#3d5a6c", fontWeight: 600,
+      textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.frame({ stroke: "#e6e3db" })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr)); gap:0.5rem; margin-top:0.5rem; font-family:'Inter',sans-serif; font-size:0.82rem;">
+  <div style="padding:0.55rem 0.75rem; border-radius:0.5rem; min-height:3.6rem; background:rgba(61,90,108,0.07); border:1px solid rgba(61,90,108,0.20);">
+    <div style="font-weight:600;color:#79766e;font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;">True β₁ (slate dashed)</div>
+    <div style="font-size:1.15rem;font-weight:700;color:#3d5a6c;">${ovb_fit.longSlope.toFixed(2)}</div>
+  </div>
+  <div style="padding:0.55rem 0.75rem; border-radius:0.5rem; min-height:3.6rem; background:rgba(153,0,0,0.06); border:1px solid rgba(153,0,0,0.18);">
+    <div style="font-weight:600;color:#79766e;font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;">Short α̂₁ (red)</div>
+    <div style="font-size:1.15rem;font-weight:700;color:#990000;">${ovb_fit.shortSlope.toFixed(2)}</div>
+  </div>
+  <div style="padding:0.55rem 0.75rem; border-radius:0.5rem; min-height:3.6rem; background:#f6f5f1; border:1px solid #e6e3db;">
+    <div style="font-weight:600;color:#79766e;font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;">Bias (empirical)</div>
+    <div style="font-size:1.15rem;font-weight:700;color:${Math.abs(ovb_fit.bias) > 0.4 ? '#9c7a33' : '#1c1c1a'};">${ovb_fit.bias >= 0 ? '+' : ''}${ovb_fit.bias.toFixed(2)}</div>
+  </div>
+  <div style="padding:0.55rem 0.75rem; border-radius:0.5rem; min-height:3.6rem; background:#f6f5f1; border:1px solid #e6e3db;">
+    <div style="font-weight:600;color:#79766e;font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;">Formula β₂·δ</div>
+    <div style="font-size:1.15rem;font-weight:700;color:#1c1c1a;">${ovb_fit.predBias >= 0 ? '+' : ''}${ovb_fit.predBias.toFixed(2)}</div>
+  </div>
+</div>
+${(ovb_fit.longSlope > 0) !== (ovb_fit.shortSlope > 0)
+  ? html`<div style="margin-top:0.5rem;padding:0.5rem 0.75rem;border-radius:0.5rem;background:rgba(179,0,11,0.10);border:1px solid rgba(179,0,11,0.30);font-family:'Inter',sans-serif;font-size:0.82rem;color:#b3000b;"><strong>Wrong sign!</strong> The true effect of staffing is ${ovb_fit.longSlope > 0 ? 'positive' : 'negative'}, but the short regression reports a ${ovb_fit.shortSlope > 0 ? 'positive' : 'negative'} slope. The omitted variable has flipped the conclusion.</div>`
+  : html`<div style="margin-top:0.5rem;padding:0.5rem 0.75rem;border-radius:0.5rem;background:#f6f5f1;border:1px solid #e6e3db;font-family:'Inter',sans-serif;font-size:0.82rem;color:#79766e;">Short and long slopes agree in sign. Increase |β₂| and |δ| to manufacture a wrong-sign estimate.</div>`}`
+```
+
+:::
+
+### How to Read the OVB Sandbox
+
+**Step 1: Establish the truth.** The slate dashed line is the **long** regression --- staffing controlling for deprivation. Its slope hovers near the true $\beta_1 = 1.5$ regardless of how you set the sliders, because the long model includes $w$ (it will wobble more when you raise the noise slider, since it is estimated, not assumed). This is the line you *wish* you could draw. The point color encodes deprivation: slate points are low-deprivation centers, red points high-deprivation (more deprived = redder = harder to treat).
+
+**Step 2: Watch the biased line.** The solid red line is the **short** regression --- staffing only, deprivation ignored. Read off the "Short slope" and "True β₁" cards and compare. The gap between them is the bias.
+
+**Step 3: Confirm the formula.** Compare the "Bias (empirical)" card (the actual short-minus-long gap in *this* sample) with the "Formula β₂·δ" card (the product of your two sliders). They track each other closely --- the formula is not an approximation, it is the population truth, and the finite sample matches it up to sampling noise. Click **Resample centers** a few times to watch the empirical bias jitter around the formula's prediction.
+
+**Step 4: Manufacture amplification, then attenuation.** Set $\beta_2 = -2.5$ (deprivation hurts outcomes) and $\delta = -0.5$ (more-deprived areas have *slightly fewer* nurses). The bias $\beta_2\delta$ is *positive* and small; since the truth is positive, the short slope is inflated --- **amplification**. Now flip to $\delta = +0.5$: the bias turns negative and shrinks the slope toward zero --- **attenuation**.
+
+**Step 5: Flip the sign.** Set $\beta_2 = -3$ and $\delta = +1.5$. Now the bias is strongly negative ($-4.5$), far larger in magnitude than the true $+1.5$. The short slope goes **negative** and the "Wrong sign!" banner appears: the regression now claims that *more* nurses are associated with *worse* diabetes control. Nothing about the data-generating effect of nurses changed --- you have simply let a confounder masquerade as the signal. This is the OVB nightmare, and it is the everyday reality of naive cross-sectional regressions.
+
+**Step 6: Kill the bias.** Set $\delta = 0$ (deprivation uncorrelated with staffing). The bias collapses to zero for *any* value of $\beta_2$, and the two lines coincide. Then set $\delta$ back and instead set $\beta_2 = 0$: again the bias vanishes. Both factors must be present for OVB to exist.
+
+
+## Reading the Swedish Example Through the Formula
+
+Return to the regional analyst. The included regressor is nurse staffing $x$; the omitted variable is area deprivation $w$ (think of $w$ as a CNI-style index, *higher = more deprived*). To sign the bias, we reason about the two pieces.
+
+- **$\beta_2$ (deprivation → outcome).** Holding staffing fixed, more deprived catchment areas have *lower* diabetes target attainment: poorer health literacy, more comorbidity, less continuity of care. So $\beta_2 < 0$.
+- **$\delta$ (deprivation ↔ staffing).** Do more-deprived areas have more or fewer nurses per patient? In Sweden, capitation formulas (and CNI itself) are explicitly designed to channel *more* resources to high-need areas --- so one might expect $\delta > 0$. But recruitment and retention are chronically harder in deprived and rural catchments, which pushes effective staffing *down*, suggesting $\delta < 0$. The sign is genuinely contested and depends on the region.
+
+This is exactly why OVB is a *design* problem, not a computational one. Consider both scenarios:
+
+::: {.glass-card .glass-card--insight}
+**Scenario A --- compensatory funding wins ($\delta > 0$).** Then $\text{Bias} = \beta_2 \cdot \delta = (-)\cdot(+) < 0$. The short regression is biased *downward*: it understates the benefit of nurses, and could even show a negative slope (more nurses, worse outcomes) purely because the nurse-rich centers are also the deprivation-rich, hard-to-treat centers. A naive read would wrongly conclude "staffing does not help."
+
+**Scenario B --- recruitment difficulty wins ($\delta < 0$).** Then $\text{Bias} = (-)\cdot(-) > 0$. The short regression is biased *upward*: it overstates the benefit of nurses, because the nurse-rich centers are also the affluent, easy-to-treat centers. A naive read would over-credit staffing for an outcome that deprivation was driving.
+
+In both cases the **fix is the same**: measure deprivation (link the CNI index) and put it in the regression. What changes is the wrong story you would have told had you not.
+:::
+
+
+## OVB *Is* Confounding
+
+If the bias mnemonic feels familiar, it should. On the [DAG Basics](../02-dags/basics.qmd) page we drew a **common cause** $W$ pointing into both the treatment $X$ and the outcome $Y$:
+
+$$
+X \leftarrow W \rightarrow Y.
+$$
+
+A common cause opens a **backdoor path** $X \leftarrow W \rightarrow Y$ that carries non-causal association from $X$ to $Y$. Omitting $W$ from the regression leaves that backdoor open, and the spurious association leaks into the slope on $X$. The OVB formula is the *algebraic* counterpart of the *graphical* backdoor criterion:
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Page-local static DAG drawing component (pure; depends only on d3). ──
+// Mirrors the basics.qmd component but kept self-contained for this page.
+// Returns an SVG node. nodes: [{id,x,y,label}] with x,y normalized in [0,1];
+// edges: [{source,target,kind,elabel}] kind ∈ 'causal'|'biasing'|'blocked';
+// `elabel` (optional) draws a small coefficient tag at the edge midpoint;
+// `conditioned` ids are drawn as a boxed (rounded square) node.
+p2_drawDAG = function ({ nodes, edges, width = 440, height = 200, conditioned = [] }) {
+  const pad = 48;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "blocked" ? "#79766e" : "#b3000b";   // 'biasing'/'backdoor-open' → red
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["p2-arr-green", "#2e6f40"], ["p2-arr-red", "#b3000b"], ["p2-arr-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+  const markerId = k =>
+    k === "causal" ? "p2-arr-green" :
+    k === "blocked" ? "p2-arr-gray" : "p2-arr-red";
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+    if (e.elabel) {
+      const mx = (xa + xb) / 2, my = (ya + yb) / 2;
+      const tg = eg.append("g");
+      tg.append("text")
+        .attr("x", mx).attr("y", my - 7)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 13).attr("font-weight", 700)
+        .attr("fill", colorFor(e.kind))
+        .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+        .text(e.elabel);
+    }
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Static figure: the confounding triangle behind OVB. The two RED edges are
+// the open backdoor (W→X carries δ, W→Y carries β₂); their product β₂·δ is the
+// bias. The GREEN edge X→Y is the causal effect β₁ we actually want.
+p2_drawDAG({
+  width: Math.min(460, width),
+  height: 215,
+  nodes: [
+    { id: "W", x: 0.5,  y: 0.10, label: "W", caption: "Deprivation (omitted)" },
+    { id: "X", x: 0.08, y: 0.80, label: "X", caption: "Staffing" },
+    { id: "Y", x: 0.92, y: 0.80, label: "Y", caption: "Attainment" }
+  ],
+  edges: [
+    { source: "W", target: "X", kind: "biasing", elabel: "δ" },
+    { source: "W", target: "Y", kind: "biasing", elabel: "β₂" },
+    { source: "X", target: "Y", kind: "causal",  elabel: "β₁" }
+  ]
+})
+```
+
+::: {.aside}
+The backdoor path $X \leftarrow W \rightarrow Y$ is drawn in <span style="color:#b3000b; font-weight:700;">red</span>: its two edges carry $\delta$ (deprivation → staffing) and $\beta_2$ (deprivation → attainment). Their product $\beta_2\delta$ is exactly the bias the open path injects into the slope on $X$. The <span style="color:#2e6f40; font-weight:700;">green</span> edge $X \rightarrow Y$ is the causal effect $\beta_1$ you want. *Controlling for $W$ blocks the red path and leaves the green one alone.*
+:::
+
+
+- $\delta \neq 0$ corresponds to the edge $W \rightarrow X$ (deprivation influences staffing).
+- $\beta_2 \neq 0$ corresponds to the edge $W \rightarrow Y$ (deprivation influences outcomes).
+- Their product $\beta_2\delta$ is the bias the open backdoor injects.
+- "Control for $W$" (the backdoor adjustment) is the same act as "include $w$ in the regression."
+
+It is also the same phenomenon as the **selection bias** decomposition from [Module 1](../01-fundamental-problem/selection-bias.qmd). There, the naive treatment--control difference equaled the ATT *plus* a bias term $E[Y(0)\mid D=1] - E[Y(0)\mid D=0]$ --- the two groups differed at baseline. With a binary regressor $x = D$, that baseline difference *is* $\beta_2\delta$: a confounder that makes the treated group systematically different in $Y(0)$ is just a variable omitted from the regression. Selection bias, confounding, and omitted variable bias are three dialects of one idea: **an open path between regressor and outcome that does not run through the causal arrow you care about.**
+
+
+<details>
+<summary>Math Details: Deriving the OVB Formula via FWL and Projection</summary>
+<div class="details-content">
+
+### Derivation 1: Direct, from the normal equations
+
+The short-regression slope is the simple-regression formula applied to $y$ on $x$:
+
+$$
+\hat\alpha_1 = \frac{\widehat{\operatorname{Cov}}(x, y)}{\widehat{\operatorname{Var}}(x)}.
+$$
+
+Substitute the *true* model $y_i = \beta_0 + \beta_1 x_i + \beta_2 w_i + \varepsilon_i$ into the covariance in the numerator. Covariance is linear and ignores additive constants:
+
+$$
+\operatorname{Cov}(x, y) = \beta_1 \operatorname{Cov}(x, x) + \beta_2 \operatorname{Cov}(x, w) + \operatorname{Cov}(x, \varepsilon).
+$$
+
+Because the long model satisfies $E[\varepsilon \mid x, w] = 0$, we have $\operatorname{Cov}(x, \varepsilon) = 0$. Also $\operatorname{Cov}(x,x) = \operatorname{Var}(x)$. Divide through by $\operatorname{Var}(x)$:
+
+$$
+\frac{\operatorname{Cov}(x,y)}{\operatorname{Var}(x)} = \beta_1 + \beta_2 \cdot \frac{\operatorname{Cov}(x,w)}{\operatorname{Var}(x)} = \beta_1 + \beta_2 \delta.
+$$
+
+Taking probability limits (sample moments converge to population moments by the law of large numbers):
+
+$$
+\operatorname{plim}\hat\alpha_1 = \beta_1 + \beta_2 \delta. \qquad \blacksquare
+$$
+
+### Derivation 2: Via Frisch–Waugh–Lovell
+
+The [FWL theorem](frisch-waugh-lovell.qmd) says the long-model coefficient $\beta_1$ equals the slope from regressing the part of $y$ orthogonal to $w$ on the part of $x$ orthogonal to $w$. Write $\tilde{x}$ and $\tilde{y}$ for those residuals, so that $\beta_1 = \operatorname{Cov}(\tilde y, \tilde x)/\operatorname{Var}(\tilde x)$.
+
+Decompose $x$ into its projection onto $w$ plus a residual: $x = \kappa_0 + \delta_{xw}\, w + \tilde{x}$, where $\delta_{xw} = \operatorname{Cov}(x,w)/\operatorname{Var}(w)$ is the slope of $x$ on $w$ and $\tilde{x}$ is orthogonal to $w$. (Note $\delta_{xw}$ regresses $x$ on $w$ and so divides by $\operatorname{Var}(w)$; the auxiliary slope $\delta$ from earlier regresses $w$ on $x$ and divides by $\operatorname{Var}(x)$ --- do not conflate them.) The short slope regresses $y$ on the *whole* of $x$ --- residual and projection together --- rather than on $\tilde{x}$ alone. The piece of $x$ that lives along $w$ drags the omitted effect $\beta_2$ into the slope.
+
+Concretely, from the true model $\operatorname{Cov}(w,y) = \beta_2\operatorname{Var}(w) + \beta_1\operatorname{Cov}(x,w)$. Substituting this back while expanding $\operatorname{Cov}(x,y)/\operatorname{Var}(x)$ collapses to the same destination:
+
+$$
+\operatorname{plim}\hat\alpha_1 = \beta_1 + \beta_2\,\frac{\operatorname{Cov}(x,w)}{\operatorname{Var}(x)} = \beta_1 + \beta_2\delta.
+$$
+
+**The FWL reading of OVB:** the short regression *fails to partial $w$ out of $x$*. The bias $\beta_2\delta$ is precisely the influence of $w$ that FWL would have scrubbed away. Controlling for a variable and "netting it out by FWL" are the same operation; omitting it leaves $\beta_2\delta$ stuck to your slope.
+
+### The multivariable case
+
+With several included regressors $\mathbf{X}$ and an omitted set $\mathbf{W}$, the result generalizes to matrix form:
+
+$$
+\operatorname{plim}\hat{\boldsymbol\alpha} = \boldsymbol\beta_X + \mathbf{\Delta}\,\boldsymbol\beta_W,
+$$
+
+where $\mathbf{\Delta} = (\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{W}$ stacks the auxiliary regressions of each omitted variable on the full set of included ones. **Read this as:** "each included coefficient is biased by the omitted effects, routed through how the omitted variables project onto the included ones." A subtle consequence: omitting one variable can bias the coefficient on a *different*, perfectly measured regressor, because $\mathbf{\Delta}$ mixes them. There is no such thing as a locally contained omission.
+
+</div>
+</details>
+
+
+## Code: Monte Carlo Confirmation
+
+The code below fixes the true model, simulates many regional datasets, and confirms that the *average* short-regression slope lands on $\beta_1 + \beta_2\delta$ while the long regression recovers $\beta_1$. We use $\beta_1 = 1.5$, $\beta_2 = -2.5$, and generate deprivation as $w = \delta\,(x - \bar{x}) + \text{noise}$ with $\delta = 1.4$, so the predicted bias is $\beta_2\delta = -2.5 \times 1.4 = -3.5$ and the expected short slope is $1.5 - 3.5 = -2.0$ --- a wrong-sign estimate.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(fixest)  # fast OLS; base lm() works identically
+
+set.seed(2024)
+
+# --- True parameters (the world) ---
+beta0 <- 55; beta1 <- 1.5; beta2 <- -2.5
+delta <- 1.4
+n      <- 160
+x_mean <- 6; x_sd <- 1.6; w_sd <- 2.2; e_sd <- 4
+
+sim_once <- function() {
+  x <- rnorm(n, x_mean, x_sd)                       # nurse staffing
+  w <- delta * (x - x_mean) + rnorm(n, 0, w_sd)     # deprivation, correlated with x
+  y <- beta0 + beta1 * x + beta2 * w + rnorm(n, 0, e_sd)
+  short <- coef(feols(y ~ x))["x"]                  # omit w
+  long  <- coef(feols(y ~ x + w))["x"]             # include w
+  aux   <- coef(feols(w ~ x))["x"]                 # auxiliary slope (estimates delta)
+  c(short = unname(short), long = unname(long), aux = unname(aux))
+}
+
+R   <- 5000
+out <- replicate(R, sim_once())
+
+cat("Predicted bias  beta2 * delta  :", beta2 * delta, "\n")
+cat("Predicted short slope          :", beta1 + beta2 * delta, "\n\n")
+cat("Mean short slope (E[alpha1])   :", round(mean(out["short", ]), 3), "\n")
+cat("Mean long slope  (recovers b1) :", round(mean(out["long",  ]), 3), "\n")
+cat("Mean auxiliary   (recovers d)  :", round(mean(out["aux",   ]), 3), "\n")
+cat("Mean empirical bias            :", round(mean(out["short", ] - out["long", ]), 3), "\n")
+
+# Expected console output:
+# Predicted bias  beta2 * delta  : -3.5
+# Predicted short slope          : -2
+# Mean short slope ~ -2.00   (WRONG SIGN: truth is +1.5)
+# Mean long slope  ~  1.50
+# Mean auxiliary   ~  1.40
+# Mean empirical bias ~ -3.50
+```
+
+### Python
+
+```python
+import numpy as np
+import statsmodels.api as sm
+
+rng = np.random.default_rng(2024)
+
+# --- True parameters (the world) ---
+beta0, beta1, beta2 = 55.0, 1.5, -2.5
+delta = 1.4
+n = 160
+x_mean, x_sd, w_sd, e_sd = 6.0, 1.6, 2.2, 4.0
+
+def ols_slope_on_first(y, *cols):
+    X = sm.add_constant(np.column_stack(cols))
+    return sm.OLS(y, X).fit().params[1]   # slope on the first predictor
+
+def sim_once():
+    x = rng.normal(x_mean, x_sd, n)                       # nurse staffing
+    w = delta * (x - x_mean) + rng.normal(0, w_sd, n)     # deprivation, correlated
+    y = beta0 + beta1 * x + beta2 * w + rng.normal(0, e_sd, n)
+    short = ols_slope_on_first(y, x)         # omit w
+    long_ = ols_slope_on_first(y, x, w)      # include w -> slope on x
+    aux   = ols_slope_on_first(w, x)         # auxiliary slope (estimates delta)
+    return short, long_, aux
+
+R = 5000
+res = np.array([sim_once() for _ in range(R)])
+short, long_, aux = res[:, 0], res[:, 1], res[:, 2]
+
+print(f"Predicted bias  beta2 * delta  : {beta2 * delta}")
+print(f"Predicted short slope          : {beta1 + beta2 * delta}\n")
+print(f"Mean short slope (E[alpha1])   : {short.mean():.3f}")
+print(f"Mean long slope  (recovers b1) : {long_.mean():.3f}")
+print(f"Mean auxiliary   (recovers d)  : {aux.mean():.3f}")
+print(f"Mean empirical bias            : {(short - long_).mean():.3f}")
+
+# Expected output:
+# Predicted bias  beta2 * delta  : -3.5
+# Predicted short slope          : -2.0
+# Mean short slope ~ -2.00  (WRONG SIGN: truth is +1.5)
+# Mean long slope  ~  1.50
+# Mean auxiliary   ~  1.40
+# Mean empirical bias ~ -3.50
+```
+
+:::
+
+The Monte Carlo confirms every claim: the short slope converges to $-2.0$ (negative!), the long slope to the true $+1.5$, the auxiliary regression recovers $\delta = 1.4$, and the empirical bias equals the formula's $\beta_2\delta = -3.5$. A region that omitted deprivation would have concluded that nurses *harm* diabetes control --- the exact opposite of the truth.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A health economist regresses annual cost per patient ($y$, in SEK) on the number of *läkare* (physicians) per 1,000 listed patients ($x$) across vårdcentraler, omitting the average age of the listed population ($w$). Suppose the true model has $\beta_2 = +900$ SEK per year of average age (older populations cost more), and centers serving older populations also tend to staff *more* physicians, so $\delta = +0.4$.
+
+(a) What is the bias on the physician coefficient? (b) If the true effect of physicians on cost is $\beta_1 = +1{,}200$ SEK, what does the short regression report on average? (c) Is this attenuation, amplification, or wrong-sign?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\text{Bias} = \beta_2 \cdot \delta = 900 \times 0.4 = +360$ SEK. The bias is positive.
+
+**(b)** $\operatorname{plim}\hat\alpha_1 = \beta_1 + \beta_2\delta = 1{,}200 + 360 = +1{,}560$ SEK.
+
+**(c)** The true effect is positive ($+1{,}200$) and the bias is also positive ($+360$), so the estimate is pushed *away* from zero --- **amplification**. The short regression overstates the per-physician cost by 30%. An analyst would over-credit physician staffing for cost growth that is partly driven by an older patient mix. The fix: control for population age.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A region studies whether longer *telefontid* (daily phone-line hours) at a vårdcentral reduces avoidable emergency-room visits ($y$, lower is better). It regresses ER visits on phone hours ($x$), omitting an urban/rural indicator ($w = 1$ if rural). The true effect of phone hours is $\beta_1 = -3$ visits per extra hour (more phone access reduces ER use). Rural centers have *more* avoidable ER visits for reasons unrelated to phones (distance, fewer alternatives), so $\beta_2 = +20$. Rural centers also tend to offer *longer* phone hours to compensate for distance, so $\delta = +0.5$.
+
+(a) Compute the bias and the expected short slope. (b) Classify the bias. (c) What wrong conclusion might the region reach, and how would they fix it?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\text{Bias} = \beta_2\delta = 20 \times 0.5 = +10$. Expected short slope $= \beta_1 + \beta_2\delta = -3 + 10 = +7$.
+
+**(b)** The true effect is negative ($-3$), the bias is positive ($+10$) and larger in magnitude, so $\operatorname{plim}\hat\alpha_1 = +7$ lands on the *opposite* side of zero --- **wrong-sign bias**.
+
+**(c)** The short regression reports a *positive* slope: centers with longer phone hours appear to have *more* ER visits, suggesting phone access is useless or even harmful. The truth is the reverse --- phone access helps, but it is concentrated in rural centers that have high ER use for other reasons. The omitted urban/rural status confounds the comparison. The fix is to include the rural indicator (or, better, compare changes within centers over time, or exploit a quasi-experiment in phone-hour expansion). With $w$ in the regression, the coefficient on phone hours would recover the true $-3$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague argues: "To be safe against omitted variable bias, I always add every variable I can get my hands on to the regression." Give two distinct reasons this blanket strategy is misguided, referencing the OVB formula. Identify one type of variable that you should specifically *avoid* controlling for.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Reason 1 --- harmless omissions exist.** The OVB formula is a *product* $\beta_2\delta$. A variable that is unrelated to the regressor of interest ($\delta = 0$) or has no effect on the outcome ($\beta_2 = 0$) contributes *zero* bias whether or not it is included. Adding such variables cannot remove a bias that was not there; it only spends degrees of freedom and can inflate the standard error of $\hat\alpha_1$ (especially if the added variable is correlated with $x$, raising variance through multicollinearity). "Control for everything" trades a non-existent bias reduction for a real precision loss.
+
+**Reason 2 --- some controls *create* bias.** Not every variable is a confounder. Controlling for a **collider** (a variable caused by both $x$ and $y$, or by $x$ and an unobserved cause of $y$) *opens* a non-causal path and induces bias where none existed. Controlling for a **mediator** (a variable on the causal pathway $x \rightarrow m \rightarrow y$) removes part of the very effect you are trying to estimate, biasing $\hat\alpha_1$ toward zero. The OVB formula assumes $w$ is a confounder ($X \leftarrow W \rightarrow Y$); it does not license adding arbitrary variables.
+
+**Variable to avoid:** a **collider**, or any post-treatment variable (mediators, downstream outcomes of the treatment). The correct strategy is to control for variables that block backdoor paths --- common causes --- and to leave colliders and mediators alone. This requires a causal model (a DAG), not a "throw everything in" reflex.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the OVB sandbox, set $\beta_2 = -2.5$ (deprivation hurts outcomes, fixed by Sweden's clinical reality) and explore $\delta$. (a) For which sign of $\delta$ is the short regression biased *downward*? (b) Find the value of $\delta$ that makes the short slope approximately zero, and interpret what that means substantively. (c) The true $\beta_1$ is $+1.5$. Solve algebraically for the $\delta$ that drives the short slope to exactly zero.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $\beta_2 = -2.5 < 0$, the bias $\beta_2\delta$ is negative when $\delta > 0$. So a *positive* auxiliary slope --- more-deprived areas having *more* nurses (compensatory funding) --- biases the short regression **downward**. Substantively: the nurse-rich centers are also the hard-to-treat centers, so the raw staffing--outcome relationship is dragged down.
+
+**(b)–(c)** The short slope is zero when $\beta_1 + \beta_2\delta = 0$, i.e.
+
+$$
+\delta = -\frac{\beta_1}{\beta_2} = -\frac{1.5}{-2.5} = 0.6.
+$$
+
+Setting $\delta \approx 0.6$ in the sandbox makes the red short line approximately flat. The interpretation is striking: a genuinely *beneficial* nurse effect ($\beta_1 = +1.5$) is *exactly cancelled* in the raw data by the confounding pull of deprivation, because the extra nurses are deployed precisely where outcomes are worst. An analyst running the short regression would report "staffing has no association with diabetes control" and might cut nurse budgets --- a policy error driven entirely by the omitted CNI index. Push $\delta$ above $0.6$ and the slope turns negative (wrong sign); pull it below $0.6$ and the benefit partially reappears.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Omitting a relevant confounder sweeps its influence into the short-model error; if that confounder is correlated with the regressor, OLS no longer estimates the true effect.
+- The bias is exactly $\beta_2\delta$: the effect of the omitted variable on the outcome, times the slope of the omitted variable on the included one. Both pieces must be nonzero for bias to exist.
+- OVB is asymptotic — it does not shrink with more data. It is a flaw in *what* you estimate, not *how precisely* you estimate it.
+- Same signs multiply to upward bias, opposite signs to downward bias; "upward" means more positive on the number line, which can attenuate, amplify, or flip the sign of a true effect.
+- OVB, confounding, and selection bias are three dialects of one idea: an open non-causal path between regressor and outcome. The fix is to control for confounders — not to throw every variable into the regression, since colliders and mediators create bias.
+:::
+
+## What Comes Next
+
+Omitted variable bias shows what happens when a relevant regressor is *missing*. But even when every relevant variable is *present*, a model can still be wrong if it imposes the assumption that effects are constant across subgroups --- that nurses help affluent and deprived centers by the same amount. The next page, [Interactions](interactions.qmd), relaxes that assumption: it introduces product terms that let the slope on one variable depend on the value of another, turning a single average effect into a family of effects --- and revealing the heterogeneity that a main-effects-only regression silently averages away.

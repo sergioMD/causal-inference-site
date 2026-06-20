@@ -1,0 +1,664 @@
+---
+title: "Growth Curve Models"
+subtitle: "Multilevel models for change over time"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Recognize repeated measurements as a two-level structure --- visits (level 1) nested within patients (level 2) --- with *time* entering as a level-1 predictor
+- Write the two-level linear growth model with a random intercept and a random slope for time, and read each variance component aloud
+- Distinguish the *fixed* time effect (the average population trajectory) from the *random* slope variance (heterogeneity in individual rates of change)
+- Extend the model to curved (quadratic) growth and say precisely what a population-average curve does and does not claim about any one patient
+- Fit a growth curve in R with `lmer(y ~ time + (time | id))` and in Python with `statsmodels` `MixedLM`, and interpret the estimated variance--covariance of the random effects
+:::
+
+## Many Measurements, One Patient
+
+A *vårdcentral* (primary care center) in one of Sweden's 21 *regioner* (regions) enrolls Type 2 diabetes patients in a 24-month coordination program. A dedicated *distriktssköterska* (district nurse) measures each patient's **HbA1c** (a percentage that summarizes average blood sugar; lower is better) at enrollment and at roughly six-month intervals thereafter. After two years the *journalsystem* (medical records system) holds, for each patient, a little string of measurements: one at month 0, another at month 6, month 12, month 18, month 24.
+
+The question the region wants answered is not "what is the average HbA1c after the program?" --- that throws away the timing. It is a question about **change**: *how fast, on average, does a patient's HbA1c fall once they enroll, and does that rate of improvement differ from patient to patient?* One patient may start at 9.0% and glide down steadily; another may start at 7.5% and barely move; a third may start high and plummet. The data are not a cloud of independent points --- they are a bundle of individual **trajectories**.
+
+This is **longitudinal** data, and it has a structure we have met before in this module. On the [Variance Components and the ICC](variance-components-icc.qmd) page we treated patients nested within clinics. Here the nesting is in *time*: each patient contributes several measurements, and those repeated measurements belong together. The natural model is again a two-level (multilevel, mixed) model --- but now with a twist that makes it a *growth* model: **time itself is a predictor at level 1**, and each patient may have not only their own baseline level but their own *rate of change*.
+
+::: {.glass-card .glass-card--insight}
+A growth curve model answers two different questions at once. The **fixed part** describes the *average* trajectory in the population --- the typical patient's path. The **random part** describes how individual patients *scatter around* that average path: how much they differ in where they start (random intercept) and in how fast they change (random slope). A program can have an excellent average effect and still help some patients enormously while doing little for others. Growth models let you see and quantify both.
+:::
+
+
+## Repeated Measures Are a Two-Level Structure
+
+Index a measurement by two subscripts: $t$ for the occasion ($t = 1, \dots, n_i$) and $i$ for the patient ($i = 1, \dots, N$). Let $y_{ti}$ be the HbA1c of patient $i$ at occasion $t$, and let $\text{time}_{ti}$ be the time of that measurement, in months since enrollment.
+
+The defining feature of longitudinal data is that **measurements within a patient are correlated**. If a patient sits well above the population average at month 6, they are very likely to sit above it at month 12 too --- they carry their own persistent level from one visit to the next. Treating the five visits of one patient as five independent observations would massively overstate how much information we have, exactly the redundancy the intraclass correlation warned us about on the previous page. A two-level model handles the correlation by giving each patient their own random deviations.
+
+::: {.glass-card .glass-card--definition}
+The data have a **two-level hierarchy**:
+
+- **Level 1 (the occasion / measurement).** Each row is one HbA1c reading at one time. The level-1 predictor is $\text{time}_{ti}$. The level-1 residual $\varepsilon_{ti}$ is the wobble of a single reading around that patient's own smooth trajectory --- measurement error, a bad week, a recent illness.
+- **Level 2 (the patient).** Each patient owns a *trajectory*: a personal starting level and a personal rate of change. The level-2 random effects describe how those personal trajectories vary across the patient population.
+
+Read the subscript $y_{ti}$ as "the outcome at occasion $t$ for patient $i$." Occasions are nested inside patients, just as patients were nested inside clinics on the previous page --- only now the level-1 predictor, time, is the very thing we are modelling change in.
+:::
+
+Crucially, time does **not** have to be measured at the same occasions for every patient, and patients need not have the same number of visits. A patient who missed their month-12 appointment simply contributes four rows instead of five. This *unbalanced* design is where multilevel growth models decisively beat the old "repeated-measures ANOVA" approach, which demanded a complete, equally spaced grid.
+
+
+## The Random-Intercept-and-Slope Growth Model
+
+We build the model in two stages, which is the cleanest way to keep the two levels straight.
+
+**Level 1 --- each patient's own straight line.** Within patient $i$, suppose HbA1c falls (approximately) linearly with time:
+
+$$
+y_{ti} = \beta_{0i} + \beta_{1i}\,\text{time}_{ti} + \varepsilon_{ti}, \qquad \varepsilon_{ti} \sim \mathcal{N}(0, \sigma^2_\varepsilon).
+$$
+
+**Read this as**: "Patient $i$'s reading at occasion $t$ equals *their own* intercept $\beta_{0i}$ (their HbA1c at $\text{time}=0$, i.e. at enrollment), plus *their own* slope $\beta_{1i}$ times how long they have been in the program, plus a small reading-level error." The two coefficients carry the subscript $i$ because they belong to the patient --- this is a separate line for every patient.
+
+**Level 2 --- where do those personal lines come from?** We do not estimate $N$ unrelated lines. Instead we say each patient's intercept and slope are the population averages plus a personal departure:
+
+$$
+\beta_{0i} = \gamma_{00} + u_{0i}, \qquad \beta_{1i} = \gamma_{10} + u_{1i}.
+$$
+
+**Read this as**: "Patient $i$'s baseline is the *average* baseline $\gamma_{00}$ plus a patient-specific bump $u_{0i}$; patient $i$'s rate of change is the *average* rate $\gamma_{10}$ plus a patient-specific bump $u_{1i}$." The fixed effects $\gamma_{00}$ and $\gamma_{10}$ describe the average trajectory; the random effects $u_{0i}$ and $u_{1i}$ describe individual departures from it.
+
+Substituting level 2 into level 1 gives the **combined (mixed) model** that software actually fits:
+
+::: {.glass-card .glass-card--definition}
+The **two-level linear growth model** is
+
+$$
+y_{ti} = \underbrace{\gamma_{00} + \gamma_{10}\,\text{time}_{ti}}_{\text{fixed: average trajectory}} \; + \; \underbrace{u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}}_{\text{random: individual departures}},
+$$
+
+with the random effects drawn jointly from a mean-zero bivariate normal,
+
+$$
+\begin{pmatrix} u_{0i} \\ u_{1i} \end{pmatrix}
+\sim \mathcal{N}\!\left(
+\begin{pmatrix} 0 \\ 0 \end{pmatrix},\;
+\mathbf{G} = \begin{pmatrix} \tau_{00} & \tau_{01} \\ \tau_{01} & \tau_{11} \end{pmatrix}
+\right),
+\qquad \varepsilon_{ti} \sim \mathcal{N}(0, \sigma^2_\varepsilon).
+$$
+
+- $\gamma_{00}$ --- **average intercept**: the mean HbA1c at enrollment ($\text{time}=0$).
+- $\gamma_{10}$ --- **average slope (the fixed time effect)**: the mean change in HbA1c *per month* in the program. A negative $\gamma_{10}$ means the typical patient improves.
+- $\tau_{00} = \operatorname{Var}(u_{0i})$ --- **intercept variance**: how much patients differ in *where they start*.
+- $\tau_{11} = \operatorname{Var}(u_{1i})$ --- **slope variance**: how much patients differ in *how fast they change*. This is the heart of a growth model.
+- $\tau_{01} = \operatorname{Cov}(u_{0i}, u_{1i})$ --- **intercept--slope covariance**: do patients who start higher also improve faster (or slower)?
+- $\sigma^2_\varepsilon$ --- **within-patient (occasion) variance**: noise of a single reading around the patient's own line.
+:::
+
+Notice the new term that makes this a growth model and not just a random-intercept model: $u_{1i}\,\text{time}_{ti}$. Because $u_{1i}$ multiplies time, its effect *grows with time* --- two patients who look nearly identical at enrollment can be far apart by month 24. This is what produces the visual **fan** of trajectories we will explore in the interactive: the spread between patients widens as the program runs.
+
+::: {.glass-card .glass-card--insight}
+**Fixed slope vs. slope variance --- do not confuse them.** The fixed time effect $\gamma_{10}$ tells you the *average* direction and speed of change. The slope variance $\tau_{11}$ tells you how *reliable* that average is at the individual level. You can have a strong average improvement ($\gamma_{10}$ large and negative) that is highly *consistent* across patients ($\tau_{11} \approx 0$, everyone improves at nearly the same rate), or the same average improvement that is wildly *heterogeneous* ($\tau_{11}$ large --- some patients plunge, others worsen). The policy reading is completely different. Reporting only $\gamma_{10}$ hides which world you are in.
+:::
+
+
+## See It: A Population of Trajectories
+
+The interactive below simulates a cohort of diabetes patients followed over 24 months. Every thin line is one patient's HbA1c trajectory; the thick **Uppsala-red** line is the population-average trajectory $\gamma_{00} + \gamma_{10}\,\text{time}$ --- the fixed part of the model.
+
+Start with the random slope **off**: every patient shares the *same* slope $\gamma_{10}$ and differs only in their starting level (random intercept). The thin lines are parallel --- a sheaf of lines that never crosses. Then switch the random slope **on** and increase the **slope variance** $\tau_{11}$: now each patient gets their own rate of change, and the trajectories **fan out**, diverging more and more as the program runs. That fanning *is* the slope variance, made visible.
+
+::: {.interactive-container}
+
+#### Individual growth trajectories around the average trend
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls (the full tour is below).
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${mlgrow_pal.axis};
+    background: ${mlgrow_pal.fill};
+    border-left: 3px solid ${mlgrow_pal.focal};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> with the random slope <em>off</em>, the thin patient
+  lines run parallel to the bold red average. Flip <em>Random slope for time</em>
+  on and push <em>Slope variance</em> up to watch the trajectories fan apart.
+  Full guided tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlgrow_randomSlope = Inputs.toggle({
+  label: "Random slope for time",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlgrow_slopeVar = Inputs.range([0, 1], {
+  value: 0.35,
+  step: 0.01,
+  label: "Slope variance τ₁₁ (heterogeneity in rate of change)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlgrow_interceptSD = Inputs.range([0, 1.2], {
+  value: 0.7,
+  step: 0.05,
+  label: "Intercept SD √τ₀₀ (spread of starting levels)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlgrow_nPatients = Inputs.range([6, 40], {
+  value: 18,
+  step: 1,
+  label: "Number of patients shown"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof mlgrow_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Uppsala-academic palette shared across this page's interactives. ──
+mlgrow_pal = ({
+  focal:   "#990000",   // the estimate / average trajectory (Uppsala red)
+  compare: "#3d5a6c",   // secondary / individual trajectories (slate)
+  good:    "#2e6f40",   // success / on-target (forest green)
+  ochre:   "#9c7a33",   // highlight / "true value" annotation (ochre)
+  ink:     "#1c1c1a",   // reference lines & ink text
+  axis:    "#79766e",   // axis / muted label text (Uppsala muted)
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed (population-average) parameters of the simulated diabetes cohort.
+// HbA1c (%), measured at months 0, 6, 12, 18, 24. Lower is better, so the
+// average slope is NEGATIVE: the typical patient improves over the program.
+mlgrow_params = ({
+  gamma00: 8.4,     // average HbA1c at enrollment (time = 0)
+  gamma10: -0.045,  // average change per MONTH  (≈ -1.08 % over 24 months)
+  times:   [0, 6, 12, 18, 24],
+  sigmaEps: 0.18    // within-patient reading noise (SD, % points)
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Generate the cohort. Each patient i gets:
+//   intercept departure u0 ~ N(0, interceptSD^2)
+//   slope departure     u1 ~ N(0, slopeVar)   [only if random slope is ON]
+// The slope-variance slider is the VARIANCE τ₁₁, so its SD is sqrt(τ₁₁); we
+// scale it to a per-month SD so the fan stays inside the plot at τ₁₁ = 1.
+mlgrow_cohort = {
+  const bump = mlgrow_draw;                 // re-seed on each button press
+  const N = mlgrow_nPatients;
+  const { gamma00, gamma10, times, sigmaEps } = mlgrow_params;
+  const interceptSD = mlgrow_interceptSD;
+  // Convert the displayed τ₁₁ to a per-month slope SD. The displayed scale runs
+  // 0..1; we map it so τ₁₁ = 1 gives a clearly fanned but on-domain spread.
+  const slopeSD = mlgrow_randomSlope ? 0.025 * Math.sqrt(mlgrow_slopeVar) : 0;
+
+  // d3.randomLcg expects a seed in [0, 1); keep it in range no matter how many
+  // times the button is pressed by taking the fractional part.
+  const seed = (0.241 + 0.733 * bump) % 1;
+  const rNorm = d3.randomNormal.source(d3.randomLcg(seed));
+  const drawIntercept = rNorm(0, interceptSD);
+  const drawSlope = rNorm(0, slopeSD);
+  const drawEps = rNorm(0, sigmaEps);
+
+  const patients = [];
+  for (let i = 0; i < N; i++) {
+    const u0 = drawIntercept();
+    const u1 = drawSlope();
+    const line = times.map(tm => ({
+      id: i,
+      time: tm,
+      // observed reading = patient's own line + occasion noise
+      y: (gamma00 + u0) + (gamma10 + u1) * tm + drawEps(),
+      // the patient's own smooth (noise-free) trajectory, for drawing the line
+      yhat: (gamma00 + u0) + (gamma10 + u1) * tm
+    }));
+    patients.push({ id: i, u0, u1, line });
+  }
+  return patients;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Flatten the per-patient smooth trajectories for the line mark, and keep the
+// noisy readings for the dot mark.
+mlgrow_lineData = mlgrow_cohort.flatMap(p => p.line.map(r => ({ ...r })))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The population-average trajectory (the fixed part): two endpoints suffice.
+mlgrow_avgLine = {
+  const { gamma00, gamma10, times } = mlgrow_params;
+  const t0 = times[0], t1 = times[times.length - 1];
+  return [
+    { time: t0, y: gamma00 + gamma10 * t0 },
+    { time: t1, y: gamma00 + gamma10 * t1 }
+  ];
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 360,
+  marginLeft: 58,
+  marginBottom: 46,
+  marginTop: 28,
+  marginRight: 18,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif" },
+  x: {
+    label: "Months since enrollment",
+    domain: [0, 24],
+    ticks: [0, 6, 12, 18, 24]
+  },
+  y: {
+    label: "HbA1c (%) — lower is better",
+    domain: [6, 11]
+  },
+  marks: [
+    // Thin individual trajectories (slate, semi-transparent).
+    Plot.line(mlgrow_lineData, {
+      x: "time", y: "yhat", z: "id",
+      stroke: mlgrow_pal.compare, strokeWidth: 1, strokeOpacity: 0.5
+    }),
+    // The noisy readings as small dots.
+    Plot.dot(mlgrow_lineData, {
+      x: "time", y: "y",
+      fill: mlgrow_pal.compare, fillOpacity: 0.35, r: 1.8
+    }),
+    // The population-average trajectory (the fixed part) in Uppsala red.
+    Plot.line(mlgrow_avgLine, {
+      x: "time", y: "y",
+      stroke: mlgrow_pal.focal, strokeWidth: 3.5
+    }),
+    // Label for the average line, anchored at its right endpoint.
+    Plot.text([mlgrow_avgLine[1]], {
+      x: "time", y: "y",
+      text: ["population average"],
+      dx: -6, dy: -12, textAnchor: "end",
+      fill: mlgrow_pal.focal, fontSize: 11, fontWeight: "bold",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.ruleY([6])
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: the realized SD of individual slopes in the drawn sample,
+// alongside the fixed slope, so the reader links the slider to a number.
+{
+  const fixedPerYear = mlgrow_params.gamma10 * 12;     // %/year
+  const slopes = mlgrow_cohort.map(p => mlgrow_params.gamma10 + p.u1);
+  const sdSlopeYr = d3.deviation(slopes.map(s => s * 12)) || 0;
+  const item = (label, val, unit, color) => html`<div style="
+      text-align:center; padding:0.5rem 0.25rem; border-radius:0.5rem;
+      background:${mlgrow_pal.fill};">
+    <div style="font-family:Inter,sans-serif; font-size:0.7rem; font-weight:700;
+        text-transform:uppercase; letter-spacing:0.04em; color:${mlgrow_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${val}</div>
+    <div style="font-family:Inter,sans-serif; font-size:0.66rem; color:${mlgrow_pal.muted};">${unit}</div>
+  </div>`;
+  return html`<div style="display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));
+      gap:0.5rem; margin-top:0.75rem;">
+    ${item("Fixed slope γ₁₀", fixedPerYear.toFixed(2), "% HbA1c per year", mlgrow_pal.focal)}
+    ${item("SD of slopes", (mlgrow_randomSlope ? sdSlopeYr.toFixed(2) : "0.00"),
+        "across patients (%/yr)", mlgrow_randomSlope ? mlgrow_pal.ochre : mlgrow_pal.muted)}
+    ${item("Random slope", mlgrow_randomSlope ? "ON" : "OFF",
+        "u₁ᵢ in the model", mlgrow_randomSlope ? mlgrow_pal.good : mlgrow_pal.muted)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Trajectory Plot
+
+Work through these steps in order; each isolates one idea in the model.
+
+**Step 1: Read one patient.** Pick any thin slate line. It is one patient's HbA1c over 24 months; the faint dots scattered just off the line are that patient's actual noisy *readings* ($\varepsilon_{ti}$ wobble). The line itself is the patient's underlying trajectory $\beta_{0i} + \beta_{1i}\,\text{time}$.
+
+**Step 2: Read the average.** The bold **red** line is the population-average trajectory $\gamma_{00} + \gamma_{10}\,\text{time}$ --- the *fixed* part. Its starting height is $\gamma_{00} \approx 8.4\%$ and its downward tilt is the fixed slope $\gamma_{10}$, about $-0.54$ percentage points per year (the readout shows it per year). No individual patient *is* this line; it is the center of the bundle.
+
+**Step 3: Random intercepts only.** With **Random slope** *off*, drag **Intercept SD** $\sqrt{\tau_{00}}$ up and down. The thin lines spread *vertically* but stay **parallel** --- everyone shares the average slope and differs only in starting level. The gap between any two patients is the same at month 0 as at month 24. This is the random-*intercept* model.
+
+**Step 4: Switch on random slopes.** Flip **Random slope for time** *on*. Now each patient also draws a personal slope $u_{1i}$. The lines are no longer parallel: some fall steeply, some barely move, a few may even drift up. Watch the "SD of slopes" readout jump from 0.00 to a positive number.
+
+**Step 5: Watch the fan.** Drag **Slope variance** $\tau_{11}$ from 0 toward 1. The trajectories **fan out** --- nearly together at enrollment, then splaying apart as months pass. This is the signature of slope heterogeneity: because $u_{1i}$ multiplies time, its effect compounds, so between-patient spread *grows over time*. The bold red average barely moves --- the fixed slope is unchanged; what changes is the scatter *around* it.
+
+**Step 6: Resample.** Press **Draw new sample** a few times. The exact lines change, but the qualitative picture --- parallel vs. fanning --- is stable, because it is a property of the variance components, not of one random draw.
+
+
+## Curved Growth: Adding a Quadratic Term
+
+A straight line is often too rigid. Diabetes patients frequently improve *fast* in the first months of a program --- new medication, fresh motivation, intensive nurse contact --- and then **plateau** as the easy gains are exhausted. A straight line cannot bend; it would average the steep early drop and the flat later phase into a single misleading slope. We let the trajectory curve by adding a **quadratic** term in time.
+
+::: {.glass-card .glass-card--definition}
+The **two-level quadratic growth model** adds a squared-time predictor:
+
+$$
+y_{ti} = \gamma_{00} + \gamma_{10}\,\text{time}_{ti} + \gamma_{20}\,\text{time}_{ti}^2 \; + \; u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}.
+$$
+
+- $\gamma_{10}$ is now the **instantaneous rate of change at $\text{time}=0$** --- the slope of the curve at enrollment, not over the whole program.
+- $\gamma_{20}$ is the **curvature**. With $\gamma_{10} < 0$ (initial improvement) and $\gamma_{20} > 0$ (the curve bends back up), the trajectory falls quickly at first and then flattens --- the classic plateau.
+
+The instantaneous slope at any time is the derivative $\gamma_{10} + 2\gamma_{20}\,\text{time}$: it starts at $\gamma_{10}$ and changes by $2\gamma_{20}$ for each additional month.
+:::
+
+**Read the curvature aloud**: "Each extra month, the rate of change shifts by $2\gamma_{20}$." A positive $\gamma_{20}$ means the (negative) improvement slope is *softening* over time --- the patient is decelerating toward a floor. One can also make the *curvature* random ($u_{2i}\,\text{time}^2$), letting patients differ in how strongly they plateau, but each extra random term costs another variance and two covariances, so quadratic random slopes are added only when the data and the science demand them.
+
+::: {.glass-card .glass-card--warning}
+**Center your time variable, and beware extrapolation.** Because $\gamma_{00}$ is the value at $\text{time}=0$, *where you put the zero matters*. If time runs 0--24 months, $\gamma_{00}$ is the enrollment level and the random intercept variance $\tau_{00}$ is the spread *at enrollment*. Center time at the midpoint instead (so $\text{time}=0$ is month 12) and $\gamma_{00}$, $\tau_{00}$, and the intercept--slope covariance $\tau_{01}$ all change meaning. Neither is wrong --- but you must report which zero you used. And never read a quadratic curve *beyond* the observed window: a fitted plateau can turn into an absurd upswing a few months past your last visit.
+:::
+
+
+<details>
+<summary>Math Details: The variance structure of the linear growth model</summary>
+<div class="details-content">
+
+### The implied mean and variance of a single reading
+
+Take the combined linear model $y_{ti} = \gamma_{00} + \gamma_{10}\,\text{time}_{ti} + u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}$, with $u_{0i}, u_{1i}, \varepsilon_{ti}$ mutually independent of the (treated-as-fixed) times. The **mean** is the fixed part, since every random term has expectation zero:
+
+$$
+E[y_{ti}] = \gamma_{00} + \gamma_{10}\,\text{time}_{ti}.
+$$
+
+The **variance** of a single reading is where time enters non-trivially. Writing $\operatorname{Var}(u_{0i})=\tau_{00}$, $\operatorname{Var}(u_{1i})=\tau_{11}$, $\operatorname{Cov}(u_{0i},u_{1i})=\tau_{01}$, and $\operatorname{Var}(\varepsilon_{ti})=\sigma^2_\varepsilon$:
+
+$$
+\operatorname{Var}(y_{ti}) = \operatorname{Var}\!\big(u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}\big)
+= \tau_{00} + 2\,\tau_{01}\,\text{time}_{ti} + \tau_{11}\,\text{time}_{ti}^2 + \sigma^2_\varepsilon.
+$$
+
+**Read this aloud**: "The variance of a reading is a *quadratic in time*." This is the algebra behind the fan. At $\text{time}=0$ the variance is $\tau_{00}+\sigma^2_\varepsilon$ (the spread of starting levels plus reading noise). As time grows, the $\tau_{11}\,\text{time}^2$ term dominates, so the between-patient spread widens --- exactly the diverging trajectories in the interactive. With a random intercept *only* ($\tau_{11}=\tau_{01}=0$), the variance is the flat $\tau_{00}+\sigma^2_\varepsilon$ for all time: parallel lines, constant spread.
+
+### The covariance between two readings on the same patient
+
+The reason these data are not independent is that two readings from the *same* patient share $u_{0i}$ and $u_{1i}$. For occasions $t \neq s$ on patient $i$ (with $\varepsilon_{ti} \perp \varepsilon_{si}$):
+
+$$
+\operatorname{Cov}(y_{ti}, y_{si}) = \tau_{00} + \tau_{01}\big(\text{time}_{ti} + \text{time}_{si}\big) + \tau_{11}\,\text{time}_{ti}\,\text{time}_{si}.
+$$
+
+Two readings on the same patient covary because they ride on the same intercept and slope draw; readings on *different* patients are independent, so their covariance is zero. This patterned within-patient covariance --- not a single number but a function of *when* the two readings were taken --- is precisely what a growth model captures and what ignoring the nesting would get wrong.
+
+### Why this beats "five independent observations"
+
+If we (wrongly) treated all $\sum_i n_i$ readings as independent, the effective sample size for the slope would be inflated and the standard error of $\hat\gamma_{10}$ would be far too small. The mixed model instead uses the **effective** information, deflated by the within-patient correlation. As on the previous page, the larger the intraclass correlation of the *intercept*, $\rho = \tau_{00}/(\tau_{00}+\sigma^2_\varepsilon)$ at $\text{time}=0$, the more redundant repeated readings are, and the more the naive standard error overstates precision.
+
+</div>
+</details>
+
+
+## Fitting a Growth Curve
+
+Both implementations below simulate the same 24-month diabetes cohort --- patients with their own intercepts and slopes --- then fit the random-intercept-and-slope model and read off the fixed time effect *and* the random-slope variance. In R the workhorse is `lme4::lmer`; in Python it is `statsmodels` `MixedLM`.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(lme4)
+library(tidyverse)
+
+# --- Simulate a longitudinal diabetes cohort -------------------------------
+# 120 patients, measured at months 0, 6, 12, 18, 24 (HbA1c %, lower is better).
+# Each patient has a random intercept AND a random slope for time.
+set.seed(15)
+
+N      <- 120
+times  <- c(0, 6, 12, 18, 24)
+g00    <- 8.4      # average HbA1c at enrollment
+g10    <- -0.045   # average change per month  (~ -1.08 over 24 months)
+
+tau00  <- 0.49     # intercept variance  (SD 0.70)
+tau11  <- 0.0006   # slope variance      (SD 0.0245 per month)
+tau01  <- -0.004   # intercept-slope covariance (higher starters improve faster)
+G      <- matrix(c(tau00, tau01, tau01, tau11), 2, 2)
+sigma  <- 0.18     # within-patient reading noise (SD)
+
+ranef  <- MASS::mvrnorm(N, mu = c(0, 0), Sigma = G)   # one (u0, u1) per patient
+
+cohort <- expand_grid(id = 1:N, time = times) |>
+  mutate(
+    u0    = ranef[id, 1],
+    u1    = ranef[id, 2],
+    hba1c = (g00 + u0) + (g10 + u1) * time + rnorm(n(), 0, sigma)
+  )
+
+# --- Fit the random-intercept-and-slope growth model -----------------------
+# (time | id)  ==  random intercept + random slope for time, with their
+# covariance freely estimated.
+m <- lmer(hba1c ~ time + (time | id), data = cohort)
+summary(m)
+
+# Fixed effects: the AVERAGE trajectory
+fixef(m)              # (Intercept) = gamma00,  time = gamma10 (per month)
+
+# Random effects: the HETEROGENEITY in trajectories
+VarCorr(m)            # SD of intercepts, SD of slopes, their correlation
+
+# Per-year fixed slope, easier to communicate to clinicians
+cat("Average change per YEAR:", round(fixef(m)["time"] * 12, 3), "% HbA1c\n")
+
+# --- A curved (quadratic) average trajectory -------------------------------
+# To LIKELIHOOD-RATIO test two models that differ in their FIXED effects, both
+# must be fit by ML, not REML: REML log-likelihoods are not comparable across
+# different fixed-effect designs. (anova() on REML fits silently refits with ML
+# and warns; we set REML = FALSE up front to make the valid comparison explicit.)
+m_ml      <- lmer(hba1c ~ time + (time | id),            data = cohort, REML = FALSE)
+m_quad_ml <- lmer(hba1c ~ time + I(time^2) + (time | id), data = cohort, REML = FALSE)
+anova(m_ml, m_quad_ml)   # does curvature improve fit? (LR test, valid under ML)
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# --- Simulate a longitudinal diabetes cohort -------------------------------
+# 120 patients, measured at months 0, 6, 12, 18, 24 (HbA1c %, lower is better).
+rng = np.random.default_rng(15)
+
+N     = 120
+times = np.array([0, 6, 12, 18, 24])
+g00, g10 = 8.4, -0.045          # average intercept; average slope (per month)
+
+tau00, tau11, tau01 = 0.49, 0.0006, -0.004
+G     = np.array([[tau00, tau01], [tau01, tau11]])
+sigma = 0.18
+
+ranef = rng.multivariate_normal([0, 0], G, size=N)    # (u0, u1) per patient
+
+rows = []
+for i in range(N):
+    u0, u1 = ranef[i]
+    for t in times:
+        y = (g00 + u0) + (g10 + u1) * t + rng.normal(0, sigma)
+        rows.append({"id": i, "time": t, "hba1c": y})
+cohort = pd.DataFrame(rows)
+
+# --- Fit the random-intercept-and-slope growth model -----------------------
+# re_formula="~time" adds a random slope for time; statsmodels estimates the
+# full 2x2 random-effects covariance G alongside the residual variance.
+m = smf.mixedlm("hba1c ~ time", data=cohort, groups="id",
+                re_formula="~time").fit(reml=True)
+print(m.summary())
+
+# Fixed effects: the AVERAGE trajectory
+print("gamma00 (enrollment level):", round(m.fe_params["Intercept"], 3))
+print("gamma10 (per month):       ", round(m.fe_params["time"], 4))
+print("Average change per YEAR:   ", round(m.fe_params["time"] * 12, 3), "% HbA1c")
+
+# Random effects: the HETEROGENEITY in trajectories.
+# m.cov_re holds the estimated G (in variance units); take sqrt for SDs.
+print("\nRandom-effects covariance G:\n", m.cov_re)
+print("SD of intercepts:", round(np.sqrt(m.cov_re.iloc[0, 0]), 3))
+print("SD of slopes:    ", round(np.sqrt(m.cov_re.iloc[1, 1]), 4))
+
+# --- A curved (quadratic) average trajectory -------------------------------
+cohort["time2"] = cohort["time"] ** 2
+m_quad = smf.mixedlm("hba1c ~ time + time2", data=cohort, groups="id",
+                     re_formula="~time").fit(reml=True)
+print(m_quad.summary())
+```
+
+:::
+
+Both fits should recover a fixed time effect near $\gamma_{10} = -0.045$ per month (about $-0.54\%$ HbA1c per year) and a *nonzero* slope SD --- the estimated heterogeneity in rates of change. The fixed effect answers "how fast does the typical patient improve?"; the slope variance answers "how much do patients differ in that improvement?" A growth model reports both, and a one-number summary that reported only the average would be hiding the second, policy-relevant story.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region fits the linear growth model $y_{ti} = \gamma_{00} + \gamma_{10}\,\text{time}_{ti} + u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}$ to monthly HbA1c, with $\text{time}$ in months. It reports $\hat\gamma_{00} = 8.40$, $\hat\gamma_{10} = -0.045$, $\hat\tau_{00} = 0.49$, $\hat\tau_{11} = 0.0006$, and $\hat\sigma^2_\varepsilon = 0.032$.
+
+(a) State the average change in HbA1c over a full year, in percentage points.
+(b) Using $\operatorname{Var}(y_{ti}) = \tau_{00} + 2\tau_{01}\,\text{time} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon$ with $\tau_{01}=0$, compute the variance of a reading at month 0 and at month 24. Which is larger, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Per month the average change is $-0.045$. Over 12 months: $-0.045 \times 12 = -0.54$ percentage points of HbA1c per year. The typical patient's HbA1c falls by about half a point a year.
+
+**(b)** With $\tau_{01}=0$ the variance is $\tau_{00} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon$.
+
+- At month 0: $0.49 + 0.0006\times 0^2 + 0.032 = 0.522$.
+- At month 24: $0.49 + 0.0006\times 24^2 + 0.032 = 0.49 + 0.0006\times 576 + 0.032 = 0.49 + 0.3456 + 0.032 = 0.8676$.
+
+The month-24 variance ($\approx 0.87$) is larger than the month-0 variance ($\approx 0.52$). The reason is the slope variance term $\tau_{11}\,\text{time}^2$: because each patient's personal slope multiplies time, individual trajectories fan apart, so the between-patient spread *grows* with time. This is the algebra behind the visual fan in the interactive.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Two analysts study the same diabetes cohort. Analyst A fits a **random-intercept-only** model, `lmer(hba1c ~ time + (1 | id))`. Analyst B fits a **random-intercept-and-slope** model, `lmer(hba1c ~ time + (time | id))`. Both report essentially the same fixed slope $\hat\gamma_{10} \approx -0.045$. Analyst A concludes "the program works the same for everyone." Is that conclusion justified? What can Analyst B see that Analyst A cannot?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Analyst A's conclusion is **not** justified. A random-intercept-only model *forces* every patient to share the single fixed slope $\gamma_{10}$ --- it has no parameter for between-patient differences in rate of change. So "everyone changes at the same rate" is an *assumption built into the model*, not a finding from the data. The model cannot distinguish "everyone truly improves at $-0.045$/month" from "some plunge, some worsen, and $-0.045$ is merely the average."
+
+Analyst B's model adds the random slope $u_{1i}$ and therefore estimates the **slope variance** $\tau_{11}$. If $\hat\tau_{11}$ is large (or a likelihood-ratio test of model B against model A is significant), there is real heterogeneity in rates of change: the program helps some patients far more than others, even though the *average* effect matches Analyst A's. The fixed slope being equal across the two models is expected --- adding a random slope changes the *uncertainty* and *heterogeneity* story, not usually the average. Only Analyst B can quantify how much patients differ, which is exactly the information a region needs to decide whether to target the program at non-responders.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A fall-prevention program for elderly patients is evaluated with a **quadratic** growth model for the number of balance-test errors (lower is better), with $\text{time}$ in months: $\hat\gamma_{00} = 6.0$, $\hat\gamma_{10} = -0.50$, $\hat\gamma_{20} = +0.015$.
+
+(a) Write the fitted average trajectory and compute the predicted error count at months 0, 6, and 12.
+(b) Find the instantaneous rate of change at month 0 and at month 12. What does the sign change (or softening) tell you clinically?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The fitted average trajectory is $\hat{y} = 6.0 - 0.50\,\text{time} + 0.015\,\text{time}^2$.
+
+- Month 0: $6.0 - 0.50(0) + 0.015(0) = 6.00$ errors.
+- Month 6: $6.0 - 0.50(6) + 0.015(36) = 6.0 - 3.0 + 0.54 = 3.54$ errors.
+- Month 12: $6.0 - 0.50(12) + 0.015(144) = 6.0 - 6.0 + 2.16 = 2.16$ errors.
+
+**(b)** The instantaneous slope is the derivative $\gamma_{10} + 2\gamma_{20}\,\text{time} = -0.50 + 0.03\,\text{time}$.
+
+- Month 0: $-0.50 + 0.03(0) = -0.50$ errors/month (improving fast).
+- Month 12: $-0.50 + 0.03(12) = -0.50 + 0.36 = -0.14$ errors/month (still improving, but much more slowly).
+
+Clinically: patients improve rapidly at first and then **plateau**. The improvement slope softens from $-0.50$ to $-0.14$ over the year --- the easy gains come early, after which the curve flattens toward a floor. (Note the curve would eventually turn *upward* if extrapolated --- a reminder from the caution box not to read a quadratic beyond the observed window: the model has no knowledge that error counts cannot rise again.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the **random slope** off and the **intercept SD** to a large value. Describe the picture. Then turn the random slope on and raise the **slope variance**. Explain, using the variance formula $\operatorname{Var}(y_{ti}) = \tau_{00} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon$ (taking $\tau_{01}=0$), why the two pictures differ in how the spread behaves *over time*.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Random slope off, large intercept SD:** the thin patient lines are widely spread *vertically* but run **parallel** to one another and to the red average. The vertical gap between any two patients is the same at month 0 as at month 24 --- the spread is constant over time. In the formula, $\tau_{11}=0$, so $\operatorname{Var}(y_{ti}) = \tau_{00} + \sigma^2_\varepsilon$, which does **not** depend on time. Big $\tau_{00}$ just makes that constant large.
+
+**Random slope on, large slope variance:** the lines start close together near enrollment and **fan apart** as months pass. Now $\tau_{11} > 0$, so $\operatorname{Var}(y_{ti}) = \tau_{00} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon$ *increases with time* --- and increases as the *square* of time, so the widening accelerates. At month 0 the time-dependent term is zero and the spread is just $\tau_{00}+\sigma^2_\varepsilon$; by month 24 the $\tau_{11}\,(24)^2$ term dominates. The difference between the two pictures is exactly the presence of the $\tau_{11}\,\text{time}^2$ term: random intercepts shift whole lines up or down (constant spread), while random slopes tilt them (growing spread).
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Longitudinal data are a two-level structure: repeated measurements (level 1) nested within individuals (level 2), with *time* as the level-1 predictor --- repeated readings on one person are correlated and must not be treated as independent.
+- A growth model gives each individual a random *intercept* (their own baseline) and a random *slope* for time (their own rate of change), so it describes a whole population of trajectories rather than a single line.
+- The fixed time effect $\gamma_{10}$ is the *average* trajectory; the slope variance $\tau_{11}$ is the *heterogeneity* in change. The same average can hide near-uniform response ($\tau_{11}\approx 0$) or wildly different responders ($\tau_{11}$ large) --- always report both.
+- Random slopes make the between-individual variance grow with time, $\operatorname{Var}(y_{ti}) = \tau_{00} + 2\tau_{01}\,\text{time} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon$ --- the algebra behind the fanning trajectories.
+- A quadratic term in time captures curved growth (fast early improvement, then a plateau); center your time variable so the intercept is interpretable, and never extrapolate a fitted curve past the observed window.
+:::
+
+## What Comes Next
+
+You can now read repeated measurements as nested data, write a growth model with a random intercept and a random slope for time, and separate the *average* trajectory from the *heterogeneity* around it --- the two questions a longitudinal program evaluation must answer at once. That completes the multilevel arc of the [Econometrician's Toolkit](../index.qmd): from variance components and the intraclass correlation, through random effects, to change over time. Return to the [book home](../index.qmd) to continue with the Toolkit's remaining modules, where these mixed-model foundations connect back to the causal-inference designs --- difference-in-differences, instrumental variables, and beyond --- that opened the book.

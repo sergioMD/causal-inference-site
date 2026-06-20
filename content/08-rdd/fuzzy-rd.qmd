@@ -1,0 +1,1155 @@
+---
+title: "Fuzzy Regression Discontinuity"
+subtitle: "Imperfect compliance and RD as instrumental variables"
+---
+
+## When Crossing the Cutoff Only *Nudges* Treatment
+
+The previous pages built the sharp regression discontinuity design on a single clean fact: at the cutoff, the probability of treatment jumps from 0 to 1. Below the threshold, *nobody* is treated; above it, *everybody* is. That all-or-nothing jump is what let us read the treatment effect straight off the vertical gap in the outcome.
+
+Real Swedish health policy rarely cooperates. Consider a concrete case. Several of the country's 21 *regioner* run an **intensive diabetes-coordination program** (*intensiv diabetessamordning*) for patients whose blood sugar has drifted out of control. To target scarce *distriktssköterskor* (district nurses), a region sets an **eligibility threshold**: any Type 2 diabetes patient whose HbA1c rises to **70 mmol/mol** or above is automatically *invited* and strongly encouraged --- their vårdcentral phones them, books the first appointment, and waives the usual fee. Patients below 70 are not invited.
+
+But invitation is not enrollment. Some invited patients decline: they feel fine, they distrust the system, they cannot take time off work. And a few patients *below* the threshold push their way in anyway --- an attentive physician refers them, or they ask for the program by name. So crossing the 70 mmol/mol line does not flip treatment from 0 to 1. It flips the *probability* of treatment from, say, 25% to 75% --- a real, sharp, but **partial** jump.
+
+This is a **fuzzy regression discontinuity** design. The cutoff still creates an abrupt, quasi-random change --- but in the *odds* of treatment, not in treatment itself. The entire trick of this page is that a fuzzy RD is exactly an instrumental-variables problem in disguise: "landing above the cutoff" is an instrument for "actually enrolling," and the RD estimate is a Wald/IV ratio. Everything you learned in Module 7 about LATE, compliers, and weak instruments comes back, now localized to the cutoff.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Distinguish a *sharp* RD (treatment jumps 0 to 1) from a *fuzzy* RD (treatment *probability* jumps by less than 1) and recognize fuzzy designs in Swedish primary-care eligibility rules.
+- Express the fuzzy-RD estimator as the ratio of the **jump in the outcome** (reduced form) to the **jump in treatment probability** (first stage).
+- Connect that ratio to instrumental variables, identifying it as a **Wald estimator** that recovers a **LATE for compliers at the cutoff**.
+- State the assumptions a fuzzy RD inherits from IV --- a nonzero first-stage jump (relevance) and exclusion at the cutoff --- and explain when each is plausible or fragile.
+- Read how the estimate's *variance* explodes as the first-stage jump shrinks, the RD echo of the weak-instrument problem.
+:::
+
+
+## Two Jumps, One Ratio
+
+Let $X_i$ be the **running variable** --- here, a patient's HbA1c at the moment of screening (mmol/mol) --- and let $c = 70$ be the cutoff. Let $D_i \in \{0, 1\}$ indicate whether the patient actually **enrolls** in the coordination program, and let $Y_i$ be a downstream outcome we care about: HbA1c twelve months later (lower is better).
+
+In a *sharp* design, $D_i = \mathbf{1}\{X_i \geq c\}$ --- treatment is a deterministic function of the running variable. In a *fuzzy* design, that equality breaks. Instead, the *probability* of treatment jumps at the cutoff:
+
+$$
+\lim_{x \downarrow c} P(D_i = 1 \mid X_i = x) \;\neq\; \lim_{x \uparrow c} P(D_i = 1 \mid X_i = x).
+$$
+
+**Read this as**: "The probability of enrolling, as we approach the cutoff from just *above*, differs from the probability as we approach from just *below*." The size of that difference --- call it the **first-stage jump** --- is the share of patients whose enrollment status is actually moved by crossing the line.
+
+There are now *two* discontinuities to measure at $c$, not one.
+
+::: {.glass-card .glass-card--definition}
+Define the two jumps at the cutoff using one-sided limits:
+
+- The **jump in the outcome** (the *reduced form*):
+$$
+\tau_Y \;=\; \lim_{x \downarrow c} E[Y_i \mid X_i = x] \;-\; \lim_{x \uparrow c} E[Y_i \mid X_i = x].
+$$
+
+- The **jump in treatment probability** (the *first stage*):
+$$
+\tau_D \;=\; \lim_{x \downarrow c} E[D_i \mid X_i = x] \;-\; \lim_{x \uparrow c} E[D_i \mid X_i = x].
+$$
+
+The **fuzzy-RD estimator** is their ratio:
+
+$$
+\tau_{\text{FRD}} \;=\; \frac{\tau_Y}{\tau_D}
+\;=\; \frac{\text{jump in outcome at } c}{\text{jump in treatment probability at } c}.
+$$
+:::
+
+**Read the ratio as**: "The fuzzy-RD effect is how much the outcome jumps at the cutoff, *divided by* how much the treatment probability jumps." If crossing the line lowered twelve-month HbA1c by $\tau_Y = -3.0$ mmol/mol on average, but it only moved the enrollment probability by $\tau_D = 0.50$, then enrolling itself must account for a jump of $\tau_Y / \tau_D = -3.0 / 0.50 = -6.0$ mmol/mol *per enrolled complier*. The reduced form mixes together patients who enrolled and patients who did not; dividing by the first stage **rescales** the diluted reduced-form effect back up to the effect on those whose behavior the cutoff actually changed.
+
+::: {.glass-card .glass-card--insight}
+The sharp design is the special case $\tau_D = 1$: crossing the cutoff moves *everyone* into treatment, the denominator is one, and the ratio collapses to the simple outcome jump $\tau_Y$. Fuzzy RD generalizes sharp RD by allowing $0 < \tau_D < 1$. The smaller $\tau_D$ is, the *harder* the cutoff is working to move behavior --- and, as we will see, the noisier the estimate becomes.
+:::
+
+The contrast is easiest to see side by side. In a **sharp** design the first stage is a full step from 0 to 1 ($\tau_D = 1$); in a **fuzzy** design it is a partial step --- here from 0.25 to 0.75, so $\tau_D = 0.50$. The denominator of the fuzzy-RD ratio is exactly the height of that step.
+
+```{ojs}
+//| echo: false
+
+// Static side-by-side first-stage comparison: SHARP (0 → 1, τ_D = 1) vs
+// FUZZY (0.25 → 0.75, τ_D = 0.5) on identical axes. Every mark is driven by
+// data rows carrying a `kind` field so faceting is unambiguous. Pure literals.
+frd_sharpFuzzy = {
+  const c = 70;
+  // step segments: below (L, slate) and above (R, red), per design
+  const steps = [
+    { kind: "sharp", side: "L", x: 56, y: 0 }, { kind: "sharp", side: "L", x: c, y: 0 },
+    { kind: "sharp", side: "R", x: c, y: 1 }, { kind: "sharp", side: "R", x: 84, y: 1 },
+    { kind: "fuzzy", side: "L", x: 56, y: 0.25 }, { kind: "fuzzy", side: "L", x: c, y: 0.25 },
+    { kind: "fuzzy", side: "R", x: c, y: 0.75 }, { kind: "fuzzy", side: "R", x: 84, y: 0.75 }
+  ];
+  const cutoff = [{ kind: "sharp" }, { kind: "fuzzy" }];
+  const brackets = [
+    { kind: "sharp", y1: 0, y2: 1 },
+    { kind: "fuzzy", y1: 0.25, y2: 0.75 }
+  ];
+  const labels = [
+    { kind: "sharp", x: 71, y: 0.5, t: "τ_D = 1" },
+    { kind: "fuzzy", x: 71, y: 0.5, t: "τ_D = 0.5" }
+  ];
+  return { steps, cutoff, brackets, labels };
+}
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(640, width),
+  height: 250,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 28,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  fx: { label: null, domain: ["sharp", "fuzzy"], tickFormat: d => d === "sharp" ? "Sharp (τ_D = 1)" : "Fuzzy (τ_D = 0.5)" },
+  x: { label: "Screening HbA1c (mmol/mol)", domain: [55, 85], ticks: [60, 70, 80] },
+  y: { label: "P(treated)", domain: [-0.08, 1.12], grid: true },
+  marks: [
+    Plot.ruleX(frd_sharpFuzzy.cutoff, { fx: "kind", x: () => 70, stroke: "#1c1c1a", strokeDasharray: "4,4", strokeWidth: 1.2 }),
+    Plot.line(frd_sharpFuzzy.steps, {
+      fx: "kind", x: "x", y: "y", z: d => d.kind + d.side,
+      stroke: d => d.side === "L" ? "#3d5a6c" : "#990000", strokeWidth: 3.5
+    }),
+    // vertical bracket showing the jump τ_D on each panel
+    Plot.ruleX(frd_sharpFuzzy.brackets, { fx: "kind", x: () => 70, y1: "y1", y2: "y2", stroke: "#2e6f40", strokeWidth: 2, strokeDasharray: "2,3" }),
+    Plot.text(frd_sharpFuzzy.labels, {
+      fx: "kind", x: "x", y: "y", text: "t", fill: "#2e6f40", fontWeight: 700, fontSize: 12,
+      textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+Both panels show the first stage --- $P(\text{treated})$ against the running variable. <span style="color:#3d5a6c; font-weight:700;">Below the cutoff</span> and <span style="color:#990000; font-weight:700;">above</span> it, with the <span style="color:#2e6f40; font-weight:700;">green</span> dashed segment marking the jump $\tau_D$. Sharp RD is the limiting case where that jump fills the whole 0-to-1 gap.
+:::
+
+
+## Fuzzy RD *Is* Instrumental Variables
+
+Here is the conceptual payoff. Define a binary indicator for being on the treated side of the cutoff:
+
+$$
+Z_i \;=\; \mathbf{1}\{X_i \geq c\}.
+$$
+
+In a neighborhood of the cutoff, $Z_i$ is *as good as randomly assigned* --- patients who screen at 69.8 and 70.2 mmol/mol are, by the RD logic, essentially exchangeable except for which side of the line they land on. Yet $Z_i$ shifts the probability of treatment ($D_i$) without (we will argue) directly affecting the outcome ($Y_i$) any other way. **That is exactly the job description of an instrument.** Look back at Module 7:
+
+- **Relevance**: the instrument must move treatment. Here that is precisely the first-stage jump $\tau_D \neq 0$.
+- **Exclusion**: the instrument may affect the outcome *only through* treatment. Here: being just above 70 mmol/mol may change twelve-month HbA1c only by changing whether the patient enrolls --- not through any other channel that activates discontinuously at 70.
+- **Independence / as-good-as-random**: guaranteed *locally* by the continuity of all other potential confounders at the cutoff (the RD design's core).
+- **Monotonicity**: crossing the cutoff (being invited) never *deters* anyone from enrolling who would otherwise have enrolled --- no "defiers."
+
+The same structure drawn as a graph makes the two assumptions concrete. The instrument $Z$ (landing above the cutoff) acts on the outcome $Y$ **only by way of** $D$ (enrollment) --- the green pipeline. Relevance is the green $Z \rightarrow D$ arrow being real (a nonzero first stage); exclusion is the absence of any *direct* $Z \rightarrow Y$ shortcut, drawn here as a crossed-out red arrow.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Self-contained static DAG drawing helper for this page (page-tag prefixed). ──
+// Pure function of d3 only: builds an SVG with d3.create and returns the node.
+//   nodes: [{id, x, y, label, caption}]  x,y normalized to [0,1] (padded so
+//          nothing clips); `label` short token inside the node, `caption` full
+//          word drawn below it.
+//   edges: [{source, target, kind}]  kind ∈
+//            "causal"  → green (#2e6f40)
+//            "biasing" → red   (#b3000b)   an open/forbidden non-causal edge
+//            "blocked" → grey  (#79766e, dashed)
+//          set `crossed: true` on an edge to strike it through (excluded path).
+//   conditioned: [id, ...]  drawn as rounded SQUARES.
+frd_drawDAG = function ({ nodes, edges, width = 460, height = 210, conditioned = [] }) {
+  const pad = 48;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" : k === "biasing" ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "frd-arrow-green" : k === "biasing" ? "frd-arrow-red" : "frd-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["frd-arrow-green", "#2e6f40"], ["frd-arrow-red", "#b3000b"], ["frd-arrow-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    eg.append("line")
+      .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb)
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+    if (e.crossed) {
+      const mx = (xa + xb) / 2, my = (ya + yb) / 2;
+      const px = -uy, py = ux;          // perpendicular
+      eg.append("line")
+        .attr("x1", mx + px * 9).attr("y1", my + py * 9)
+        .attr("x2", mx - px * 9).attr("y2", my - py * 9)
+        .attr("stroke", "#b3000b").attr("stroke-width", 3.5);
+    }
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Static IV DAG for the fuzzy-RD setting: Z → D → Y, with the forbidden
+// direct Z → Y exclusion-violating path drawn as a crossed-out red arrow.
+frd_drawDAG({
+  width: Math.min(500, width),
+  height: 200,
+  nodes: [
+    { id: "Z", x: 0.07, y: 0.30, label: "Z", caption: "Above cutoff" },
+    { id: "D", x: 0.5,  y: 0.30, label: "D", caption: "Enroll" },
+    { id: "Y", x: 0.93, y: 0.30, label: "Y", caption: "12-mo HbA1c" }
+  ],
+  edges: [
+    { source: "Z", target: "D", kind: "causal" },
+    { source: "D", target: "Y", kind: "causal" },
+    { source: "Z", target: "Y", kind: "biasing", crossed: true }
+  ]
+})
+```
+
+::: {.aside}
+The instrument $Z$ (above the 70 mmol/mol cutoff) is *relevant* if the green $Z \rightarrow D$ arrow is real (first stage $\tau_D \neq 0$) and *valid* if the lower red $Z \rightarrow Y$ arrow truly is absent (**exclusion** --- the cutoff moves the outcome only through enrollment). The fuzzy-RD estimate divides the $Z \rightarrow Y$ reduced-form jump by the $Z \rightarrow D$ first-stage jump to recover the $D \rightarrow Y$ effect.
+:::
+
+Under these conditions, the fuzzy-RD ratio is a **Wald estimator** (the reduced-form jump divided by the first-stage jump --- the IV ratio from Module 7), and it identifies a **Local Average Treatment Effect (LATE)**:
+
+::: {.glass-card .glass-card--definition}
+The fuzzy-RD estimand --- the population quantity we are trying to estimate --- is the Wald ratio of reduced form to first stage,
+
+$$
+\tau_{\text{FRD}} \;=\; \frac{\tau_Y}{\tau_D}
+\;=\; \frac{\lim_{x\downarrow c}E[Y|X{=}x] - \lim_{x\uparrow c}E[Y|X{=}x]}
+            {\lim_{x\downarrow c}E[D|X{=}x] - \lim_{x\uparrow c}E[D|X{=}x]},
+$$
+
+and under independence, exclusion, relevance, and monotonicity it equals
+
+$$
+\tau_{\text{FRD}} \;=\; E\big[\,Y_i(1) - Y_i(0) \;\big|\; \text{complier},\; X_i = c\,\big].
+$$
+:::
+
+**Read the second line as**: "The fuzzy-RD ratio equals the average treatment effect among *compliers* --- patients whose enrollment decision is flipped by crossing the cutoff --- evaluated *at the cutoff*." It is a doubly local estimand: local in the IV sense (only compliers, not always-takers or never-takers) and local in the RD sense (only patients near the 70 mmol/mol threshold). It tells us nothing directly about a patient screening at 55, nor about an always-taker who would have enrolled regardless of invitation.
+
+Who are the four groups in this Swedish setting?
+
+- **Compliers**: enroll *because* they were invited (crossed the cutoff). The program would not have reached them otherwise. The estimand is about exactly these patients.
+- **Always-takers**: enroll regardless --- the patient just below 70 whose doctor pushed them in.
+- **Never-takers**: decline regardless --- invited at 70+, but never show up.
+- **Defiers**: would enroll *only if not invited* and refuse *because* invited. Monotonicity rules these out, and here that is eminently reasonable: an invitation does not plausibly drive people away.
+
+The four types are exactly the four combinations of *would-enroll-if-not-invited* ($D_i(0)$) and *would-enroll-if-invited* ($D_i(1)$). The quadrant below lays them out; only the **complier** cell (top-right, green) is moved by crossing the cutoff, and the **defier** cell (bottom-left) is struck out by monotonicity. This is why the first-stage jump $\tau_D$ turns out to equal the *share of compliers* at the cutoff (derived in the Math Details).
+
+```{ojs}
+//| echo: false
+
+// Static 2x2 compliance-type quadrant: D(0) (would enroll if NOT invited) on
+// rows, D(1) (would enroll if invited) on columns. Only compliers are moved by
+// the cutoff; defiers are ruled out by monotonicity.
+html`<div style="margin:1.25rem 0; max-width:34rem;">
+  <table class="science-table" style="margin:0;">
+    <thead>
+      <tr>
+        <th style="text-align:left; background:#f6f5f1;"></th>
+        <th>D(1) = 0<br><span style="font-weight:400; text-transform:none; letter-spacing:0;">declines if invited</span></th>
+        <th>D(1) = 1<br><span style="font-weight:400; text-transform:none; letter-spacing:0;">enrolls if invited</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th style="text-align:left; background:#f6f5f1; text-transform:none; letter-spacing:0; font-size:0.74rem;">D(0) = 0<br><span style="font-weight:400;">declines if not invited</span></th>
+        <td style="background:#f6f5f1; color:#79766e;"><strong>Never-taker</strong><br><span style="font-size:0.8rem;">never enrolls<br>(0 → 0)</span></td>
+        <td style="background:rgba(46,111,64,0.10); color:#2e6f40;"><strong>Complier</strong><br><span style="font-size:0.8rem;">enrolls iff invited<br>(0 → 1) — the estimand</span></td>
+      </tr>
+      <tr>
+        <th style="text-align:left; background:#f6f5f1; text-transform:none; letter-spacing:0; font-size:0.74rem;">D(0) = 1<br><span style="font-weight:400;">enrolls if not invited</span></th>
+        <td style="background:rgba(179,0,11,0.06); color:#b3000b;"><strong>Defier</strong> <span style="font-size:0.78rem;">(1 → 0)</span><br><span style="font-size:0.8rem; text-decoration:line-through;">ruled out by monotonicity</span></td>
+        <td style="background:#f6f5f1; color:#79766e;"><strong>Always-taker</strong><br><span style="font-size:0.8rem;">always enrolls<br>(1 → 1)</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e; margin-top:0.4rem; line-height:1.4;">
+    Rows: enrollment if <em>not</em> invited, D(0). Columns: enrollment if invited, D(1). Only the green
+    <strong>complier</strong> cell has its enrollment flipped by the cutoff, so it alone defines the fuzzy-RD LATE.
+  </div>
+</div>`
+```
+
+
+## See It: Two Stacked Jumps and Their Ratio
+
+The interactive below makes the fuzzy-RD machinery visible. The **top panel** is the *first stage*: the share of patients enrolled as a function of HbA1c at screening. The **bottom panel** is the *reduced form*: twelve-month HbA1c as a function of the same running variable. Both show a jump at the cutoff (the dashed vertical line at 70 mmol/mol). The fuzzy-RD estimate is the ratio of the bottom jump to the top jump, reported live --- together with a Monte Carlo standard error so you can watch precision degrade as the first-stage jump shrinks.
+
+Drag the **first-stage jump** slider toward zero and watch the denominator collapse: the point estimate stays roughly centered, but its confidence band blows up. That is the weak-instrument problem of Module 7, reappearing at the cutoff.
+
+::: {.callout-note appearance="simple"}
+**Clinical anchor.** HbA1c measures average blood sugar; normal is below 42 mmol/mol and 70+ signals poor control. *Lower is better*, so a **negative** effect (and a negative "true complier effect" slider) means the program **improves** the outcome.
+:::
+
+::: {.interactive-container}
+
+#### The Fuzzy-RD Ratio: First Stage over Reduced Form
+
+::: {.callout-tip appearance="simple"}
+**Start here:** drag the **First-stage jump** slider toward zero and watch the *Monte Carlo SE* tile balloon (and turn red) while the point estimate stays put. The full step-by-step tour is below the plots.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rdfuzzy_firstStage = Inputs.range([0.05, 1.0], {
+  value: 0.5,
+  step: 0.05,
+  width: 320,
+  label: "First-stage jump (enrollment prob.)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdfuzzy_trueLATE = Inputs.range([-10, 2], {
+  value: -6,
+  step: 0.5,
+  width: 320,
+  label: "True complier effect (mmol/mol, neg = helps)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdfuzzy_noise = Inputs.range([1, 8], {
+  value: 4,
+  step: 0.5,
+  width: 320,
+  label: "Outcome noise (SD, mmol/mol)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdfuzzy_n = Inputs.range([200, 4000], {
+  value: 1200,
+  step: 100,
+  width: 320,
+  label: "Sample size (patients)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdfuzzy_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e;
+    margin:-0.4rem 0 0.2rem; line-height:1.4;">
+  Press repeatedly to see the estimate jitter within roughly ±SE — most visible when the
+  first-stage jump is small.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Cutoff and base parameters for the screening DGP ──
+rdfuzzy_cutoff = 70                 // HbA1c eligibility threshold (mmol/mol)
+rdfuzzy_baseBelow = 0.25           // enrollment prob just BELOW cutoff (always-taker-ish)
+rdfuzzy_outcomeSlope = 0.45        // smooth dependence of 12-mo HbA1c on screening HbA1c
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Generate one patient sample deterministically per `rdfuzzy_draw` click ──
+// Each patient: running variable X (screening HbA1c) ~ Uniform around the cutoff.
+// Instrument Z = 1{X >= c}. Treatment probability jumps by τ_D at the cutoff;
+// the realized D is a coin flip at that probability (imperfect compliance).
+// Twelve-month outcome Y depends SMOOTHLY on X (a confound that RD controls for
+// via continuity) plus the true complier effect applied to those who enroll.
+rdfuzzy_sample = {
+  rdfuzzy_draw;                    // re-run on button click (acyclic reference)
+  const n = rdfuzzy_n;
+  const c = rdfuzzy_cutoff;
+  const tauD = rdfuzzy_firstStage;
+  const late = rdfuzzy_trueLATE;
+  const sd = rdfuzzy_noise;
+  const rnorm = d3.randomNormal(0, 1);
+
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    // Screening HbA1c spread symmetrically around the cutoff (55..85).
+    const x = c - 15 + 30 * Math.random();
+    const z = x >= c ? 1 : 0;
+    // Enrollment probability: base below, base + τ_D above, clipped to [0,1].
+    const pD = Math.min(1, Math.max(0, rdfuzzy_baseBelow + tauD * z));
+    const d = Math.random() < pD ? 1 : 0;
+    // Smooth baseline: sicker-at-screening patients have higher 12-mo HbA1c.
+    const baseline = c + rdfuzzy_outcomeSlope * (x - c);
+    const y = baseline + (d === 1 ? late : 0) + sd * rnorm();
+    rows.push({ x, z, d, y, pD });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Local-linear-ish RD estimates via one-sided OLS within a bandwidth ──
+// We fit a simple line on each side of the cutoff for BOTH D (first stage) and
+// Y (reduced form), then take the difference of the fitted intercepts at c.
+rdfuzzy_fit = {
+  const c = rdfuzzy_cutoff;
+  const h = 12;                    // bandwidth (mmol/mol) around the cutoff
+  const within = rdfuzzy_sample.filter(r => Math.abs(r.x - c) <= h);
+  const left  = within.filter(r => r.x < c);
+  const right = within.filter(r => r.x >= c);
+
+  // Ordinary least squares slope+intercept for an outcome column, recentered at c.
+  const ols = (rows, key) => {
+    const xs = rows.map(r => r.x - c);
+    const ys = rows.map(r => r[key]);
+    const mx = d3.mean(xs), my = d3.mean(ys);
+    let sxx = 0, sxy = 0;
+    for (let i = 0; i < xs.length; i++) {
+      sxx += (xs[i] - mx) ** 2;
+      sxy += (xs[i] - mx) * (ys[i] - my);
+    }
+    const slope = sxx > 0 ? sxy / sxx : 0;
+    const intercept = my - slope * mx;   // fitted value AT x = c
+    return { slope, intercept, n: rows.length };
+  };
+
+  const dL = ols(left, "d"),  dR = ols(right, "d");
+  const yL = ols(left, "y"),  yR = ols(right, "y");
+
+  const tauD = dR.intercept - dL.intercept;   // first-stage jump
+  const tauY = yR.intercept - yL.intercept;   // reduced-form jump
+  const frd  = tauD !== 0 ? tauY / tauD : NaN; // fuzzy-RD ratio
+
+  return { h, dL, dR, yL, yR, tauD, tauY, frd, nL: left.length, nR: right.length };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Binned scatter points for plotting (one dot per HbA1c bin per side) ──
+rdfuzzy_bins = {
+  const c = rdfuzzy_cutoff;
+  const binW = 1.5;
+  const grouped = d3.rollups(
+    rdfuzzy_sample,
+    v => ({
+      x: d3.mean(v, r => r.x),
+      d: d3.mean(v, r => r.d),
+      y: d3.mean(v, r => r.y),
+      n: v.length
+    }),
+    r => Math.floor((r.x - c) / binW)
+  );
+  return grouped.map(g => g[1]).sort((a, b) => a.x - b.x);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fitted line segments for each panel/side, drawn within the bandwidth ──
+rdfuzzy_lineData = {
+  const c = rdfuzzy_cutoff;
+  const h = rdfuzzy_fit.h;
+  const seg = (fit, side, panel) => {
+    const x1 = side === "left" ? c - h : c;
+    const x2 = side === "left" ? c : c + h;
+    const val = x => fit.intercept + fit.slope * (x - c);
+    return [
+      { x: x1, v: val(x1), side, panel },
+      { x: x2, v: val(x2), side, panel }
+    ];
+  };
+  return [
+    ...seg(rdfuzzy_fit.dL, "left",  "first"),
+    ...seg(rdfuzzy_fit.dR, "right", "first"),
+    ...seg(rdfuzzy_fit.yL, "left",  "reduced"),
+    ...seg(rdfuzzy_fit.yR, "right", "reduced")
+  ];
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── TOP PANEL: first stage — enrollment probability vs screening HbA1c ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 230,
+  marginLeft: 64,
+  marginTop: 24,
+  marginRight: 16,
+  marginBottom: 36,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Screening HbA1c (mmol/mol)", domain: [55, 85] },
+  y: { label: "P(enroll)", domain: [-0.05, 1.05], grid: true },
+  color: { domain: ["below cutoff", "above cutoff"], range: ["#3d5a6c", "#990000"], legend: true },
+  marks: [
+    Plot.ruleX([rdfuzzy_cutoff], { stroke: "#1c1c1a", strokeDasharray: "4,4", strokeWidth: 1.5 }),
+    Plot.dot(rdfuzzy_bins, {
+      x: "x", y: "d",
+      r: d => Math.max(2, Math.sqrt(d.n)),
+      fill: d => d.x >= rdfuzzy_cutoff ? "above cutoff" : "below cutoff",
+      fillOpacity: 0.5,
+      title: d => `HbA1c ≈ ${d.x.toFixed(1)}\nP(enroll) = ${d.d.toFixed(2)}\nn = ${d.n}`
+    }),
+    Plot.line(rdfuzzy_lineData.filter(d => d.panel === "first"), {
+      x: "x", y: "v", z: "side",
+      stroke: d => d.side === "left" ? "#3d5a6c" : "#990000",
+      strokeWidth: 3
+    }),
+    Plot.text([{ label: `τ_D = ${rdfuzzy_fit.tauD.toFixed(2)}` }], {
+      text: "label",
+      frameAnchor: "top-left", dx: 8, dy: 6, textAnchor: "start",
+      fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// ── BOTTOM PANEL: reduced form — 12-month HbA1c vs screening HbA1c ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 230,
+  marginLeft: 64,
+  marginTop: 24,
+  marginRight: 16,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Screening HbA1c (mmol/mol)", domain: [55, 85] },
+  y: { label: "12-mo HbA1c (mmol/mol)", grid: true },
+  color: { domain: ["below cutoff", "above cutoff"], range: ["#3d5a6c", "#990000"], legend: true },
+  marks: [
+    Plot.ruleX([rdfuzzy_cutoff], { stroke: "#1c1c1a", strokeDasharray: "4,4", strokeWidth: 1.5 }),
+    Plot.dot(rdfuzzy_bins, {
+      x: "x", y: "y",
+      r: d => Math.max(2, Math.sqrt(d.n)),
+      fill: d => d.x >= rdfuzzy_cutoff ? "above cutoff" : "below cutoff",
+      fillOpacity: 0.5,
+      title: d => `HbA1c ≈ ${d.x.toFixed(1)}\n12-mo HbA1c = ${d.y.toFixed(1)}\nn = ${d.n}`
+    }),
+    Plot.line(rdfuzzy_lineData.filter(d => d.panel === "reduced"), {
+      x: "x", y: "v", z: "side",
+      stroke: d => d.side === "left" ? "#3d5a6c" : "#990000",
+      strokeWidth: 3
+    }),
+    Plot.text([{ label: `τ_Y = ${rdfuzzy_fit.tauY.toFixed(2)}` }], {
+      text: "label",
+      frameAnchor: "top-left", dx: 8, dy: 6, textAnchor: "start",
+      fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Monte Carlo SE of the fuzzy-RD ratio at the current settings ──
+// Re-draw the experiment many times (independent of the displayed sample) and
+// take the SD of the resulting ratios. This visualizes how the denominator τ_D
+// governs precision: small τ_D => large SE (the weak-instrument problem).
+rdfuzzy_mc = {
+  rdfuzzy_draw;                    // refresh with the displayed sample too
+  const reps = 250;
+  const c = rdfuzzy_cutoff;
+  const h = 12;
+  const n = rdfuzzy_n;
+  const tauD = rdfuzzy_firstStage;
+  const late = rdfuzzy_trueLATE;
+  const sd = rdfuzzy_noise;
+  const rnorm = d3.randomNormal(0, 1);
+
+  const olsIntercept = (xs, ys) => {
+    const mx = d3.mean(xs), my = d3.mean(ys);
+    let sxx = 0, sxy = 0;
+    for (let i = 0; i < xs.length; i++) {
+      sxx += (xs[i] - mx) ** 2;
+      sxy += (xs[i] - mx) * (ys[i] - my);
+    }
+    const slope = sxx > 0 ? sxy / sxx : 0;
+    return my - slope * mx;
+  };
+
+  const ratios = [];
+  for (let r = 0; r < reps; r++) {
+    const xl = [], dl = [], yl = [], xr = [], dr = [], yr = [];
+    for (let i = 0; i < n; i++) {
+      const x = c - 15 + 30 * Math.random();
+      if (Math.abs(x - c) > h) continue;
+      const z = x >= c ? 1 : 0;
+      const pD = Math.min(1, Math.max(0, rdfuzzy_baseBelow + tauD * z));
+      const d = Math.random() < pD ? 1 : 0;
+      const y = c + rdfuzzy_outcomeSlope * (x - c) + (d ? late : 0) + sd * rnorm();
+      if (z === 0) { xl.push(x - c); dl.push(d); yl.push(y); }
+      else         { xr.push(x - c); dr.push(d); yr.push(y); }
+    }
+    const tD = olsIntercept(xr, dr) - olsIntercept(xl, dl);
+    const tY = olsIntercept(xr, yr) - olsIntercept(xl, yl);
+    if (Math.abs(tD) > 0.02) ratios.push(tY / tD);
+  }
+  return { mean: d3.mean(ratios), se: d3.deviation(ratios), reps: ratios.length };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Live numeric readout: τ_D, τ_Y, the ratio, and its Monte Carlo SE ──
+{
+  const f = rdfuzzy_fit;
+  const mc = rdfuzzy_mc;
+  const fmt = (v, d = 2) => `${v >= 0 ? "+" : ""}${v.toFixed(d)}`;
+  const tile = (name, val, color, bg) => html`<div style="
+      text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem; background: ${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e; min-height:2.1em; display:flex; align-items:center;
+        justify-content:center;">${name}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${val}</div>
+  </div>`;
+
+  const weak = Math.abs(f.tauD) < 0.15;
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${tile("First stage τ_D", f.tauD.toFixed(2),
+          weak ? "#b3000b" : "#1c1c1a",
+          weak ? "rgba(179,0,11,0.07)" : "#f6f5f1")}
+      ${tile("Reduced form τ_Y", fmt(f.tauY),  "#1c1c1a", "#f6f5f1")}
+      ${tile("Fuzzy-RD ratio", isFinite(f.frd) ? fmt(f.frd) : "—", "#990000", "rgba(153,0,0,0.07)")}
+      ${tile("Monte Carlo SE", mc.se ? mc.se.toFixed(2) : "—",
+          weak ? "#b3000b" : "#2e6f40",
+          weak ? "rgba(179,0,11,0.07)" : "rgba(46,111,64,0.08)")}
+    </div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e;
+        margin-top:0.4rem; line-height:1.4;">
+      Red tiles flag a weak first stage (τ_D &lt; 0.15) where the estimate becomes unreliable.
+      SE = SD of the ratio over 250 simulated re-samples.
+    </div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── One-line plain-language verdict that updates with the sliders ──
+{
+  const f = rdfuzzy_fit;
+  const mc = rdfuzzy_mc;
+  let msg, color;
+  if (Math.abs(f.tauD) < 0.15) {
+    msg = `First stage τ_D = ${f.tauD.toFixed(2)} is tiny: crossing the cutoff barely moves enrollment. The ratio still centers near the truth (${rdfuzzy_trueLATE.toFixed(1)}), but the Monte Carlo SE has ballooned to ±${mc.se ? mc.se.toFixed(2) : "—"} — this is the weak-instrument problem at the cutoff.`;
+    color = "#b3000b";
+  } else {
+    msg = `First stage τ_D = ${f.tauD.toFixed(2)} is healthy. The reduced-form jump τ_Y = ${f.tauY.toFixed(2)} divided by τ_D gives a fuzzy-RD estimate of ${f.frd.toFixed(2)} mmol/mol (true LATE = ${rdfuzzy_trueLATE.toFixed(1)}), with Monte Carlo SE ±${mc.se ? mc.se.toFixed(2) : "—"}.`;
+    color = "#2e6f40";
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+      border-left:3px solid ${color}; background:#f6f5f1;
+      font-family:'Inter',sans-serif; font-size:0.86rem;
+      line-height:1.45; color:#1c1c1a;">${msg}</div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Additive: keep the full array of Monte Carlo ratios (not just the SE) so
+// the sampling distribution can be drawn. Independent of rdfuzzy_mc; same DGP. ──
+frd_mcRatios = {
+  rdfuzzy_draw;                    // refresh alongside the displayed sample
+  const reps = 400;
+  const c = rdfuzzy_cutoff;
+  const h = 12;
+  const n = rdfuzzy_n;
+  const tauD = rdfuzzy_firstStage;
+  const late = rdfuzzy_trueLATE;
+  const sd = rdfuzzy_noise;
+  const rnorm = d3.randomNormal(0, 1);
+
+  const olsIntercept = (xs, ys) => {
+    const mx = d3.mean(xs), my = d3.mean(ys);
+    let sxx = 0, sxy = 0;
+    for (let i = 0; i < xs.length; i++) {
+      sxx += (xs[i] - mx) ** 2;
+      sxy += (xs[i] - mx) * (ys[i] - my);
+    }
+    const slope = sxx > 0 ? sxy / sxx : 0;
+    return my - slope * mx;
+  };
+
+  const ratios = [];
+  for (let r = 0; r < reps; r++) {
+    const xl = [], dl = [], yl = [], xr = [], dr = [], yr = [];
+    for (let i = 0; i < n; i++) {
+      const x = c - 15 + 30 * Math.random();
+      if (Math.abs(x - c) > h) continue;
+      const z = x >= c ? 1 : 0;
+      const pD = Math.min(1, Math.max(0, rdfuzzy_baseBelow + tauD * z));
+      const d = Math.random() < pD ? 1 : 0;
+      const y = c + rdfuzzy_outcomeSlope * (x - c) + (d ? late : 0) + sd * rnorm();
+      if (z === 0) { xl.push(x - c); dl.push(d); yl.push(y); }
+      else         { xr.push(x - c); dr.push(d); yr.push(y); }
+    }
+    const tD = olsIntercept(xr, dr) - olsIntercept(xl, dl);
+    const tY = olsIntercept(xr, yr) - olsIntercept(xl, yl);
+    if (Math.abs(tD) > 0.02) ratios.push(tY / tD);
+  }
+  return ratios;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Sampling distribution of the fuzzy-RD ratio: clipped to a fixed window
+// centered on the true LATE so a weak first stage VISIBLY spreads the bars,
+// instead of the lone red SE tile. Bias stays put; precision collapses. ──
+{
+  const ratios = frd_mcRatios;
+  const truth = rdfuzzy_trueLATE;
+  const lo = truth - 12, hi = truth + 12;          // fixed window so spread is comparable
+  const clipped = ratios.filter(v => v >= lo && v <= hi);
+  const nOut = ratios.length - clipped.length;
+  const weak = Math.abs(rdfuzzy_fit.tauD) < 0.15;
+
+  const fig = Plot.plot({
+    width: Math.min(680, width),
+    height: 200,
+    marginLeft: 60,
+    marginBottom: 45,
+    marginTop: 18,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Fuzzy-RD ratio across 400 re-samples (mmol/mol)", domain: [lo, hi] },
+    y: { label: "count", grid: true },
+    marks: [
+      Plot.rectY(clipped, Plot.binX({ y: "count" }, {
+        x: d => d, thresholds: 36,
+        fill: weak ? "rgba(179,0,11,0.5)" : "rgba(61,90,108,0.55)"
+      })),
+      Plot.ruleX([truth], { stroke: "#2e6f40", strokeWidth: 2.5 }),
+      Plot.text([{ x: truth, y: 0, t: `true LATE = ${truth.toFixed(1)}` }], {
+        x: "x", y: "y", text: "t", frameAnchor: "top",
+        dy: 2, fill: "#2e6f40", fontWeight: 700, fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+  return html`<div style="margin-top:0.85rem;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem; font-weight:700;
+        text-transform:uppercase; letter-spacing:0.04em; color:#79766e; margin-bottom:0.2rem;">
+      Sampling distribution of the estimate</div>
+    ${fig}
+    <div style="font-family:'Inter',sans-serif; font-size:0.72rem; color:#79766e;
+        margin-top:0.2rem; line-height:1.4;">
+      Each bar counts how often the estimate landed in that range over 400 simulated re-samples;
+      the green line is the true LATE. Drag <strong>First-stage jump</strong> toward zero and the
+      histogram fans out wildly while staying <em>centered</em> on the green line${nOut > 0 ? ` (${nOut} extreme draws fell outside this window)` : ""}: precision collapses, bias does not.
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Two-Panel Fuzzy-RD Plot
+
+Work through these in order; each isolates one piece of the ratio.
+
+**Step 1: Read the first stage (top panel).** Each dot is a thin HbA1c bin; its height is the *share of patients in that bin who enrolled*, and its size reflects how many patients fall in the bin. Below the cutoff, enrollment hovers near the base rate (around 25% --- the always-takers). At the cutoff the line *jumps up*: those are the compliers the invitation pulled in. The printed $\tau_D$ is the size of that jump --- the denominator of everything.
+
+**Step 2: Read the reduced form (bottom panel).** Same running variable on the x-axis, but now the y-axis is twelve-month HbA1c. The smooth upward slope on both sides reflects that patients who screened sicker tend to stay sicker --- a confound the RD controls for by comparing only *across the cutoff*. The vertical jump at 70 mmol/mol is $\tau_Y$, the reduced-form effect of *being invited* (not of enrolling).
+
+**Step 3: Form the ratio.** Read the live tiles. The reduced-form jump $\tau_Y$ is *diluted* --- it averages enrolled compliers with never-takers who ignored the invitation. Dividing by the first-stage jump $\tau_D$ rescales it to the effect on the compliers who actually enrolled: $\tau_Y / \tau_D$. With the defaults ($\tau_D \approx 0.5$, true LATE $-6$), you should see a reduced form near $-3$ and a ratio near $-6$.
+
+**Step 4: Shrink the first stage and watch precision collapse.** Drag **First-stage jump** toward $0.05$. The point estimate stays roughly centered on the true LATE, but the **Monte Carlo SE** tile turns red and grows fast: a tiny denominator magnifies every wiggle in the numerator. This is exactly the weak-instrument pathology from Module 7 --- a fuzzy RD with a feeble first stage is a weak-IV problem wearing a different hat.
+
+**Step 5: Separate signal from noise.** Push **Outcome noise** up or **Sample size** down: the SE grows, but the *bias* does not --- the estimator is still consistent, just imprecise. Then redraw a few samples with the button: the point estimate jitters within roughly the SE band the Monte Carlo reports. Precision, not bias, is the binding constraint in most fuzzy RDs.
+
+
+## Estimation in Practice: Fuzzy RD as 2SLS
+
+Operationally, you do not compute $\tau_Y$ and $\tau_D$ in separate regressions and divide by hand (though that is conceptually what happens). You run **two-stage least squares** with local-linear control for the running variable, instrumenting treatment $D_i$ with the above-cutoff indicator $Z_i$. Within a bandwidth $h$ around $c$, and recentering $\tilde{X}_i = X_i - c$:
+
+$$
+\textbf{First stage:}\quad D_i = \gamma_0 + \gamma_1 Z_i + \gamma_2 \tilde{X}_i + \gamma_3 (Z_i \cdot \tilde{X}_i) + u_i,
+$$
+$$
+\textbf{Second stage:}\quad Y_i = \alpha_0 + \tau_{\text{FRD}} \, \widehat{D}_i + \alpha_2 \tilde{X}_i + \alpha_3 (Z_i \cdot \tilde{X}_i) + \varepsilon_i.
+$$
+
+**Read this as**: "Let the data have different slopes on each side of the cutoff (the $Z \cdot \tilde X$ interaction). In the first stage, the coefficient $\gamma_1$ on the above-cutoff indicator *is* the first-stage jump $\tau_D$. In the second stage, replace actual enrollment $D_i$ with its first-stage prediction $\widehat{D}_i$; the coefficient on it is the fuzzy-RD effect." Because $Z_i$ is the only excluded instrument, 2SLS here is numerically identical to the ratio $\tau_Y / \tau_D$ --- it is the Wald estimator, computed by regression. The dedicated package `rdrobust` automates the bandwidth choice, the local-linear fit, and the bias-corrected (robust) confidence intervals that the raw 2SLS standard errors miss.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(rdrobust)   # bias-corrected RD with data-driven bandwidth
+library(AER)        # ivreg for the explicit 2SLS view
+
+set.seed(70)
+
+# --- Simulate the diabetes screening RD ---
+n      <- 1500
+cutoff <- 70
+x      <- runif(n, 55, 85)              # screening HbA1c (running variable)
+z      <- as.integer(x >= cutoff)       # invited = above cutoff (instrument)
+# Enrollment probability jumps from 0.25 to 0.75 at the cutoff
+pD     <- pmin(1, pmax(0, 0.25 + 0.50 * z))
+d      <- rbinom(n, 1, pD)              # actual enrollment (imperfect compliance)
+true_late <- -6
+y      <- 70 + 0.45 * (x - cutoff) + true_late * d + rnorm(n, 0, 4)
+
+# --- Fuzzy RD the easy way: rdrobust with the `fuzzy` argument ---
+frd <- rdrobust(y = y, x = x, c = cutoff, fuzzy = d)
+summary(frd)        # 'Coeff' under "Robust" is the fuzzy-RD LATE
+
+# --- The first stage as its own sharp RD (jump in P(enroll)) ---
+fs <- rdrobust(y = d, x = x, c = cutoff)
+cat("First-stage jump tau_D:", round(fs$coef[1], 3), "\n")
+
+# --- The same number as 2SLS within a bandwidth, by hand ---
+h     <- frd$bws[1, 1]                  # the optimal bandwidth rdrobust chose
+band  <- abs(x - cutoff) <= h
+xc    <- (x - cutoff)[band]
+iv <- ivreg(y[band] ~ d[band] + xc + z[band]:xc | z[band] + xc + z[band]:xc)
+cat("Fuzzy-RD via 2SLS:", round(coef(iv)["d[band]"], 3), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from rdrobust import rdrobust
+from linearmodels.iv import IV2SLS
+
+rng = np.random.default_rng(70)
+
+# --- Simulate the diabetes screening RD ---
+n, cutoff = 1500, 70
+x  = rng.uniform(55, 85, n)              # screening HbA1c (running variable)
+z  = (x >= cutoff).astype(int)          # invited = above cutoff (instrument)
+pD = np.clip(0.25 + 0.50 * z, 0, 1)     # enrollment prob jumps 0.25 -> 0.75
+d  = rng.binomial(1, pD)                # actual enrollment (imperfect compliance)
+true_late = -6
+y  = 70 + 0.45 * (x - cutoff) + true_late * d + rng.normal(0, 4, n)
+
+# --- Fuzzy RD the easy way: rdrobust with the `fuzzy` argument ---
+frd = rdrobust(y=y, x=x, c=cutoff, fuzzy=d)
+print(frd)          # 'Robust' coefficient is the fuzzy-RD LATE
+
+# --- First stage as its own sharp RD (jump in P(enroll)) ---
+fs = rdrobust(y=d, x=x, c=cutoff)
+print("First-stage jump tau_D:", round(float(fs.coef.iloc[0]), 3))
+
+# --- The same number as 2SLS within a bandwidth, by hand ---
+h     = float(frd.bws.iloc[0, 0])       # optimal bandwidth rdrobust chose
+band  = np.abs(x - cutoff) <= h
+xc    = (x - cutoff)[band]
+df = pd.DataFrame({
+    "y": y[band], "d": d[band], "z": z[band], "xc": xc,
+    "zxc": z[band] * xc,
+})
+iv = IV2SLS.from_formula(
+    "y ~ 1 + xc + zxc + [d ~ z]", data=df
+).fit()
+print("Fuzzy-RD via 2SLS:", round(iv.params["d"], 3))
+```
+
+:::
+
+Both routes return a number near the true LATE of $-6$: enrolling in the coordination program lowers twelve-month HbA1c by roughly 6 mmol/mol *for the compliers at the cutoff*. The `rdrobust` and 2SLS estimates agree because, with a single instrument, 2SLS *is* the Wald ratio --- the only differences are the bandwidth and the bias-correction `rdrobust` applies to its confidence intervals.
+
+
+## The Assumptions, Inherited from IV
+
+Because fuzzy RD is IV, it lives or dies on the IV assumptions --- now phrased *at the cutoff*.
+
+::: {.glass-card .glass-card--assumption}
+**Relevance (a nonzero first stage).** Crossing the cutoff must actually change the probability of treatment: $\tau_D \neq 0$. In our setting, the invitation at 70 mmol/mol must measurably raise enrollment. If almost everyone above the threshold ignores the invitation (and almost everyone below sneaks in anyway), $\tau_D \to 0$, the denominator vanishes, and the estimate is hopelessly imprecise.
+
+**Exclusion at the cutoff.** Landing just above the cutoff may affect the outcome *only* through enrollment --- not through any other channel that switches on discontinuously at exactly 70 mmol/mol. This fails if the *same* threshold also triggers something else: e.g., if 70 mmol/mol simultaneously qualifies the patient for a free glucose monitor or a different drug regimen. Then $\tau_Y$ mixes two channels and dividing by the enrollment jump misattributes both to the program.
+:::
+
+The continuity / as-good-as-random and monotonicity conditions carry over too:
+
+::: {.glass-card .glass-card--warning}
+**Where fuzzy RD quietly breaks.**
+
+- **A weak first stage.** A small $\tau_D$ does not bias the estimator, but it inflates its variance without bound and makes it acutely sensitive to bandwidth and functional form --- the weak-instrument disease. Always report the first-stage jump and its precision, not just the ratio.
+- **A discontinuity in the instrument's own validity.** If patients can precisely *manipulate* their screening HbA1c to land just above 70 (to get into the program) or just below (to avoid it), then $Z_i$ is no longer as-good-as-random at the cutoff. A McCrary density test on the running variable is the standard check --- the subject of the next page.
+- **Defiers.** Monotonicity fails if some patients enroll *only when not invited* and refuse *because* invited. Usually implausible for an encouragement design, but worth arguing rather than assuming.
+- **A confounded threshold.** If 70 mmol/mol is a bright line for *several* policies at once, exclusion fails and no amount of rescaling fixes it. The cleanest fuzzy RDs use a cutoff that triggers *one* program and nothing else.
+:::
+
+
+<details>
+<summary>Math Details: The Fuzzy-RD Ratio and Its IV Interpretation</summary>
+<div class="details-content">
+
+### Setup
+
+For each patient define potential outcomes indexed by treatment, $Y_i(1), Y_i(0)$, and potential *treatment* states indexed by the instrument, $D_i(z)$ for $z \in \{0, 1\}$: whether the patient would enroll if *not invited* ($D_i(0)$) versus if *invited* ($D_i(1)$). The instrument is $Z_i = \mathbf{1}\{X_i \geq c\}$. Observed treatment is $D_i = D_i(Z_i)$ and observed outcome is $Y_i = Y_i(D_i)$.
+
+A patient's compliance type is fixed by $(D_i(0), D_i(1))$:
+
+- **Complier**: $D_i(0) = 0,\ D_i(1) = 1$ (enrolls iff invited).
+- **Always-taker**: $D_i(0) = D_i(1) = 1$.
+- **Never-taker**: $D_i(0) = D_i(1) = 0$.
+- **Defier**: $D_i(0) = 1,\ D_i(1) = 0$ --- ruled out by monotonicity.
+
+### The reduced form, decomposed
+
+Take the limit of $E[Y_i \mid X_i = x]$ from each side of $c$. By RD continuity, every smooth function of $X$ (baselines, confounders) is identical in the two limits and cancels in the difference; only the discontinuous effect of $Z$ survives. So the reduced-form jump is
+
+$$
+\tau_Y = E[Y_i(D_i(1)) - Y_i(D_i(0)) \mid X_i = c].
+$$
+
+**Read this as**: "The outcome jump at the cutoff equals the average change in outcome caused by flipping the instrument from 0 to 1, among patients exactly at the cutoff." Split by type. Always-takers have $D_i(1) = D_i(0) = 1$, so their term is $Y_i(1) - Y_i(1) = 0$; never-takers have $D_i(1) = D_i(0) = 0$, so theirs is $Y_i(0) - Y_i(0) = 0$. Only compliers contribute, with $Y_i(1) - Y_i(0)$. Therefore
+
+$$
+\tau_Y = E[Y_i(1) - Y_i(0) \mid \text{complier},\, X_i = c] \cdot P(\text{complier} \mid X_i = c).
+$$
+
+### The first stage, decomposed
+
+By the identical continuity argument applied to $D_i$,
+
+$$
+\tau_D = E[D_i(1) - D_i(0) \mid X_i = c].
+$$
+
+Again always-takers ($1 - 1 = 0$) and never-takers ($0 - 0 = 0$) drop out; compliers contribute $1 - 0 = 1$; defiers (excluded) would contribute $-1$. Hence
+
+$$
+\tau_D = P(\text{complier} \mid X_i = c).
+$$
+
+**Read this as**: "The first-stage jump *is* the share of compliers at the cutoff." This is why a bigger first stage means a larger, better-identified complier subpopulation.
+
+### Dividing: the Wald / LATE result
+
+Form the ratio and the complier-share factor cancels:
+
+$$
+\frac{\tau_Y}{\tau_D}
+= \frac{E[Y_i(1) - Y_i(0) \mid \text{complier},\, X_i = c]\cdot P(\text{complier}\mid X_i=c)}
+       {P(\text{complier}\mid X_i = c)}
+= E[Y_i(1) - Y_i(0) \mid \text{complier},\, X_i = c].
+$$
+
+$$
+\boxed{\;\tau_{\text{FRD}} = \dfrac{\tau_Y}{\tau_D} = \text{LATE at the cutoff}.\;}
+$$
+
+This is the Wald estimator from Module 7, with $Z_i = \mathbf{1}\{X_i \geq c\}$ as the instrument and the estimand localized to $X_i = c$. The sharp RD is the limit $\tau_D = P(\text{complier} \mid X_i = c) = 1$: *everyone* near the cutoff is a complier, the LATE becomes the average effect for the whole local population, and $\tau_{\text{FRD}} = \tau_Y$.
+
+### Why precision dies as $\tau_D \to 0$
+
+By the delta method, the variance of a ratio $\widehat{\tau}_Y / \widehat{\tau}_D$ scales, to leading order, like
+
+$$
+\operatorname{Var}\!\left(\frac{\widehat\tau_Y}{\widehat\tau_D}\right)
+\approx \frac{1}{\tau_D^2}\left[\operatorname{Var}(\widehat\tau_Y)
++ \tau_{\text{FRD}}^2 \operatorname{Var}(\widehat\tau_D)
+- 2\,\tau_{\text{FRD}}\operatorname{Cov}(\widehat\tau_Y, \widehat\tau_D)\right].
+$$
+
+**Read this as**: "The variance of the ratio is inflated by a factor of $1/\tau_D^2$." As the first-stage jump shrinks, this factor explodes --- doubling a small denominator quadruples the variance. That is the algebra behind the red **Monte Carlo SE** tile in the interactive, and it is the same $1/(\text{first stage})^2$ blow-up that defines weak instruments.
+
+</div>
+</details>
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region runs a fall-prevention program with an eligibility cutoff at a frailty score of 5 (higher = frailer). Patients at or above 5 are invited; invitation is encouragement, not a mandate. Just *below* the cutoff, 18% of patients are enrolled (always-takers referred by their physician); just *above*, 62% are enrolled. The outcome is fall-related emergency visits per 1,000 patient-years. The reduced-form jump at the cutoff is $\tau_Y = -9.9$ visits.
+
+(a) Compute the first-stage jump $\tau_D$. (b) Compute the fuzzy-RD estimate. (c) Interpret it precisely --- for *whom* is this the effect?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\tau_D = 0.62 - 0.18 = 0.44$. Crossing the frailty cutoff raises the enrollment probability by 44 percentage points (an *absolute* gap between two probabilities, not a 44% relative change).
+
+**(b)** $\tau_{\text{FRD}} = \tau_Y / \tau_D = -9.9 / 0.44 = -22.5$ fall-related visits per 1,000 patient-years.
+
+**(c)** This is a **LATE**: the average effect of *actually enrolling* in the program, among **compliers** --- patients who enroll because they were invited (and would not have otherwise) --- evaluated **at a frailty score of 5**. It does not describe always-takers (who enroll regardless), never-takers (who never enroll despite invitation), or patients far from the cutoff. The reduced form ($-9.9$) understates the per-enrollee benefit because it is diluted by the 56% of invited-side patients whose behavior the cutoff did not change; dividing by $\tau_D$ rescales it back to the compliers.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Two diabetes programs in different regions both have a reduced-form outcome jump of $\tau_Y = -2.0$ mmol/mol at their respective cutoffs. Program A has a first-stage jump of $\tau_D = 0.80$; Program B has $\tau_D = 0.20$.
+
+(a) Compute each fuzzy-RD estimate. (b) Using the rule that the variance of the ratio scales like $1/\tau_D^2$ (delta method), how many times larger is the *standard error* of Program B's estimate than Program A's, holding the numerator's variance fixed? (c) What practical lesson follows?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Program A: $-2.0 / 0.80 = -2.5$ mmol/mol. Program B: $-2.0 / 0.20 = -10.0$ mmol/mol.
+
+**(b)** Variance scales like $1/\tau_D^2$, so the standard error (its square root) scales like $1/\tau_D$. The ratio of standard errors is $\tau_{D,A} / \tau_{D,B} = 0.80 / 0.20 = 4$. Program B's standard error is roughly **4 times larger** than Program A's. (Holding the reduced-form variance fixed, the leading $1/\tau_D^2$ factor differs by $(0.80/0.20)^2 = 16$ in variance, i.e. 4× in SE.)
+
+**(c)** A larger point estimate is not a more *reliable* one. Program B's headline effect ($-10.0$) looks dramatic, but its weak first stage makes that number four times noisier --- it may not be statistically distinguishable from zero, and it is hypersensitive to bandwidth and specification. Always report and scrutinize the first-stage jump; a fuzzy RD with a feeble first stage is a weak-instrument estimate and should be treated with the same suspicion.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A health economist evaluates the coordination program with a sharp-RD estimator --- she ignores compliance entirely and simply reads the outcome jump $\tau_Y = -3.0$ mmol/mol off the data, reporting it as "the effect of the program." The true first-stage jump is $\tau_D = 0.5$.
+
+(a) What quantity has she actually estimated, and how does it relate to the effect of *enrolling*? (b) Is her estimate biased for the *intention-to-treat* effect? (c) Under what condition would her sharp-RD reading coincide with the true effect of enrolling?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** She has estimated the **reduced form**, $\tau_Y = -3.0$. This is the effect of *being invited* (crossing the cutoff), not the effect of *enrolling*. It is the per-enrollee complier effect *diluted* by the first stage: $\tau_Y = \tau_{\text{FRD}} \cdot \tau_D$, so the true effect of enrolling for compliers is $\tau_Y / \tau_D = -3.0 / 0.5 = -6.0$ mmol/mol. By reading the reduced form as "the effect of the program," she **understates the per-enrollee benefit by half**.
+
+**(b)** No --- for the **intention-to-treat (ITT)** effect she is *unbiased*. The reduced-form jump *is* the ITT: the average effect of being assigned/invited to the program, regardless of whether the patient complied. The ITT is a legitimate and often policy-relevant estimand (it answers "what does sending the invitation accomplish?"). Her error is only in *labeling* it the effect of enrolling.
+
+**(c)** They coincide when $\tau_D = 1$ --- i.e., when the design is *sharp* and everyone invited enrolls (no never-takers) and nobody below the cutoff enrolls (no always-takers). Then the ratio's denominator is 1 and the reduced form equals the treatment effect. With $\tau_D = 0.5$ here, the design is genuinely fuzzy and the two diverge by a factor of two.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the **first-stage jump** to a healthy value (say 0.6) and note the Monte Carlo SE. Then drag it down toward 0.1.
+
+(a) Describe what happens to the *point estimate* versus the *standard error*, and name the Module-7 phenomenon this reproduces. (b) Separately, suppose the 70 mmol/mol threshold *also* triggers automatic eligibility for a free continuous-glucose monitor (CGM), independent of program enrollment, and the CGM itself lowers HbA1c. Which IV assumption does this violate, and what does it do to the fuzzy-RD estimate?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** As the first-stage jump shrinks toward 0.1, the **point estimate stays roughly centered** on the true LATE (the estimator remains consistent --- it is not biased by a small first stage), but the **Monte Carlo SE grows sharply**, with the SE tile turning red. This is the **weak-instrument problem** from Module 7: the variance of a Wald/IV ratio scales like $1/\tau_D^2$, so a weak first stage produces a noisy, unstable estimate even though it is centered correctly.
+
+**(b)** This violates **exclusion at the cutoff**. The instrument $Z_i = \mathbf{1}\{X_i \geq 70\}$ now affects the outcome through a *second* channel (the CGM) that is not the program enrollment we instrument for. The reduced-form jump $\tau_Y$ then captures *both* the program effect and the CGM effect, but we still divide by the enrollment-only first stage $\tau_D$. The fuzzy-RD estimate is therefore **biased**: it misattributes the entire combined jump to program enrollment, overstating (in magnitude) the program's true LATE. No rescaling can separate the two channels --- the only fixes are a design where the cutoff triggers a single program, or measuring and adjusting for the CGM channel directly.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A **fuzzy RD** arises when crossing the cutoff changes the *probability* of treatment by less than 1; the sharp RD is the special case where that jump equals 1.
+- The estimator is the **ratio** of the outcome jump (reduced form) to the treatment-probability jump (first stage): $\tau_{\text{FRD}} = \tau_Y / \tau_D$.
+- This ratio is exactly a **Wald / IV estimator** with "above the cutoff" as the instrument; it identifies a **LATE for compliers at the cutoff**, not an effect for always-takers, never-takers, or patients far from the threshold.
+- It inherits the IV assumptions, localized to the cutoff: a **nonzero first stage** (relevance) and **exclusion** (the cutoff affects the outcome only through treatment), plus continuity and monotonicity.
+- A **weak first stage** ($\tau_D \to 0$) does not bias the estimate but inflates its variance like $1/\tau_D^2$ --- the weak-instrument problem at the cutoff. Always report the first-stage jump.
+:::
+
+
+## What Comes Next
+
+We have seen that a fuzzy RD is an instrumental-variables design built around a cutoff: its credibility rests on a real first-stage jump and on exclusion holding at the threshold. But both the sharp and fuzzy designs share a deeper, more basic worry --- that the cutoff really is *as good as random*, with no manipulation of the running variable and no other policy switching on at the same line. The next page, [Validity and Falsification](validity-tests.qmd), turns to the tests that probe exactly these threats: the McCrary density test for bunching at the cutoff, covariate-balance ("placebo outcome") checks that should show *no* jump, placebo-cutoff tests away from the true threshold, and sensitivity to bandwidth and polynomial order. Together they are the falsification toolkit that lets a reader believe --- or reject --- a regression-discontinuity claim.

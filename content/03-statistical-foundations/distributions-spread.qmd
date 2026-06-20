@@ -1,0 +1,1498 @@
+---
+title: "Distributions and Spread"
+subtitle: "Random variables, expectations, variance, and the sampling distribution"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Distinguish a random variable from an observed value, and a discrete from a continuous distribution
+- Compute and interpret the expectation, variance, and standard deviation of a random variable, and apply their linearity and scaling rules
+- Separate the population mean (estimand) from the sample mean (estimator), and explain why $\text{Var}(\bar{X}) = \sigma^2/n$
+- Derive the standard error $\sigma/\sqrt{n}$ and distinguish it from the standard deviation of the data
+- Use the Central Limit Theorem to justify why the sampling distribution of $\bar{X}$ (and of $\hat{\tau}$) is approximately normal regardless of population shape
+:::
+
+## A Number That Could Have Been Different
+
+Sweden's national diabetes registry --- *Nationella Diabetesregistret* (NDR) --- tracks HbA1c levels for hundreds of thousands of patients with diabetes across all 21 *regioner*. Suppose a researcher draws a sample of $n = 50$ patients from a single *vårdcentral* (primary care center) in Region Västra Götaland and computes the average HbA1c level: $\bar{X} = 7.3\%$. A perfectly reasonable number. But here is the question that animates this entire page:
+
+*If she had drawn a different sample of 50 patients from the same population, would she have gotten exactly 7.3% again?*
+
+Almost certainly not. She might have gotten 7.1%, or 7.5%, or 7.28%. The sample mean is not a fixed quantity --- it is a **random variable**, a number whose value depends on which patients happened to end up in the sample. Understanding the behavior of random variables --- how they are distributed, how spread out they are, and what happens when you average many of them together --- is the foundation of statistical inference.
+
+This matters for causal inference because every treatment effect estimate is a sample mean (or a difference of sample means). The difference-in-means estimator $\hat{\tau} = \bar{Y}_{\text{treated}} - \bar{Y}_{\text{control}}$ is itself a random variable. To know whether an estimated effect of $-0.4$ percentage points in HbA1c is "real" or just sampling noise, we need to understand the *sampling distribution* of that estimator. That is where we are heading.
+
+
+## Random Variables
+
+A **random variable** is a quantity whose value is determined by the outcome of a random process. Before you observe the data, you do not know what value it will take --- you only know the set of values it *could* take and how likely each is.
+
+::: {.glass-card .glass-card--definition}
+**Random Variable**
+
+A **random variable** $X$ is a function that assigns a numerical value to each outcome of a random process. We write it as a capital letter ($X$, $Y$, $Z$) to distinguish it from a specific observed value, which is written in lowercase ($x$, $y$, $z$).
+
+- A **discrete** random variable takes on a countable set of values: $X \in \{0, 1, 2, \ldots\}$. Example: the number of emergency visits a patient makes in a year.
+- A **continuous** random variable can take any value in an interval. Example: a patient's systolic blood pressure, which could be 118.3, 132.7, or any other real number.
+
+**How to read the notation**: When you see $X$, think "a quantity that hasn't been observed yet." When you see $x$ or $x_i$, think "a specific number that was observed for individual $i$."
+:::
+
+In healthcare research using Swedish registries, most outcome variables are continuous or approximately continuous: HbA1c levels, blood pressure in mmHg, waiting times in days, costs in SEK. We focus on continuous random variables for the rest of this page, though the core concepts apply to both types.
+
+### The Distribution of a Random Variable
+
+The **probability distribution** of a random variable tells you which values are likely and which are rare. For a continuous random variable, this is described by a **probability density function** (PDF), which we write as $f(x)$.
+
+You can think of the density function as a smoothed-out histogram. Where the curve is tall, values are common; where it is low, values are rare. The total area under the curve is always 1 (certainty --- the variable must take *some* value).
+
+::: {.glass-card .glass-card--warning}
+**A common source of confusion**: For a continuous random variable, $f(x)$ is *not* the probability that $X = x$. In fact, $P(X = x) = 0$ for any specific value $x$. Instead, $f(x)$ gives the *density* --- how "concentrated" the probability is near $x$. Probabilities are areas: $P(a < X < b) = \int_a^b f(x) \, dx$. You do not need to know calculus to use the concepts in this book, but this distinction matters: density is not probability.
+:::
+
+The picture below makes "probability = area" concrete. The shaded slate region is $P(a < X < b)$ --- the probability that a draw lands between $a$ and $b$ is the *area* under the curve there. The single crimson line at $x$ has zero width, so it encloses zero area: that is why $P(X = x) = 0$ for any exact value.
+
+```{ojs}
+//| echo: false
+
+// Static figure: probability is AREA under the density. Slate band shades
+// P(a<X<b); a single crimson rule at x illustrates that an exact value
+// encloses no area, so P(X=x)=0. Uses the page's SBP example (mu=130, sd=18).
+p2_areaFig = {
+  const mu = 130, sd = 18;
+  const lo = 70, hi = 190;
+  const pdf = (x) => Math.exp(-0.5 * ((x - mu) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+  const grid = d3.range(0, 241).map(i => {
+    const x = lo + (i / 240) * (hi - lo);
+    return { x, y: pdf(x) };
+  });
+  const a = 120, b = 145, xPoint = 160;
+  const band = grid.filter(d => d.x >= a && d.x <= b);
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 240,
+    marginLeft: 60,
+    marginBottom: 46,
+    style: { fontFamily: "'Inter', sans-serif" },
+    x: { label: "Systolic blood pressure (mmHg)", domain: [lo, hi] },
+    y: { label: "Density f(x)", axis: null },
+    marks: [
+      Plot.areaY(band, { x: "x", y: "y", fill: "#3d5a6c", fillOpacity: 0.28 }),
+      Plot.line(grid, { x: "x", y: "y", stroke: "#1c1c1a", strokeWidth: 2.5 }),
+      Plot.ruleX([xPoint], { stroke: "#990000", strokeWidth: 2 }),
+      Plot.ruleY([0]),
+      Plot.text([{ x: (a + b) / 2, y: pdf((a + b) / 2) * 0.45 }],
+        { x: "x", y: "y", text: ["P(a < X < b)\n= shaded area"], fill: "#3d5a6c", fontWeight: 700, fontSize: 11, textAnchor: "middle", lineHeight: 1.1, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ x: xPoint, y: pdf(xPoint) + 0.0016 }],
+        { x: "x", y: "y", text: ["P(X = x) = 0\n(a line has no area)"], fill: "#990000", fontWeight: 700, fontSize: 11, textAnchor: "middle", lineHeight: 1.1, stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Probability is the **area** under the density between two values. A single point ($x = 160$) is a line of zero width, so it encloses no area --- hence $P(X = x) = 0$. Only intervals carry positive probability.
+:::
+
+
+## Expectation: The Center of the Distribution
+
+If you could observe a random variable infinitely many times and average all the values, what would you get? That number is the **expectation**.
+
+::: {.glass-card .glass-card--definition}
+**Expectation (Population Mean)**
+
+The **expectation** (or **expected value**) of a continuous random variable $X$ is:
+
+$$
+E[X] = \int_{-\infty}^{\infty} x \, f(x) \, dx
+$$
+
+For a discrete random variable: $E[X] = \sum_x x \cdot P(X = x)$.
+
+We also write the expectation as $\mu$ (the Greek letter "mu") or $\mu_X$ when we need to be specific about which variable.
+
+**How to read this**: "$E[X]$" is read "the expectation of $X$" or "the expected value of $X$." Think of it as the long-run average --- if you drew from this distribution forever, the running average would converge to $E[X]$.
+
+**How to read the integral**: For continuous variables, $\int_{-\infty}^{\infty} x \, f(x) \, dx$ says "multiply each possible value $x$ by how likely it is (its density $f(x)$), and add up all these products." It is a weighted average of all possible values, weighted by their likelihood.
+:::
+
+**Example**: Suppose systolic blood pressure (SBP) among patients at a *vårdcentral* in Region Stockholm follows a normal distribution with mean 130 mmHg and standard deviation 18 mmHg. Then $E[\text{SBP}] = \mu = 130$ mmHg. This does not mean every patient has SBP of 130 --- it means that if you averaged the blood pressures of *every* patient in the population, you would get 130.
+
+### Properties of Expectation
+
+Two properties of expectation appear constantly in causal inference:
+
+**Linearity**: For any constants $a$ and $b$, $E[aX + b] = aE[X] + b$. If you multiply every patient's blood pressure by 2 and add 10, the expected value also gets multiplied by 2 and shifted by 10. More importantly, $E[X + Y] = E[X] + E[Y]$ always holds, even if $X$ and $Y$ are correlated. This is why we can write $E[Y(1) - Y(0)] = E[Y(1)] - E[Y(0)]$ for the ATE.
+
+**Conditional expectation**: $E[X \mid D = 1]$ means "the expected value of $X$, but only among units where $D = 1$." The vertical bar "$\mid$" means "given that" or "among those for whom." This notation is central to the selection bias decomposition from Module 1: $E[Y(0) \mid D = 1]$ is the average untreated potential outcome *among the treated*.
+
+
+## Variance and Standard Deviation: How Spread Out Is It?
+
+The expectation tells you where the distribution is centered. But two distributions can have the same center and look completely different. A distribution of HbA1c levels at a well-managed diabetes clinic might be tightly clustered around 7.0%, while the same average at a poorly coordinated clinic might come from values scattered between 5.5% and 10%. We need a measure of **spread**.
+
+::: {.glass-card .glass-card--definition}
+**Variance and Standard Deviation**
+
+The **variance** of a random variable $X$ is the expected value of the squared deviation from the mean:
+
+$$
+\text{Var}(X) = E\left[(X - \mu)^2\right] = E[X^2] - (E[X])^2
+$$
+
+We also write variance as $\sigma^2$ (sigma-squared). The **standard deviation** is the square root of the variance:
+
+$$
+\text{SD}(X) = \sigma = \sqrt{\text{Var}(X)}
+$$
+
+**How to read this**: "$\text{Var}(X)$" is read "the variance of $X$." It measures how far a typical value of $X$ is from the mean $\mu$. We square the deviations so that values above and below the mean do not cancel out. The standard deviation $\sigma$ puts the measure back in the original units (e.g., mmHg for blood pressure, % for HbA1c).
+
+**How to read the formula**: $E[(X - \mu)^2]$ says "take the distance between $X$ and $\mu$, square it, and then average that squared distance over the entire population." The equivalent form $E[X^2] - (E[X])^2$ says "the average of the squares minus the square of the average."
+:::
+
+**Example**: If HbA1c at a *vårdcentral* has $\mu = 7.0\%$ and $\sigma = 0.8\%$, then roughly 68% of patients have HbA1c between 6.2% and 7.8% (within one standard deviation of the mean), and about 95% fall between 5.4% and 8.6% (within two standard deviations). These are the rules for normal distributions --- more on this below.
+
+This pattern --- the **empirical rule** (or 68--95--99.7 rule) --- is worth seeing once and remembering. The figure below shades it directly on the HbA1c example: the inner band ($\mu \pm 1\sigma$) holds about 68% of patients, and the wider band ($\mu \pm 2\sigma$) holds about 95%. The standard deviation is the natural "ruler" for how far a typical value sits from the mean.
+
+```{ojs}
+//| echo: false
+
+// Static 68/95 empirical-rule figure anchored to the HbA1c example
+// (mu=7.0, sigma=0.8). Inner band = mu +/- 1 sigma (~68%), outer band =
+// mu +/- 2 sigma (~95%). Pure function of width; no widget state.
+p2_empiricalRule = {
+  const mu = 7.0, sd = 0.8;
+  const lo = mu - 3.4 * sd, hi = mu + 3.4 * sd;
+  const pdf = (x) => Math.exp(-0.5 * ((x - mu) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+  const grid = d3.range(0, 281).map(i => {
+    const x = lo + (i / 280) * (hi - lo);
+    return { x, y: pdf(x) };
+  });
+  const band2 = grid.filter(d => d.x >= mu - 2 * sd && d.x <= mu + 2 * sd);
+  const band1 = grid.filter(d => d.x >= mu - 1 * sd && d.x <= mu + 1 * sd);
+  const peak = pdf(mu);
+  return Plot.plot({
+    width: Math.min(580, width),
+    height: 270,
+    marginLeft: 60,
+    marginBottom: 48,
+    style: { fontFamily: "'Inter', sans-serif" },
+    x: {
+      label: "HbA1c (%)",
+      domain: [lo, hi],
+      ticks: [mu - 2 * sd, mu - 1 * sd, mu, mu + 1 * sd, mu + 2 * sd],
+      tickFormat: d => d.toFixed(1)
+    },
+    y: { label: "Density", axis: null },
+    marks: [
+      Plot.areaY(band2, { x: "x", y: "y", fill: "#9c7a33", fillOpacity: 0.18 }),
+      Plot.areaY(band1, { x: "x", y: "y", fill: "#2e6f40", fillOpacity: 0.22 }),
+      Plot.line(grid, { x: "x", y: "y", stroke: "#1c1c1a", strokeWidth: 2.5 }),
+      Plot.ruleX([mu], { stroke: "#990000", strokeWidth: 2, strokeDasharray: "4,2" }),
+      Plot.ruleY([0]),
+      Plot.text([{ x: mu, y: peak * 0.42 }],
+        { x: "x", y: "y", text: ["~68%\n(±1σ)"], fill: "#2e6f40", fontWeight: 700, fontSize: 11, textAnchor: "middle", lineHeight: 1.1, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ x: mu - 1.6 * sd, y: pdf(mu - 1.6 * sd) * 0.6 }],
+        { x: "x", y: "y", text: ["~95% within ±2σ"], fill: "#9c7a33", fontWeight: 700, fontSize: 11, textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ x: mu, y: peak * 1.04 }],
+        { x: "x", y: "y", text: ["μ = 7.0"], fill: "#990000", fontWeight: 700, fontSize: 11, textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+    ]
+  });
+}
+```
+
+::: {.aside}
+The empirical rule for a normal distribution: about **68%** of values fall within one standard deviation of the mean ($\mu \pm 1\sigma$, here 6.2--7.8%), about **95%** within two ($\mu \pm 2\sigma$, here 5.4--8.6%), and about 99.7% within three. This is why $\sigma$ is the natural unit for "how far from typical."
+:::
+
+### Key Properties of Variance
+
+**Scaling**: $\text{Var}(aX + b) = a^2 \text{Var}(X)$. Adding a constant $b$ does not change the spread; multiplying by $a$ scales the variance by $a^2$.
+
+**Sum of independent variables**: If $X$ and $Y$ are independent, then $\text{Var}(X + Y) = \text{Var}(X) + \text{Var}(Y)$. Variances of independent quantities add. This is the engine behind the standard error formula we derive below.
+
+
+## The Sample Mean vs. the Population Mean
+
+Here is a critical distinction that many researchers handle loosely. There are two very different objects:
+
+| | **Population mean** | **Sample mean** |
+|:---|:---|:---|
+| **Symbol** | $\mu$ or $E[X]$ | $\bar{X} = \frac{1}{n}\sum_{i=1}^n X_i$ |
+| **What is it?** | A fixed, unknown constant | A random variable |
+| **Does it change?** | No | Yes --- it depends on the sample |
+| **Role** | The **estimand** (what we want to know) | The **estimator** (our best guess) |
+
+The **estimand** is the target: the true average HbA1c in the population of all diabetes patients at this vårdcentral. The **estimator** is the tool: the average HbA1c in our sample of $n$ patients. The estimator is our best guess at the estimand, but it is not the same thing.
+
+The schematic below captures the whole relationship at a glance: there is **one fixed truth** $\mu$ (the estimand, left), but each repeated sample drawn from the population produces its own wobbling $\bar{X}$ (an estimator, right). No single $\bar{X}$ equals $\mu$ exactly; instead they scatter *around* it. The distribution of those scattered $\bar{X}$ values is the sampling distribution we build up next.
+
+```{ojs}
+//| echo: false
+
+// Static schematic: one fixed population (estimand mu) -> several samples,
+// each producing its own x-bar dot that wobbles around mu. Built with
+// d3.create per the DAG-component pattern; pure function of width.
+p2_estimandFig = function ({ width = 560 }) {
+  const height = 260;
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const W = width;
+  const popCx = W * 0.16, popCy = height * 0.5, popR = 52;
+  const sampX = W * 0.55;            // where the sample x-bar dots sit
+  const lineX = W * 0.9;            // where the mu reference / scatter axis is
+
+  // Population box (the estimand mu lives here, fixed).
+  svg.append("circle")
+    .attr("cx", popCx).attr("cy", popCy).attr("r", popR)
+    .attr("fill", "#f6f5f1").attr("stroke", "#990000").attr("stroke-width", 2.5);
+  svg.append("text")
+    .attr("x", popCx).attr("y", popCy - 8).attr("text-anchor", "middle")
+    .attr("font-size", 13).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("Population");
+  svg.append("text")
+    .attr("x", popCx).attr("y", popCy + 14).attr("text-anchor", "middle")
+    .attr("font-size", 15).attr("font-weight", 800).attr("fill", "#990000")
+    .text("μ (fixed)");
+  svg.append("text")
+    .attr("x", popCx).attr("y", popCy + popR + 18).attr("text-anchor", "middle")
+    .attr("font-size", 10.5).attr("font-weight", 600).attr("fill", "#79766e")
+    .text("the ESTIMAND");
+
+  // Arrowhead marker.
+  svg.append("defs").append("marker")
+    .attr("id", "p2-arrow").attr("viewBox", "0 -5 10 10")
+    .attr("refX", 9).attr("refY", 0)
+    .attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#79766e");
+
+  // A few samples -> each its own x-bar dot, scattered around mu.
+  const muY = height * 0.5;
+  const offsets = [-58, -22, 8, 34, -40, 20];   // vertical wobble of the x-bars
+  const ys = offsets.map((o, i) => muY + o * 0.85);
+  svg.selectAll(null).data(ys).join("line")
+    .attr("x1", popCx + popR + 2).attr("y1", popCy)
+    .attr("x2", sampX - 18).attr("y2", d => d)
+    .attr("stroke", "#79766e").attr("stroke-width", 1.4)
+    .attr("opacity", 0.55).attr("marker-end", "url(#p2-arrow)");
+
+  // mu reference line on the right (the truth the dots scatter around).
+  svg.append("line")
+    .attr("x1", lineX).attr("y1", muY - 78).attr("x2", lineX).attr("y2", muY + 78)
+    .attr("stroke", "#990000").attr("stroke-width", 2).attr("stroke-dasharray", "5,3");
+  svg.append("text")
+    .attr("x", lineX + 6).attr("y", muY - 78).attr("font-size", 11)
+    .attr("font-weight", 700).attr("fill", "#990000").text("μ");
+
+  // The x-bar dots: at sampX, plus a faint horizontal tick to the mu line.
+  svg.selectAll(null).data(ys).join("g").each(function (d, i) {
+    const g = d3.select(this);
+    g.append("line")
+      .attr("x1", sampX).attr("y1", d).attr("x2", lineX).attr("y2", d)
+      .attr("stroke", "#3d5a6c").attr("stroke-width", 1).attr("opacity", 0.3).attr("stroke-dasharray", "2,3");
+    g.append("circle")
+      .attr("cx", sampX).attr("cy", d).attr("r", 7)
+      .attr("fill", "#3d5a6c").attr("fill-opacity", 0.85).attr("stroke", "white").attr("stroke-width", 1.5);
+  });
+  svg.append("text")
+    .attr("x", sampX).attr("y", muY - 100).attr("text-anchor", "middle")
+    .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#3d5a6c")
+    .text("each sample → its own x̄");
+  svg.append("text")
+    .attr("x", sampX).attr("y", muY + 108).attr("text-anchor", "middle")
+    .attr("font-size", 10.5).attr("font-weight", 600).attr("fill", "#79766e")
+    .text("the ESTIMATORS (they wobble)");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+p2_estimandFig({ width: Math.min(580, width) })
+```
+
+::: {.aside}
+One fixed truth, many wobbling guesses. The population mean $\mu$ (crimson, the **estimand**) never changes; each sample yields a different $\bar{X}$ (slate, an **estimator**) that lands near but rarely exactly on $\mu$. Quantifying that wobble --- its center and spread --- is the job of the sampling distribution.
+:::
+
+::: {.glass-card .glass-card--definition}
+**Sample Mean**
+
+Given a random sample $X_1, X_2, \ldots, X_n$ drawn independently from a population with mean $\mu$ and variance $\sigma^2$, the **sample mean** is:
+
+$$
+\bar{X} = \frac{1}{n}\sum_{i=1}^n X_i
+$$
+
+**How to read this**: "$\bar{X}$" is read "X-bar." The formula says "add up all $n$ observations and divide by $n$." The bar over the $X$ is the universal notation for "average."
+
+The sample mean has two key properties:
+
+1. **Unbiased**: $E[\bar{X}] = \mu$. On average, across all possible samples, the sample mean hits the population mean.
+2. **Variance shrinks with $n$**: $\text{Var}(\bar{X}) = \frac{\sigma^2}{n}$. Larger samples produce less variable estimates.
+:::
+
+Property 2 deserves emphasis. The variance of the sample mean is $\sigma^2 / n$, not $\sigma^2$. Every time you quadruple the sample size, the variance of the sample mean is cut by a factor of four (and the standard deviation by a factor of two). This is why larger studies produce more precise estimates.
+
+<details>
+<summary>Math Details: Deriving the Variance of the Sample Mean</summary>
+<div class="details-content">
+
+Start with the definition:
+
+$$
+\text{Var}(\bar{X}) = \text{Var}\left(\frac{1}{n}\sum_{i=1}^n X_i\right)
+$$
+
+Pull the constant $1/n$ outside using the scaling rule $\text{Var}(aX) = a^2\text{Var}(X)$:
+
+$$
+= \frac{1}{n^2}\text{Var}\left(\sum_{i=1}^n X_i\right)
+$$
+
+Since the $X_i$ are independent and each has variance $\sigma^2$, variances add:
+
+$$
+= \frac{1}{n^2}\sum_{i=1}^n \text{Var}(X_i) = \frac{1}{n^2} \cdot n\sigma^2 = \frac{\sigma^2}{n}
+$$
+
+**How to read the derivation**: We used two rules: (1) pulling a constant out of a variance squares the constant, and (2) the variance of a sum of independent variables is the sum of the variances. Together, they show that averaging $n$ independent observations reduces the variance by a factor of $n$.
+
+</div>
+</details>
+
+
+## The Sampling Distribution
+
+Now we arrive at one of the most important ideas in statistics. If you repeat your study --- draw a fresh sample of $n$ patients, compute $\bar{X}$ --- you get a different number each time. The **sampling distribution** is the distribution of those numbers across all possible samples.
+
+::: {.glass-card .glass-card--definition}
+**Sampling Distribution**
+
+The **sampling distribution** of the sample mean $\bar{X}$ is the probability distribution that describes how $\bar{X}$ varies across repeated samples of size $n$ from the same population.
+
+- **Center**: $E[\bar{X}] = \mu$ (the sampling distribution is centered on the truth).
+- **Spread**: $\text{SD}(\bar{X}) = \frac{\sigma}{\sqrt{n}}$, called the **standard error** (SE).
+
+**How to read "standard error"**: The standard error is the standard deviation of the sampling distribution. It measures how much the sample mean typically varies from sample to sample. It is *not* the same as the standard deviation of the data ($\sigma$), which measures how much individual observations vary.
+:::
+
+The standard error $\text{SE} = \sigma / \sqrt{n}$ is one of the most important quantities in applied statistics. When a regression table reports a "standard error" next to a coefficient, this is what it means: an estimate of how much that coefficient would vary if you repeated the study with new data.
+
+::: {.glass-card .glass-card--warning}
+**Standard deviation vs. standard error** --- a frequent source of confusion:
+
+- **Standard deviation** ($\sigma$): How spread out individual observations are. A property of the population.
+- **Standard error** ($\sigma / \sqrt{n}$): How spread out sample means are. Gets smaller as $n$ increases.
+
+If patient HbA1c levels have $\sigma = 1.2\%$, the standard error of the mean for a sample of $n = 100$ is $1.2 / \sqrt{100} = 0.12\%$. Individual patients vary by about 1.2 percentage points. Sample means of 100 patients vary by about 0.12 percentage points.
+:::
+
+
+## The Central Limit Theorem
+
+We now know that the sampling distribution of $\bar{X}$ has mean $\mu$ and standard error $\sigma/\sqrt{n}$. But what *shape* does it have? If the population is normally distributed, the answer is straightforward: $\bar{X}$ is also exactly normal. But what if the population is skewed, bimodal, or otherwise non-normal?
+
+This is where the Central Limit Theorem (CLT) comes in --- arguably the single most important result in statistics.
+
+::: {.glass-card .glass-card--definition}
+**The Central Limit Theorem (CLT)**
+
+Let $X_1, X_2, \ldots, X_n$ be independent random variables drawn from *any* population with mean $\mu$ and finite variance $\sigma^2$. As $n$ grows large, the sampling distribution of the standardized sample mean converges to a standard normal distribution:
+
+$$
+\frac{\bar{X} - \mu}{\sigma / \sqrt{n}} \xrightarrow{d} N(0, 1)
+$$
+
+Equivalently, for large $n$:
+
+$$
+\bar{X} \dot{\sim} N\!\left(\mu, \frac{\sigma^2}{n}\right)
+$$
+
+**How to read this**: The first line says "subtract the mean from $\bar{X}$, divide by the standard error, and the result is approximately standard normal (mean 0, variance 1)." The symbol $\xrightarrow{d}$ means "converges in distribution." The second line is the practical version: "$\bar{X}$ is approximately normally distributed with mean $\mu$ and variance $\sigma^2/n$." The notation $\dot{\sim}$ means "approximately distributed as."
+
+**The remarkable part**: This holds *regardless of the shape of the population distribution*. The population can be skewed, bimodal, uniform, or weirdly lumpy. As long as $n$ is large enough and the variance is finite, the distribution of the sample mean will be approximately bell-shaped.
+:::
+
+### How Large Is "Large Enough"?
+
+The CLT is an asymptotic result --- it says what happens "in the limit." In practice, the approximation quality depends on how non-normal the population is:
+
+- **Symmetric populations** (e.g., blood pressure): $n \geq 10$ is often sufficient.
+- **Moderately skewed populations** (e.g., waiting times): $n \geq 30$ usually works well.
+- **Heavily skewed populations** (e.g., healthcare costs in SEK): May need $n \geq 100$ or more.
+
+The interactive simulation below lets you explore this directly.
+
+
+## See It: The Central Limit Theorem in Action
+
+Use the controls below to explore the CLT. Choose a population shape, set a sample size, and draw repeated samples. Watch the sampling distribution of $\bar{X}$ emerge.
+
+::: {.interactive-container}
+
+#### Building a Sampling Distribution
+
+::: {.start-here}
+**Start here:** pick a population shape and sample size, then click *Draw 100 samples* to watch the sampling distribution build. New here? Follow the numbered tour just below the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof popShape = Inputs.radio(
+  ["Normal", "Uniform", "Exponential", "Bimodal"],
+  {
+    label: "Population shape",
+    value: "Exponential"
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof sampleSize = Inputs.range([1, 200], {
+  value: 5,
+  step: 1,
+  label: "Sample size (n)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof drawAction = Inputs.button("Draw 100 samples", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+viewof resetAction = Inputs.button("Reset", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+viewof zoomToggle = Inputs.toggle({
+  label: "Auto-zoom sampling x-axis",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family: 'Inter'; font-size: 0.7rem; color: #79766e; margin: -0.2rem 0 0.3rem 0;">Off = compare the sampling spread against the full population scale (zoom only changes the view, not the data).</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Published accumulator that downstream cells read. It is WRITTEN here and in
+// the reactive cells below, but never READ in the same cell that writes it
+// (reading + writing one mutable in a single cell is a circular definition in
+// the OJS runtime). The retained state lives in `cltStore` instead. This
+// matches the accumulator pattern used by the Hypothesis Testing and
+// Confidence Intervals widgets in this module.
+mutable sampleMeans = []
+
+// RNG
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randn(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// Generate a single observation from the chosen population
+function drawOne(rng, shape) {
+  if (shape === "Normal") {
+    // Normal: mean 130, sd 18 (systolic blood pressure)
+    return 130 + 18 * randn(rng);
+  } else if (shape === "Uniform") {
+    // Uniform on [100, 160]
+    return 100 + 60 * rng();
+  } else if (shape === "Exponential") {
+    // Exponential with mean 14, shifted to start at 0 (waiting days)
+    return -14 * Math.log(1 - rng());
+  } else {
+    // Bimodal: mixture of two normals
+    if (rng() < 0.5) {
+      return 115 + 8 * randn(rng);
+    } else {
+      return 150 + 10 * randn(rng);
+    }
+  }
+}
+
+// Stable, non-reactive store created once. Because it depends on nothing, the
+// OJS runtime keeps the same object across reactive re-runs, so accumulated
+// sample means persist between draws WITHOUT reading back `mutable sampleMeans`
+// (which would be a read+write of one mutable in a single cell — a circular
+// definition). `lastDraw` records the draw-button count we last acted on, so a
+// shape/n change cannot replay a stale batch into the histogram.
+cltStore = ({ means: [], lastDraw: 0 })
+
+// Population parameters for reference lines.
+// sigma is the TRUE population standard deviation for each shape, used to
+// compute the theoretical standard error sigma/sqrt(n) and the theoretical
+// Normal(mu, sigma^2/n) density overlaid on the sampling distribution.
+popParams = {
+  if (popShape === "Normal") return { mu: 130, sigma: 18, label: "SBP (mmHg)", xDomain: [60, 200] };
+  if (popShape === "Uniform") return { mu: 130, sigma: 60 / Math.sqrt(12), label: "SBP (mmHg)", xDomain: [60, 200] };
+  if (popShape === "Exponential") return { mu: 14, sigma: 14, label: "Wait time (days)", xDomain: [0, 70] };
+  // Bimodal: equal mixture of N(115, 8^2) and N(150, 10^2); mu = 132.5, sigma ≈ 19.70
+  return { mu: 132.5, sigma: Math.sqrt(388.25), label: "SBP (mmHg)", xDomain: [60, 200] };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// React to the draw button. Reads the plain `cltStore` (NOT `mutable
+// sampleMeans`), appends a fresh batch of 100 means to it, then publishes a
+// copy to `mutable sampleMeans`. Reading `cltStore` instead of the mutable
+// avoids the read+write-same-mutable cycle that would crash the cell. The
+// `trigger !== cltStore.lastDraw` guard means this only appends on a genuine
+// new button click; a shape/n change re-runs this cell but is ignored here
+// (the reset-on-change cell below handles clearing), so batches from different
+// settings can never be mixed into one histogram.
+{
+  const trigger = drawAction;     // re-run on button click
+  const n = sampleSize;           // current sample size for this batch
+  const shape = popShape;         // current population shape for this batch
+
+  if (trigger > 0 && trigger !== cltStore.lastDraw) {
+    // Deterministic per-click seed so each draw is reproducible yet distinct.
+    const baseSeed = trigger * 9999 + n * 7 + (shape === "Normal" ? 1 : shape === "Uniform" ? 2 : shape === "Exponential" ? 3 : 4);
+    const rng = mulberry32(baseSeed);
+
+    const newMeans = [];
+    for (let rep = 0; rep < 100; rep++) {
+      let sum = 0;
+      for (let j = 0; j < n; j++) {
+        sum += drawOne(rng, shape);
+      }
+      newMeans.push(sum / n);
+    }
+
+    cltStore.lastDraw = trigger;
+    cltStore.means = [...cltStore.means, ...newMeans];
+    mutable sampleMeans = [...cltStore.means];
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// React to the Reset button: clear the non-reactive store and the published
+// accumulator. Reads only `resetAction`, never `mutable sampleMeans`, so there
+// is no read+write cycle. `lastDraw` is left untouched: the next genuine draw
+// has a strictly larger button count and so still passes the draw cell's guard.
+{
+  resetAction;
+  cltStore.means = [];
+  mutable sampleMeans = [];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Auto-clear the accumulator whenever the population shape or sample size
+// changes. Without this, draws made at one (shape, n) setting would silently
+// pile into the same histogram as draws made at another, mixing distributions
+// from two different data-generating processes and corrupting the lesson. This
+// matches the treatment-effect widget below, which recomputes fresh on every
+// parameter change. Reads only popShape/sampleSize (and writes the store +
+// published accumulator), so it never reads back a mutable it writes.
+{
+  popShape;
+  sampleSize;
+  cltStore.means = [];
+  mutable sampleMeans = [];
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Summary stats
+cltStats = {
+  const means = sampleMeans;
+  if (means.length === 0) return { n: 0, avg: 0, se: 0 };
+  const avg = d3.mean(means);
+  const se = d3.deviation(means) || 0;
+  return { n: means.length, avg, se };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Theoretical standard error of the sample mean from the CLT: sigma / sqrt(n).
+// This is the value the observed SE should converge to as more samples are drawn.
+theoreticalSE = popParams.sigma / Math.sqrt(sampleSize)
+```
+
+```{ojs}
+//| echo: false
+
+html`<div>
+  <div style="font-family: 'Inter'; font-size: 0.72rem; color: #79766e; margin-bottom: 0.35rem;">Watch <strong>Observed SE</strong> approach <strong>Theoretical SE</strong> as you draw more samples.</div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.1rem; border-left: 4px solid #990000;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Samples drawn</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #1c1c1a;">${cltStats.n}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.1rem; border-left: 4px solid #2e6f40;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Mean of x&#772; values</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #2e6f40;">${cltStats.n > 0 ? cltStats.avg.toFixed(2) : "---"}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.1rem; border-left: 4px solid #3d5a6c;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Observed SE</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #3d5a6c;">${cltStats.n > 1 ? cltStats.se.toFixed(2) : "---"}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.1rem; border-left: 4px solid #9c7a33;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;" title="The CLT prediction: population SD divided by the square root of the sample size (&#963;/&#8730;n)">Theoretical SE</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #9c7a33;">${theoreticalSE.toFixed(2)}</div>
+  </div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Population distribution plot
+popPlotData = {
+  const shape = popShape;
+  const rng = mulberry32(12345);
+  const pts = [];
+  for (let i = 0; i < 5000; i++) {
+    pts.push({ x: drawOne(rng, shape) });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Two-panel layout: population and sampling distribution
+{
+  const popPlot = Plot.plot({
+    width: Math.min(480, width),
+    height: 160,
+    marginLeft: 45,
+    marginBottom: 30,
+    style: { fontFamily: "'Inter', sans-serif" },
+    x: { label: popParams.label, domain: popParams.xDomain },
+    y: { label: "Density", axis: null },
+    marks: [
+      Plot.rectY(popPlotData, Plot.binX(
+        { y: "count" },
+        { x: "x", fill: "#79766e", fillOpacity: 0.5, thresholds: 50 }
+      )),
+      Plot.ruleX([popParams.mu], { stroke: "#1c1c1a", strokeWidth: 2, strokeDasharray: "4,2" })
+    ]
+  });
+
+  // x-domain for the sampling panel. When auto-zoom is on, follow the
+  // theoretical spread (mu ± 4*SE) so the 1/sqrt(n) narrowing stays visible
+  // as n grows instead of collapsing to a spike inside the full population
+  // domain. Clamp to the population domain so the view never exceeds it.
+  const nBins = 40;
+  const sampDomain = (() => {
+    if (!zoomToggle) return popParams.xDomain;
+    const halfWidth = Math.max(4 * theoreticalSE, 0.5);
+    let lo = popParams.mu - halfWidth;
+    let hi = popParams.mu + halfWidth;
+    lo = Math.max(lo, popParams.xDomain[0]);
+    hi = Math.min(hi, popParams.xDomain[1]);
+    return [lo, hi];
+  })();
+
+  // Explicit, evenly spaced bin edges so the histogram bin width is known
+  // exactly. This lets us scale the theoretical density to the count axis.
+  const binEdges = d3.range(nBins + 1).map(
+    i => sampDomain[0] + (i / nBins) * (sampDomain[1] - sampDomain[0])
+  );
+  const binWidth = (sampDomain[1] - sampDomain[0]) / nBins;
+
+  // Theoretical Normal(mu, sigma^2/n) density, scaled from a probability
+  // density to expected counts: count(x) = N * binWidth * pdf(x). This makes
+  // the curve directly comparable to the empirical histogram bars.
+  const normalPdf = (x, mu, sd) =>
+    Math.exp(-0.5 * ((x - mu) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+  const curvePoints = d3.range(0, 201).map(i => {
+    const x = sampDomain[0] + (i / 200) * (sampDomain[1] - sampDomain[0]);
+    return { x, y: sampleMeans.length * binWidth * normalPdf(x, popParams.mu, theoreticalSE) };
+  });
+
+  const sampPlot = sampleMeans.length > 0 ? Plot.plot({
+    width: Math.min(480, width),
+    height: 220,
+    marginLeft: 45,
+    marginTop: 28,
+    marginRight: 14,
+    marginBottom: 35,
+    style: { fontFamily: "'Inter', sans-serif" },
+    x: { label: `Sample mean (n = ${sampleSize})`, domain: sampDomain },
+    y: { label: "Frequency", axis: null },
+    marks: [
+      Plot.rectY(sampleMeans.map(m => ({ m })), Plot.binX(
+        { y: "count" },
+        { x: "m", fill: "#990000", fillOpacity: 0.5, thresholds: binEdges }
+      )),
+      Plot.line(curvePoints, { x: "x", y: "y", stroke: "#1c1c1a", strokeWidth: 2.5 }),
+      Plot.ruleX([popParams.mu], { stroke: "#9c7a33", strokeWidth: 2.5 }),
+      Plot.ruleX([cltStats.avg], { stroke: "#2e6f40", strokeWidth: 2, strokeDasharray: "4,3" }),
+      Plot.text(
+        ["Theoretical N(μ, σ²/n)"],
+        { frameAnchor: "top-right", dx: -6, dy: 6, fill: "#1c1c1a", fontWeight: 700, fontSize: 11, textAnchor: "end", stroke: "white", strokeWidth: 3, paintOrder: "stroke" }
+      )
+    ]
+  }) : html`<div style="height: 220px; display: flex; align-items: center; justify-content: center; color: #79766e; font-style: italic; font-size: 0.95rem;">Click "Draw 100 samples" to start building the sampling distribution.</div>`;
+
+  const swatch = (c) => `display:inline-block;width:0.7rem;height:0.7rem;border-radius:2px;background:${c};margin-right:0.25rem;vertical-align:-1px;`;
+  return html`<div style="display: flex; flex-direction: column; gap: 0.25rem;">
+    <div style="background: #ffffff; padding: 0.75rem; border-radius: 0.75rem; border: 1px solid #e6e3db;">
+      <div style="font-family: 'Inter'; font-weight: 700; font-size: 0.75rem; margin-bottom: 0.25rem; color: #79766e; text-transform: uppercase;">Population Distribution</div>
+      ${popPlot}
+    </div>
+    <div style="background: #ffffff; padding: 0.75rem; border-radius: 0.75rem; border: 1px solid #e6e3db;">
+      <div style="font-family: 'Inter'; font-weight: 700; font-size: 0.75rem; margin-bottom: 0.25rem; color: #990000; text-transform: uppercase;">Sampling Distribution of x&#772;</div>
+      ${sampPlot}
+      ${sampleMeans.length > 0 ? html`<div style="font-family: 'Inter'; font-size: 0.7rem; color: #555555; margin-top: 0.35rem;">
+        <span style="${swatch('#990000')}"></span>Sample means (x&#772;)&nbsp;&nbsp;
+        <span style="${swatch('#9c7a33')}"></span>True mean μ&nbsp;&nbsp;
+        <span style="${swatch('#2e6f40')}"></span>Observed mean of x&#772;&nbsp;&nbsp;
+        <span style="${swatch('#1c1c1a')}"></span>Theoretical N(μ, σ²/n)
+      </div>` : ""}
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read This Simulation
+
+**Step 1: Start with the Exponential distribution at $n = 5$.** The top panel shows the population: a sharply right-skewed distribution (think waiting times at a Swedish emergency department --- many short waits, a few very long ones). Now click "Draw 100 samples." The bottom panel shows a histogram of 100 sample means, each computed from 5 observations. The sampling distribution is still somewhat skewed.
+
+**Step 2: Increase $n$ to 30.** Click "Reset," set $n = 30$, and draw again. The sampling distribution is much more symmetric and bell-shaped, even though the population is wildly skewed. This is the CLT at work.
+
+**Step 3: Push $n$ to 100 or beyond.** The sampling distribution becomes indistinguishable from a normal curve. The spread also narrows dramatically --- the standard error shrinks as $1/\sqrt{n}$. Keep "Auto-zoom sampling x-axis" on so this narrowing stays visible (the x-axis tracks the theoretical $\mu \pm 4\,\text{SE}$ window); turn it off to see how tiny the distribution becomes against the full population range. The black curve is the theoretical $N(\mu, \sigma^2/n)$ predicted by the CLT --- watch the crimson histogram converge to it, and watch the **Observed SE** card approach the **Theoretical SE** card as you draw more samples.
+
+**Step 4: Try the Bimodal distribution.** This simulates a population with two subgroups (perhaps young and elderly patients with different typical blood pressures). With $n = 1$, the sampling distribution mirrors the bimodal population. By $n = 30$, the bimodality has vanished --- the sample mean is approximately normal.
+
+**Step 5: Try the Normal distribution.** When the population is already normal, $\bar{X}$ is *exactly* normal for any $n$, even $n = 1$. The CLT is not needed, but it doesn't hurt.
+
+::: {.glass-card .glass-card--insight}
+The Central Limit Theorem is the reason we can do inference without knowing the exact shape of the population. No matter how strange the underlying distribution of individual patients' outcomes, the *average* outcome across a reasonably large sample follows an approximately normal distribution. This is why the normal distribution appears everywhere in statistics --- not because individual data are normally distributed, but because *averages* are.
+:::
+
+
+## Connection to Causal Inference
+
+Everything we have developed on this page connects directly to causal inference. Here is the bridge.
+
+The **difference-in-means estimator** for the ATE is:
+
+$$
+\hat{\tau} = \bar{Y}_{\text{treated}} - \bar{Y}_{\text{control}}
+$$
+
+This is a difference of two sample means. Each sample mean is a random variable with its own sampling distribution. Their difference is also a random variable with a sampling distribution:
+
+$$
+\hat{\tau} \dot{\sim} N\!\left(\tau, \; \frac{\sigma_1^2}{n_1} + \frac{\sigma_0^2}{n_0}\right)
+$$
+
+where $\tau$ is the true ATE, $\sigma_1^2$ and $\sigma_0^2$ are the population variances in the treated and control groups, and $n_1$ and $n_0$ are the sample sizes.
+
+**How to read this**: The estimated treatment effect $\hat{\tau}$ is approximately normally distributed, centered on the true effect $\tau$, with a variance that is the sum of the variances of the two group means. The standard error of the treatment effect estimate is:
+
+$$
+\text{SE}(\hat{\tau}) = \sqrt{\frac{\sigma_1^2}{n_1} + \frac{\sigma_0^2}{n_0}}
+$$
+
+This formula tells you how precise your treatment effect estimate is. If the standard error is small relative to $\hat{\tau}$, you have strong evidence that the effect is real. If it is large, the observed effect could easily be sampling noise. The next two pages --- on hypothesis testing and confidence intervals --- formalize this intuition.
+
+The interactive below makes the sampling distribution of $\hat{\tau}$ tangible. Set a true effect $\tau$ and a per-group sample size, run many simulated trials of the diabetes program, and watch the histogram of estimated effects form --- centered on $\tau$, with a spread that the theoretical formula above predicts exactly. The **"force effect = 0"** toggle is the key to everything that follows: flip it on, and you will see the null sampling distribution straddle zero, which is precisely the picture that hypothesis testing reasons about.
+
+Before you experiment, hold the two reference pictures in mind. The sketch below draws them side by side, at the *same* width: a **real effect** moves the whole sampling distribution off zero (left, centered on $\tau$), while the **null** ($\tau = 0$) sits squarely on zero (right). The shaded slate overlap is the region where the two clouds agree --- estimates that are plausible under *both* worlds. The smaller that overlap (bigger $|\tau|$ or bigger $n$), the easier it is to tell a real effect from noise. That shrinking overlap is exactly what "statistical power" will mean.
+
+```{ojs}
+//| echo: false
+
+// Static two-panel sketch: sampling distribution of tau-hat under a real
+// effect (centered on tau) vs under the null (centered on 0), same width and
+// same SE, with the overlap region shaded. Primes Step 6 of the widget tour.
+// Pure function of width; uses illustrative tau=-0.4 and SE matching the
+// widget defaults (~0.19).
+p2_effectVsNull = {
+  const se = 0.19, tau = -0.4;
+  const lo = -1.0, hi = 0.7;
+  const pdf = (x, mu) => Math.exp(-0.5 * ((x - mu) / se) ** 2) / (se * Math.sqrt(2 * Math.PI));
+  const grid = d3.range(0, 281).map(i => {
+    const x = lo + (i / 280) * (hi - lo);
+    return { x, effect: pdf(x, tau), null: pdf(x, 0) };
+  });
+  // Overlap = pointwise minimum of the two densities (the shared region).
+  const overlap = grid.map(d => ({ x: d.x, y: Math.min(d.effect, d.null) }));
+  const peak = pdf(tau, tau);
+  return Plot.plot({
+    width: Math.min(620, width),
+    height: 250,
+    marginLeft: 56,
+    marginBottom: 48,
+    style: { fontFamily: "'Inter', sans-serif" },
+    x: { label: "Estimated effect τ̂ (% HbA1c)", domain: [lo, hi] },
+    y: { label: "Density of τ̂", axis: null },
+    marks: [
+      Plot.areaY(overlap, { x: "x", y: "y", fill: "#3d5a6c", fillOpacity: 0.3 }),
+      Plot.line(grid, { x: "x", y: "effect", stroke: "#990000", strokeWidth: 2.5 }),
+      Plot.line(grid, { x: "x", y: "null", stroke: "#1c1c1a", strokeWidth: 2.5, strokeDasharray: "5,3" }),
+      Plot.ruleX([tau], { stroke: "#990000", strokeWidth: 1.5, strokeDasharray: "3,2" }),
+      Plot.ruleX([0], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "3,2" }),
+      Plot.ruleY([0]),
+      Plot.text([{ x: tau, y: peak * 1.06 }],
+        { x: "x", y: "y", text: ["Real effect\n(centered on τ)"], fill: "#990000", fontWeight: 700, fontSize: 11, textAnchor: "middle", lineHeight: 1.1, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ x: 0, y: peak * 1.06 }],
+        { x: "x", y: "y", text: ["Null\n(centered on 0)"], fill: "#1c1c1a", fontWeight: 700, fontSize: 11, textAnchor: "middle", lineHeight: 1.1, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ x: -0.2, y: peak * 0.16 }],
+        { x: "x", y: "y", text: ["overlap"], fill: "#3d5a6c", fontWeight: 700, fontSize: 10, textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+    ]
+  });
+}
+```
+
+::: {.aside}
+The same sampling distribution drawn under two worlds: a real effect (crimson, centered on $\tau$) versus the null (ink dashed, centered on 0). Both have the same width (the same standard error); only the center moves. The slate **overlap** is where the two worlds produce indistinguishable estimates --- shrinking it is what raising $|\tau|$ or $n$ accomplishes, and is the seed of statistical power.
+:::
+
+## See It: The Sampling Distribution of the Treatment Effect
+
+Each "experiment" below is a fresh randomized trial at a Swedish *vårdcentral*: $n$ patients are assigned to the diabetes management program and $n$ to standard care, and we record the estimated effect $\hat{\tau} = \bar{Y}_{\text{treated}} - \bar{Y}_{\text{control}}$ on HbA1c (lower is better, so a *beneficial* effect is negative). One trial gives one $\hat{\tau}$. Run a thousand trials and the histogram of those $\hat{\tau}$ values *is* the sampling distribution.
+
+::: {.interactive-container}
+
+#### Many Trials, One Sampling Distribution of &tau;&#770;
+
+::: {.start-here}
+**Start here:** set a true effect τ and a per-group sample size, then click *Draw 1000 experiments*. Try the *force effect = 0* toggle to see the null world. New here? Follow the numbered tour just below the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof dms_tau = Inputs.range([-1.5, 1.5], {
+  value: -0.4,
+  step: 0.05,
+  label: "True effect τ (% HbA1c; negative = program helps)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof dms_nPer = Inputs.range([10, 400], {
+  value: 60,
+  step: 10,
+  label: "Sample size per group (n₁ = n₀)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof dms_nullToggle = Inputs.toggle({
+  label: "Force effect = 0 (simulate the null H₀: τ = 0)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family: 'Inter'; font-size: 0.7rem; color: #79766e; margin: -0.2rem 0 0.3rem 0;">${dms_nullToggle
+  ? `The <strong>True effect τ</strong> slider is ignored while this is on — every trial uses τ = 0.`
+  : `The <strong>True effect τ</strong> slider is active only when this toggle is off.`}</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof dms_draw = Inputs.button("Draw 1000 experiments", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// --- Fixed population parameters for the two arms (Swedish HbA1c framing) ---
+// Control arm: standard care, mean 7.8%. Treated arm gets shifted by the
+// effective effect. The two arms have slightly DIFFERENT spreads so the
+// separate-variance SE formula sqrt(s1^2/n1 + s0^2/n0) is the right one.
+dms_sigma0 = 1.10   // control SD of HbA1c (%)
+dms_sigma1 = 0.95   // treated SD of HbA1c (%)
+dms_mu0 = 7.8       // control population mean HbA1c (%)
+
+// The effect actually used by the simulator: zero when the null toggle is on,
+// otherwise the slider value. This is what lets the reader watch the whole
+// distribution slide onto 0.
+dms_effect = dms_nullToggle ? 0 : dms_tau
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standard normal draw via Box-Muller (browser randomness is fine here).
+dms_randn = function () {
+  let u1 = Math.random();
+  let u2 = Math.random();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// Simulate ONE randomized trial and return its tau-hat plus the trial's own
+// estimated SE from the separate-variance formula. Both groups have size n.
+dms_simulateExperiment = function (effect, n) {
+  let sumC = 0, sumC2 = 0, sumT = 0, sumT2 = 0;
+  for (let i = 0; i < n; i++) {
+    const yc = dms_mu0 + dms_sigma0 * dms_randn();
+    const yt = dms_mu0 + effect + dms_sigma1 * dms_randn();
+    sumC += yc; sumC2 += yc * yc;
+    sumT += yt; sumT2 += yt * yt;
+  }
+  const meanC = sumC / n, meanT = sumT / n;
+  const varC = (sumC2 - n * meanC * meanC) / (n - 1);
+  const varT = (sumT2 - n * meanT * meanT) / (n - 1);
+  const seHat = Math.sqrt(varT / n + varC / n);
+  return { tauHat: meanT - meanC, seHat };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Run 1000 experiments. This cell re-runs whenever dms_draw advances (button
+// click) OR whenever the data-generating process changes (effect / n), so the
+// histogram never mixes draws from two different settings. No mutable needed:
+// the whole batch is recomputed each time, returning a fresh array.
+dms_results = {
+  dms_draw;                         // re-run on button click
+  const n = dms_nPer;               // re-run when n changes
+  const effect = dms_effect;        // re-run when effect (or null toggle) changes
+  const tauHats = [];
+  const seHats = [];
+  for (let rep = 0; rep < 1000; rep++) {
+    const r = dms_simulateExperiment(effect, n);
+    tauHats.push(r.tauHat);
+    seHats.push(r.seHat);
+  }
+  return { tauHats, seHats };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Theoretical SE of tau-hat from this page's formula: sqrt(sigma1^2/n1 + sigma0^2/n0).
+dms_theoreticalSE = Math.sqrt(
+  (dms_sigma1 ** 2) / dms_nPer + (dms_sigma0 ** 2) / dms_nPer
+)
+
+// Summary statistics across the 1000 simulated experiments.
+dms_stats = {
+  const t = dms_results.tauHats;
+  const meanTau = d3.mean(t);
+  const sdTau = d3.deviation(t) || 0;          // observed SE = spread of tau-hats
+  const meanSeHat = d3.mean(dms_results.seHats); // avg of each trial's own SE estimate
+  return { meanTau, sdTau, meanSeHat };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div>
+  <div style="font-family: 'Inter'; font-size: 0.72rem; color: #79766e; margin-bottom: 0.35rem;"><strong>Mean of &tau;&#770;</strong> should sit near the true τ, and <strong>Observed SE</strong> should approach <strong>Theoretical SE</strong>.</div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.4rem; border-left: 4px solid #3d5a6c;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;">Experiments</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #1c1c1a;">${dms_results.tauHats.length}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.4rem; border-left: 4px solid #2e6f40;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;" title="Average of the 1000 estimated effects — should sit near the true τ">Mean of &tau;&#770;</div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #2e6f40;">${(dms_stats.meanTau >= 0 ? "+" : "") + dms_stats.meanTau.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.4rem; border-left: 4px solid #990000;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;" title="Spread of the 1000 estimated effects — the empirical standard error">Observed SE<div style="font-size: 0.55rem; font-weight: 600; text-transform: none; color: #79766e;">spread of &tau;&#770;</div></div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #990000;">${dms_stats.sdTau.toFixed(3)}</div>
+  </div>
+  <div class="glass-card" style="margin: 0; padding: 0.6rem 0.8rem; min-height: 4.4rem; border-left: 4px solid #9c7a33;">
+    <div style="font-family: 'Inter'; font-size: 0.65rem; text-transform: uppercase; color: #79766e; font-weight: 700;" title="The formula prediction: sqrt(sigma1^2/n1 + sigma0^2/n0)">Theoretical SE<div style="font-size: 0.55rem; font-weight: 600; text-transform: none; color: #79766e;">&#8730;(&#963;&#8321;&#178;/n&#8321; + &#963;&#8320;&#178;/n&#8320;)</div></div>
+    <div style="font-size: 1.3rem; font-weight: 800; color: #9c7a33;">${dms_theoreticalSE.toFixed(3)}</div>
+  </div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Histogram of the 1000 estimated effects, with reference rules at the true τ
+// (ochre) and at 0 (ink dashed), plus the theoretical N(τ, SE²) curve scaled
+// to the count axis exactly as the CLT panel above does.
+{
+  const tauHats = dms_results.tauHats;
+  const center = dms_effect;
+
+  // Symmetric, fixed window around the true effect so both τ and 0 are always
+  // in view (important for the "force effect = 0" comparison). 4.5 SE of slack,
+  // and always wide enough to include 0.
+  const half = Math.max(4.5 * dms_theoreticalSE, Math.abs(center) + 4.5 * dms_theoreticalSE, 0.2);
+  const lo = Math.min(center - half, -0.05);
+  const hi = Math.max(center + half, 0.05);
+
+  const nBins = 40;
+  const binEdges = d3.range(nBins + 1).map(i => lo + (i / nBins) * (hi - lo));
+  const binWidth = (hi - lo) / nBins;
+
+  const normalPdf = (x, mu, sd) =>
+    Math.exp(-0.5 * ((x - mu) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+  const curvePoints = d3.range(0, 201).map(i => {
+    const x = lo + (i / 200) * (hi - lo);
+    return { x, y: tauHats.length * binWidth * normalPdf(x, center, dms_theoreticalSE) };
+  });
+  const curveMax = d3.max(curvePoints, d => d.y) || 0;
+
+  // When the true effect sits close to 0 (small slider value or the null
+  // toggle), the "0 (null)" and "τ = …" labels would print at nearly the same
+  // x and overlap. Merge them into one label in that regime; otherwise keep two
+  // labels but anchor each to the side of its rule so they never collide.
+  const labelsClose = Math.abs(center) < 1.5 * dms_theoreticalSE;
+  const tauLabelText = `τ = ${(center >= 0 ? "+" : "") + center.toFixed(2)}`;
+  const haloText = (extra) => ({ fontWeight: 700, fontSize: 11, stroke: "white", strokeWidth: 3, paintOrder: "stroke", ...extra });
+
+  const labelMarks = labelsClose
+    ? [
+        Plot.text(
+          [{ x: center, y: curveMax }],
+          { x: "x", y: "y", text: [center === 0 ? "τ = 0 (null)" : `${tauLabelText} (≈ null)`], fill: "#9c7a33", textAnchor: "middle", dy: -10, ...haloText({}) }
+        )
+      ]
+    : [
+        Plot.text(
+          [{ x: 0, y: curveMax }],
+          { x: "x", y: "y", text: ["0 (null)"], fill: "#1c1c1a", textAnchor: center < 0 ? "start" : "end", dx: center < 0 ? 4 : -4, dy: -6, ...haloText({}) }
+        ),
+        Plot.text(
+          [{ x: center, y: curveMax }],
+          { x: "x", y: "y", text: [tauLabelText], fill: "#9c7a33", textAnchor: center < 0 ? "end" : "start", dx: center < 0 ? -4 : 4, dy: -6, ...haloText({}) }
+        )
+      ];
+
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 300,
+    marginLeft: 50,
+    marginTop: 24,
+    marginBottom: 48,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px", background: "transparent" },
+    x: { label: "Estimated effect τ̂ (% HbA1c)", domain: [lo, hi] },
+    y: { label: "Number of experiments", grid: true },
+    marks: [
+      Plot.rectY(tauHats.map(t => ({ t })), Plot.binX(
+        { y: "count" },
+        { x: "t", fill: "#990000", fillOpacity: 0.5, thresholds: binEdges }
+      )),
+      Plot.line(curvePoints, { x: "x", y: "y", stroke: "#1c1c1a", strokeWidth: 2.5 }),
+      // Rule at 0 (the null value) — neutral ink dashed reference.
+      Plot.ruleX([0], { stroke: "#1c1c1a", strokeWidth: 2, strokeDasharray: "5,3" }),
+      // Rule at the true effect τ — ochre (true value / highlight).
+      Plot.ruleX([center], { stroke: "#9c7a33", strokeWidth: 2.5 }),
+      ...labelMarks,
+      Plot.ruleY([0])
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Plain-language read-out tying the histogram to the inference question:
+// how often does a single trial land on the "wrong side" of zero?
+{
+  const tauHats = dms_results.tauHats;
+  const seHats = dms_results.seHats;
+  const center = dms_effect;
+  // Under the null we report the genuine two-sided 5%-level decision: a trial
+  // is "flagged" when |tau-hat| >= 1.96 * its OWN estimated SE (seHat), exactly
+  // what a z/t-test does — it never knows the true population SE. Using each
+  // trial's seHat (not the oracle theoreticalSE) is the honest false-positive
+  // count and is why dms_simulateExperiment returns seHat at all.
+  const nWrongSign = center === 0
+    ? tauHats.filter((t, i) => Math.abs(t) >= 1.96 * seHats[i]).length
+    : (center < 0
+        ? tauHats.filter(t => t > 0).length
+        : tauHats.filter(t => t < 0).length);
+  const pct = (100 * nWrongSign / tauHats.length).toFixed(1);
+  const tag = center === 0 ? "Null mode:" : "Effect mode:";
+  const msg = center === 0
+    ? `With τ = 0, about <strong>${pct}%</strong> of trials produced a τ̂ at least 1.96 of their own estimated standard errors from zero — these are the false positives a two-sided 5%-level test would flag, and the figure sits near the nominal 5%. The distribution is centred on 0: positive and negative estimates are equally likely.`
+    : `The true effect is <strong>${(center >= 0 ? "+" : "") + center.toFixed(2)}</strong>. About <strong>${pct}%</strong> of trials produced an estimate with the <em>wrong sign</em> (on the far side of 0). Larger |τ| and larger n both shrink this — that is statistical power building up.`;
+  return html`<div style="margin-top: 0.5rem; padding: 0.65rem 0.9rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db; font-family: 'Inter', sans-serif; font-size: 0.86rem; color: #1c1c1a;"><strong style="color: #990000;">${tag}</strong> ${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read This Simulation
+
+This interactive turns the formula $\text{SE}(\hat{\tau}) = \sqrt{\sigma_1^2/n_1 + \sigma_0^2/n_0}$ into something you can watch. Here is a guided tour:
+
+**Step 1: Draw your first thousand trials.** Leave the true effect at $\tau = -0.4$ (the program lowers HbA1c by 0.4 percentage points) and $n = 60$ per group, and click "Draw 1000 experiments." Each crimson bar counts how many of the 1000 simulated trials landed in that range of $\hat{\tau}$. The cloud of estimates is centered on the ochre line at $\tau = -0.4$, not on any single value --- this is the **sampling distribution** of the treatment-effect estimator.
+
+**Step 2: Confirm the estimator is unbiased.** Look at the **Mean of $\hat{\tau}$** card: it sits very close to $-0.40$, the true effect. Across many hypothetical repetitions of the trial, the difference-in-means estimator hits the truth on average. The individual trials scatter around it, but they do not systematically miss.
+
+**Step 3: Match observed SE to theoretical SE.** Compare the **Observed SE** card (the spread of the 1000 $\hat{\tau}$ values) with the **Theoretical SE** card (the formula $\sqrt{\sigma_1^2/n_1 + \sigma_0^2/n_0}$). They agree to within simulation noise. The black bell curve is the theoretical $N(\tau, \text{SE}^2)$ predicted by the CLT --- the crimson histogram tracks it. This is the difference-of-means analogue of the single-mean CLT you explored earlier on this page.
+
+**Step 4: Shrink the standard error with $n$.** Increase the sample size from 60 to 200, then 400, drawing again each time. The histogram visibly narrows and the Theoretical SE card falls. Because SE scales as $1/\sqrt{n}$, quadrupling $n$ roughly halves the spread --- the same $1/\sqrt{n}$ law that governed a single sample mean now governs the *difference* of two of them.
+
+**Step 5: Flip on "force effect = 0" --- the null world.** This is the pivotal move. With the toggle on, the program truly does nothing, so the entire distribution slides over to straddle the ink dashed line at **0**. Yet individual trials still produce nonzero $\hat{\tau}$ values --- some positive, some negative --- purely from sampling noise. The read-out tells you what fraction landed at least 1.96 of their *own* estimated standard errors from zero --- about 5% --- those are the experiments a two-sided 5%-level test would mistakenly flag as "significant." (Where does 1.96 come from? It is the distance, in standard-error units, that brackets the middle 95% of a normal curve --- the empirical-rule "$\pm 2\sigma$" picture from earlier, sharpened from 2 to 1.96. The [Hypothesis Testing](hypothesis-testing.qmd) and Confidence Intervals pages derive it.) This null distribution centered on 0 is exactly the reference picture the [Hypothesis Testing](hypothesis-testing.qmd) page asks you to reason against.
+
+**Step 6: Slide $\tau$ back to a real effect and compare.** Turn the toggle off and watch the whole cloud shift away from 0 to center on your chosen $\tau$. A real effect *moves the sampling distribution off the null*; testing is then a question of whether your one observed $\hat{\tau}$ is far enough into that shifted cloud to be implausible under the null. Notice how the overlap between the "effect" cloud and 0 shrinks as you make $|\tau|$ larger or $n$ bigger --- that vanishing overlap is statistical power, the subject of the next page.
+
+::: {.glass-card .glass-card--insight}
+Every confidence interval and every p-value you will ever compute is a statement about this cloud. The estimate $\hat{\tau}$ you get from your one real study is a single draw from the sampling distribution; the standard error tells you how wide the cloud is; and the distance from 0 (in SE units) tells you how surprising your draw would be if the program truly did nothing. Hold both pictures in mind --- the cloud shifted onto $\tau$, and the same-width cloud sitting on 0 --- and the entire logic of statistical inference for causal effects falls into place.
+:::
+
+::: {.glass-card .glass-card--assumption}
+**What the CLT requires (and what it does not)**
+
+The CLT tells us that $\hat{\tau}$ is approximately normal for large samples. But it says nothing about whether $\hat{\tau}$ is centered on the *causal* effect. For $E[\hat{\tau}] = \tau$ (the true ATE), we also need:
+
+- **No selection bias**: $E[Y(0) \mid D = 1] = E[Y(0) \mid D = 0]$
+- **SUTVA**: No interference or hidden treatment versions
+
+The CLT gives us the *shape* of the sampling distribution. The causal assumptions from Module 1 give us the *center*. Both are needed for valid causal inference.
+:::
+
+
+<details>
+<summary>Math Details: Variance of the Difference-in-Means Estimator</summary>
+<div class="details-content">
+
+Let $\bar{Y}_1 = \frac{1}{n_1}\sum_{i: D_i=1} Y_i$ and $\bar{Y}_0 = \frac{1}{n_0}\sum_{i: D_i=0} Y_i$ be the treated and control group sample means.
+
+$$
+\text{Var}(\hat{\tau}) = \text{Var}(\bar{Y}_1 - \bar{Y}_0)
+$$
+
+If treatment assignment is independent of potential outcomes (as under randomization), the two groups are independent, so:
+
+$$
+\text{Var}(\hat{\tau}) = \text{Var}(\bar{Y}_1) + \text{Var}(\bar{Y}_0) = \frac{\sigma_1^2}{n_1} + \frac{\sigma_0^2}{n_0}
+$$
+
+where we used the fact that $\text{Var}(-\bar{Y}_0) = \text{Var}(\bar{Y}_0)$.
+
+In practice, $\sigma_1^2$ and $\sigma_0^2$ are unknown and must be estimated from the data. Common estimators:
+
+- **Separate variances**: $\hat{\sigma}_1^2 = \frac{1}{n_1 - 1}\sum_{i: D_i=1}(Y_i - \bar{Y}_1)^2$ and similarly for control.
+- **Pooled variance**: $\hat{\sigma}^2_{\text{pool}} = \frac{(n_1 - 1)\hat{\sigma}_1^2 + (n_0 - 1)\hat{\sigma}_0^2}{n_1 + n_0 - 2}$, which assumes equal variances across groups.
+
+When variances are unequal, use the separate-variance formula with Welch's degrees of freedom. When you run a regression of $Y$ on $D$, the reported standard error for the coefficient on $D$ is (by default) based on a pooled variance assumption, though heteroskedasticity-robust standard errors relax this.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+# --- CLT Simulation: HbA1c levels from a Swedish registry ---
+set.seed(42)
+
+# Population parameters (true, unobservable in practice)
+pop_mean <- 7.2       # Population mean HbA1c (%)
+pop_sd   <- 1.1       # Population SD of HbA1c
+
+# Simulate: draw many samples of size n, compute sample means
+n_samples <- 2000
+sample_size <- 50
+
+sample_means <- replicate(n_samples, {
+  sample_data <- rnorm(sample_size, mean = pop_mean, sd = pop_sd)
+  mean(sample_data)
+})
+
+# Theoretical predictions from the CLT
+theoretical_se <- pop_sd / sqrt(sample_size)
+
+cat("--- CLT Verification ---\n")
+cat("Population mean:       ", pop_mean, "\n")
+cat("Mean of sample means:  ", round(mean(sample_means), 4), "\n\n")
+cat("Theoretical SE:        ", round(theoretical_se, 4), "\n")
+cat("Observed SD of means:  ", round(sd(sample_means), 4), "\n")
+
+# Visualize
+tibble(xbar = sample_means) |>
+  ggplot(aes(x = xbar)) +
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 40, fill = "#990000", alpha = 0.5) +
+  stat_function(fun = dnorm,
+                args = list(mean = pop_mean, sd = theoretical_se),
+                color = "#1c1c1a", linewidth = 1.2) +
+  geom_vline(xintercept = pop_mean, linetype = "dashed") +
+  labs(
+    title = "Sampling Distribution of Mean HbA1c (n = 50)",
+    subtitle = "Histogram: simulated | Dark curve: CLT prediction",
+    x = "Sample mean HbA1c (%)",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# --- Now with a skewed population (healthcare costs in SEK) ---
+# Log-normal: right-skewed, like real cost data
+cost_mean_log <- 9.5     # On the log scale
+cost_sd_log   <- 0.8
+
+cost_means <- replicate(n_samples, {
+  costs <- rlnorm(sample_size, meanlog = cost_mean_log, sdlog = cost_sd_log)
+  mean(costs)
+})
+
+cat("\n--- Skewed Population (Healthcare Costs) ---\n")
+cat("Observed SD of means:  ", round(sd(cost_means), 0), " SEK\n")
+cat("Shapiro-Wilk p-value:  ", round(shapiro.test(cost_means)$p.value, 4),
+    " (high = consistent with normality)\n")
+```
+
+### Python
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# --- CLT Simulation: HbA1c levels from a Swedish registry ---
+np.random.seed(42)
+
+# Population parameters
+pop_mean = 7.2       # Population mean HbA1c (%)
+pop_sd   = 1.1       # Population SD of HbA1c
+
+# Simulate: draw many samples of size n, compute sample means
+n_samples = 2000
+sample_size = 50
+
+sample_means = np.array([
+    np.random.normal(pop_mean, pop_sd, sample_size).mean()
+    for _ in range(n_samples)
+])
+
+# Theoretical predictions
+theoretical_se = pop_sd / np.sqrt(sample_size)
+
+print("--- CLT Verification ---")
+print(f"Population mean:       {pop_mean}")
+print(f"Mean of sample means:  {sample_means.mean():.4f}")
+print(f"Theoretical SE:        {theoretical_se:.4f}")
+print(f"Observed SD of means:  {sample_means.std(ddof=1):.4f}")
+
+# Visualize
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+# Left: sampling distribution of HbA1c means
+axes[0].hist(sample_means, bins=40, density=True, alpha=0.5, color="#990000")
+x_grid = np.linspace(sample_means.min(), sample_means.max(), 200)
+axes[0].plot(x_grid, stats.norm.pdf(x_grid, pop_mean, theoretical_se),
+             color="#1c1c1a", linewidth=2, label="CLT prediction")
+axes[0].axvline(pop_mean, linestyle="--", color="black", alpha=0.5)
+axes[0].set_xlabel("Sample mean HbA1c (%)")
+axes[0].set_title(f"Sampling Distribution (n = {sample_size})")
+axes[0].legend()
+
+# Right: skewed population (healthcare costs in SEK)
+cost_means = np.array([
+    np.random.lognormal(mean=9.5, sigma=0.8, size=sample_size).mean()
+    for _ in range(n_samples)
+])
+axes[1].hist(cost_means, bins=40, density=True, alpha=0.5, color="#990000")
+x_grid2 = np.linspace(cost_means.min(), cost_means.max(), 200)
+axes[1].plot(x_grid2,
+             stats.norm.pdf(x_grid2, cost_means.mean(), cost_means.std()),
+             color="#1c1c1a", linewidth=2, label="Normal approx.")
+axes[1].set_xlabel("Sample mean cost (SEK)")
+axes[1].set_title("Skewed Population → Normal Means")
+axes[1].legend()
+
+plt.tight_layout()
+plt.show()
+
+print(f"\n--- Skewed Population (Healthcare Costs) ---")
+print(f"Observed SD of means:  {cost_means.std(ddof=1):.0f} SEK")
+_, p_val = stats.shapiro(cost_means)  # test all 2000 sample means for normality
+print(f"Shapiro-Wilk p-value:  {p_val:.4f} (high = consistent with normality)")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A Swedish *kvalitetsregister* (quality registry) records HbA1c levels for a population of 10,000 Type 2 diabetes patients across Region Skåne. The population mean is $\mu = 7.4\%$ and the population standard deviation is $\sigma = 1.3\%$. A researcher draws a random sample of $n = 64$ patients.
+
+(a) What is the expected value of the sample mean $\bar{X}$?
+(b) What is the standard error of $\bar{X}$?
+(c) Using the CLT, find an interval that contains $\bar{X}$ roughly 95% of the time.
+(d) If the researcher quadruples the sample size to $n = 256$, by what factor does the standard error decrease?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $E[\bar{X}] = \mu = 7.4\%$. The sample mean is an unbiased estimator of the population mean.
+
+**(b)** $\text{SE}(\bar{X}) = \sigma / \sqrt{n} = 1.3 / \sqrt{64} = 1.3 / 8 = 0.1625\%$.
+
+**(c)** By the CLT, $\bar{X} \dot{\sim} N(7.4, \; 0.1625^2)$. A 95% interval is approximately $\mu \pm 1.96 \times \text{SE}$:
+
+$$
+7.4 \pm 1.96 \times 0.1625 = 7.4 \pm 0.3185 = (7.08, \; 7.72)
+$$
+
+Roughly 95% of all possible sample means of size 64 will fall between 7.08% and 7.72%.
+
+**(d)** The new standard error is $1.3 / \sqrt{256} = 1.3 / 16 = 0.08125\%$. The ratio is $0.1625 / 0.08125 = 2$. Quadrupling the sample size halves the standard error (because $\sqrt{4} = 2$). This illustrates the $1/\sqrt{n}$ relationship: to cut the standard error in half, you need four times as many observations.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Waiting times at an emergency department in a Swedish hospital are right-skewed, with a population mean of $\mu = 180$ minutes and a standard deviation of $\sigma = 120$ minutes.
+
+(a) Would the sample mean of $n = 4$ patients be approximately normally distributed? Why or why not?
+(b) What about $n = 100$?
+(c) For $n = 100$, what is the probability that $\bar{X}$ exceeds 200 minutes? (Use the CLT approximation.)
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Almost certainly not. With $n = 4$ from a heavily skewed population, the CLT approximation is poor. The distribution of the sample mean will still be right-skewed, though less so than the population. Try this in the simulation: set the Exponential distribution and $n = 4$.
+
+**(b)** Yes. With $n = 100$ from a population with finite variance, the CLT gives a good approximation. The sample mean will be approximately normally distributed even though individual waiting times are highly skewed. The standard error is $\text{SE} = 120 / \sqrt{100} = 12$ minutes, so $\bar{X} \dot{\sim} N(180, 12^2)$.
+
+**(c)** We need $P(\bar{X} > 200)$. Standardize: $Z = \frac{200 - 180}{12} = \frac{20}{12} \approx 1.67$. From the standard normal table, $P(Z > 1.67) \approx 0.048$. There is roughly a 4.8% chance that the sample mean exceeds 200 minutes.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A randomized trial in a Swedish primary care setting assigns 80 patients to a new digital blood pressure monitoring program ($n_1 = 80$) and 80 patients to standard care ($n_0 = 80$). The estimated treatment effect is $\hat{\tau} = -4.2$ mmHg (the program lowers blood pressure). The estimated standard error is $\text{SE}(\hat{\tau}) = 1.8$ mmHg.
+
+(a) Interpret the standard error in words: what does 1.8 mmHg represent?
+(b) Compute the ratio $\hat{\tau} / \text{SE}(\hat{\tau})$. This ratio (the t-statistic) is the subject of the next page, but intuitively, what does a large absolute value suggest?
+(c) If the trial had enrolled 320 patients per group instead of 80 (four times as many), what would you expect the standard error to be, approximately?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The standard error of 1.8 mmHg measures the typical amount by which the estimated treatment effect would vary if the trial were repeated many times with different random samples of 80 patients per group. It is the standard deviation of the sampling distribution of $\hat{\tau}$.
+
+**(b)** $\hat{\tau} / \text{SE}(\hat{\tau}) = -4.2 / 1.8 \approx -2.33$. This says the estimated effect is about 2.33 standard errors away from zero. Intuitively, if the true effect were zero, it would be unusual (but not impossible) to observe an estimate this far from zero by chance alone. A large absolute value suggests the observed effect is unlikely to be pure noise. We formalize this on the Hypothesis Testing page.
+
+**(c)** Quadrupling the sample size (from 80 to 320 per group) divides the standard error by $\sqrt{4} = 2$. The new standard error would be approximately $1.8 / 2 = 0.9$ mmHg. The estimate becomes much more precise, making it easier to distinguish a real effect from noise.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Use the interactive simulation to answer the following:
+
+(a) Set the population to "Bimodal" and $n = 1$. Draw 500 or more samples. What does the sampling distribution look like? Why?
+(b) Now increase $n$ to 2, then 5, then 30. At roughly what $n$ does the bimodality disappear?
+(c) Set the population to "Uniform" and $n = 30$. Draw 500+ samples. The sampling distribution looks normal even though the population is flat. Explain why this does *not* mean individual observations are normally distributed.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $n = 1$, the "sample mean" is just a single observation. The sampling distribution is identical to the population distribution --- bimodal with two peaks. This is because $\bar{X}$ for $n = 1$ is just $X_1$, which is drawn directly from the population.
+
+**(b)** At $n = 2$, the bimodality softens (values between the peaks become more likely as you can get one draw from each mode). By $n \approx 5$--$10$, the two peaks merge into a single broad peak. By $n = 30$, the distribution is approximately bell-shaped and clearly unimodal. The exact transition depends on the separation and relative weights of the two modes.
+
+**(c)** The CLT describes the distribution of the *sample mean*, not of individual observations. When you draw $n = 30$ from a uniform distribution and compute the mean, the CLT says that mean is approximately normal. But each individual observation is still uniformly distributed --- nothing has changed about the population. The normal shape applies to the *estimator* (the average), not to the *data*. This distinction is essential: regression standard errors and t-tests rely on the normality of *estimators* (via the CLT), not on the normality of the raw data.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The sample mean is a random variable: it has a sampling distribution centered on $\mu$ with standard error $\sigma/\sqrt{n}$, so precision improves only with the square root of the sample size.
+- The standard error (spread of the estimator) is not the standard deviation of the data (spread of individuals) --- conflating the two is a frequent and costly error.
+- The Central Limit Theorem makes $\bar{X}$ approximately normal for large $n$ no matter how skewed or bimodal the population is; normality applies to the estimator, not the raw data.
+- The difference-in-means estimator $\hat{\tau}$ inherits this logic, with $\text{SE}(\hat{\tau}) = \sqrt{\sigma_1^2/n_1 + \sigma_0^2/n_0}$; the CLT gives the shape of its sampling distribution, but causal assumptions are what put its center on the true effect.
+:::
+
+## What Comes Next
+
+We now know that the sample mean --- and hence any difference-in-means estimator --- has a sampling distribution that is approximately normal for large enough $n$, centered on the true parameter, with spread measured by the standard error. The next page asks the natural follow-up question: if we observe a particular estimate, how do we decide whether it reflects a real effect or just sampling noise? That is the domain of **hypothesis testing**.

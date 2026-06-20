@@ -1,0 +1,1142 @@
+---
+title: "Inference for Synthetic Control"
+subtitle: "Placebo tests, RMSPE ratios, and permutation"
+---
+
+## The Inference Problem with a Sample Size of One
+
+On the [previous page](method.qmd) we built a *synthetic Region Jämtland* --- a weighted average of donor regions that tracked Jämtland's pre-reform trajectory of fall-related hospitalizations among residents aged 80+ (per 1,000). After Jämtland's *vårdcentraler* rolled out a structured **fall-prevention program** (*fallpreventionsprogram*) in 2016 --- balance training led by *fysioterapeuter*, medication reviews by the *distriktssköterska*, and home-hazard checks --- the treated region's hospitalization rate fell visibly *below* its synthetic twin. The vertical gap after 2016 is our estimated treatment effect.
+
+But here is the uncomfortable question every reviewer will ask: **is that gap real, or could it have happened by chance?**
+
+With difference-in-differences we had clusters of regions and could compute a standard error. Here we have **one treated unit**. There is no sampling distribution in the usual sense --- Jämtland is not a random draw from a population of treated regions, because it is the *only* region that adopted the program. The familiar machinery of $t$-statistics and confidence intervals does not apply. We cannot write down $\widehat{\text{SE}}(\hat\tau)$ from a single treated time series and pretend it means what it means in a regression.
+
+Abadie, Diamond, and Hainmueller (2010, 2015) proposed a different and beautifully simple logic: **if the program did nothing, then Jämtland's gap should look like the gap we would get by applying the same synthetic-control machinery to a region that was *never* treated.** So we run the entire procedure again, pretending in turn that *each donor region* was the treated one, and we collect the distribution of these "placebo" gaps. Jämtland's gap is convincing only if it stands out from that placebo cloud. This is a **permutation** (or **randomization**) **inference** argument --- *inference by re-shuffling the "treated" label across units and asking how extreme the real assignment looks* --- and it is the subject of this page.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Run a **placebo (in-space) test** by reassigning treatment to each donor and building the distribution of placebo gaps
+- Summarize fit and effect in one number using the **post/pre RMSPE ratio**, and turn its rank among placebos into a **permutation $p$-value**
+- Read a **leave-one-out** robustness check that drops one donor at a time from the synthetic weights
+- Explain why $p$-values from synthetic control are **coarse**, bounded below by $1/(J+1)$, and sensitive to the donor pool
+:::
+
+
+## In-Space Placebos: Treat Everyone, One at a Time
+
+The core device is the **in-space placebo** (also called a *placebo test in space*, to distinguish it from the *in-time* placebo we meet on the [next page](extensions.qmd)).
+
+Suppose our donor pool has $J$ untreated regions. We already built a synthetic control for the genuinely treated region (Jämtland). Now we do the following for *every donor region* $j$:
+
+1. **Pretend region $j$ is treated** in 2016 and move it out of the donor pool.
+2. **Build a synthetic $j$** from the *remaining* donors (the other $J-1$ donors plus the real treated region is usually excluded too, leaving only never-treated units as donors).
+3. **Compute region $j$'s gap** $\hat\tau_{jt} = Y_{jt} - \hat Y_{jt}^{\text{synth}}$ in every period.
+
+Because region $j$ was never actually treated, its post-2016 gap is a **placebo gap** --- whatever the method produces *when there is no effect to find*. Collecting these gaps across all $J$ donors gives us the **distribution of effects under the null hypothesis of no treatment effect**.
+
+::: {.glass-card .glass-card--definition}
+The **placebo distribution** is the set of estimated gap trajectories
+$$
+\big\{\, \hat\tau_{jt} \;=\; Y_{jt} - \hat Y_{jt}^{\text{synth}} \;:\; j = 1, \dots, J \,\big\}
+$$
+obtained by applying the synthetic-control estimator to each *untreated* donor region $j$ as if it had been treated in the reform year.
+
+**Read this as**: "For each donor, build its own synthetic twin and record the vertical distance between the donor and its twin in every year. Stack all those distance-trajectories together --- that pile of placebo lines is what 'no effect' looks like for this method and this data."
+
+The treated region's gap is judged **statistically unusual** if it lies in the tail of this placebo distribution --- typically, if its post-treatment gap is *larger in magnitude* than almost all of the placebo gaps.
+:::
+
+The intuition is exactly the logic of a permutation test. Under the sharp null (*the hypothesis that the effect is exactly zero for **every** unit, not merely zero on average*) --- "the program had no effect on anyone" --- the label "treated" could just as well have been pinned on any region. If Jämtland's gap is indistinguishable from the gaps we manufacture for untreated regions, we have no evidence of an effect. If it is an outlier --- a line that dives away from a tight cloud of flat placebo lines --- we do.
+
+::: {.glass-card .glass-card--insight}
+Synthetic-control inference flips the usual question. Instead of asking "how precisely is the effect estimated?" it asks "**how unusual is this effect compared to what the same method produces when nothing happened?**" The answer is a *rank*, not a standard error --- and a rank needs no normality, no large-$N$ asymptotics, and no clustering assumption.
+:::
+
+
+## See It: The Treated Gap Against the Placebo Cloud
+
+The interactive below shows the heart of the method. Each thin slate line is a **placebo gap** --- one donor region treated-as-if, with its own synthetic twin subtracted off. The thick red line is **Jämtland's actual gap**. Before 2016 every line should hug zero (good pre-treatment fit). After 2016, ask one question: *does the red line separate from the slate cloud?*
+
+The **"Keep placebos with pre-RMSPE ≤ (× treated's)"** slider is essential and often misunderstood. (*RMSPE* is the **root-mean-squared prediction error** --- the typical size of a region's gap; the *pre*-RMSPE is how badly its synthetic twin missed before 2016.) A donor region whose synthetic twin fit *badly* before treatment will have a large gap *even with no effect* --- not because something happened to it, but because the method never managed to reproduce it in the first place. Including such junk placebos inflates the cloud and makes the treated unit look *less* special than it is. Abadie et al. recommend discarding placebos whose pre-treatment fit (pre-period RMSPE) is much worse than the treated unit's. The slider lets you set that cutoff and watch the cloud thin out.
+
+::: {.interactive-container}
+
+#### Treated Gap vs. the Placebo Distribution
+
+```{ojs}
+//| echo: false
+
+// "Start here" prompt + a compact on-chart color key.
+html`<div style="font-family:'Inter',sans-serif; font-size:0.85rem;
+    line-height:1.5; color:#1c1c1a; margin-bottom:0.6rem;">
+  <b>Start here:</b> drag the slider down from 20 toward 2 and watch the wild
+  placebo lines drop out — then read how the rank and <i>p</i>-value below change.
+  <div style="display:flex; flex-wrap:wrap; gap:1rem; margin-top:0.4rem;
+      font-size:0.8rem; color:#79766e;">
+    <span><span style="display:inline-block; width:1.4rem; height:0;
+        border-top:3.5px solid #990000; vertical-align:middle;"></span>
+      Jämtland (treated)</span>
+    <span><span style="display:inline-block; width:1.4rem; height:0;
+        border-top:2px solid #3d5a6c; vertical-align:middle;"></span>
+      placebo donors</span>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof scinfer_rmspeMult = Inputs.range([1, 20], {
+  value: 20,
+  step: 0.5,
+  label: "Keep placebos with pre-RMSPE ≤ (× treated's)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Plain-language helper under the slider.
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem;
+    color:#79766e; margin:-0.3rem 0 0.4rem 0;">
+  Lower = stricter: drops donors the method fit poorly before 2016.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof scinfer_statChoice = Inputs.radio(
+  ["Post/pre RMSPE ratio", "Post-period mean gap"],
+  { label: "Ranking statistic", value: "Post/pre RMSPE ratio" }
+)
+```
+
+```{ojs}
+//| echo: false
+
+viewof scinfer_highlight = Inputs.toggle({
+  label: "Shade the post-treatment period",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed, reproducible synthetic-control inference scenario. ──
+// 16 donor regions + 1 treated region (Jämtland). Years 2009–2021.
+// We do NOT re-fit a real SCM in the browser; instead we hard-code a
+// realistic set of GAP TRAJECTORIES (treated minus synthetic) with the
+// qualitative features the prose promises:
+//   * Almost every region has a small, near-zero pre-treatment gap (good fit).
+//   * A handful of donors fit BADLY pre-treatment (large pre-RMSPE) — these
+//     are the "junk placebos" the filter is meant to remove.
+//   * The treated region (Jämtland) has tight pre-fit AND a clear negative
+//     post-2016 gap (the program reduced fall hospitalizations).
+// All randomness is generated once from a fixed seed so the page is stable.
+
+scinfer_treatYear = 2016
+scinfer_years = d3.range(2009, 2022)   // 2009..2021 inclusive
+
+// A tiny deterministic PRNG (mulberry32) so the placebo cloud never changes.
+scinfer_rng = {
+  let a = 20160101 >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Build the gap trajectories. Each region object carries its full gap series
+// plus pre- and post-treatment RMSPE summaries used for filtering and ranking.
+scinfer_regions = {
+  const rng = scinfer_rng;            // call repeatedly for fresh draws
+  const gauss = () => {               // Box–Muller from the seeded uniform
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+
+  const preYears  = scinfer_years.filter(y => y <  scinfer_treatYear);
+  const postYears = scinfer_years.filter(y => y >= scinfer_treatYear);
+
+  // 16 donor regions. Most fit well (small preNoise); four fit badly.
+  const badFitIdx = new Set([3, 7, 11, 14]);   // junk placebos
+  const donors = d3.range(16).map(k => {
+    const badFit = badFitIdx.has(k);
+    // Pre-treatment noise scale: tight for good donors, wide for junk.
+    const preScale  = badFit ? 1.7 : 0.30;
+    // A donor with bad pre-fit also drifts post-treatment for no causal reason.
+    const postDrift = badFit ? (gauss() * 1.4) : 0;
+    // Small idiosyncratic post noise for everyone (no real effect on donors).
+    const postScale = badFit ? 1.6 : 0.45;
+
+    const gaps = scinfer_years.map(y => {
+      if (y < scinfer_treatYear) {
+        return { year: y, gap: gauss() * preScale };
+      } else {
+        // ramp the spurious drift in gradually after the pseudo-treatment year
+        const ramp = (y - scinfer_treatYear + 1) / postYears.length;
+        return { year: y, gap: postDrift * ramp + gauss() * postScale };
+      }
+    });
+    return { id: `Donor ${k + 1}`, treated: false, gaps };
+  });
+
+  // The genuinely treated region: tight pre-fit, clear negative post gap that
+  // widens over time (fewer fall hospitalizations after the 2016 program).
+  const treatedGaps = scinfer_years.map(y => {
+    if (y < scinfer_treatYear) {
+      return { year: y, gap: gauss() * 0.28 };
+    } else {
+      const ramp = (y - scinfer_treatYear + 1) / postYears.length;
+      return { year: y, gap: -5.2 * ramp + gauss() * 0.35 };
+    }
+  });
+  const treated = { id: "Jämtland (treated)", treated: true, gaps: treatedGaps };
+
+  // Attach RMSPE summaries.
+  const rmspe = (arr, yrs) => {
+    const sel = arr.filter(d => yrs.includes(d.year));
+    return Math.sqrt(d3.mean(sel, d => d.gap * d.gap));
+  };
+  const all = [treated, ...donors];
+  for (const r of all) {
+    r.preRMSPE  = rmspe(r.gaps, preYears);
+    r.postRMSPE = rmspe(r.gaps, postYears);
+    r.ratio     = r.postRMSPE / r.preRMSPE;
+    r.postMean  = d3.mean(r.gaps.filter(d => d.year >= scinfer_treatYear), d => d.gap);
+  }
+  return all;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The treated region and the donor-only list, for convenience.
+scinfer_treated = scinfer_regions.find(r => r.treated)
+scinfer_donors  = scinfer_regions.filter(r => !r.treated)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Apply the pre-fit filter: keep donors whose pre-RMSPE is within the chosen
+// multiple of the treated unit's pre-RMSPE. (The treated unit is always kept.)
+scinfer_keptDonors = scinfer_donors.filter(
+  d => d.preRMSPE <= scinfer_rmspeMult * scinfer_treated.preRMSPE
+)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Flatten kept placebo gaps into one long array for Plot.line (grouped by id).
+scinfer_placeboLong = scinfer_keptDonors.flatMap(
+  d => d.gaps.map(g => ({ id: d.id, year: g.year, gap: g.gap }))
+)
+
+scinfer_treatedLong = scinfer_treated.gaps.map(
+  g => ({ id: scinfer_treated.id, year: g.year, gap: g.gap })
+)
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 420,
+  marginLeft: 60,
+  marginRight: 70,
+  marginTop: 28,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: {
+    label: "Year",
+    tickFormat: d => `${d}`,
+    domain: [2009, 2021]
+  },
+  y: {
+    label: "Gap (per 1,000, age 80+)",
+    domain: [-7, 7],
+    grid: true
+  },
+  marks: [
+    // Shaded post-treatment band.
+    scinfer_highlight ? Plot.rectX([{}], {
+      x1: scinfer_treatYear, x2: 2021, y1: -7, y2: 7,
+      fill: "#990000", fillOpacity: 0.06
+    }) : null,
+
+    // Zero reference (perfect-counterfactual line).
+    Plot.ruleY([0], { stroke: "#79766e", strokeDasharray: "3,3" }),
+
+    // Treatment-year marker.
+    Plot.ruleX([scinfer_treatYear], { stroke: "#1c1c1a", strokeWidth: 1 }),
+    Plot.text([{ x: scinfer_treatYear }], {
+      x: "x", frameAnchor: "top", text: ["reform 2016"],
+      fill: "#1c1c1a", fontSize: 11, dx: 4, dy: 4, textAnchor: "start"
+    }),
+
+    // Placebo cloud (one slate line per kept donor).
+    Plot.line(scinfer_placeboLong, {
+      x: "year", y: "gap", z: "id",
+      stroke: "#3d5a6c", strokeWidth: 1, strokeOpacity: 0.45
+    }),
+
+    // Treated region's gap, bold Uppsala red.
+    Plot.line(scinfer_treatedLong, {
+      x: "year", y: "gap",
+      stroke: "#990000", strokeWidth: 3.5
+    }),
+    Plot.dot(scinfer_treatedLong.filter(d => d.year >= scinfer_treatYear), {
+      x: "year", y: "gap", fill: "#990000", r: 3
+    }),
+    // End label anchored to a fixed frame position (bottom-right) so it never
+    // clips the right edge as the treated line dives to the bottom.
+    Plot.text([scinfer_treatedLong[scinfer_treatedLong.length - 1]], {
+      x: "year", y: "gap", text: ["Jämtland"],
+      fill: "#990000", fontWeight: 700, fontSize: 12,
+      dx: 6, dy: 4, textAnchor: "start",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Compute the permutation p-value from the chosen ranking statistic, over the
+// KEPT set (treated + kept donors). For RMSPE ratio and for |post-mean gap| we
+// rank by magnitude: how many regions have a statistic ≥ the treated unit's?
+scinfer_inference = {
+  const useRatio = scinfer_statChoice === "Post/pre RMSPE ratio";
+  const statOf = r => useRatio ? r.ratio : Math.abs(r.postMean);
+
+  const pool = [scinfer_treated, ...scinfer_keptDonors];
+  const tStat = statOf(scinfer_treated);
+
+  // Rank: 1 = largest statistic. Count regions whose statistic is ≥ treated's.
+  const atLeast = pool.filter(r => statOf(r) >= tStat - 1e-9).length;
+  const rank = atLeast;                 // treated's rank among the pool
+  const N = pool.length;                // = J_kept + 1
+  const pval = atLeast / N;             // permutation p-value
+
+  return { useRatio, tStat, rank, N, pval,
+           Jkept: scinfer_keptDonors.length };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout: where the treated unit ranks, and the permutation p-value.
+{
+  const inf = scinfer_inference;
+  const statLabel = inf.useRatio ? "post/pre RMSPE ratio" : "|mean post gap|";
+  const statTile  = inf.useRatio ? "RMSPE ratio" : "|Post gap|";
+  const sig = inf.pval <= 0.10;
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 8.5rem; min-height: 4rem; text-align: center;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem;
+      background: #f6f5f1;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.2rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="display:grid;
+        grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${tile("Donors kept", `${inf.Jkept}`, "#1c1c1a")}
+      ${tile(statTile, inf.tStat.toFixed(2), "#990000")}
+      ${tile("Rank (of " + inf.N + ")", `${inf.rank}`, "#1c1c1a")}
+      ${tile("Permutation p", inf.pval.toFixed(3),
+             sig ? "#2e6f40" : "#b3000b")}
+    </div>
+    <div style="margin-top:0.6rem; padding:0.55rem 0.85rem; border-radius:0.5rem;
+        border-left:3px solid ${sig ? "#2e6f40" : "#b3000b"};
+        background:#f6f5f1; font-family:'Inter',sans-serif;
+        font-size:0.85rem; line-height:1.45; color:#1c1c1a;">
+      Keeping donors with pre-RMSPE ≤ ${scinfer_rmspeMult.toFixed(1)}× Jämtland's
+      leaves <b>${inf.Jkept} of 16</b> donors.
+      Jämtland's ${statLabel} ranks <b>${inf.rank} of ${inf.N}</b>
+      regions, giving a permutation <i>p</i>-value of
+      <b>${inf.pval.toFixed(3)}</b> = ${inf.rank}/${inf.N}.
+      ${sig
+        ? "The treated gap sits in the tail of the placebo distribution — evidence the program mattered."
+        : "The treated gap is not unusual relative to the placebos — we cannot rule out chance."}
+      The smallest p-value attainable with this pool is
+      1/${inf.N} = ${(1 / inf.N).toFixed(3)}.
+    </div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// A second view: a 1-D strip/dot plot of the ranking statistic across the kept
+// pool, with the treated unit highlighted. With only ~16 donors a strip plot
+// reads far cleaner than a histogram and makes "in the tail" literal.
+{
+  const inf = scinfer_inference;
+  const statOf = r => inf.useRatio ? r.ratio : Math.abs(r.postMean);
+  const data = [scinfer_treated, ...scinfer_keptDonors].map(r => ({
+    id: r.id, stat: statOf(r), treated: r.treated
+  }));
+  const tStat = statOf(scinfer_treated);
+  const maxStat = d3.max(data, d => d.stat) * 1.18;
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 150,
+    marginLeft: 60,
+    marginRight: 70,
+    marginTop: 28,
+    marginBottom: 44,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: {
+      label: inf.useRatio
+        ? "Post/pre RMSPE ratio (larger = bigger fit-adjusted effect)"
+        : "|mean post-treatment gap|",
+      domain: [0, maxStat], grid: true
+    },
+    y: { axis: null, domain: [-1, 1] },
+    marks: [
+      // Placebo dots (slate), jittered slightly off the baseline for legibility.
+      Plot.dot(data.filter(d => !d.treated), {
+        x: "stat", y: 0, r: 5, fill: "#3d5a6c", fillOpacity: 0.55,
+        stroke: "white", strokeWidth: 0.75
+      }),
+      // Treated rule + dot in Uppsala red.
+      Plot.ruleX([tStat], { stroke: "#990000", strokeWidth: 2.5 }),
+      Plot.dot([{ stat: tStat }], {
+        x: "stat", y: 0, r: 6, fill: "#990000",
+        stroke: "white", strokeWidth: 1
+      }),
+      // Label anchored to the top frame so it never collides with the baseline
+      // dots or clips the right edge; white halo for contrast.
+      Plot.text([{ x: tStat }], {
+        x: "x", frameAnchor: "top",
+        text: ["Jämtland"], fill: "#990000", fontWeight: 700,
+        fontSize: 11, dy: -2, dx: -4, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+:::
+
+### How to Read the Placebo Plot
+
+Take these steps in order; each isolates one idea behind permutation inference.
+
+**Step 1: Confirm the pre-treatment fit.** Before 2016 (left of the vertical line), every line --- slate placebos and the red treated --- should hover near zero. That is the precondition for the whole exercise: the synthetic controls reproduced each region's *history*. A line that wanders far from zero *before* treatment is a region the method could not fit, and its post-treatment gap means nothing.
+
+**Step 2: Watch the red line separate.** After 2016, Jämtland's red line dives downward (fewer fall hospitalizations) and pulls away from the slate cloud. The further it sits below the placebo lines, the more unusual the effect. The shaded band marks the post period where the comparison lives.
+
+**Step 3: Read the rank and the p-value.** The readout tiles report Jämtland's ranking statistic, its **rank** among all kept regions, and the **permutation $p$-value** = rank / (number of regions). With the default settings Jämtland has the largest statistic, so its rank is 1 and $p = 1/17 \approx 0.059$. The strip plot below makes "in the tail" literal: the red marker (Jämtland) sits to the far right of the slate dots (placebos).
+
+**Step 4: Filter out the junk placebos.** Drag **"Keep placebos with pre-RMSPE ≤ (× treated's)"** down from 20 toward 2. Watch the four wild slate lines --- the donors the method never fit --- disappear first. With those gone, the remaining cloud is tight and flat before 2016, and Jämtland's separation *looks* even cleaner. But watch the readout: filtering has two opposing effects on the $p$-value. Removing a placebo that *out-ranked* the treated unit would lower the treated unit's rank numerator and shrink $p$; removing a placebo that *did not* out-rank it only shrinks the pool $N$ and so *raises* both the floor $1/(J+1)$ and the $p$-value = rank/$N$. Here Jämtland is already rank 1, so no placebo is ahead of it --- every donor you drop just shrinks $N$ and the $p$-value *climbs* (from $1/17 \approx 0.059$ toward $1/10 = 0.100$ at $\times 2$). A tighter-looking cloud can therefore mean *weaker*, not stronger, evidence. That bias--resolution trade-off is the subject of the caution box below.
+
+**Step 5: Switch the ranking statistic.** Toggle between **"Post/pre RMSPE ratio"** and **"Post-period mean gap."** The mean gap rewards *large* post-treatment gaps; the RMSPE ratio rewards a large post gap *relative to how well the region was fit*. The ratio is the preferred statistic precisely because it penalizes regions (like the junk placebos) whose post gaps are large only because their fit was poor. Notice how Jämtland's rank is robust to the choice --- a reassuring sign.
+
+::: {.aside}
+**A note on this scenario.** In the fixed data above, Jämtland's effect is strong enough that it stays **rank 1** no matter how you filter --- so the interactive can only show you the *floor-raising* half of the trade-off (drop a donor → $N$ shrinks → $p$ climbs). The opposite case --- a *weak* treated effect where a high-ranking junk placebo out-ranks the treated unit, so removing it actually *lowers* $p$ --- is the scenario described in Step 4's first sentence and worked through numerically in **Exercise 3** below.
+:::
+
+
+## The RMSPE Ratio: One Number for Fit and Effect
+
+We need a single statistic that captures "big effect *and* good fit" so we can rank all regions on a common scale. The building block is the **root mean squared prediction error** (RMSPE) of a region's gap over a window of years.
+
+::: {.glass-card .glass-card--definition}
+For region $j$, let periods be indexed $t = 1, \dots, T$, let $T_0$ be the period index of the reform (the *first* treated period, so $t < T_0$ is pre and $t \ge T_0$ is post), and let the gap be $\hat\tau_{jt} = Y_{jt} - \hat Y_{jt}^{\text{synth}}$. Define the **pre-treatment RMSPE** and **post-treatment RMSPE**:
+
+$$
+\text{RMSPE}^{\text{pre}}_j = \sqrt{\frac{1}{T_0 - 1}\sum_{t < T_0} \big(\hat\tau_{jt}\big)^2},
+\qquad
+\text{RMSPE}^{\text{post}}_j = \sqrt{\frac{1}{T - T_0 + 1}\sum_{t \ge T_0} \big(\hat\tau_{jt}\big)^2}.
+$$
+
+The **post/pre RMSPE ratio** is
+$$
+r_j = \frac{\text{RMSPE}^{\text{post}}_j}{\text{RMSPE}^{\text{pre}}_j}.
+$$
+
+**Read this as**: "$\text{RMSPE}^{\text{pre}}_j$ is the typical size of the gap *before* the reform --- a measure of how badly the synthetic twin missed during the fitting window. $\text{RMSPE}^{\text{post}}_j$ is the typical gap size *after*. Their ratio asks: by what factor did the gap *blow up* after the reform relative to the noise we already had before it?"
+:::
+
+Why a *ratio* rather than the raw post-period gap? Because a raw gap is large for two very different reasons:
+
+- A region with a **genuine effect**: tiny pre-period gap, large post-period gap --- a *high* ratio.
+- A region the method **fit badly**: large pre-period gap *and* large post-period gap --- a *low* ratio, because the post gap is no bigger than the chronic miss.
+
+Dividing by the pre-period RMSPE normalizes away the second case. A junk placebo with a huge but *uninformative* post gap gets a modest ratio, while a well-fit region with a clean break gets a large ratio. The ratio is the statistic Abadie et al. recommend ranking on, and it is why the interactive defaults to it.
+
+For Jämtland, the pre-period gaps are around $0.3$ per 1,000 in magnitude while the post-period gaps grow to several per 1,000, so the ratio is large --- larger than any donor's. That is exactly what we want to see.
+
+The two panels below put those two cases side by side. Both regions end up with a *large post gap*, so a ranking on the raw post gap would treat them as equally extreme. But the **pre-period gap** tells them apart: panel A was fit cleanly (flat before, diving after) so its ratio is large; panel B was fit badly (already noisy before) so dividing by that chronic miss leaves a ratio near 1. This is exactly why the ratio, not the raw gap, is the right thing to rank on.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Two contrasting gap series illustrating WHY the post/pre ratio beats the raw
+// post gap. Both reach a similar post-period magnitude; only the pre-period
+// fit differs. Hard-coded, deterministic — a static teaching figure.
+scratio_years = d3.range(2009, 2022)
+scratio_treatYear = 2016
+
+// Panel A — GENUINE EFFECT: tiny pre gap, large post gap → big ratio.
+scratio_genuine = scratio_years.map((y, i) => {
+  const wob = [0.05, -0.04, 0.06, -0.03, 0.04, -0.05, 0.03][i % 7];
+  if (y < scratio_treatYear) return { year: y, gap: wob * 4 };       // ~±0.2
+  const ramp = (y - scratio_treatYear + 1) / 6;
+  return { year: y, gap: -4.6 * ramp + wob };
+})
+
+// Panel B — JUNK PLACEBO: large pre gap AND large post gap → ratio ≈ 1.
+scratio_junk = scratio_years.map((y, i) => {
+  const wob = [1.4, -1.7, 1.9, -1.3, 1.6, -1.8, 1.5][i % 7];
+  if (y < scratio_treatYear) return { year: y, gap: wob };           // ~±1.6
+  const ramp = (y - scratio_treatYear + 1) / 6;
+  return { year: y, gap: -2.0 * ramp + wob };
+})
+
+scratio_rmspe = (arr, pre) => {
+  const sel = arr.filter(d => pre ? d.year < scratio_treatYear : d.year >= scratio_treatYear);
+  return Math.sqrt(d3.mean(sel, d => d.gap * d.gap));
+}
+scratio_ratioOf = arr => scratio_rmspe(arr, false) / scratio_rmspe(arr, true)
+
+scratio_panel = (data, title, kind) => Plot.plot({
+  width: Math.min(320, (width - 24) / 2),
+  height: 230,
+  marginLeft: 42,
+  marginRight: 14,
+  marginTop: 40,
+  marginBottom: 40,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "11px" },
+  x: { label: null, tickFormat: d => `${d}`, domain: [2009, 2021], ticks: [2009, 2016, 2021] },
+  y: { label: "Gap", domain: [-5, 3], grid: true },
+  marks: [
+    Plot.rectX([{}], { x1: scratio_treatYear, x2: 2021, y1: -5, y2: 3,
+      fill: "#990000", fillOpacity: 0.06 }),
+    Plot.ruleY([0], { stroke: "#79766e", strokeDasharray: "3,3" }),
+    Plot.ruleX([scratio_treatYear], { stroke: "#1c1c1a", strokeWidth: 1 }),
+    Plot.line(data, { x: "year", y: "gap",
+      stroke: kind === "genuine" ? "#2e6f40" : "#9c7a33", strokeWidth: 2.5 }),
+    Plot.text([{ x: 2009, y: 2.7 }], { x: "x", y: "y", text: [title],
+      fill: "#1c1c1a", fontSize: 12, fontWeight: 700, textAnchor: "start" }),
+    Plot.text([{ x: 2009, y: 2.0 }], { x: "x", y: "y",
+      text: [`ratio = ${scratio_ratioOf(data).toFixed(1)}`],
+      fill: kind === "genuine" ? "#2e6f40" : "#9c7a33",
+      fontSize: 11, fontWeight: 700, textAnchor: "start" })
+  ]
+})
+
+scratio_caption = html`<div style="font-family:'Inter',sans-serif;
+    font-size:0.78rem; color:#79766e; text-align:center; margin-top:0.3rem;">
+  Shaded = post-reform. Both panels reach a similar post gap; only panel A has a
+  <i>clean pre-treatment fit</i>, so only panel A earns a high ratio.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`<figure style="margin:1.5rem 0;">
+  <div style="display:flex; flex-wrap:wrap; gap:1.2rem; justify-content:center;
+      align-items:flex-start;">
+    ${scratio_panel(scratio_genuine, "A. Genuine effect", "genuine")}
+    ${scratio_panel(scratio_junk, "B. Junk placebo", "junk")}
+  </div>
+  ${scratio_caption}
+</figure>`
+```
+
+
+## From Rank to a Permutation p-Value
+
+Once every region has a ratio $r_j$ (and the genuinely treated region has $r_1$), inference is a ranking exercise.
+
+::: {.glass-card .glass-card--definition}
+Pool the treated region and the $J$ donors, so there are $J + 1$ regions, each with a ranking statistic $r_j$. The **permutation (randomization) $p$-value** for the treated region is the fraction of regions whose statistic is at least as large as the treated region's:
+
+$$
+p \;=\; \frac{1}{J+1}\sum_{j=1}^{J+1}\mathbf{1}\!\left\{\,r_j \ge r_{\text{treated}}\,\right\}
+\;=\; \frac{\text{rank of the treated region}}{J + 1}.
+$$
+
+**Read this as**: "Line up all $J+1$ regions by their ranking statistic. Count how many --- including the treated region itself --- have a statistic as big as the treated region's. Divide by $J+1$. If the treated region is the single most extreme, that count is 1 and $p = 1/(J+1)$."
+:::
+
+The logic is the textbook permutation test. Under the **sharp null** "the reform had zero effect on every region," the synthetic-control estimator is just a deterministic function of the data, and the label "treated" was assigned to one of $J+1$ exchangeable regions (*exchangeable = the regions are interchangeable under the null, so any one of them was equally likely to wear the "treated" label*). The chance that a *no-effect* region ends up with the most extreme statistic is $1/(J+1)$; with the second-most-extreme, $2/(J+1)$; and so on. So the rank *is* the $p$-value.
+
+::: {.glass-card .glass-card--warning}
+**The small-donor-pool caveat.** The permutation $p$-value is **discrete and floored**. With $J$ donors it can only take the values $1/(J+1), 2/(J+1), \dots, 1$. The *smallest possible* $p$-value is $1/(J+1)$: with $J = 16$ donors you cannot get below $1/17 \approx 0.059$, no matter how dramatic the effect. To reach a $p$-value strictly below $0.05$ you need $1/(J+1) < 0.05$, i.e. $J + 1 > 20$, so $J \ge 20$ donors ($1/21 \approx 0.048$); to get strictly below $0.01$ you need $J + 1 > 100$, so $J \ge 100$ donors ($1/101 \approx 0.0099$). (With $J = 19$ the floor is exactly $0.05$ and with $J = 99$ exactly $0.01$ --- neither is *strictly* below the threshold under the $\ge$ convention.)
+
+Two practical consequences. First, **report the rank, not just the $p$-value** ("1 of 17") --- it is more honest about the resolution of the test. Second, **be wary of shrinking the pool too aggressively** with the pre-fit filter: each donor you drop *raises* the floor $1/(J+1)$, so over-filtering can make a real effect *un*detectable even as it tightens the cloud. There is a genuine bias--resolution trade-off here.
+:::
+
+The curve below traces that floor $1/(J+1)$ as the donor pool $J$ grows. It falls steeply at first, then flattens: each of the conventional thresholds becomes attainable only once the pool is large enough --- $J \ge 20$ to clear $0.05$, and $J \ge 100$ to clear $0.01$. Read it as a *design* chart: pick your target significance level, then read off the minimum donor pool you need before you ever look at the outcome.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// p-value floor 1/(J+1) as a function of the donor-pool size J. Static design
+// chart for the small-donor-pool caveat: where each conventional threshold
+// first becomes attainable.
+scfloor_curve = d3.range(2, 141).map(J => ({ J, floor: 1 / (J + 1) }))
+scfloor_marks = [16, 19, 20, 99, 100].map(J => ({ J, floor: 1 / (J + 1) }))
+scfloor_levels = [
+  { p: 0.10, lab: "0.10" },
+  { p: 0.05, lab: "0.05" },
+  { p: 0.01, lab: "0.01" }
+]
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 320,
+  marginLeft: 60,
+  marginRight: 70,
+  marginTop: 28,
+  marginBottom: 48,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Number of donors J", domain: [2, 140], grid: true },
+  y: { label: "Smallest attainable p-value  1/(J+1)", domain: [0, 0.35], grid: true },
+  marks: [
+    // Threshold reference lines (slate, dashed) with haloed labels.
+    Plot.ruleY(scfloor_levels, { y: "p", stroke: "#79766e", strokeDasharray: "4,4" }),
+    Plot.text(scfloor_levels, {
+      x: () => 140, y: "p", text: d => `p = ${d.lab}`,
+      fill: "#79766e", fontSize: 10, fontWeight: 600,
+      textAnchor: "end", dy: -5,
+      stroke: "white", strokeWidth: 2.5, paintOrder: "stroke"
+    }),
+    // The floor curve.
+    Plot.line(scfloor_curve, { x: "J", y: "floor", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+    // Reference markers at the J values discussed in the box.
+    Plot.dot(scfloor_marks, { x: "J", y: "floor", r: 4, fill: "#990000",
+      stroke: "white", strokeWidth: 1 }),
+    Plot.text(scfloor_marks, {
+      x: "J", y: "floor", text: d => `J=${d.J}`,
+      fill: "#990000", fontSize: 10, fontWeight: 700,
+      dx: 6, dy: -6, textAnchor: "start",
+      stroke: "white", strokeWidth: 2.5, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+::: {.aside}
+The floor $1/(J+1)$ crosses below $0.05$ only at $J = 20$ (red marker) and below $0.01$ only at $J = 100$; at $J = 16$ the floor is $\approx 0.059$, already above $0.05$.
+:::
+
+
+## Leave-One-Out: Is the Result Driven by a Single Donor?
+
+A separate worry is **fragility**. The synthetic Jämtland might place most of its weight on one or two donor regions --- in the figure below, nearly half (46%) sits on Region Västerbotten. If that one donor is itself unusual (an outlier, a region with its own concurrent reform), the entire counterfactual --- and therefore the estimated effect --- could be an artifact of that single unit.
+
+The **leave-one-out** check addresses this directly: re-estimate the synthetic control $J$ times, each time *removing one donor* with positive weight from the pool, and overlay the resulting counterfactuals. If the estimated gap is stable across all leave-one-out re-estimations --- if no single donor's removal collapses the effect --- the result is robust. If dropping Västerbotten makes the gap vanish, the finding rests on one region and should be reported with that caveat front and center.
+
+The figure below makes both halves of this argument visible. The top bar shows the **donor weights** of the synthetic Jämtland (a *weight* is how much each donor contributes to the synthetic twin; they sum to 1) --- notice how concentrated they are. The bottom panel overlays the **leave-one-out gap trajectories**: re-run the estimator dropping one weighted donor at a time. When the fan of slate lines stays bunched around the baseline red gap, the effect is robust; a line that springs back toward zero is the warning sign that the result hinged on the donor you just removed.
+
+::: {.interactive-container}
+
+#### Leave-One-Out: Donor Weights and the Counterfactual Fan
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static leave-one-out illustration (additive; independent of the main
+// placebo widget). A realistic CONCENTRATED weight vector for synthetic
+// Jämtland, then the gap trajectory you get when each positively-weighted
+// donor is dropped and the optimizer re-solves. Hard-coded but qualitatively
+// faithful: dropping the dominant donor (Västerbotten, 46%) pulls the gap
+// noticeably back toward zero; dropping minor donors barely moves it. ──
+scloo_treatYear = 2016
+scloo_years = d3.range(2009, 2022)
+
+// Donor weights of the BASELINE synthetic control (positive-weight donors),
+// with explicit cumulative x0/x1 so the stacked bar AND its labels line up
+// (Plot.text does not stack on its own — we precompute the segment positions).
+scloo_weights = {
+  const raw = [
+    { donor: "Västerbotten", w: 0.46 },
+    { donor: "Norrbotten",   w: 0.24 },
+    { donor: "Dalarna",      w: 0.16 },
+    { donor: "Gävleborg",    w: 0.09 },
+    { donor: "Värmland",     w: 0.05 }
+  ];
+  let acc = 0;
+  return raw.map(d => {
+    const x0 = acc; acc += d.w;
+    return { ...d, x0, x1: acc, mid: (x0 + acc) / 2,
+             cls: d.donor === "Västerbotten" ? "dominant" : "minor" };
+  });
+}
+
+// Baseline treated gap (the headline effect): tight pre-fit, growing negative
+// post gap — the same shape as the main widget's treated line.
+scloo_baselineGap = scloo_years.map(y => {
+  if (y < scloo_treatYear) return { year: y, gap: 0 };
+  const ramp = (y - scloo_treatYear + 1) / 6;
+  return { year: y, gap: -5.0 * ramp };
+})
+
+// Leave-one-out: each dropped donor scales the post gap by a "retention"
+// factor. Dropping the dominant donor retains LESS of the effect (the gap
+// springs back toward 0); dropping a minor donor retains nearly all of it.
+// retention ≈ 1 - share-of-effect carried by that donor.
+scloo_retention = ({
+  "Västerbotten": 0.38,   // dominant donor: effect collapses toward zero
+  "Norrbotten":   0.84,
+  "Dalarna":      0.92,
+  "Gävleborg":    0.97,
+  "Värmland":     0.99
+})
+
+scloo_fanLong = scloo_weights.flatMap(d =>
+  scloo_baselineGap.map(g => ({
+    dropped: `drop ${d.donor}`,
+    donor: d.donor,
+    dominant: d.donor === "Västerbotten",
+    year: g.year,
+    gap: g.gap * (g.year < scloo_treatYear ? 1 : scloo_retention[d.donor])
+  }))
+)
+
+scloo_dominantLong = scloo_fanLong.filter(d => d.dominant)
+scloo_otherLong    = scloo_fanLong.filter(d => !d.dominant)
+```
+
+```{ojs}
+//| echo: false
+
+// Donor-weight bar: a single stacked horizontal bar showing how concentrated
+// the synthetic control is (the trigger for running leave-one-out at all).
+Plot.plot({
+  width: Math.min(680, width),
+  height: 96,
+  marginLeft: 60,
+  marginRight: 70,
+  marginTop: 28,
+  marginBottom: 28,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Donor weight (share of synthetic Jämtland)", domain: [0, 1],
+       tickFormat: "%", grid: true },
+  y: { axis: null },
+  color: { domain: ["dominant", "minor"], range: ["#990000", "#3d5a6c"] },
+  marks: [
+    // Explicit x0→x1 segments (no implicit stacking) so labels can be centered.
+    Plot.barX(scloo_weights, {
+      x1: "x0", x2: "x1", y: () => "weights",
+      fill: "cls", stroke: "white", strokeWidth: 1.5
+    }),
+    // White-haloed labels centered in the wider segments only.
+    Plot.text(scloo_weights.filter(d => d.w >= 0.12), {
+      x: "mid", y: () => "weights",
+      text: d => `${d.donor} ${Math.round(d.w * 100)}%`,
+      fill: "#1c1c1a", fontSize: 10, fontWeight: 600,
+      stroke: "white", strokeWidth: 2.5, paintOrder: "stroke",
+      textAnchor: "middle"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem;
+    color:#79766e; margin:-0.2rem 0 0.6rem 0;">
+  Weights are concentrated: <b>Västerbotten alone carries 46%</b>. That is the
+  cue to run leave-one-out — a result resting on one donor is fragile.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Counterfactual fan: baseline gap (red) plus one slate line per dropped donor.
+// The dominant-donor drop is drawn thicker/dashed so the reader sees the gap
+// "spring back" toward zero — the fragility signal the prose describes.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 360,
+  marginLeft: 60,
+  marginRight: 70,
+  marginTop: 28,
+  marginBottom: 45,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Year", tickFormat: d => `${d}`, domain: [2009, 2021] },
+  y: { label: "Gap (per 1,000, age 80+)", domain: [-6, 2], grid: true },
+  marks: [
+    Plot.rectX([{}], {
+      x1: scloo_treatYear, x2: 2021, y1: -6, y2: 2,
+      fill: "#990000", fillOpacity: 0.06
+    }),
+    Plot.ruleY([0], { stroke: "#79766e", strokeDasharray: "3,3" }),
+    Plot.ruleX([scloo_treatYear], { stroke: "#1c1c1a", strokeWidth: 1 }),
+    Plot.text([{ x: scloo_treatYear }], {
+      x: "x", frameAnchor: "top", text: ["reform 2016"],
+      fill: "#1c1c1a", fontSize: 11, dx: 4, dy: 4, textAnchor: "start"
+    }),
+    // Minor-donor drops: tight slate fan hugging the baseline (robust).
+    Plot.line(scloo_otherLong, {
+      x: "year", y: "gap", z: "dropped",
+      stroke: "#3d5a6c", strokeWidth: 1.4, strokeOpacity: 0.55
+    }),
+    // Dominant-donor drop: gap springs back toward zero (fragility signal).
+    Plot.line(scloo_dominantLong, {
+      x: "year", y: "gap",
+      stroke: "#9c7a33", strokeWidth: 2.5, strokeDasharray: "6,4"
+    }),
+    // Baseline headline gap.
+    Plot.line(scloo_baselineGap, {
+      x: "year", y: "gap", stroke: "#990000", strokeWidth: 3.5
+    }),
+    Plot.text([scloo_baselineGap[scloo_baselineGap.length - 1]], {
+      x: "year", y: "gap", text: ["baseline gap"],
+      fill: "#990000", fontWeight: 700, fontSize: 11,
+      dy: 12, dx: -2, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([scloo_dominantLong[scloo_dominantLong.length - 1]], {
+      x: "year", y: "gap", text: ["drop Västerbotten"],
+      fill: "#9c7a33", fontWeight: 700, fontSize: 11,
+      dy: -8, dx: -2, textAnchor: "end",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family:'Inter',sans-serif; font-size:0.82rem;
+    line-height:1.45; color:#1c1c1a; background:#f6f5f1;
+    border-left:3px solid #9c7a33; border-radius:0 0.35rem 0.35rem 0;
+    padding:0.55rem 0.85rem; margin-top:0.6rem;">
+  Dropping the four minor donors (slate) barely moves the gap — but dropping
+  the dominant <b>Västerbotten</b> (gold dashed) pulls the post-2016 gap roughly
+  two-thirds of the way back toward zero. A fan this wide is a caution flag: the
+  headline effect leans heavily on one region and should be reported as such.
+</div>`
+```
+
+:::
+
+::: {.aside}
+Illustrative weights and leave-one-out trajectories (not re-fit in the browser); the shapes mirror what a concentrated-weight synthetic control with one dominant donor typically produces.
+:::
+
+::: {.glass-card .glass-card--insight}
+Placebo tests, the RMSPE ratio, and leave-one-out answer three *different* questions. Placebos ask: **is the effect bigger than chance?** The RMSPE ratio asks: **is the effect big relative to how well we fit?** Leave-one-out asks: **does the effect survive removing any single donor?** A credible synthetic-control study passes all three; reporting only one is a red flag.
+:::
+
+
+<details>
+<summary>Math Details: The RMSPE Ratio and the Permutation p-Value</summary>
+<div class="details-content">
+
+### Why divide post by pre?
+
+Write the observed gap for region $j$ in period $t$ as
+$$
+\hat\tau_{jt} = \underbrace{\tau_{jt}}_{\text{true effect}} + \underbrace{\varepsilon_{jt}}_{\text{fit/noise}},
+$$
+where $\tau_{jt} = 0$ for all $t$ for any genuinely untreated donor (the sharp null), and $\varepsilon_{jt}$ is the residual the synthetic control fails to reproduce.
+
+For a never-treated donor, $\hat\tau_{jt} = \varepsilon_{jt}$ in *both* windows. If the residual process is roughly stationary across the break (the gap is no noisier after $T_0$ than before), then
+$$
+\text{RMSPE}^{\text{post}}_j \approx \text{RMSPE}^{\text{pre}}_j
+\quad\Longrightarrow\quad
+r_j = \frac{\text{RMSPE}^{\text{post}}_j}{\text{RMSPE}^{\text{pre}}_j} \approx 1.
+$$
+So under the null the ratio clusters around $1$, *regardless of how well or badly the donor was fit* --- a poorly-fit donor has a large numerator *and* a large denominator. This is precisely the normalization that defangs the junk placebos: the raw post gap does not, but the ratio does.
+
+For the treated region, $\hat\tau_{1t} = \tau_{1t} + \varepsilon_{1t}$ with $\tau_{1t} \neq 0$ after $T_0$. The numerator inflates while the denominator stays at the pre-period noise level, so $r_1 \gg 1$. The ratio is large exactly when there is a real effect on top of a good fit.
+
+### The permutation distribution
+
+Let $r_{(1)} \ge r_{(2)} \ge \dots \ge r_{(J+1)}$ be the ordered statistics across the pool of $J+1$ regions. Under the sharp null and **exchangeability** of the treatment label across regions, each region is equally likely to be the one labelled "treated." Hence, *before* seeing the data, the treated region's rank $R$ is uniform on $\{1, 2, \dots, J+1\}$:
+$$
+\Pr(R = k) = \frac{1}{J+1}, \qquad k = 1, \dots, J+1.
+$$
+The one-sided $p$-value is the probability of a rank at least as extreme as the one observed:
+$$
+p = \Pr(R \le r_{\text{obs}}) = \frac{r_{\text{obs}}}{J+1},
+$$
+where $r_{\text{obs}}$ is the treated region's observed rank (1 = most extreme). This is an **exact** finite-sample $p$-value: it requires no distributional assumption, only exchangeability of the label under the null.
+
+### Why the floor is $1/(J+1)$
+
+Because $R$ takes integer values in $\{1, \dots, J+1\}$, the attainable $p$-values are exactly
+$$
+\Big\{\tfrac{1}{J+1}, \tfrac{2}{J+1}, \dots, 1\Big\}.
+$$
+The minimum, achieved when the treated region is *strictly* the most extreme, is $1/(J+1)$. No effect, however enormous, can drive $p$ below this floor --- the resolution of the test is fixed by the size of the donor pool, not by the magnitude of the effect. This is the formal statement of the small-donor-pool caveat. It also explains the design rule of thumb: **collect enough donors that $1/(J+1)$ is below your target significance level** before you even look at the outcome.
+
+### A subtlety: ties and the $\ge$ convention
+
+We used $\mathbf 1\{r_j \ge r_{\text{treated}}\}$ (weak inequality), which counts the treated region itself and any donor tied with it. This is the conservative convention and guarantees $p \ge 1/(J+1)$ always. With continuous statistics ties have probability zero, but the convention matters for the floor and for honest reporting.
+
+</div>
+</details>
+
+
+## Code: Placebos, RMSPE Ratios, and the Permutation p-Value
+
+Both implementations take a long panel of regions $\times$ years for a single placebo logic: loop over every region as if it were treated, fit a synthetic control, extract the gap, and rank by the post/pre RMSPE ratio. We use `tidysynth` in R and a compact NNLS-based synthetic control in Python.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(tidysynth)
+
+# panel: columns region, year, falls (fall hospitalizations / 1,000, age 80+),
+#        plus pre-period predictors. `treated_region` adopted in 2016.
+# Helper: run synthetic control treating `unit` as the treated one and return
+# its gap series + pre/post RMSPE ratio.
+treat_year <- 2016
+
+run_one <- function(panel, unit) {
+  sc <- panel |>
+    synthetic_control(outcome = falls, unit = region, time = year,
+                      i_unit = unit, i_time = treat_year,
+                      generate_placebos = FALSE) |>
+    generate_predictor(time_window = 2009:2015,
+                       mean_falls = mean(falls),
+                       share_80plus = mean(share_80plus)) |>
+    generate_weights(optimization_window = 2009:2015) |>
+    generate_control()
+
+  gaps <- sc |> grab_synthetic_control() |>
+    transmute(year = time_unit, gap = real_y - synth_y)
+
+  pre  <- gaps |> filter(year <  treat_year) |> summarise(r = sqrt(mean(gap^2))) |> pull()
+  post <- gaps |> filter(year >= treat_year) |> summarise(r = sqrt(mean(gap^2))) |> pull()
+
+  tibble(region = unit, gaps = list(gaps),
+         pre_rmspe = pre, post_rmspe = post, ratio = post / pre)
+}
+
+# Run for the treated region AND every donor as a placebo.
+all_units <- unique(panel$region)
+results   <- map_dfr(all_units, ~ run_one(panel, .x))
+
+# Optional: drop badly-fit placebos (pre-RMSPE > 2x the treated unit's).
+treated_pre <- results$pre_rmspe[results$region == treated_region]
+kept <- results |> filter(pre_rmspe <= 2 * treated_pre | region == treated_region)
+
+# Rank by the post/pre RMSPE ratio; permutation p = rank / (J + 1).
+kept <- kept |> arrange(desc(ratio)) |> mutate(rank = row_number())
+J1   <- nrow(kept)
+pval <- kept$rank[kept$region == treated_region] / J1
+
+cat(sprintf("Treated ratio: %.2f | rank %d of %d | permutation p = %.3f (floor %.3f)\n",
+            kept$ratio[kept$region == treated_region],
+            kept$rank[kept$region == treated_region], J1, pval, 1 / J1))
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from scipy.optimize import nnls
+
+# panel: columns region, year, falls, share_80plus. treated_region adopted 2016.
+TREAT_YEAR = 2016
+pre_years  = list(range(2009, 2016))
+
+def synth_gap(panel, unit):
+    """Fit a simple synthetic control for `unit` from all other regions and
+    return its gap series + pre/post RMSPE ratio."""
+    wide = panel.pivot(index="year", columns="region", values="falls")
+    donors = [c for c in wide.columns if c != unit]
+
+    # Match pre-period outcomes: choose nonneg weights summing ~1 via NNLS.
+    Xpre = wide.loc[pre_years, donors].values            # T_pre x J
+    ypre = wide.loc[pre_years, unit].values              # T_pre
+    # Append a soft sum-to-one constraint as an extra equation.
+    big = 1e3
+    A = np.vstack([Xpre, big * np.ones(len(donors))])
+    b = np.concatenate([ypre, [big]])
+    w, _ = nnls(A, b)
+
+    synth = wide[donors].values @ w                      # all years
+    gap   = wide[unit].values - synth
+    yrs   = wide.index.values
+    pre_mask, post_mask = yrs < TREAT_YEAR, yrs >= TREAT_YEAR
+    pre_rmspe  = np.sqrt(np.mean(gap[pre_mask]  ** 2))
+    post_rmspe = np.sqrt(np.mean(gap[post_mask] ** 2))
+    return pd.Series({"region": unit, "pre_rmspe": pre_rmspe,
+                      "post_rmspe": post_rmspe, "ratio": post_rmspe / pre_rmspe})
+
+units   = panel["region"].unique()
+results = pd.DataFrame([synth_gap(panel, u) for u in units])
+
+# Drop badly-fit placebos (pre-RMSPE > 2x treated's); always keep the treated.
+treated_pre = results.loc[results.region == TREATED, "pre_rmspe"].iloc[0]
+kept = results[(results.pre_rmspe <= 2 * treated_pre) | (results.region == TREATED)]
+
+# Rank by ratio; permutation p = rank / (J + 1).
+kept = kept.sort_values("ratio", ascending=False).reset_index(drop=True)
+kept["rank"] = kept.index + 1
+J1   = len(kept)
+rank = int(kept.loc[kept.region == TREATED, "rank"].iloc[0])
+print(f"rank {rank} of {J1} | permutation p = {rank / J1:.3f} | floor {1 / J1:.3f}")
+```
+
+:::
+
+Both routines return the treated region's rank and the permutation $p$-value, and both expose the pre-fit filter so you can reproduce the interactive's "drop poorly-fitting placebos" behavior.
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- With one treated unit there is no sampling standard error; inference is done by **permutation** --- treat each donor as-if-treated and compare the real gap to the placebo cloud.
+- The **post/pre RMSPE ratio** combines effect size and fit quality into one rank-able statistic; dividing by pre-period RMSPE neutralizes donors the method fit badly.
+- The **permutation $p$-value** is the treated unit's rank divided by $J+1$; it is exact under exchangeability but **discrete and floored at $1/(J+1)$**, so the donor pool size caps your attainable significance.
+- Always **report the rank** (e.g. "1 of 17"), filter junk placebos by pre-fit, and run **leave-one-out** to confirm no single donor drives the result.
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A synthetic-control study of a regional smoking-cessation reform has a donor pool of $J = 30$ untreated regions. The treated region has the *largest* post/pre RMSPE ratio in the pool.
+
+(a) What is the permutation $p$-value? (b) Is it below $0.05$? (c) What is the smallest $p$-value the study could possibly report, and how many donors would be needed to attain $p < 0.01$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The pool has $J + 1 = 31$ regions. Being the largest ratio means rank $= 1$, so
+$$
+p = \frac{\text{rank}}{J+1} = \frac{1}{31} \approx 0.032.
+$$
+
+**(b)** Yes: $0.032 < 0.05$. With 30 donors the floor $1/31 \approx 0.032$ already clears the conventional threshold.
+
+**(c)** The smallest attainable $p$-value is the floor $1/(J+1) = 1/31 \approx 0.032$. To reach $p < 0.01$ you need $1/(J+1) < 0.01$, i.e. $J + 1 > 100$, so $J \ge 100$ donors (giving $1/101 \approx 0.0099$). With $J = 99$ the floor is exactly $0.01$, which is not strictly below $0.01$ under the $\ge$ convention.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Two donor regions, A and B, both produce a post-period mean gap of $4.0$ fall hospitalizations per 1,000 in a placebo run. Region A had a pre-treatment RMSPE of $0.5$; Region B had a pre-treatment RMSPE of $3.8$. Their post-treatment RMSPEs are $4.1$ (A) and $4.2$ (B).
+
+(a) Compute each region's post/pre RMSPE ratio. (b) Which region looks like a genuine "effect" and which like a junk placebo? (c) Explain why ranking on the raw post gap would mislead, but ranking on the ratio would not.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Ratios:
+$$
+r_A = \frac{4.1}{0.5} = 8.2, \qquad r_B = \frac{4.2}{3.8} \approx 1.11.
+$$
+
+**(b)** Region A's ratio of $8.2$ signals a *clean* break: the gap was tiny before and exploded after --- the signature of a genuine effect on a well-fit unit. Region B's ratio of $\approx 1.11$ is barely above $1$: its post gap is large only because its gap was *already* large before treatment (a poorly-fit unit). B is a junk placebo.
+
+**(c)** On the *raw post gap* both regions score about $4.0$, so a ranking by raw gap would treat them as equally extreme and inflate the placebo tail with B's meaningless gap --- making a truly treated region look less special. The *ratio* normalizes each region by how well it was fit, so B's chronic miss is divided out and only A registers as extreme. This is exactly why Abadie et al. rank on the post/pre RMSPE ratio rather than the raw gap.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the interactive, with the filter set to keep all placebos ($\times 20$), Jämtland ranks 1 of 17, giving $p = 1/17 \approx 0.059$. A colleague proposes tightening the pre-fit filter to keep only the 8 best-fitting donors, arguing the cloud will look cleaner.
+
+(a) Assuming Jämtland still has the largest ratio, what is the new $p$-value and floor? (b) Did the evidence get *stronger* or *weaker*? (c) State the trade-off the colleague is making.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Keeping 8 donors plus Jämtland gives a pool of $J + 1 = 9$. If Jämtland is still rank 1,
+$$
+p = \frac{1}{9} \approx 0.111, \qquad \text{floor} = \frac{1}{9} \approx 0.111.
+$$
+
+**(b)** Counter-intuitively, the evidence got **weaker**: the $p$-value rose from $0.059$ to $0.111$, and it now *fails* a $p < 0.10$ threshold. Even though the visual cloud is tighter, shrinking the pool raised the floor $1/(J+1)$ above the value we previously achieved.
+
+**(c)** The trade-off is **resolution vs. cloud quality**. Filtering removes junk placebos that could spuriously out-rank the treated unit (protecting against false negatives from a contaminated tail), but every donor removed also *coarsens* the test by raising the minimum attainable $p$-value. Filtering is justified to drop genuinely unfittable donors, not to manufacture a tight picture --- and one should report results across a range of filter thresholds rather than cherry-picking the prettiest cloud.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A synthetic control for a region's diabetes-coordination reform places weights of $0.62$ on Region Halland, $0.28$ on Region Kronoberg, and $0.10$ on Region Blekinge (all other donors get weight $0$). The estimated post-period gap is $-0.40$ percentage points of HbA1c.
+
+(a) Which robustness check is most relevant here, and why? (b) Describe concretely how you would run it. (c) What pattern of results would make you *distrust* the headline $-0.40$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The **leave-one-out** check is most relevant. The weights are highly concentrated --- 62% on a single donor, Halland --- so the entire synthetic counterfactual could be an artifact of that one region. Placebo tests address "is it bigger than chance?", but not "does it hinge on one donor?"; leave-one-out targets exactly that fragility.
+
+**(b)** Re-estimate the synthetic control three times, each time *removing one of the positively-weighted donors* (Halland, then Kronoberg, then Blekinge) from the donor pool and letting the optimizer re-choose weights from the remaining donors. Overlay the resulting counterfactual trajectories and recompute the post-period gap each time. (One can also leave out *every* donor in turn for completeness.)
+
+**(c)** If dropping **Halland** causes the gap to shrink toward $0$ (say to $-0.05$) or flip sign, the headline $-0.40$ rests almost entirely on one region and should not be trusted as a general effect. By contrast, if all three re-estimations yield gaps clustered near $-0.40$ (e.g. $-0.36$ to $-0.43$), the result is robust to the donor composition and the headline is credible. A wide *spread* of leave-one-out gaps is the warning sign.
+
+</div>
+</details>
+:::
+
+
+## What Comes Next
+
+We now have a complete inferential toolkit for a single treated unit: in-space placebos to build a null distribution, the post/pre RMSPE ratio to rank fit-adjusted effects, the permutation $p$-value with its honest $1/(J+1)$ floor, and leave-one-out to guard against one-donor fragility. But all of this assumes the basic estimator is well-behaved --- that a good pre-treatment fit exists, that the donor pool is clean, and that no donor was itself shocked. The next page, [Extensions and Practical Issues](extensions.qmd), confronts what to do when those conditions strain: in-time placebos and backdating, the augmented (bias-corrected) synthetic control, what to do when no convex combination fits, interpolation bias, and the practical pitfalls that separate a publishable synthetic-control study from a misleading one.

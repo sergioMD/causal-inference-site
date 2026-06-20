@@ -1,0 +1,716 @@
+---
+title: "Quantile Regression"
+subtitle: "Modeling the whole conditional distribution, not just the mean"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define a *conditional quantile function* and explain how it lets one covariate have different effects at different points of the outcome distribution
+- Write the *check (pinball) loss* $\rho_\tau(u)$ and show that its expected-loss minimizer is the population $\tau$-quantile
+- Estimate a separate slope at each quantile $\tau$ and read the fanning of fitted lines as evidence of heteroskedasticity
+- Recognise the median ($\tau = 0.5$) case as least-absolute-deviations regression and explain its robustness to outliers
+- Interpret a quantile-regression coefficient as an effect on the *conditional quantile*, not on a fixed individual
+:::
+
+## The Question the Mean Cannot Answer
+
+A *vårdcentral* (primary care center) in Region Östergötland is deciding how to spend a fixed staffing budget. The proposal on the table is to add *distriktssköterskor* (district nurses) dedicated to diabetes follow-up. The natural evaluation is a regression of patients' HbA1c (mmol/mol --- lower is better) on nurse density. Ordinary least squares returns a single slope: each extra nurse per 1{,}000 listed patients is associated with an average drop of about 3 mmol/mol.
+
+That average hides the question the *verksamhetschef* (clinic manager) actually cares about. The patients who drive cost, complications, and emergency admissions are not the median patient sitting comfortably on target. They are the **poorly-controlled tail** --- the 10% of patients with HbA1c so high they are heading for retinopathy and kidney damage. If extra nursing barely moves the median patient but pulls the worst-controlled patients down hard, the mean understates the program's real value. If instead it polishes the already-controlled and leaves the tail untouched, the mean *overstates* it.
+
+The conditional mean $E[Y \mid X]$ answers "where is the center of the outcome, given $X$?" But a budget question is a *distributional* question: "what happens to the **top of the distribution**, given $X$?" Quantile regression answers exactly that. Instead of one line through the conditional mean, it fits a separate line through each conditional quantile --- the 10th percentile, the median, the 90th percentile --- and lets the slope differ at each.
+
+::: {.glass-card .glass-card--definition}
+For an outcome $Y$ and covariates $X$, the **conditional quantile function** at level $\tau \in (0,1)$ is the value $Q_\tau(X)$ below which a fraction $\tau$ of the conditional distribution of $Y$ lies:
+
+$$
+Q_\tau(x) \;=\; \inf\{\,q : F_{Y\mid X}(q \mid x) \ge \tau\,\},
+$$
+
+where $F_{Y\mid X}$ is the conditional CDF. **Read this as**: "$Q_\tau(x)$ is the smallest value $q$ such that the conditional probability of $Y$ falling at or below $q$, given $X = x$, is at least $\tau$." For $\tau = 0.5$ this is the conditional median; for $\tau = 0.9$ it is the threshold the worst-controlled 10% of patients exceed.
+
+**Linear quantile regression** models each of these as linear in $X$ with its *own* coefficients:
+
+$$
+Q_\tau(x) \;=\; x'\beta(\tau).
+$$
+
+The slope $\beta(\tau)$ is allowed to change with $\tau$ --- that freedom is the entire point.
+:::
+
+The contrast with the mean is sharp. OLS gives you $\beta$, full stop. Quantile regression gives you a *function* $\tau \mapsto \beta(\tau)$: a whole curve of slopes, one for every percentile. When that curve is flat, the covariate shifts the distribution rigidly and the mean told the whole story. When it fans --- steep at the top, flat at the bottom --- the covariate reshapes the distribution, and only quantile regression sees it.
+
+## The Check Function: How a Loss Picks a Quantile
+
+OLS is defined by a loss: the conditional mean is the number that minimizes expected *squared* error. Quantile regression has an exactly parallel story, but with a different, deliberately *asymmetric* loss. Getting this loss right is the whole trick, so we build it slowly.
+
+::: {.glass-card .glass-card--definition}
+The **check function** (or **pinball loss**) at level $\tau$ is
+
+$$
+\rho_\tau(u) \;=\; u\bigl(\tau - \mathbf{1}\{u < 0\}\bigr)
+\;=\;
+\begin{cases}
+\tau\,u & \text{if } u \ge 0,\\[2pt]
+(\tau - 1)\,u & \text{if } u < 0,
+\end{cases}
+$$
+
+where $u = y - q$ is the residual and $\mathbf{1}\{\cdot\}$ is the indicator function. **Read this as**: "weight an under-prediction (the truth is *above* my guess, $u > 0$) by $\tau$, and an over-prediction (the truth is *below* my guess, $u < 0$) by $1 - \tau$." Both pieces are non-negative because $(\tau - 1)$ multiplies a negative $u$. The name "check" comes from its shape: a V tilted so the two arms have slopes $\tau$ and $-(1-\tau)$.
+:::
+
+The asymmetry is the engine. For the median, $\tau = 0.5$, the two arms have equal slope $0.5$ --- this is just the absolute value $\tfrac12|u|$, which is why median regression is **least absolute deviations** (LAD). For $\tau = 0.9$, an under-prediction is penalized nine times as hard as an over-prediction ($0.9$ vs $0.1$). To avoid that heavy penalty, the optimal guess is pushed *up* until only 10% of the data lies above it --- which is precisely the 90th percentile. The tilt of the loss *is* the quantile it targets.
+
+::: {.glass-card .glass-card--insight}
+**Squared loss finds the mean; tilted absolute loss finds a quantile.** Minimizing $E[(Y-q)^2]$ over $q$ gives $q = E[Y]$. Minimizing $E[\rho_\tau(Y-q)]$ over $q$ gives $q = Q_\tau$, the $\tau$-quantile. Replacing one loss with another is the *only* change needed to move from "model the mean" to "model any quantile you like." Everything downstream --- linear models, standard errors, software --- follows the same pattern as least squares, just with $\rho_\tau$ in place of the square.
+:::
+
+To estimate a *linear* conditional quantile, we replace the constant guess $q$ with a fitted value $x_i'\beta$ and minimize the total check loss over the sample:
+
+$$
+\hat\beta(\tau) \;=\; \arg\min_{\beta}\; \sum_{i=1}^{n} \rho_\tau\!\bigl(y_i - x_i'\beta\bigr).
+$$
+
+**Read this as**: "choose the coefficients $\beta$ that make the tilted-absolute residuals as small as possible, in total." Because $\rho_\tau$ is piecewise linear, this is a *linear program* --- it has no closed form like OLS, but it solves quickly and exactly. Solve it once for each $\tau$ you care about, and you have the fitted quantile lines.
+
+## See It: Quantile Lines Fanning Over Heteroskedastic Data
+
+The interactive below shows nurse density (district nurses per 1{,}000 listed patients) on the horizontal axis and patient HbA1c on the vertical axis, for a simulated panel of patients at one *vårdcentral*. The data are deliberately **heteroskedastic**: at low nurse density the HbA1c values are widely spread (many poorly-controlled patients), and as nurse density rises the spread *shrinks* --- the worst tail is pulled in faster than the median.
+
+Watch three fitted lines --- $\tau = 0.1$, $\tau = 0.5$, $\tau = 0.9$ --- and the OLS line for comparison. Because the spread narrows with $x$, the lines **fan apart on the left and converge on the right**: the slope is gentle at the 10th percentile but steep at the 90th. Then drag the $\tau$ slider to sweep a single fitted line continuously across every percentile, and read its slope live.
+
+::: {.interactive-container}
+
+#### Conditional quantile lines for HbA1c vs. nurse density
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls; the full guided tour is below.
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${qrqr_pal.axis};
+    background: ${qrqr_pal.fill};
+    border-left: 3px solid ${qrqr_pal.focal};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave the three reference lines on and notice how
+  they <em>fan apart</em> on the left (poorly-controlled patients) and pinch
+  together on the right. Then drag <em>Quantile τ</em> to sweep a single line and
+  watch its slope change. Full guided tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+// Uppsala-academic palette tokens shared across this page's interactives.
+qrqr_pal = ({
+  focal:  "#990000",   // focal series (Uppsala red) — the swept τ line
+  slate:  "#3d5a6c",   // secondary / OLS comparison line
+  good:    "#2e6f40",  // on-target / low quantile
+  ochre:   "#9c7a33",  // highlight / high quantile, annotations
+  ink:     "#1c1c1a",  // ink text & reference lines
+  axis:    "#79766e",  // axis / muted label text (Uppsala muted token)
+  hair:    "#e6e3db",  // gridlines / hairlines
+  muted:   "#79766e",  // muted ink
+  fill:    "#f6f5f1",  // subtle tile fill
+  bad:     "#b3000b"   // alarm
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof qrqr_tau = Inputs.range([0.05, 0.95], {
+  value: 0.9,
+  step: 0.01,
+  label: "Quantile τ (drag to sweep the fitted line)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof qrqr_showRefs = Inputs.toggle({
+  label: "Show reference lines (τ = 0.1, 0.5, 0.9) and OLS",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof qrqr_scatter = Inputs.toggle({
+  label: "Show patient scatter",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standard normal quantile (inverse CDF) via the Acklam / Beasley-Springer
+// rational approximation — accurate to ~1e-9 over (0,1). We need z_τ = Φ⁻¹(τ)
+// to turn the location-scale model into exact conditional-quantile lines.
+qrqr_qnorm = function (p) {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+              1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+              6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+             -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+             3.754408661907416e+00];
+  const plow = 0.02425, phigh = 1 - 0.02425;
+  let q, r;
+  if (p < plow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  } else if (p <= phigh) {
+    q = p - 0.5; r = q*q;
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+           (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+            ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Location-scale data-generating process for HbA1c (mmol/mol):
+//   y = a + b·x + (c + d·x)·Z,   Z ~ N(0,1),  x = nurse density.
+// With d < 0 the spread (c + d·x) SHRINKS as nurse density rises, so the
+// poorly-controlled tail is pulled in faster than the median — heteroskedasticity.
+// The exact conditional τ-quantile of this model is LINEAR in x:
+//   Q_τ(x) = [a + c·z_τ] + [b + d·z_τ]·x,   z_τ = Φ⁻¹(τ).
+// So the fitted "quantile lines" the chart draws are the TRUE population lines —
+// no estimation noise, exact pedagogy, and the slope b + d·z_τ fans with τ.
+qrqr_dgp = ({ a: 62, b: -3.0, c: 8.0, d: -2.0, xLo: 0.5, xHi: 3.5 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Seeded PRNG (mulberry32) so the scatter is identical on every render — no
+// flicker, and the prose can quote stable visual facts. randomness via a fixed
+// seed, not Math.random, to keep the picture reproducible.
+qrqr_rng = {
+  let s = 0x2e6f40;
+  return function () {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Box–Muller standard-normal draw built on the seeded uniform generator.
+qrqr_randn = function () {
+  const u1 = Math.max(qrqr_rng(), 1e-12);
+  const u2 = qrqr_rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// 220 simulated patients drawn once from the DGP (reproducible via the seed).
+qrqr_data = {
+  const { a, b, c, d, xLo, xHi } = qrqr_dgp;
+  const n = 220;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = xLo + (xHi - xLo) * qrqr_rng();
+    const sigma = Math.max(0.4, c + d * x);   // spread shrinks with x
+    const y = a + b * x + sigma * qrqr_randn();
+    out.push({ x, y });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Exact conditional-quantile line for a given τ, as two endpoints spanning the
+// x-range. Slope = b + d·z_τ, intercept = a + c·z_τ.
+qrqr_qline = function (tau) {
+  const { a, b, c, d, xLo, xHi } = qrqr_dgp;
+  const z = qrqr_qnorm(tau);
+  const slope = b + d * z;
+  const inter = a + c * z;
+  return {
+    tau, slope, inter,
+    pts: [{ x: xLo, y: inter + slope * xLo }, { x: xHi, y: inter + slope * xHi }]
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// OLS line = the conditional MEAN line. For this location-scale model the mean
+// is a + b·x exactly (E[Z]=0), so OLS recovers slope b regardless of the
+// heteroskedasticity — a clean contrast with the fanning quantile slopes.
+qrqr_olsLine = ({
+  slope: qrqr_dgp.b,
+  inter: qrqr_dgp.a,
+  pts: [
+    { x: qrqr_dgp.xLo, y: qrqr_dgp.a + qrqr_dgp.b * qrqr_dgp.xLo },
+    { x: qrqr_dgp.xHi, y: qrqr_dgp.a + qrqr_dgp.b * qrqr_dgp.xHi }
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The three fixed reference quantile lines (τ = 0.1, 0.5, 0.9).
+qrqr_refLines = [qrqr_qline(0.1), qrqr_qline(0.5), qrqr_qline(0.9)]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The live swept line at the reader's chosen τ.
+qrqr_sweep = qrqr_qline(qrqr_tau)
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 420,
+  marginLeft: 62,
+  marginBottom: 48,
+  marginTop: 30,
+  marginRight: 24,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px", color: qrqr_pal.axis },
+  x: {
+    label: "Nurse density (district nurses per 1,000 listed patients)  →",
+    domain: [qrqr_dgp.xLo, qrqr_dgp.xHi],
+    grid: false
+  },
+  y: {
+    label: "↑ HbA1c (mmol/mol)   lower is better",
+    domain: [38, 86],
+    grid: true
+  },
+  marks: [
+    Plot.gridY({ stroke: qrqr_pal.hair }),
+
+    // Patient scatter.
+    qrqr_scatter ? Plot.dot(qrqr_data, {
+      x: "x", y: "y",
+      r: 2.6, fill: qrqr_pal.muted, fillOpacity: 0.5
+    }) : null,
+
+    // OLS / conditional-mean line (slate, dashed) — the single-slope benchmark.
+    qrqr_showRefs ? Plot.line(qrqr_olsLine.pts, {
+      x: "x", y: "y", stroke: qrqr_pal.slate, strokeWidth: 2, strokeDasharray: "6,4"
+    }) : null,
+
+    // The three reference quantile lines.
+    qrqr_showRefs ? Plot.line(qrqr_refLines[0].pts, {
+      x: "x", y: "y", stroke: qrqr_pal.good, strokeWidth: 2
+    }) : null,
+    qrqr_showRefs ? Plot.line(qrqr_refLines[1].pts, {
+      x: "x", y: "y", stroke: qrqr_pal.ink, strokeWidth: 2
+    }) : null,
+    qrqr_showRefs ? Plot.line(qrqr_refLines[2].pts, {
+      x: "x", y: "y", stroke: qrqr_pal.ochre, strokeWidth: 2
+    }) : null,
+
+    // End-of-line text labels (Plot.line carries no text channel). Pinned at the
+    // LEFT end (pts[0]), where the heteroskedastic lines FAN APART and so the three
+    // labels are vertically well separated (~9 mmol/mol each) — at the right end
+    // they converge and would collide. textAnchor "start" + small dx keeps them
+    // just inside the frame; the white halo keeps them legible over the lines.
+    qrqr_showRefs ? Plot.text([{ x: qrqr_dgp.xLo, y: qrqr_refLines[2].pts[0].y, t: "τ=0.9" }], {
+      x: "x", y: "y", text: "t", fill: qrqr_pal.ochre, fontWeight: 700, fontSize: 11,
+      textAnchor: "start", dx: 4, dy: -7, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+    qrqr_showRefs ? Plot.text([{ x: qrqr_dgp.xLo, y: qrqr_refLines[1].pts[0].y, t: "τ=0.5" }], {
+      x: "x", y: "y", text: "t", fill: qrqr_pal.ink, fontWeight: 700, fontSize: 11,
+      textAnchor: "start", dx: 4, dy: -7, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+    qrqr_showRefs ? Plot.text([{ x: qrqr_dgp.xLo, y: qrqr_refLines[0].pts[0].y, t: "τ=0.1" }], {
+      x: "x", y: "y", text: "t", fill: qrqr_pal.good, fontWeight: 700, fontSize: 11,
+      textAnchor: "start", dx: 4, dy: -7, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null,
+
+    // The live swept τ line (focal red, thick) — drawn last so it sits on top.
+    Plot.line(qrqr_sweep.pts, {
+      x: "x", y: "y", stroke: qrqr_pal.focal, strokeWidth: 3.5
+    }),
+    // Swept label at the RIGHT end (pts[1]) — opposite side from the reference
+    // labels, so the single focal-red tag never overlaps them or itself, and it
+    // stays inside the frame (textAnchor "end").
+    Plot.text([{ x: qrqr_dgp.xHi, y: qrqr_sweep.pts[1].y, t: `τ=${qrqr_tau.toFixed(2)}` }], {
+      x: "x", y: "y", text: "t", fill: qrqr_pal.focal, fontWeight: 700, fontSize: 12,
+      textAnchor: "end", dx: -4, dy: -8, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Live readout tying the swept line back to the numbers. Built in an ojs html``
+// cell so the reactive values interpolate (markdown ${...} would render literally).
+{
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 8rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${qrqr_pal.fill}; border: 1px solid ${qrqr_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${qrqr_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  const sweepSlope = qrqr_sweep.slope;
+  const olsSlope = qrqr_olsLine.slope;
+  const ratio = sweepSlope / olsSlope;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("τ (quantile)", qrqr_tau.toFixed(2), qrqr_pal.focal)}
+    ${tile("slope β(τ)", sweepSlope.toFixed(2) + " mmol/mol", qrqr_pal.focal)}
+    ${tile("OLS slope (mean)", olsSlope.toFixed(2) + " mmol/mol", qrqr_pal.slate)}
+    ${tile("β(τ) ÷ OLS slope", ratio.toFixed(2) + "×",
+        ratio > 1.1 ? qrqr_pal.ochre : (ratio < 0.9 ? qrqr_pal.good : qrqr_pal.ink))}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line verdict that updates with the slider.
+{
+  const s = qrqr_sweep.slope;
+  const ols = qrqr_olsLine.slope;
+  let msg, color;
+  if (qrqr_tau >= 0.75) {
+    msg = `At τ = ${qrqr_tau.toFixed(2)} the slope is ${s.toFixed(2)} mmol/mol — far steeper than the OLS mean slope of ${ols.toFixed(2)}. Extra nursing helps the poorly-controlled (high-HbA1c) patients far more than the average patient.`;
+    color = qrqr_pal.ochre;
+  } else if (qrqr_tau <= 0.25) {
+    msg = `At τ = ${qrqr_tau.toFixed(2)} the slope is only ${s.toFixed(2)} mmol/mol — much flatter than the OLS mean slope of ${ols.toFixed(2)}. Already well-controlled patients have little room to improve, so nursing barely moves them.`;
+    color = qrqr_pal.good;
+  } else {
+    msg = `Near the median (τ = ${qrqr_tau.toFixed(2)}) the slope is ${s.toFixed(2)} mmol/mol, close to the OLS mean slope of ${ols.toFixed(2)} — here the mean and the median tell a similar story.`;
+    color = qrqr_pal.ink;
+  }
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${color}; background: ${qrqr_pal.fill};
+      font-family: 'Inter', sans-serif; font-size: 0.86rem; line-height: 1.45;
+      color: ${qrqr_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Quantile-Line Chart
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the cloud.** Each grey dot is one patient: nurse density on the horizontal axis, HbA1c on the vertical. Notice the *triangular* shape --- the cloud is tall (widely spread) on the left, where nurse density is low, and narrows toward the right. That shrinking vertical spread is **heteroskedasticity**: the variance of the outcome depends on $X$.
+
+**Step 2: Read the three reference lines.** The green line is the 10th-percentile fit ($\tau = 0.1$), the black line the median ($\tau = 0.5$), the ochre line the 90th-percentile fit ($\tau = 0.9$). Each line tracks its own slice of the cloud --- roughly 10% of dots fall below the green line, half below the black line, 90% below the ochre line. They are *not* parallel: they **fan apart on the left and converge on the right**, mirroring the shrinking spread.
+
+**Step 3: Compare the slopes.** Read the slopes off the live tiles by dragging the $\tau$ slider to each landmark. At $\tau = 0.1$ the slope is about $-0.4$ mmol/mol --- nearly flat. At $\tau = 0.5$ it is $-3.0$. At $\tau = 0.9$ it is about $-5.6$ --- steeper than the OLS mean slope by roughly $1.9\times$. The covariate's effect is *not* constant across the distribution: it is small for the well-controlled and large for the poorly-controlled.
+
+**Step 4: Contrast with OLS.** The dashed slate line is ordinary least squares --- the single conditional-mean slope of $-3.0$. It sits near the median line and *completely misses* the fanning. Reporting only OLS would tell the *verksamhetschef* that nursing helps "by 3 on average," hiding the fact that it helps the at-risk tail nearly twice as much. That is the budget-relevant fact, and only quantile regression surfaces it.
+
+**Step 5: Sweep the quantile.** Drag **Quantile τ** slowly from $0.05$ to $0.95$ and watch the red line rotate: shallow at the bottom, steepening as you climb. You are watching the entire function $\tau \mapsto \beta(\tau)$ play out --- a continuum of slopes that OLS collapses to a single number.
+
+## The Median Case: Robustness to Outliers
+
+Set $\tau = 0.5$ and the check function becomes symmetric: $\rho_{0.5}(u) = \tfrac12|u|$. Minimizing the sum of *absolute* residuals is **least absolute deviations** (LAD), and its fitted line passes through the conditional median rather than the conditional mean.
+
+This buys a concrete robustness property. The mean is exquisitely sensitive to outliers: one patient with a lab error recording HbA1c as $200$ instead of $70$ drags $\bar Y$ --- and the OLS line --- toward it, because squared loss penalizes the huge residual quadratically. The median does not budge: moving a point that is already above the median further up does not change which point sits in the middle. Absolute loss grows only linearly, so a lone extreme value cannot dominate.
+
+::: {.glass-card .glass-card--insight}
+**Median regression is OLS's robust cousin.** Where OLS minimizes $\sum_i (y_i - x_i'\beta)^2$ and chases the conditional mean, LAD minimizes $\sum_i |y_i - x_i'\beta|$ and chases the conditional median. Because absolute loss is linear in the residual, a single gross outlier --- a data-entry error, a patient with a rare comorbidity --- can shift the OLS line substantially while leaving the LAD line essentially fixed. When you fear contaminated outcomes, the median fit is the safer summary of "the typical patient."
+:::
+
+## Interpreting a Quantile-Regression Coefficient
+
+The most common mistake with quantile regression is reading $\beta(\tau)$ as an effect *on a particular person* --- "the effect for poorly-controlled patients." It is not. The coefficient describes a **comparison of conditional quantiles across different values of $X$**, not a treatment effect for a fixed individual.
+
+::: {.glass-card .glass-card--warning}
+**$\beta(0.9)$ is not "the effect on the 90th-percentile patient."** A quantile-regression slope answers: *"If we compare two clinics that differ by one nurse per 1{,}000 patients, how much lower is the **90th percentile of HbA1c** in the better-staffed clinic?"* It is a statement about the **conditional distribution**, not about any one patient. The patient who sits at the 90th percentile of HbA1c under low staffing need not be the same patient who sits at the 90th percentile under high staffing --- the **rank may not be preserved**. Without an additional *rank-invariance* assumption, you cannot read $\beta(0.9)$ as the causal effect experienced by a specific high-HbA1c individual. It tells you how the *shape* of the distribution shifts, which is exactly what a budget or targeting decision needs --- but it is not an individual treatment effect.
+:::
+
+This is the same caution that runs through the whole book: a coefficient is defined by *what it compares*. OLS compares conditional means; quantile regression compares conditional quantiles. Neither, on its own, delivers an individual effect without extra structure. The next page on distributional treatment effects makes the rank-invariance assumption explicit and shows what it buys.
+
+::: {.glass-card .glass-card--assumption}
+**What linear quantile regression rests on.** The estimator $\hat\beta(\tau)$ is valid as a description of the conditional quantile under two assumptions, both easy to forget.
+
+1. **Correct functional form at that quantile.** $Q_\tau(x) = x'\beta(\tau)$ must be (close to) *linear* in the covariates. Linearity can hold at the median yet fail in a tail, so a good fit at $\tau = 0.5$ is no guarantee at $\tau = 0.9$. Check each quantile you report.
+
+2. **No (or negligible) quantile crossing.** Estimated separately, the fitted lines for $\tau = 0.1$ and $\tau = 0.9$ can *cross* in regions of sparse data, implying the impossible $\hat Q_{0.1}(x) > \hat Q_{0.9}(x)$. In the location-scale picture here the lines converge but do not cross within the data range; in real samples, watch for crossings near the edges of the $X$ support and consider rearrangement methods if they appear.
+
+For a *causal* reading on top of these --- not just a description of the distribution --- you additionally need the design to identify the conditional quantiles (e.g. exogeneity of $X$), exactly as OLS needs for the mean.
+:::
+
+## Computing Quantile Regression
+
+Both panels fit the same three quantiles ($\tau = 0.1, 0.5, 0.9$) plus OLS to a heteroskedastic HbA1c-vs-nurse-density sample, then print the slope at each quantile so you can see the fanning numerically.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("quantreg")
+library(quantreg)
+
+## ---- Simulate the heteroskedastic vårdcentral sample ----
+set.seed(42)
+n     <- 400
+x     <- runif(n, 0.5, 3.5)                 # nurse density per 1,000 patients
+sigma <- pmax(0.4, 8 - 2 * x)               # spread SHRINKS as x rises
+y     <- 62 - 3 * x + rnorm(n, 0, 1) * sigma  # HbA1c (mmol/mol)
+df    <- data.frame(x = x, y = y)
+
+## ---- Quantile regression at three quantiles in one call ----
+# rq() minimizes the check loss via the Barrodale–Roberts simplex algorithm.
+fit_q <- rq(y ~ x, tau = c(0.1, 0.5, 0.9), data = df)
+print(summary(fit_q))                       # slope per τ, with rank-inversion CIs
+coef(fit_q)                                  # 2 × 3 matrix: intercept & slope by τ
+
+## ---- OLS for comparison (the conditional MEAN) ----
+fit_ols <- lm(y ~ x, data = df)
+cat("OLS slope (mean):", round(coef(fit_ols)["x"], 3), "\n")
+
+## ---- The whole coefficient *process* across τ ----
+fit_proc <- rq(y ~ x, tau = seq(0.05, 0.95, by = 0.05), data = df)
+plot(summary(fit_proc), parm = "x")         # slope β(τ) fanning vs the OLS band
+```
+
+### Python
+
+```python
+# pip install statsmodels numpy pandas
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# ---- Simulate the heteroskedastic vårdcentral sample ----
+rng   = np.random.default_rng(42)
+n     = 400
+x     = rng.uniform(0.5, 3.5, n)              # nurse density per 1,000 patients
+sigma = np.maximum(0.4, 8 - 2 * x)            # spread SHRINKS as x rises
+y     = 62 - 3 * x + rng.normal(0, 1, n) * sigma   # HbA1c (mmol/mol)
+df    = pd.DataFrame({"x": x, "y": y})
+
+# ---- Quantile regression: one fit per τ (statsmodels QuantReg) ----
+# .fit(q=τ) minimizes the check loss via iteratively reweighted least squares.
+mod = smf.quantreg("y ~ x", df)
+for tau in (0.1, 0.5, 0.9):
+    res = mod.fit(q=tau)
+    print(f"τ={tau}: intercept={res.params['Intercept']:.2f}, "
+          f"slope={res.params['x']:.3f}")
+
+# ---- OLS for comparison (the conditional MEAN) ----
+ols = smf.ols("y ~ x", df).fit()
+print(f"OLS slope (mean): {ols.params['x']:.3f}")
+
+# ---- The whole coefficient process across τ ----
+taus   = np.arange(0.05, 0.96, 0.05)
+slopes = [mod.fit(q=t).params["x"] for t in taus]
+for t, s in zip(taus, slopes):
+    print(f"  τ={t:.2f}  β(τ)={s:.3f}")
+```
+
+:::
+
+Both languages return the same picture: the slope grows in magnitude from roughly $-0.2$ near $\tau = 0.1$, through $-2.8$ at the median, to about $-4.8$ near $\tau = 0.9$ (sampling noise moves these a little from the exact location-scale values). The OLS slope of about $-2.6$ sits in the middle, blind to the fan. When you report quantile regression, show the *whole* $\beta(\tau)$ process, not a single quantile cherry-picked after the fact.
+
+<details>
+<summary>Math Details: Why the check-loss minimizer is the quantile</summary>
+<div class="details-content">
+
+We show that the constant $q$ minimizing the expected check loss $E[\rho_\tau(Y - q)]$ is the $\tau$-quantile of $Y$. The same argument applies pointwise to the *conditional* quantile by conditioning on $X = x$ throughout.
+
+### Set up the objective
+
+Write the expected loss, splitting the residual $u = Y - q$ at zero:
+
+$$
+R(q) \;=\; E[\rho_\tau(Y - q)]
+\;=\; \tau \underbrace{E[(Y - q)\,\mathbf{1}\{Y \ge q\}]}_{\text{under-predictions}}
+\;-\;(1-\tau)\underbrace{E[(Y - q)\,\mathbf{1}\{Y < q\}]}_{\text{over-predictions}} .
+$$
+
+The first term weights the cases where the truth lies at or above the guess by $\tau$; the second weights the cases where the truth lies below by $1 - \tau$ (the extra minus sign makes that contribution positive, since $Y - q < 0$ there).
+
+### Differentiate with respect to the guess
+
+Differentiate $R(q)$ with respect to $q$. Using Leibniz's rule, the boundary terms (where $Y = q$) cancel because the integrand is continuous there, leaving only the derivative of the $(Y - q)$ factors:
+
+$$
+\frac{dR}{dq}
+\;=\; -\tau\,P(Y \ge q) \;+\; (1-\tau)\,P(Y < q).
+$$
+
+**Read this as**: "raising the guess by a hair *saves* $\tau$ on every observation still above it, and *costs* $(1-\tau)$ on every observation now below it." Substitute $P(Y \ge q) = 1 - F(q)$, where $F$ is the CDF of $Y$:
+
+$$
+\frac{dR}{dq}
+\;=\; -\tau\,[1 - F(q)] + (1-\tau)\,F(q).
+$$
+
+Expand and collect the $F(q)$ terms: $-\tau + \tau F(q) + (1-\tau)F(q) = -\tau + F(q)$. So the derivative simplifies cleanly to
+
+$$
+\frac{dR}{dq} \;=\; F(q) - \tau .
+$$
+
+### Set the derivative to zero
+
+The first-order condition is
+
+$$
+\frac{dR}{dq} = 0 \;\Longrightarrow\; F(q) = \tau
+\;\Longrightarrow\; \boxed{\,q^\star = F^{-1}(\tau) = Q_\tau\,}.
+$$
+
+The minimizer is exactly the value at which the CDF equals $\tau$ --- the **$\tau$-quantile**. For $\tau = 0.5$ it is the median; for $\tau = 0.9$ it is the 90th percentile.
+
+### Confirm it is a minimum
+
+The derivative $F(q) - \tau$ is *non-decreasing* in $q$ (because $F$ is non-decreasing): it is negative for $q < Q_\tau$ and positive for $q > Q_\tau$. So $R(q)$ is falling then rising --- the stationary point is a global minimum, and $R$ is convex. $\checkmark$
+
+### From a constant to a linear model
+
+Replacing the constant guess $q$ with a linear predictor $x'\beta$ and taking the sample average in place of the expectation gives the estimator
+
+$$
+\hat\beta(\tau) = \arg\min_\beta \frac1n \sum_{i=1}^n \rho_\tau(y_i - x_i'\beta),
+$$
+
+whose fitted values estimate the conditional quantile $Q_\tau(x) = x'\beta(\tau)$. Because $\rho_\tau$ is piecewise linear and convex, the sample problem is a linear program with a unique solution at a vertex (generically, a fit passing exactly through $k$ data points, where $k$ is the number of parameters).
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Five diabetes patients at a *vårdcentral* have HbA1c values (mmol/mol): $50, 52, 55, 60, 70$. Using the check function $\rho_\tau(u)$:
+
+(a) Compute the total check loss $\sum_i \rho_{0.5}(y_i - q)$ for the candidate guesses $q = 52$ and $q = 55$, and state which is the median fit. (b) Without minimizing again, explain why the minimizer for $\tau = 0.9$ must be $70$, the largest value.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $\tau = 0.5$, $\rho_{0.5}(u) = 0.5\,u$ if $u \ge 0$ and $-0.5\,u$ if $u < 0$, i.e. $0.5|u|$.
+
+For $q = 52$: residuals $u = y - q$ are $-2, 0, 3, 8, 18$. Absolute values $2, 0, 3, 8, 18$ sum to $31$; total loss $= 0.5 \times 31 = 15.5$.
+
+For $q = 55$: residuals are $-5, -3, 0, 5, 15$. Absolute values $5, 3, 0, 5, 15$ sum to $28$; total loss $= 0.5 \times 28 = 14.0$.
+
+So $q = 55$ has the lower loss, $14.0 < 15.5$. Indeed $55$ is the sample median (the 3rd of 5 ordered values), and it minimizes the symmetric check loss. (A full grid search confirms the minimum is at $q = 55$ with loss $14.0$.)
+
+**(b)** For $\tau = 0.9$ the check loss penalizes an under-prediction ($u = y - q > 0$, the truth above the guess) by $0.9$ but an over-prediction by only $0.1$. The minimizer is the smallest $q$ such that the fraction of data at or below $q$ reaches $\tau = 0.9$. With only $5$ points, you must place $q$ at or above the largest value before $90\%$ of the mass is below it; the order statistic that achieves this is the maximum, $70$. (Checking the data points directly, $\rho_{0.9}$ total loss is $33.3$ at $q=50$ and falls monotonically to its minimum $6.3$ at $q = 70$.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+In the interactive, the slope at $\tau = 0.9$ is about $-5.6$ mmol/mol while the slope at $\tau = 0.1$ is about $-0.4$. (a) What feature of the data generates this difference in slopes? (b) If the data were *homoskedastic* (constant spread), what would the three quantile lines look like, and how would their slopes compare to the OLS slope?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The difference is driven by **heteroskedasticity** --- the conditional spread of HbA1c shrinks as nurse density rises. The data follow a location-scale model $y = a + bx + (c + dx)Z$ with $d < 0$, so the conditional $\tau$-quantile is $Q_\tau(x) = (a + c\,z_\tau) + (b + d\,z_\tau)\,x$ with $z_\tau = \Phi^{-1}(\tau)$. The slope $b + d\,z_\tau$ depends on $\tau$ through $z_\tau$: it is more negative for high $\tau$ (where $z_\tau > 0$) and closer to zero for low $\tau$ (where $z_\tau < 0$). The varying spread, not a varying *mean* effect, makes the slopes fan.
+
+**(b)** Under homoskedasticity ($d = 0$, constant spread), the slope $b + d\,z_\tau = b$ is the *same* at every quantile. The three quantile lines would be **parallel**, separated only by vertical shifts $c\,z_\tau$, and every slope would equal the OLS slope $b$. Fanning lines are the visual signature of heteroskedasticity; parallel lines say the covariate shifts the distribution rigidly and the mean tells the whole story.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague fits a 90th-percentile quantile regression of HbA1c on a "diabetes coordination program" dummy and finds $\hat\beta(0.9) = -8$ mmol/mol. They write in the draft: *"The program lowers HbA1c by 8 mmol/mol for the worst-controlled patients."* Explain precisely what is wrong with this sentence and write a corrected version.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The sentence treats $\hat\beta(0.9)$ as an **individual effect on a fixed group of people** ("the worst-controlled patients"). It is not. A quantile-regression coefficient compares the **90th percentile of the conditional distribution** across the two values of the dummy --- it is a statement about the *distribution*, not about any specific patient. The patients sitting at the 90th percentile *with* the program need not be the same patients who would sit at the 90th percentile *without* it; ranks need not be preserved. Reading $\hat\beta(0.9)$ as a per-patient effect requires an extra **rank-invariance** assumption that quantile regression alone does not provide.
+
+**Corrected version:** *"Clinics running the coordination program have a 90th percentile of HbA1c that is 8 mmol/mol lower than otherwise-similar clinics without it --- i.e., the program is associated with a markedly lower upper tail of the HbA1c distribution. This describes how the program reshapes the distribution, not the effect on any particular patient."* (If the design supports a causal reading and rank invariance is assumed, one may add "causally" and "for the patient who would occupy that rank," but those assumptions must be stated.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+(a) Explain why median (LAD) regression is more robust to a single grossly mismeasured HbA1c value than OLS. (b) One lab returns a patient's HbA1c as $250$ mmol/mol (a clear data-entry error; real values rarely exceed $130$). Qualitatively, what happens to the OLS slope and to the $\tau = 0.5$ quantile slope?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** OLS minimizes *squared* residuals, so a residual of size $r$ contributes $r^2$ to the loss; a single huge residual dominates the objective and pulls the fitted line toward the outlier to reduce that one squared term. LAD minimizes *absolute* residuals, where the contribution grows only linearly ($|r|$), and the median's location depends on the *rank* of points, not their magnitude. Moving one point that is already above the fitted line even further away does not change which observation sits in the middle, so the LAD fit is essentially unmoved.
+
+**(b)** The OLS slope is **distorted**: the $250$ outlier inflates that observation's squared residual enormously, tilting the least-squares line toward it (the direction depends on the outlier's $x$-value, but the line moves substantially). The $\tau = 0.5$ quantile slope is **almost unchanged**: replacing a high value with an even higher value leaves the conditional median --- and thus the LAD fit --- essentially fixed, because the median ignores how far above it the extreme point lies. This is exactly the robustness property that makes median regression a safer summary when outcome data may be contaminated.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The conditional quantile function $Q_\tau(x) = x'\beta(\tau)$ models a chosen percentile of the outcome given $X$, letting a covariate have a *different* slope $\beta(\tau)$ at each quantile $\tau$.
+- The check (pinball) loss $\rho_\tau(u) = u(\tau - \mathbf{1}\{u<0\})$ is the engine: its expected-loss minimizer is the $\tau$-quantile, because the first-order condition reduces to $F(q) = \tau$.
+- Fitting $\hat\beta(\tau) = \arg\min_\beta \sum_i \rho_\tau(y_i - x_i'\beta)$ at several $\tau$ reveals fanning slopes when the data are heteroskedastic; parallel slopes mean the mean told the whole story.
+- The median ($\tau = 0.5$) case is least-absolute-deviations regression --- OLS's robust cousin, unmoved by a lone gross outlier because absolute loss grows only linearly.
+- A quantile-regression coefficient compares conditional quantiles across values of $X$; it is *not* an effect on a fixed individual unless you additionally assume rank invariance.
+:::
+
+## What Comes Next
+
+Quantile regression gave us the conditional distribution *one covariate at a time*: it shows how the shape of the outcome shifts as $X$ changes, and it warned us that a quantile slope is a statement about the distribution, not about any one patient. The natural next question is causal: not "how does the 90th percentile of HbA1c vary with staffing?" but "how does a *treatment* change the **whole distribution** of outcomes, and for whom?" The next page, [Distributional Treatment Effects](distributional-effects.qmd), makes the rank-invariance assumption explicit, defines the quantile treatment effect (QTE), and shows how to estimate the effect of a treatment on the entire outcome distribution rather than on a single summary --- turning the distributional *description* of this page into a distributional *causal* tool.

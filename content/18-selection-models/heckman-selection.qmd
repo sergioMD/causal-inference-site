@@ -1,0 +1,768 @@
+---
+title: "Sample Selection: The Heckman Model"
+subtitle: "When who you observe depends on the outcome"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Distinguish *sample selection* (the outcome is observed only for a self-selected subsample) from the censoring and truncation of the [Tobit model](censoring-truncation-tobit.qmd)
+- Write the two-equation Heckman model --- a probit **selection** equation and a linear **outcome** equation linked by correlated errors $\rho$
+- Derive the selection-bias term $E[\varepsilon \mid \text{selected}]$ and recognise it as the **inverse Mills ratio** (IMR)
+- Implement the Heckman correction two ways: the **two-step** estimator (add the IMR as a regressor) and the **full-information MLE**
+- Explain why a credible **exclusion restriction** --- a variable that shifts selection but not the outcome --- is what rescues identification from collinearity
+:::
+
+## The Question Behind the Missing Rows
+
+A *vårdcentral* (primary care center) in Region Skåne wants to know how a patient's age relates to the cost of a course of physiotherapy for lower-back pain. The natural move is to regress treatment cost (in SEK) on age, using the patients who completed a course last year. But there is a catch that the regression cannot see: **cost is only recorded for patients who actually sought and started treatment.** Many people with back pain never came in --- they self-managed, used a private clinic, or simply endured it. Their cost is not zero; it is *missing*, and they are missing from the dataset entirely.
+
+This is not a nuisance about a few absent rows. The patients who came in are not a random slice of the population. Those in more pain, with more time, or with stronger expectations of benefit are more likely to seek care --- and those same traits plausibly drive how expensive their care turns out to be. **Who we observe depends on the outcome we are trying to model.** A regression on the observed (selected) sample will recover a line that is bent away from the truth, and no amount of extra data of the same kind will fix it.
+
+James Heckman's 1979 insight --- which earned a share of the 2000 Nobel Prize --- was to treat selection as a problem we can *model* rather than ignore. If we can write down the process that decides who is observed, we can compute exactly how it distorts the outcome equation, and then subtract that distortion off. This page builds that correction from the ground up. Like the [Tobit model](censoring-truncation-tobit.qmd) before it and the [count models](../17-count-data/poisson-regression.qmd) before that, the engine underneath is [maximum likelihood](../11-mle-gmm/likelihood.qmd) --- but the two-step version cleverly turns the hard part into an ordinary OLS regression with one extra regressor.
+
+## Selection Is Not Censoring
+
+The previous page studied the Tobit model, where a latent outcome is *clipped* at a threshold: spending below zero is recorded as zero, but the same equation governs the latent value and the observation rule. Sample selection is a different animal, and the distinction decides which model you should reach for.
+
+::: {.glass-card .glass-card--definition}
+**Sample selection** occurs when the outcome $Y$ is observed only for units that clear a *separate* selection process, and the unobservable driving selection is correlated with the unobservable in the outcome. Formally there are **two** equations:
+
+$$
+\underbrace{S_i^* = \mathbf{z}_i'\boldsymbol\gamma + u_i, \qquad S_i = \mathbf{1}\{S_i^* > 0\}}_{\text{selection (probit)}}
+\qquad
+\underbrace{Y_i = \mathbf{x}_i'\boldsymbol\beta + \varepsilon_i}_{\text{outcome}}
+$$
+
+and $Y_i$ is observed **only when $S_i = 1$**. The errors are jointly normal with correlation $\rho = \mathrm{Corr}(u_i, \varepsilon_i)$.
+
+**Read this as**: "a latent selection index $S^*$ equals observed drivers $\mathbf{z}'\boldsymbol\gamma$ plus noise $u$; we select the unit (observe its $Y$) when that index crosses zero. The outcome $Y$ is its own equation with its own noise $\varepsilon$. The two noises are correlated through $\rho$." When $\rho = 0$ the noises are unrelated and ordinary OLS on the selected sample is fine; the whole problem lives in $\rho \ne 0$.
+:::
+
+The contrast with censoring is sharp, and worth pinning down.
+
+::: {.glass-card .glass-card--insight}
+**One equation versus two.** In the **Tobit** model, the *same* latent variable both generates the outcome and triggers the censoring --- a patient with low latent demand spends little *and* is the one censored at zero. There is one equation and one error. In the **Heckman** model, a *separate* selection equation (with its own regressors $\mathbf{z}$ and its own error $u$) decides who is observed; the outcome equation has its own error $\varepsilon$. Selection bites only because the two errors are *correlated*. Tobit is "the outcome censors itself"; Heckman is "a different process picks who you get to see."
+:::
+
+To make this concrete: a Tobit fits when we record care spending for *everyone* but it piles up at zero for non-users (the zero is a real, observed value). A Heckman fits when spending is simply *absent* for non-users --- there is no row at all --- and whether a row exists is governed by who chose to seek care.
+
+## How Selection Bends the Line
+
+Why does dropping the unobserved rows bias the slope? Because conditioning on "was selected" ($S_i = 1$) is the same as conditioning on $u_i > -\mathbf{z}_i'\boldsymbol\gamma$ --- we keep only units whose selection noise was high enough. And if $\varepsilon$ is correlated with $u$ ($\rho \ne 0$), keeping the high-$u$ units also keeps the high-$\varepsilon$ (or low-$\varepsilon$) units. The conditional mean of the outcome error among the selected is therefore **not zero**:
+
+$$
+E[\varepsilon_i \mid S_i = 1, \mathbf{x}_i, \mathbf{z}_i] = \rho\,\sigma_\varepsilon \, \lambda(\mathbf{z}_i'\boldsymbol\gamma) \;\ne\; 0 \quad \text{when } \rho \ne 0.
+$$
+
+That extra term $\rho\,\sigma_\varepsilon\,\lambda(\cdot)$ is an **omitted variable**. Run OLS on the selected sample and it folds into the residual; because $\lambda(\mathbf{z}_i'\boldsymbol\gamma)$ varies with the regressors, it contaminates $\hat{\boldsymbol\beta}$. The function $\lambda$ is the inverse Mills ratio, which we now define precisely.
+
+::: {.glass-card .glass-card--definition}
+The **inverse Mills ratio** (IMR) of a standard normal at index $a$ is the hazard ratio
+
+$$
+\lambda(a) \;=\; \frac{\phi(a)}{\Phi(a)},
+$$
+
+where $\phi$ is the standard normal density and $\Phi$ its cumulative distribution function.
+
+**Read this as**: "lambda of $a$ is the normal density at $a$ divided by the probability of being above $-a$." It is exactly the expected value of a standard normal *given that it exceeds $-a$* --- the mean of the truncated tail. The smaller the selection probability $\Phi(a)$, the larger $\lambda(a)$: when few units clear the bar, those that do are an extreme, heavily-selected slice, so the selection distortion is large.
+:::
+
+The Heckman correction follows immediately. If the omitted term is $\rho\,\sigma_\varepsilon\,\lambda(\mathbf{z}_i'\boldsymbol\gamma)$, then **add it back as a regressor**. We do not know $\boldsymbol\gamma$, but we can estimate it with a probit on the full sample (everyone is either selected or not), form the fitted IMR $\hat\lambda_i = \lambda(\mathbf{z}_i'\hat{\boldsymbol\gamma})$, and include it in the outcome regression:
+
+$$
+Y_i = \mathbf{x}_i'\boldsymbol\beta + \beta_\lambda\,\hat\lambda_i + \text{error}, \qquad \beta_\lambda = \rho\,\sigma_\varepsilon.
+$$
+
+Once $\hat\lambda_i$ absorbs the selection, the remaining error is mean-zero and OLS on the selected sample recovers $\boldsymbol\beta$ consistently. The coefficient on the IMR, $\hat\beta_\lambda$, is itself a *test*: if it is statistically zero, $\rho = 0$ and there was no selection problem to begin with.
+
+## See It: Selection Bias and Its Correction
+
+The lab below shows the whole story in one picture. The faint grey cloud is the **full population** --- every patient, observed or not. The solid dots are the **selected sample** (those who sought care). Three lines compete: the **true** population line (ochre), the **biased** OLS line fit to the selected dots only (red), and the **Heckman-corrected** line (green). Drag the **error correlation $\rho$** and watch the red line peel away from the truth while the green line stays locked onto it.
+
+::: {.interactive-container}
+
+#### Selection bias in physiotherapy cost, and the Heckman fix
+
+```{ojs}
+//| echo: false
+selheck_intro = html`<p style="
+    font-family: Inter, sans-serif; font-size: 0.85rem;
+    color: ${selheck_pal.axis}; background: ${selheck_pal.fill};
+    border-left: 3px solid ${selheck_pal.focal};
+    padding: 0.5rem 0.75rem; border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> set <em>error correlation &rho;</em> to 0 and confirm
+  all three lines coincide &mdash; no selection, no bias. Then drag &rho; toward
+  +0.9 and watch the red selected-sample line swing away from the ochre truth,
+  while the green Heckman line tracks it. Full tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof selheck_rho = Inputs.range([-0.9, 0.9], {
+  value: 0.6, step: 0.05,
+  label: "Error correlation ρ (selection ↔ cost)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof selheck_selectShare = Inputs.range([0.2, 0.9], {
+  value: 0.45, step: 0.05,
+  label: "Share of patients who seek care (selection rate)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof selheck_draw = Inputs.button("Draw a new patient sample", {
+  value: 0, reduce: v => v + 1
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Uppsala-academic palette shared across this page's interactives. ──
+selheck_pal = ({
+  focal:  "#990000",   // focal series — biased selected-sample OLS (Uppsala red)
+  slate:  "#3d5a6c",   // secondary / selection machinery (slate)
+  good:   "#2e6f40",   // Heckman-corrected, on-target (green)
+  ochre:  "#9c7a33",   // the TRUE population line / highlight (ochre)
+  ink:    "#1c1c1a",   // ink text & reference lines
+  axis:   "#79766e",   // axis text (Uppsala muted)
+  hair:   "#e6e3db",   // gridlines / hairlines
+  muted:  "#79766e",   // unselected cloud / muted ink
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Population of patients (physiotherapy cost in 1000s SEK). DGP: ──
+//   selection  S* = γ0 + γ_age·age + γ_pain·pain + u,  S = 1{S*>0}
+//   outcome    Y  = β0 + β1·age + ε,   (u,ε) ~ bivariate normal, Corr = ρ.
+// `pain` is the EXCLUSION RESTRICTION: it drives selection (more pain ⇒ seek
+// care) but is absent from the cost equation, giving the IMR independent
+// variation that identifies the correction.
+selheck_truth = ({ b0: 4.0, b1: 1.4 })   // true cost intercept & age slope (1000s SEK)
+
+selheck_data = {
+  selheck_draw;                              // re-draw on button press
+  const n = 600;
+  const rho = selheck_rho;
+  const rn = d3.randomNormal.source(d3.randomLcg(0.42 + 0.001 * selheck_draw))(0, 1);
+
+  // Choose the selection intercept γ0 so the realised selection rate ≈ slider.
+  // Φ(γ0 + ...) averaged over the covariate cloud ≈ selectShare; with mean-zero
+  // covariates the average index is γ0, so γ0 ≈ Φ⁻¹(share).
+  const g0 = selheck_qnorm(selheck_selectShare);
+  const g_age = 0.5;        // age also raises the chance of seeking care
+  const g_pain = 1.1;       // EXCLUSION RESTRICTION: pain drives selection only
+
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const age = rn();                        // standardized age
+    const pain = rn();                       // standardized baseline pain (exclusion)
+    // Correlated errors via Cholesky of a 2×2 with unit variances and corr ρ.
+    const u = rn();
+    const e = rho * u + Math.sqrt(1 - rho * rho) * rn();
+    const sIndex = g0 + g_age * age + g_pain * pain + u;
+    const selected = sIndex > 0;
+    const cost = selheck_truth.b0 + selheck_truth.b1 * age + e;  // cost in 1000s SEK
+    rows.push({ age, pain, u, e, sIndex, selected, cost });
+  }
+  return rows;
+}
+
+selheck_selected = selheck_data.filter(d => d.selected)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Standard-normal helpers (no library dependency). ──
+selheck_phi = a => Math.exp(-0.5 * a * a) / Math.sqrt(2 * Math.PI)
+
+// Φ via the Abramowitz–Stegun rational approximation (max error ≈ 7.5e-8).
+selheck_Phi = function (a) {
+  const sign = a < 0 ? -1 : 1;
+  const x = Math.abs(a) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+            - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return 0.5 * (1 + sign * y);
+}
+
+// Φ⁻¹ (quantile), central-region rational approximation (Acklam). The slider
+// only ever passes p ∈ [0.2, 0.9], so the central branch is all we need.
+selheck_qnorm = function (p) {
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+             1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+             6.680131188771972e+01, -1.328068155288572e+01];
+  const q = p - 0.5, r = q * q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+         (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+
+selheck_imr = a => selheck_phi(a) / selheck_Phi(a)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── OLS helper: simple regression of y on a single x (returns slope+intercept).
+selheck_ols1 = function (rows, xKey, yKey) {
+  const mx = d3.mean(rows, d => d[xKey]);
+  const my = d3.mean(rows, d => d[yKey]);
+  let sxx = 0, sxy = 0;
+  for (const r of rows) {
+    sxx += (r[xKey] - mx) ** 2;
+    sxy += (r[xKey] - mx) * (r[yKey] - my);
+  }
+  const slope = sxy / sxx;
+  return { slope, intercept: my - slope * mx };
+}
+
+// ── Two-regressor OLS (cost on age and the fitted IMR) via normal equations.
+//    Returns {b0, bAge, bLambda}. Used for the Heckman two-step line.
+selheck_ols2 = function (rows, yKey, x1Key, x2Key) {
+  const n = rows.length;
+  let Sx1=0,Sx2=0,Sy=0,Sx1x1=0,Sx2x2=0,Sx1x2=0,Sx1y=0,Sx2y=0;
+  for (const r of rows) {
+    const x1=r[x1Key], x2=r[x2Key], y=r[yKey];
+    Sx1+=x1; Sx2+=x2; Sy+=y;
+    Sx1x1+=x1*x1; Sx2x2+=x2*x2; Sx1x2+=x1*x2;
+    Sx1y+=x1*y; Sx2y+=x2*y;
+  }
+  // Solve the 3×3 normal equations [n, Sx1, Sx2; ...] β = [Sy; Sx1y; Sx2y].
+  const A = [[n, Sx1, Sx2], [Sx1, Sx1x1, Sx1x2], [Sx2, Sx1x2, Sx2x2]];
+  const rhs = [Sy, Sx1y, Sx2y];
+  const sol = selheck_solve3(A, rhs);
+  return { b0: sol[0], bAge: sol[1], bLambda: sol[2] };
+}
+
+// 3×3 linear solve by Gaussian elimination with partial pivoting.
+selheck_solve3 = function (A, b) {
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < 3; c++) {
+    let piv = c;
+    for (let r = c + 1; r < 3; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    for (let r = 0; r < 3; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k < 4; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return [M[0][3] / M[0][0], M[1][3] / M[1][1], M[2][3] / M[2][2]];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Probit selection equation by Newton–Raphson on (γ0, γ_age, γ_pain), ──
+// fit on the FULL sample. Then form the fitted IMR and run the two-step OLS.
+selheck_probit = {
+  const rows = selheck_data;
+  let g = [0, 0, 0];                          // [intercept, age, pain]
+  for (let iter = 0; iter < 40; iter++) {
+    const grad = [0, 0, 0];
+    const H = [[0,0,0],[0,0,0],[0,0,0]];      // gradient & Hessian
+    for (const r of rows) {
+      const xi = [1, r.age, r.pain];
+      const idx = g[0] + g[1]*r.age + g[2]*r.pain;
+      const Pi = Math.min(1 - 1e-9, Math.max(1e-9, selheck_Phi(idx)));
+      const phi = selheck_phi(idx);
+      const y = r.selected ? 1 : 0;
+      const w = phi * (y - Pi) / (Pi * (1 - Pi));    // score weight
+      const hw = phi * phi / (Pi * (1 - Pi));        // information weight
+      for (let a = 0; a < 3; a++) {
+        grad[a] += w * xi[a];
+        for (let b = 0; b < 3; b++) H[a][b] -= hw * xi[a] * xi[b];
+      }
+    }
+    // Newton step: g ← g − H⁻¹ grad (H negative definite ⇒ negate then solve).
+    const step = selheck_solve3(H.map(row => row.map(v => -v)), grad);
+    g = [g[0] + step[0], g[1] + step[1], g[2] + step[2]];
+    const mag = Math.hypot(step[0], step[1], step[2]);
+    if (mag < 1e-8) break;
+  }
+  return { g0: g[0], gAge: g[1], gPain: g[2] };
+}
+
+// Attach the fitted IMR to each selected unit, then run the two-step OLS.
+selheck_selectedWithIMR = selheck_selected.map(r => {
+  const idx = selheck_probit.g0 + selheck_probit.gAge * r.age + selheck_probit.gPain * r.pain;
+  return { ...r, lambda: selheck_imr(idx) };
+})
+
+selheck_fits = {
+  const truthLine = { intercept: selheck_truth.b0, slope: selheck_truth.b1 };
+  const biased = selheck_ols1(selheck_selected, "age", "cost");
+  const two = selheck_ols2(selheck_selectedWithIMR, "cost", "age", "lambda");
+  return {
+    truth:  truthLine,
+    biased: biased,                                  // OLS on selected sample
+    heck:   { intercept: two.b0, slope: two.bAge, bLambda: two.bLambda }
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+selheck_scatter = {
+  const xs = [-3, 3];
+  const linePts = (f) => xs.map(x => ({ x, y: f.intercept + f.slope * x }));
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 380,
+    marginLeft: 64,
+    marginBottom: 48,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px",
+             background: "transparent", color: selheck_pal.axis },
+    x: { label: "Patient age (standardized) →", domain: [-3, 3], grid: false },
+    y: { label: "↑ Physiotherapy cost (1000s SEK)", domain: [-1, 9], grid: true },
+    marks: [
+      Plot.gridY({ stroke: selheck_pal.hair }),
+      // Unselected (never sought care) — faint muted cloud.
+      Plot.dot(selheck_data.filter(d => !d.selected), {
+        x: "age", y: "cost", r: 2.4, fill: selheck_pal.muted, fillOpacity: 0.22
+      }),
+      // Selected sample — slate dots.
+      Plot.dot(selheck_selected, {
+        x: "age", y: "cost", r: 3, fill: selheck_pal.slate, fillOpacity: 0.6
+      }),
+      // TRUE population line (ochre).
+      Plot.line(linePts(selheck_fits.truth), {
+        x: "x", y: "y", stroke: selheck_pal.ochre, strokeWidth: 3
+      }),
+      // BIASED selected-sample OLS (Uppsala red, dashed).
+      Plot.line(linePts(selheck_fits.biased), {
+        x: "x", y: "y", stroke: selheck_pal.focal, strokeWidth: 2.5,
+        strokeDasharray: "6,4"
+      }),
+      // HECKMAN-corrected (green).
+      Plot.line(linePts(selheck_fits.heck), {
+        x: "x", y: "y", stroke: selheck_pal.good, strokeWidth: 2.5
+      }),
+      // Line labels (Plot.line has no text channel) — white halo so they read.
+      Plot.text([{ x: 2.6, y: selheck_fits.truth.intercept + selheck_fits.truth.slope * 2.6 }], {
+        x: "x", y: "y", text: () => "True", fill: selheck_pal.ochre,
+        fontWeight: 700, fontSize: 12, dy: -8, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: -2.6, y: selheck_fits.biased.intercept + selheck_fits.biased.slope * -2.6 }], {
+        x: "x", y: "y", text: () => "Selected-sample OLS (biased)",
+        fill: selheck_pal.focal, fontWeight: 700, fontSize: 11, dy: 16,
+        textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 2.6, y: selheck_fits.heck.intercept + selheck_fits.heck.slope * 2.6 }], {
+        x: "x", y: "y", text: () => "Heckman", fill: selheck_pal.good,
+        fontWeight: 700, fontSize: 12, dy: 16, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// Live readout: how far each estimated slope sits from the true age slope (1.4).
+selheck_readout = {
+  const trueB = selheck_truth.b1;
+  const biasGap = selheck_fits.biased.slope - trueB;
+  const heckGap = selheck_fits.heck.slope - trueB;
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7.5rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${selheck_pal.fill}; border:1px solid ${selheck_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${selheck_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  const fmt = v => (v >= 0 ? "+" : "") + v.toFixed(3);
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("True age slope", selheck_truth.b1.toFixed(3), selheck_pal.ochre)}
+    ${tile("Biased OLS slope", selheck_fits.biased.slope.toFixed(3), selheck_pal.focal)}
+    ${tile("Heckman slope", selheck_fits.heck.slope.toFixed(3), selheck_pal.good)}
+    ${tile("Biased error", fmt(biasGap), Math.abs(biasGap) < 0.05 ? selheck_pal.good : selheck_pal.focal)}
+    ${tile("Heckman error", fmt(heckGap), Math.abs(heckGap) < 0.05 ? selheck_pal.good : selheck_pal.focal)}
+    ${tile("IMR coef. β_λ", selheck_fits.heck.bLambda.toFixed(3), selheck_pal.slate)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// One-line plain-language verdict that updates with ρ.
+selheck_verdict = {
+  const r = selheck_rho;
+  const heckGap = selheck_fits.heck.slope - selheck_truth.b1;
+  const biasGap = selheck_fits.biased.slope - selheck_truth.b1;
+  let msg, color;
+  if (Math.abs(r) < 0.06) {
+    msg = "ρ ≈ 0: selection noise is unrelated to cost noise, so the selected-sample OLS is already unbiased — all three lines coincide. This is the case where you do not need Heckman at all.";
+    color = selheck_pal.good;
+  } else {
+    const dir = r > 0 ? "high-cost" : "low-cost";
+    msg = `ρ = ${r.toFixed(2)}: patients who self-select into care also tend to have ${dir} unobservables, so the red OLS line is off by ${(biasGap >= 0 ? "+" : "") + biasGap.toFixed(3)}. The Heckman line adds the inverse Mills ratio and lands within ${Math.abs(heckGap).toFixed(3)} of the true slope.`;
+    color = Math.abs(heckGap) < 0.08 ? selheck_pal.good : selheck_pal.ochre;
+  }
+  return html`<div style="margin-top:0.75rem; padding:0.6rem 0.9rem;
+      border-radius:0.5rem; border-left:3px solid ${color};
+      background:${selheck_pal.fill}; font-family:'Inter',system-ui,sans-serif;
+      font-size:0.86rem; line-height:1.45; color:${selheck_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Selection-Bias Lab
+
+Work through these in order; each isolates one idea.
+
+**Step 1: See the full population.** The faint grey cloud is *every* patient, including those who never sought care. The ochre line is the **true** relationship between age and cost, fit to the whole cloud --- the answer we wish we could compute. Its slope is $1.40$ (each standardized year of age adds 1,400 SEK).
+
+**Step 2: See what you actually get.** The solid slate dots are the **selected sample** --- patients who sought care and so have a recorded cost. Notice they are not a random slice of the cloud. Age helps push a patient over the selection bar (older patients seek care more readily), so *low*-age patients only appear when their cost-side luck was unusually high. With positive $\rho$ this lift falls hardest on the *left* of the plot: low-age selected dots sit well above the true line, while high-age dots --- who clear the bar easily --- sit close to it.
+
+**Step 3: Watch the bias appear.** Drag **error correlation $\rho$** up from 0 to $+0.9$. The red dashed line --- ordinary OLS on the selected dots only --- swings *away* from the ochre truth. Because the upward lift is concentrated at low ages, the left end of the red line is pulled up while the right end barely moves, so the red slope **flattens** and drops *below* the true $1.40$ (watch the "Biased OLS slope" tile fall). The "Biased error" tile grows in magnitude. This is sample-selection bias: the missing rows are missing *for a reason that correlates with cost*, and OLS has no way to know.
+
+**Step 4: Watch the correction work.** The green line is the **Heckman two-step** fit. It estimates a probit selection model, forms the inverse Mills ratio for each selected patient, adds it as a regressor, and re-runs OLS. Across the whole $\rho$ range the green line stays glued to the ochre truth: the "Heckman error" tile stays near zero while the red one blows up.
+
+**Step 5: Read the IMR coefficient.** The "IMR coef. $\beta_\lambda$" tile is $\hat\rho\,\hat\sigma_\varepsilon$. At $\rho = 0$ it sits near zero --- a built-in *test* that there was no selection problem. As you raise $\rho$ it grows in magnitude, quantifying exactly how much the selection process was contaminating the cost equation.
+
+**Step 6: Vary the selection rate.** Lower **share who seek care** to 0.2. Now selection is severe (the IMR is large), the red line's bias worsens, and you can feel how much the green line is leaning on the model. Resample with **Draw a new patient sample** to confirm the pattern is structural, not a fluke of one draw.
+
+## Identification: The Exclusion Restriction
+
+The two-step estimator looks like magic: add one regressor and bias evaporates. There is a catch, and it is the single most important thing to understand about the Heckman model.
+
+The IMR $\lambda(\mathbf{z}_i'\hat{\boldsymbol\gamma})$ is a smooth, nearly-linear function of the index $\mathbf{z}_i'\hat{\boldsymbol\gamma}$ over much of its range. If the selection regressors $\mathbf{z}$ are *exactly the same* as the outcome regressors $\mathbf{x}$, then $\hat\lambda_i$ is nearly a linear function of $\mathbf{x}_i$ --- and it is fighting the other regressors for the same variation. Identification then rests entirely on the *curvature* of $\lambda$, which is weak. Standard errors explode and estimates become wildly unstable.
+
+::: {.glass-card .glass-card--assumption}
+**Credible Heckman identification requires an exclusion restriction.** There must be at least one variable in the selection equation $\mathbf{z}$ that is **excluded** from the outcome equation $\mathbf{x}$: a variable that plausibly affects *whether* a unit is observed but has *no direct effect* on the outcome of interest.
+
+In our example, **baseline pain severity** is the exclusion restriction: more pain makes a patient far more likely to seek physiotherapy (it enters selection), but conditional on seeking care, baseline pain is assumed not to shift the *cost* of a standard course (it is excluded from the outcome). This gives $\hat\lambda_i$ variation that is independent of the cost regressors, so the correction is identified by data rather than by functional form.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Without an exclusion restriction, Heckman is identified "off the normality assumption" alone --- and that is fragile.** When $\mathbf{z} = \mathbf{x}$, the model technically estimates because $\lambda$ is not *perfectly* linear, but the correction leans entirely on the joint-normality of $(u, \varepsilon)$ and the curvature of the Mills ratio. Results become hypersensitive to distributional misspecification and the IMR is often near-collinear with the regressors (a variance-inflation problem). Always report whether you have a genuine exclusion restriction and defend it substantively; a Heckman model without one should be read with deep skepticism.
+:::
+
+A second subtlety: in the two-step estimator the regressor $\hat\lambda_i$ is *generated* from a first-stage probit, so the naive OLS standard errors in the second stage are **wrong** (too small). Use the Heckman-corrected (Murphy–Topel / Greene) standard errors that the software reports, or estimate the full model by MLE, which gets the standard errors right automatically.
+
+## Two-Step versus Full MLE
+
+There are two ways to fit the model, and they trade transparency against efficiency.
+
+::: {.glass-card .glass-card--definition}
+**The Heckman two-step estimator (Heckit):**
+
+1. Probit of $S_i$ on $\mathbf{z}_i$ over the **full** sample $\Rightarrow \hat{\boldsymbol\gamma}$.
+2. Form $\hat\lambda_i = \phi(\mathbf{z}_i'\hat{\boldsymbol\gamma}) / \Phi(\mathbf{z}_i'\hat{\boldsymbol\gamma})$ for the selected units.
+3. OLS of $Y_i$ on $\mathbf{x}_i$ and $\hat\lambda_i$ over the **selected** sample $\Rightarrow \hat{\boldsymbol\beta}, \hat\beta_\lambda$.
+
+**The full-information MLE** maximises the joint likelihood of the selection indicator and (for the selected) the outcome directly over $(\boldsymbol\beta, \boldsymbol\gamma, \sigma_\varepsilon, \rho)$ in one step.
+:::
+
+The two-step is robust, transparent, and never fails to converge --- you literally watch the selection term enter as a regressor. The MLE is more *efficient* (smaller standard errors) when the joint-normality assumption holds, and it returns $\rho$ and $\sigma_\varepsilon$ as proper parameters with valid standard errors, but it can struggle to converge when selection is weak or the exclusion restriction is thin. A common workflow uses the two-step estimates as **starting values** for the MLE.
+
+```{ojs}
+//| echo: false
+selheck_compareCard = html`<div style="font-family:'Inter',system-ui,sans-serif;
+    font-size:0.86rem; color:${selheck_pal.ink}; line-height:1.5;
+    background:${selheck_pal.fill}; border:1px solid ${selheck_pal.hair};
+    border-left:3px solid ${selheck_pal.slate}; border-radius:0 0.35rem 0.35rem 0;
+    padding:0.8rem 1rem; margin:1rem 0;">
+  <strong>Rule of thumb.</strong> Start with the <em>two-step</em> to see the IMR
+  coefficient and confirm a sane exclusion restriction; then refit by
+  <em>MLE</em> for efficient, properly-bounded estimates of &rho; and
+  &sigma;<sub>&epsilon;</sub>. If the two disagree sharply, suspect a weak or
+  invalid exclusion restriction.
+</div>`
+```
+
+## Fitting It in R and Python
+
+Both panels simulate the same physiotherapy-cost story --- cost is observed only for patients who sought care, with baseline pain as the exclusion restriction --- and recover the true age slope of $1.4$ that naive OLS on the selected sample misses.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("sampleSelection")
+library(sampleSelection)
+
+set.seed(2024)
+n   <- 4000
+age  <- rnorm(n)                      # standardized age
+pain <- rnorm(n)                      # baseline pain = EXCLUSION RESTRICTION
+rho  <- 0.6                           # correlation of selection & cost errors
+
+# Correlated bivariate-normal errors (unit variances).
+u   <- rnorm(n)
+eps <- rho * u + sqrt(1 - rho^2) * rnorm(n)
+
+# Selection: more pain & older patients more likely to seek physiotherapy.
+s_star   <- -0.2 + 0.5 * age + 1.1 * pain + u
+selected <- s_star > 0
+
+# Outcome: physiotherapy cost (1000s SEK), true age slope = 1.4. Pain is
+# EXCLUDED from the cost equation.
+cost_full <- 4.0 + 1.4 * age + eps
+cost      <- ifelse(selected, cost_full, NA)   # missing for non-seekers
+
+dat <- data.frame(cost, age, pain, selected)
+
+## ---- Naive OLS on the selected sample (BIASED) ----
+naive <- lm(cost ~ age, data = subset(dat, selected))
+cat("Naive age slope  =", round(coef(naive)["age"], 3), "\n")  # ~1.3, too flat
+
+## ---- Heckman two-step (Heckit): exclusion restriction = pain ----
+two_step <- heckit(
+  selection = selected ~ age + pain,   # probit selection equation
+  outcome   = cost ~ age,              # outcome equation (pain EXCLUDED)
+  data      = dat,
+  method    = "2step"
+)
+summary(two_step)
+cat("2-step age slope =", round(coef(two_step)["age"], 3), "\n")  # ~1.4
+
+## ---- Full-information MLE (more efficient under joint normality) ----
+mle <- selection(
+  selection = selected ~ age + pain,
+  outcome   = cost ~ age,
+  data      = dat,
+  method    = "ml"
+)
+summary(mle)        # reports rho and sigma with valid SEs
+cat("MLE rho estimate =", round(coef(mle)["rho"], 3), "\n")       # ~0.6
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy.stats import norm
+
+rng  = np.random.default_rng(2024)
+n    = 4000
+age  = rng.normal(size=n)                 # standardized age
+pain = rng.normal(size=n)                 # baseline pain = EXCLUSION RESTRICTION
+rho  = 0.6                                # selection-cost error correlation
+
+u   = rng.normal(size=n)
+eps = rho * u + np.sqrt(1 - rho**2) * rng.normal(size=n)
+
+s_star   = -0.2 + 0.5 * age + 1.1 * pain + u
+selected = s_star > 0
+
+cost_full = 4.0 + 1.4 * age + eps         # true age slope = 1.4
+cost = np.where(selected, cost_full, np.nan)
+
+# ---- Naive OLS on the selected sample (BIASED) ----
+sel = selected
+Xn  = sm.add_constant(age[sel])
+naive = sm.OLS(cost[sel], Xn).fit()
+print(f"Naive age slope  = {naive.params[1]:.3f}")   # ~1.3, too flat
+
+# ---- Heckman two-step (manual: probit -> IMR -> OLS) ----
+# Stage 1: probit of selection on age + pain over the FULL sample.
+Zp = sm.add_constant(np.column_stack([age, pain]))
+probit = sm.Probit(selected.astype(int), Zp).fit(disp=False)
+idx = Zp @ probit.params                              # fitted selection index
+imr = norm.pdf(idx) / norm.cdf(idx)                   # inverse Mills ratio
+
+# Stage 2: OLS of cost on age + IMR over the SELECTED sample (pain EXCLUDED).
+X2 = sm.add_constant(np.column_stack([age[sel], imr[sel]]))
+two_step = sm.OLS(cost[sel], X2).fit()
+print(f"2-step age slope = {two_step.params[1]:.3f}")  # ~1.4
+print(f"IMR coef (rho*sigma) = {two_step.params[2]:.3f}")
+# NOTE: these OLS SEs ignore that the IMR is generated — use Heckman-corrected
+# SEs (e.g. via the `Heckman` class in the `heckman` package) for inference.
+
+# ---- Full MLE alternative ----
+# pip install Heckman   # community package exposing a Heckman MLE/two-step API
+# from Heckman import Heckman
+# m = Heckman(cost, sm.add_constant(age), Zp).fit(method="mle")
+```
+
+:::
+
+The naive slope comes out near $1.3$ --- because age also drives selection, the selected sample makes the age--cost gradient look *flatter* than it truly is (the bias is downward, not upward) --- while both the two-step and the MLE recover the true $1.4$. The estimated $\rho \approx 0.6$ confirms the selection mechanism the simulation built in.
+
+<details>
+<summary>Math Details: Deriving the inverse Mills ratio and the selection-bias term</summary>
+<div class="details-content">
+
+### Goal
+
+We want $E[\varepsilon_i \mid S_i = 1]$ --- the mean of the outcome error *among the selected*. If this is nonzero and varies with the regressors, OLS on the selected sample is biased.
+
+### Setup
+
+Let the selection index be $S_i^* = \mathbf{z}_i'\boldsymbol\gamma + u_i$, with $S_i = \mathbf{1}\{S_i^* > 0\}$, and let the outcome error be $\varepsilon_i$. Normalise $u_i \sim N(0,1)$ (the probit scale is not separately identified) and let $(u_i, \varepsilon_i)$ be jointly normal with
+
+$$
+\begin{pmatrix} u_i \\ \varepsilon_i \end{pmatrix} \sim N\!\left(
+\begin{pmatrix} 0 \\ 0 \end{pmatrix},
+\begin{pmatrix} 1 & \rho\,\sigma_\varepsilon \\ \rho\,\sigma_\varepsilon & \sigma_\varepsilon^2 \end{pmatrix}\right).
+$$
+
+### Step 1: A truncated-normal moment
+
+Selection $S_i = 1$ means $S_i^* > 0$, i.e. $u_i > -\mathbf{z}_i'\boldsymbol\gamma$. The first result we need is the mean of a standard normal *above* a cutoff. For $u \sim N(0,1)$ and any $c$,
+
+$$
+E[u \mid u > c] = \frac{\phi(c)}{1 - \Phi(c)} = \frac{\phi(-c)}{\Phi(-c)},
+$$
+
+using the symmetry $\phi(c) = \phi(-c)$ and $1 - \Phi(c) = \Phi(-c)$. Setting $c = -\mathbf{z}_i'\boldsymbol\gamma$ and writing $a_i = \mathbf{z}_i'\boldsymbol\gamma$,
+
+$$
+E[u_i \mid S_i = 1] = E[u_i \mid u_i > -a_i] = \frac{\phi(a_i)}{\Phi(a_i)} \;\equiv\; \lambda(a_i).
+$$
+
+This ratio is the **inverse Mills ratio** $\lambda(a_i)$.
+
+### Step 2: Project $\varepsilon$ onto $u$
+
+Because $(u_i, \varepsilon_i)$ are jointly normal, we can write the regression of $\varepsilon$ on $u$ exactly:
+
+$$
+\varepsilon_i = \big(\rho\,\sigma_\varepsilon\big)\, u_i + \eta_i,
+\qquad \eta_i \perp u_i,\quad E[\eta_i] = 0,
+$$
+
+where the coefficient is $\mathrm{Cov}(u,\varepsilon)/\mathrm{Var}(u) = \rho\,\sigma_\varepsilon / 1 = \rho\,\sigma_\varepsilon$, and $\eta_i$ is independent of $u_i$ (a property of the bivariate normal). Taking the conditional expectation given $S_i = 1$ (a statement purely about $u_i$, to which $\eta_i$ is independent):
+
+$$
+E[\varepsilon_i \mid S_i = 1]
+= \rho\,\sigma_\varepsilon \, E[u_i \mid S_i = 1] + \underbrace{E[\eta_i \mid S_i=1]}_{=\,0}
+= \rho\,\sigma_\varepsilon \, \lambda(a_i).
+$$
+
+### Step 3: The selection-corrected conditional mean
+
+Substituting into the outcome equation $Y_i = \mathbf{x}_i'\boldsymbol\beta + \varepsilon_i$ and conditioning on selection,
+
+$$
+\boxed{\;
+E[Y_i \mid \mathbf{x}_i, \mathbf{z}_i,\, S_i = 1]
+= \mathbf{x}_i'\boldsymbol\beta \;+\; \rho\,\sigma_\varepsilon \, \lambda(\mathbf{z}_i'\boldsymbol\gamma)
+\;}
+$$
+
+This is the whole model in one line. The selected sample's conditional mean is the structural line $\mathbf{x}_i'\boldsymbol\beta$ **plus** an extra term proportional to the inverse Mills ratio. If we omit $\lambda(\cdot)$ (plain OLS), that term is absorbed into the error; since $\lambda(\mathbf{z}_i'\boldsymbol\gamma)$ correlates with $\mathbf{x}_i$ (they share variables, or are linked through $\mathbf{z}$), the omission biases $\hat{\boldsymbol\beta}$. Including the fitted $\hat\lambda_i = \lambda(\mathbf{z}_i'\hat{\boldsymbol\gamma})$ as a regressor restores a mean-zero error, and its coefficient is exactly $\beta_\lambda = \rho\,\sigma_\varepsilon$.
+
+### Why $\beta_\lambda = 0 \iff \rho = 0$
+
+Since $\sigma_\varepsilon > 0$, the IMR coefficient $\beta_\lambda = \rho\,\sigma_\varepsilon$ vanishes if and only if $\rho = 0$. A $t$-test on $\hat\beta_\lambda$ is therefore a direct test of the null "no selection bias." Fail to reject and you may use plain OLS on the selected sample; reject and the correction is doing real work.
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A *region* studies the relationship between a diabetes patient's education and their annual out-of-pocket spending on a structured self-management program. Spending is recorded only for patients who **enrolled** in the program; non-enrollees are absent from the data. Enrollment is driven partly by how far the patient lives from the nearest *vårdcentral* offering the program.
+
+(a) Why is naive OLS of spending on education, using enrollees only, potentially biased? (b) Identify a candidate exclusion restriction and justify it. (c) What does a statistically insignificant coefficient on the inverse Mills ratio tell you?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Patients self-select into enrollment, and the unobservables driving enrollment (motivation, health literacy, time) plausibly also drive spending. So the enrolled sample is non-random with respect to the spending error: $E[\varepsilon \mid \text{enrolled}] \ne 0$. OLS on enrollees omits the selection term $\rho\,\sigma_\varepsilon\,\lambda(\cdot)$, which correlates with education, biasing the education coefficient.
+
+**(b)** **Distance to the nearest program-offering vårdcentral** is a good candidate: it strongly affects whether a patient enrolls (a selection driver) but, conditional on enrolling, has no plausible direct effect on *how much* an enrollee spends on the program itself. It belongs in $\mathbf{z}$ (selection) but is excluded from $\mathbf{x}$ (outcome).
+
+**(c)** An insignificant IMR coefficient means $\hat\beta_\lambda = \hat\rho\,\hat\sigma_\varepsilon \approx 0$, i.e. the selection and spending errors are essentially uncorrelated ($\rho \approx 0$). There is no detectable selection bias, and plain OLS on the enrolled sample is consistent. The correction was not needed --- but you only learned that *by running it*.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the standard normal, compute the inverse Mills ratio $\lambda(a) = \phi(a)/\Phi(a)$ at (a) $a = 0$ and (b) a large positive $a$, and (c) explain what a large $\lambda$ implies about the severity of selection. Useful values: $\phi(0) = 0.3989$, $\Phi(0) = 0.5$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $a = 0$: $\lambda(0) = \phi(0)/\Phi(0) = 0.3989 / 0.5 = 0.7979 \approx 0.80$. (This is the mean of a standard normal truncated below at $0$ --- the classic $\sqrt{2/\pi} \approx 0.7979$.)
+
+**(b)** For large positive $a$, $\Phi(a) \to 1$ while $\phi(a) \to 0$, so $\lambda(a) \to 0$. Almost everyone is selected, so "being selected" carries essentially no information and the truncated-tail mean shrinks toward zero. (Conversely, for large *negative* $a$, $\Phi(a) \to 0$ faster than $\phi(a)$, and $\lambda(a) \to \infty$.)
+
+**(c)** A large $\lambda(\mathbf{z}_i'\boldsymbol\gamma)$ arises when the selection probability $\Phi(\mathbf{z}_i'\boldsymbol\gamma)$ is *small* --- few units clear the bar. Those that do are an extreme, heavily-truncated slice of the error distribution, so the selection distortion $\rho\,\sigma_\varepsilon\,\lambda(\cdot)$ is large. Severe selection (low selection rates) means a big correction and a model leaning hard on its assumptions.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the interactive, set $\rho = 0$ and note the three lines coincide; then raise $\rho$ to $+0.8$. (a) Which direction does the biased OLS slope move, and why? (b) What happens to the IMR coefficient tile? (c) Now set $\rho$ to $-0.8$. Predict the direction of bias *before* dragging, then check.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $\rho > 0$, selection noise $u$ and cost noise $\varepsilon$ move together. Age itself raises the selection index (older patients seek care more readily), so *low*-age patients enter the sample only when their cost-side luck ($\varepsilon$) is unusually high --- their selected dots are lifted *above* the true line. High-age patients clear the bar easily, so they are barely lifted. Because the upward push is largest at the left, the left end of the fitted line rises more than the right and the slope **flattens** --- the biased OLS slope falls *below* the true $1.40$ (typically to around $1.3$). The bias here is downward, not upward.
+
+**(b)** The IMR coefficient $\hat\beta_\lambda = \hat\rho\,\hat\sigma_\varepsilon$ grows *positive* and moves away from zero. It is the model detecting and measuring the selection.
+
+**(c)** With $\rho < 0$, the correlation flips: selected low-age patients now tend to have *low* cost-side luck, so the differential push at the left is *downward* --- the left end of the line is pulled down more than the right, **steepening** the slope *above* $1.40$. The IMR coefficient turns *negative*. The Heckman line, in both cases, snaps back to $1.40$.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A colleague fits a Heckman model where the selection equation and the outcome equation use the **exact same** regressors (no exclusion restriction). The point estimates look reasonable but the standard errors are enormous. Explain what is going wrong, and what they should do.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+Without an exclusion restriction, the only thing distinguishing the IMR $\hat\lambda_i = \lambda(\mathbf{x}_i'\hat{\boldsymbol\gamma})$ from the outcome regressors $\mathbf{x}_i$ is the *curvature* of the Mills ratio function. But over much of its range $\lambda$ is close to linear, so $\hat\lambda_i$ is nearly a linear combination of $\mathbf{x}_i$ --- it is severely **collinear** with the other regressors. Collinearity inflates the variance of every coefficient (high variance-inflation factor), which is exactly the enormous standard errors observed. The model is then identified only "off functional form" --- the assumed joint normality and the slight nonlinearity of $\lambda$ --- which is fragile and not credible.
+
+The fix is substantive, not statistical: find a genuine **exclusion restriction** --- a variable that affects selection but is defensibly absent from the outcome equation (e.g., distance to clinic, a policy-induced eligibility quirk, local supply shocks) --- and put it in $\mathbf{z}$ only. That gives $\hat\lambda_i$ independent variation, breaks the collinearity, and makes the correction rest on data rather than on the normality assumption. If no credible exclusion restriction exists, the honest move is to report the OLS result with a frank discussion of potential selection bias rather than a fragile Heckman fit.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- Sample selection means the outcome is observed only for a self-selected subsample chosen by a *separate* process whose error is correlated ($\rho$) with the outcome error --- distinct from Tobit censoring, where one equation does both jobs.
+- Conditioning on "selected" makes the outcome error have nonzero mean: $E[\varepsilon \mid \text{selected}] = \rho\,\sigma_\varepsilon\,\lambda(\mathbf{z}'\boldsymbol\gamma)$, where $\lambda = \phi/\Phi$ is the inverse Mills ratio.
+- The Heckman correction adds the fitted IMR as a regressor in the outcome equation; its coefficient is $\rho\,\sigma_\varepsilon$, so testing it against zero is a direct test for selection bias.
+- Fit it via the transparent two-step (probit → IMR → OLS) or the more efficient full-information MLE; remember the two-step's second-stage SEs need the generated-regressor correction.
+- Credible identification requires an **exclusion restriction** --- a variable that shifts selection but not the outcome; without one, the IMR is near-collinear with the regressors and the model leans entirely on the normality assumption.
+:::
+
+## What Comes Next
+
+We have now handled outcomes that are missing for *behavioural* reasons --- units choose whether to be observed. But a vast class of data is missing for a *temporal* reason instead: we are following patients forward in time and the event of interest (a readmission, a relapse, a death) simply *has not happened yet* when our study ends. That is **censoring in time**, and it has its own elegant machinery built around hazards and survival curves rather than inverse Mills ratios. The next module, [Survival Analysis](../19-survival/survival-basics.qmd), develops the Kaplan–Meier estimator, the hazard function, and the Cox proportional-hazards model --- the tools for asking not just *whether* an event occurs but *when*.

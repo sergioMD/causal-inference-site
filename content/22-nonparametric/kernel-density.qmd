@@ -1,0 +1,664 @@
+---
+title: "Kernel Density Estimation"
+subtitle: "Estimating a distribution without assuming its shape"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain why a histogram is a *crude* density estimate --- arbitrary in its bin width, jumpy at its bin edges, and discontinuous by construction
+- Build a kernel density estimate by placing one smooth kernel bump at each data point and averaging them, and write the estimator $\hat f_h(x)$
+- Distinguish the role of the *kernel* (the bump shape --- matters little) from the role of the *bandwidth* $h$ (the smoothing scale --- matters enormously)
+- Describe the bias--variance tradeoff in $h$: small $h$ undersmooths (spiky, high variance), large $h$ oversmooths (washed out, high bias)
+- Select a bandwidth in practice using Silverman's rule of thumb and least-squares cross-validation, in both R and Python
+:::
+
+## The Question Behind the Shape
+
+A *vårdcentral* (primary care center) in Region Uppsala has just pulled the latest HbA1c readings for its 600 Type 2 diabetes patients (in mmol/mol, where 52 is the clinical target). The *verksamhetschef* (clinic manager) does not want a single summary number --- a mean hides everything interesting. She wants to see the *whole distribution*: is it a single hump centred near target, or are there two clusters --- a well-controlled group and a poorly-controlled tail that needs outreach? The *shape* is the policy question.
+
+The reflex is to draw a histogram. But a histogram forces two arbitrary choices on us --- where to put the bin edges and how wide to make them --- and the answer to "is there a second hump?" can flip depending on those choices. Slide the bins half a bar to the left and a bimodal picture can collapse into one lump. That is an uncomfortable amount of power to hand to an arbitrary grid.
+
+**Kernel density estimation** (Rosenblatt 1956; Parzen 1962) removes the arbitrariness of *where* the bins sit. Instead of dropping each observation into a hard bin, we lay a small smooth *bump* over each data point and add the bumps up. The result is a continuous curve --- the same idea as a histogram (let the data vote on where the mass is), but without the jagged edges and without a privileged origin. One arbitrary choice survives, and it turns out to be the only one that matters: how *wide* to make each bump. That width --- the **bandwidth** --- is the whole story of this page.
+
+## From Histogram to Smooth Curve
+
+Start with what a histogram actually computes. Over a bin of width $b$ centred on $x$, the histogram height is the *fraction of observations that land in that bin*, divided by the bin width:
+
+$$
+\hat f_{\text{hist}}(x) = \frac{\#\{\,i : x_i \in \text{bin}(x)\,\}}{n \, b}.
+$$
+
+**Read this as**: "the estimated density at $x$ equals the count of observations falling in the bin around $x$, divided by the sample size times the bin width." Dividing by $n b$ is what makes the bars integrate to 1, so the histogram is a genuine density and not just a count.
+
+Two things are wrong with this as a *smooth* estimate. First, an observation at the very edge of a bin counts fully for *its* bin and not at all for the neighbour one millimetre away --- a hard, discontinuous boundary. Second, the whole picture pivots on where we decide the first bin edge sits. The kernel density estimate fixes both by replacing the hard bin with a soft, centred bump.
+
+::: {.glass-card .glass-card--definition}
+The **kernel density estimator** of a density $f$, from an i.i.d. sample $x_1, \dots, x_n$, is
+
+$$
+\hat f_h(x) \;=\; \frac{1}{n h} \sum_{i=1}^{n} K\!\left( \frac{x - x_i}{h} \right).
+$$
+
+**Read this as**: "the estimated density at the point $x$ equals one over $n$ times $h$, times the sum over all observations of the kernel $K$ evaluated at the scaled distance $(x - x_i)/h$." In words: stand at the point $x$, look at every data point $x_i$, give it a vote that *fades smoothly* with its distance from $x$ (the kernel $K$), scaled by the bandwidth $h$; average those votes.
+
+- The **kernel** $K$ is a fixed, symmetric bump that integrates to 1 (e.g. a standard Normal density). It sets the *shape* of each contribution.
+- The **bandwidth** $h > 0$ is the width of each bump. It sets the *scale* of smoothing.
+- The leading $1/(nh)$ normalises the curve so that $\int \hat f_h(x)\,dx = 1$ --- the estimate is itself a valid density.
+:::
+
+There are two equally valid ways to read the formula, and switching between them builds the intuition:
+
+1. **Pointwise (the "voting" view).** Fix the evaluation point $x$. Then $\hat f_h(x)$ is a weighted count of nearby data, with weights $K((x-x_i)/h)$ that decay with distance. This is the histogram idea with a soft, moving window instead of a fixed hard bin.
+
+2. **Bump-sum (the "stamps" view).** Each observation $x_i$ contributes its *own* little kernel $\frac{1}{nh}K((x-x_i)/h)$, a bump centred on $x_i$ with area $1/n$. The estimate $\hat f_h$ is the *sum of all $n$ bumps*. Drop a stamp on each data point; the skyline they make is the density.
+
+The interactive below is built around the second view: you will literally see the individual bumps and watch them sum to the curve.
+
+## Pick a Kernel, Pick a Bandwidth
+
+Two choices define a KDE. They could not matter more differently.
+
+The **kernel** $K$ barely matters. The two most common choices are the Gaussian kernel $K(u) = \frac{1}{\sqrt{2\pi}} e^{-u^2/2}$ (infinitely smooth, infinite support) and the **Epanechnikov** kernel $K(u) = \frac{3}{4}(1 - u^2)$ for $|u| \le 1$ (which is, in a precise sense, *optimal* --- it minimises the asymptotic integrated error). In practice the difference between a Gaussian and an Epanechnikov fit, *at a comparable bandwidth*, is visually tiny and statistically negligible. You will see this in the interactive: flip the kernel and the curve barely flinches.
+
+The **bandwidth** $h$ matters enormously. It is the single dial that decides whether your estimate is a spiky mess or a featureless blob.
+
+::: {.glass-card .glass-card--insight}
+**One dial rules the estimate.** The choice of kernel ($K$) changes the answer by a few percent; the choice of bandwidth ($h$) changes it from "ten sharp spikes" to "one smooth hump." When someone shows you a kernel density curve, the right question is never "which kernel?" --- it is "what bandwidth, and how was it chosen?"
+:::
+
+## See It: Bumps Summing to a Curve
+
+The interactive below puts a *rug* of 60 simulated HbA1c readings along the bottom (each tick is one patient), draws the individual kernel bumps in faint slate, and overlays their sum --- the kernel density estimate --- in Uppsala red. The data are deliberately **bimodal**: a well-controlled cluster near the target of 52 and a poorly-controlled cluster near 70, exactly the "two-group" structure the clinic manager is hunting for.
+
+Drag the **bandwidth** slider and watch the tradeoff happen in real time. At tiny $h$ the curve is a row of needles --- every patient is its own peak (undersmoothed, high variance). At huge $h$ the two clusters melt into one wide arch and the clinically important second hump *disappears* (oversmoothed, high bias). Somewhere in between, the two modes are clearly resolved. Toggle the kernel to confirm it hardly matters; toggle the bumps to see the stamps that build the curve.
+
+::: {.interactive-container}
+
+#### Bandwidth: the dial between spiky and washed-out
+
+```{ojs}
+//| echo: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+npkde_pal = ({
+  focal:   "#990000",   // the KDE curve (Uppsala red)
+  slate:   "#3d5a6c",   // individual kernel bumps / comparison series
+  good:    "#2e6f40",   // on-target / "just right" bandwidth
+  ochre:   "#9c7a33",   // true density / highlight
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis / muted label text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  bad:     "#b3000b",   // alarm
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+// Concise "Start here" prompt above the controls.
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${npkde_pal.axis};
+    background: ${npkde_pal.fill};
+    border-left: 3px solid ${npkde_pal.focal};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> drag <em>Bandwidth h</em> from far left (spiky) to
+  far right (one blob) and find the setting where the two patient clusters are
+  cleanly separated. Then turn on <em>Show individual bumps</em>. Full guided
+  tour is below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof npkde_h = Inputs.range([0.6, 12], {
+  value: 2.2,
+  step: 0.1,
+  label: "Bandwidth h (mmol/mol)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof npkde_kernel = Inputs.radio(["Gaussian", "Epanechnikov"], {
+  label: "Kernel shape",
+  value: "Gaussian"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof npkde_showBumps = Inputs.toggle({
+  label: "Show individual bumps",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+viewof npkde_showTrue = Inputs.toggle({
+  label: "Show true density",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Simulated HbA1c (mmol/mol) for 60 patients, drawn ONCE from a fixed-seed
+// bimodal mixture: a well-controlled cluster ~N(52, 4) and a poorly-controlled
+// cluster ~N(70, 5), mixed 65/35. A small seeded LCG keeps the sample stable
+// across reactive re-renders so the curve only moves when YOU move a control.
+npkde_data = {
+  // Deterministic pseudo-random generator (mulberry32) so the rug never jumps.
+  let s = 20240617 >>> 0;
+  const u = () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  // Box–Muller for a standard normal from two uniforms.
+  const z = () => Math.sqrt(-2 * Math.log(u() + 1e-12)) * Math.cos(2 * Math.PI * u());
+  const out = [];
+  for (let i = 0; i < 60; i++) {
+    const controlled = u() < 0.65;
+    const v = controlled ? 52 + 4 * z() : 70 + 5 * z();
+    out.push(Math.max(40, Math.min(95, v)));   // clip to a sane HbA1c range
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The two kernel functions on the standardized argument u = (x - x_i)/h.
+// Both integrate to 1, are symmetric, and centred at 0.
+npkde_K = ({
+  Gaussian: u => Math.exp(-0.5 * u * u) / Math.sqrt(2 * Math.PI),
+  // Epanechnikov: optimal kernel, compact support on |u| <= 1.
+  Epanechnikov: u => (Math.abs(u) <= 1 ? 0.75 * (1 - u * u) : 0)
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The true mixture density we are trying to recover (for the optional overlay).
+npkde_trueDensity = function (x) {
+  const phi = (x, m, sd) =>
+    Math.exp(-0.5 * ((x - m) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+  return 0.65 * phi(x, 52, 4) + 0.35 * phi(x, 70, 5);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Evaluation grid spanning the plausible HbA1c range.
+npkde_grid = d3.range(40, 95.01, 0.4)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// The KDE evaluated on the grid: f_hat(x) = (1/nh) * sum_i K((x - x_i)/h).
+npkde_curve = {
+  const n = npkde_data.length;
+  const K = npkde_K[npkde_kernel];
+  const h = npkde_h;
+  return npkde_grid.map(x => {
+    let acc = 0;
+    for (const xi of npkde_data) acc += K((x - xi) / h);
+    return { x, y: acc / (n * h) };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// One faint bump PER observation, each scaled by 1/(nh) so the bumps sum
+// EXACTLY to npkde_curve. Flattened to {id, x, y} for Plot.line(..., {z:"id"}).
+// We thin to a coarser grid here purely to keep the SVG light (60 curves).
+npkde_bumps = {
+  const n = npkde_data.length;
+  const K = npkde_K[npkde_kernel];
+  const h = npkde_h;
+  const gx = d3.range(40, 95.01, 0.6);
+  const rows = [];
+  npkde_data.forEach((xi, id) => {
+    for (const x of gx) {
+      rows.push({ id, x, y: K((x - xi) / h) / (n * h) });
+    }
+  });
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+// The main figure: rug + (optional) bumps + KDE curve + (optional) true density.
+Plot.plot({
+  width: Math.min(700, width),
+  height: 380,
+  marginLeft: 64,
+  marginBottom: 48,
+  marginTop: 30,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px", color: npkde_pal.axis },
+  x: {
+    label: "HbA1c (mmol/mol)  →",
+    domain: [40, 95],
+    grid: false
+  },
+  y: {
+    label: "↑ Density  f̂(x)",
+    grid: true,
+    domain: [0, 0.085]
+  },
+  marks: [
+    Plot.gridY({ stroke: npkde_pal.hair }),
+    // Clinical target reference at 52 mmol/mol.
+    Plot.ruleX([52], { stroke: npkde_pal.good, strokeWidth: 1.5, strokeDasharray: "3,3" }),
+    Plot.text([{ x: 52, y: 0.083 }], {
+      x: "x", y: "y", text: () => "target 52",
+      fill: npkde_pal.good, fontSize: 11, fontWeight: 600, textAnchor: "middle",
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Individual kernel bumps (faint slate), only when toggled on.
+    npkde_showBumps ? Plot.line(npkde_bumps, {
+      x: "x", y: "y", z: "id",
+      stroke: npkde_pal.slate, strokeWidth: 0.7, strokeOpacity: 0.45
+    }) : null,
+    // True density overlay (ochre dashed), optional.
+    npkde_showTrue ? Plot.line(npkde_grid.map(x => ({ x, y: npkde_trueDensity(x) })), {
+      x: "x", y: "y", stroke: npkde_pal.ochre, strokeWidth: 2, strokeDasharray: "5,4"
+    }) : null,
+    // The KDE curve (focal, Uppsala red).
+    Plot.line(npkde_curve, {
+      x: "x", y: "y", stroke: npkde_pal.focal, strokeWidth: 2.6
+    }),
+    // The data rug along the baseline.
+    Plot.ruleX(npkde_data, {
+      stroke: npkde_pal.ink, strokeWidth: 1, strokeOpacity: 0.55,
+      y2: -0.004, clip: false
+    }),
+    Plot.dot(npkde_data.map(x => ({ x })), {
+      x: "x", y: () => 0, r: 2, fill: npkde_pal.ink, fillOpacity: 0.6
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live verdict tying the slider to the bias–variance story. Computes a coarse
+// "roughness" (sum of squared second differences) and the ISE against the true
+// density, then classifies the current h as under/over/just-right.
+{
+  // Integrated squared error vs the true mixture (a proxy for total error).
+  const dx = npkde_grid[1] - npkde_grid[0];
+  let ise = 0;
+  for (const { x, y } of npkde_curve) {
+    const d = y - npkde_trueDensity(x);
+    ise += d * d * dx;
+  }
+  // Roughness: discrete second-difference energy of the estimate.
+  let rough = 0;
+  for (let i = 1; i < npkde_curve.length - 1; i++) {
+    const a = npkde_curve[i - 1].y, b = npkde_curve[i].y, c = npkde_curve[i + 1].y;
+    rough += (a - 2 * b + c) ** 2;
+  }
+  let label, color, note;
+  if (npkde_h < 1.6) {
+    label = "Undersmoothed";
+    color = npkde_pal.bad;
+    note = "spiky — high variance, every patient is its own peak";
+  } else if (npkde_h > 5.5) {
+    label = "Oversmoothed";
+    color = npkde_pal.bad;
+    note = "washed out — high bias, the second cluster has vanished";
+  } else {
+    label = "Well resolved";
+    color = npkde_pal.good;
+    note = "the two patient clusters are clearly separated";
+  }
+  const tile = (lab, val, col) => html`<div style="
+      flex:1 1 0; min-width:8rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${npkde_pal.fill}; border:1px solid ${npkde_pal.hair};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem; font-weight:700;
+        text-transform:uppercase; letter-spacing:0.05em; color:${npkde_pal.muted};">${lab}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${col};">${val}</div>
+  </div>`;
+  return html`<div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+      ${tile("Bandwidth h", npkde_h.toFixed(1), npkde_pal.ink)}
+      ${tile("Roughness", rough.toExponential(1), npkde_h < 1.6 ? npkde_pal.bad : npkde_pal.ink)}
+      ${tile("Error vs. truth (ISE)", ise.toFixed(5), npkde_pal.ink)}
+      ${tile("Verdict", label, color)}
+    </div>
+    <div style="margin-top:0.6rem; padding:0.5rem 0.8rem; border-radius:0.35rem;
+        border-left:3px solid ${color}; background:${npkde_pal.fill};
+        font-family:'Inter',sans-serif; font-size:0.84rem; color:${npkde_pal.ink};">
+      At <strong>h = ${npkde_h.toFixed(1)}</strong>: ${note}.
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Bandwidth Interactive
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Read the picture.** The black ticks along the bottom are the **rug** --- one tick per patient's HbA1c. The red curve is the kernel density estimate $\hat f_h$: where ticks bunch up, the curve rises. The green dashed line marks the clinical **target of 52 mmol/mol**. With the default bandwidth ($h = 2.2$), the curve shows two clear humps --- a controlled cluster near target and a poorly-controlled cluster near 70.
+
+**Step 2: See the stamps.** Turn on **Show individual bumps**. Each faint slate curve is one patient's kernel, a little bump of area $1/n$ centred on that patient's reading. The red curve is exactly their *sum* --- this is the bump-sum view of the formula made literal. Where bumps overlap, they stack into a peak.
+
+**Step 3: Undersmooth.** Drag **Bandwidth $h$** all the way left (toward 0.6). The bumps become narrow needles, the curve sprouts a spike over almost every single patient, and the "Roughness" tile spikes red. This is **high variance**: the estimate is chasing the noise of *this particular sample*. A fresh sample would give a wildly different set of needles.
+
+**Step 4: Oversmooth.** Now drag $h$ far right (toward 12). The bumps become wide, flat hills; they blur together into a single broad arch and the second cluster near 70 *disappears entirely*. This is **high bias**: the estimate is so smooth it has erased a real feature of the distribution --- exactly the second patient group the clinic was trying to find.
+
+**Step 5: Find the balance.** Move $h$ back into the middle (roughly 1.6--5.5). The "Verdict" tile turns green and the two clusters are cleanly resolved. Watch the **Error vs. truth (ISE)** tile: it is large at both extremes and smallest in the middle. That U-shape in total error *is* the bias--variance tradeoff.
+
+**Step 6: Confirm the kernel hardly matters.** Switch **Kernel shape** from Gaussian to Epanechnikov at a fixed $h$. The curve barely changes --- a slightly more compact look near the modes, nothing that would change a clinical conclusion. The kernel is a footnote; the bandwidth is the headline.
+
+## The Bias--Variance Tradeoff, Precisely
+
+The interactive showed the tradeoff visually. Here is the mathematics behind it. The quality of $\hat f_h(x)$ at a point is measured by its **mean squared error**, MSE $=$ bias$^2$ $+$ variance, and the two terms pull in opposite directions as $h$ changes. For a twice-differentiable density and a kernel with the usual properties, the leading-order approximations are
+
+$$
+\operatorname{Bias}\!\big[\hat f_h(x)\big] \;\approx\; \tfrac{1}{2}\, h^2\, \mu_2(K)\, f''(x),
+\qquad
+\operatorname{Var}\!\big[\hat f_h(x)\big] \;\approx\; \frac{f(x)\,R(K)}{n\,h},
+$$
+
+where $\mu_2(K) = \int u^2 K(u)\,du$ is the kernel's variance and $R(K) = \int K(u)^2\,du$ is its roughness.
+
+**Read the bias as**: "the bias grows with $h^2$ and with the curvature $f''(x)$ of the true density." Wide bumps ($h$ large) flatten peaks and fill valleys wherever the density bends (large $|f''|$) --- and a *low* mode is the first casualty, because only a little flattening is needed to bury a short hump under the broadening tail of the dominant mass, which is why a too-large $h$ erases the smaller second clinical mode first.
+
+**Read the variance as**: "the variance shrinks like $1/(nh)$." Narrow bumps ($h$ small) average over only a handful of nearby points, so the estimate is noisy; widening the window or collecting more data both tame it.
+
+::: {.glass-card .glass-card--insight}
+**The tug-of-war in one line.** Increasing $h$ *lowers* variance (each estimate averages more points) but *raises* bias (peaks get flattened). Decreasing $h$ does the reverse. The optimal bandwidth balances $h^2$-bias against $1/(nh)$-variance, and minimising their sum gives $h^\star \propto n^{-1/5}$: the best bandwidth shrinks as the sample grows, but *slowly*. Even doubling your data only narrows the ideal window by about 13%.
+:::
+
+This $n^{-1/5}$ rate is also why nonparametric density estimation converges *slower* than a parametric fit (which would converge at the usual $n^{-1/2}$): the price of not assuming a shape is that you need a lot more data to pin the curve down.
+
+## Choosing the Bandwidth in Practice
+
+We cannot dial $h$ by eye on a dashboard that updates nightly. Two principled, automatic rules dominate applied work.
+
+**Silverman's rule of thumb.** Derive $h^\star$ under the *pretend* assumption that the true density is Normal, then plug in robust scale estimates. The result is
+
+$$
+h_{\text{Silverman}} \;=\; 0.9 \, \min\!\left( \hat\sigma, \; \frac{\text{IQR}}{1.34} \right) \, n^{-1/5},
+$$
+
+where $\hat\sigma$ is the sample standard deviation and IQR the interquartile range. **Read this as**: "use the smaller of the standard deviation and a robust IQR-based spread, scale it down for the sample size, and that is your bandwidth." It is fast, has no tuning, and is an excellent default --- but because it assumes Normality, it tends to *oversmooth* genuinely multimodal data like our bimodal HbA1c.
+
+**Least-squares cross-validation (LSCV).** Choose $h$ to directly minimise an unbiased estimate of the integrated squared error $\int (\hat f_h - f)^2$. Expanding that integral and dropping the constant $\int f^2$ that does not depend on $h$ gives the cross-validation objective
+
+$$
+\text{CV}(h) \;=\; \int \hat f_h(x)^2\,dx \;-\; \frac{2}{n}\sum_{i=1}^{n} \hat f_{h,-i}(x_i),
+$$
+
+where $\hat f_{h,-i}$ is the estimate built from all data *except* $x_i$ (leave-one-out). **Read this as**: "penalise a curve for being large on average (first term) but reward it for placing density where the held-out points actually are (second term)." Minimising $\text{CV}(h)$ over a grid of bandwidths is data-driven and makes no Normality assumption, so it generally resolves multimodality better --- at the cost of more computation and occasionally an undersmoothed wiggle.
+
+::: {.glass-card .glass-card--assumption}
+**What a KDE quietly assumes.**
+
+1. **The observations are i.i.d. draws** from a fixed density $f$. Clustered or serially dependent data (e.g. repeated HbA1c readings on the *same* patient) break the variance formula and the cross-validation logic --- the effective sample size is smaller than $n$.
+
+2. **The density is smooth** (at least twice differentiable) where you read it. The bias expansion uses $f''$; at a hard boundary or a true jump, the standard KDE is biased and a boundary correction is needed.
+
+3. **The support is unbounded, or you correct for the boundary.** Costs in SEK and HbA1c cannot be negative; a naive Gaussian KDE leaks probability mass past 0, biasing the estimate down near the boundary. Fit on a log scale or use a boundary-corrected / reflected kernel.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Bandwidth is where the lie lives.** The same data can be made to look unimodal or trimodal purely by the choice of $h$ --- and nothing on the plot announces which choice was made. Always report the bandwidth and the rule that produced it, and sanity-check a multimodal claim by re-fitting with a cross-validated $h$ before you tell a region it has "two distinct patient populations." A bump is not a population until it survives a principled bandwidth.
+:::
+
+<details>
+<summary>Math Details: The AMISE and the optimal bandwidth</summary>
+<div class="details-content">
+
+We want a single number for the *global* quality of $\hat f_h$, not just its quality at one point $x$. Integrate the pointwise MSE over all $x$ to get the **mean integrated squared error**,
+
+$$
+\text{MISE}(h) \;=\; \mathbb{E}\!\int \big(\hat f_h(x) - f(x)\big)^2 \, dx
+\;=\; \int \operatorname{Bias}^2 \, dx \;+\; \int \operatorname{Var} \, dx .
+$$
+
+### Plugging in the leading terms
+
+Substitute the pointwise bias and variance from the main text and integrate. Using $\int \big(\tfrac12 h^2 \mu_2(K) f''(x)\big)^2 dx = \tfrac14 h^4 \mu_2(K)^2 R(f'')$ with $R(f'') = \int f''(x)^2 dx$, and $\int \frac{f(x) R(K)}{nh}\,dx = \frac{R(K)}{nh}$ (since $\int f = 1$), the **asymptotic MISE** is
+
+$$
+\text{AMISE}(h) \;=\; \underbrace{\frac{1}{4}\,h^4\,\mu_2(K)^2\,R(f'')}_{\text{integrated bias}^2} \;+\; \underbrace{\frac{R(K)}{n\,h}}_{\text{integrated variance}} .
+$$
+
+The structure is transparent: the bias term *grows* like $h^4$, the variance term *shrinks* like $1/(nh)$. We are minimising a convex-looking sum of an increasing and a decreasing function of $h$ --- there is an interior optimum.
+
+### Minimising over h
+
+Differentiate AMISE with respect to $h$ and set it to zero:
+
+$$
+\frac{d\,\text{AMISE}}{dh} \;=\; h^3\,\mu_2(K)^2\,R(f'') \;-\; \frac{R(K)}{n\,h^2} \;=\; 0 .
+$$
+
+Multiply through by $h^2$ and solve for $h^5$:
+
+$$
+h^5 \;=\; \frac{R(K)}{n\,\mu_2(K)^2\,R(f'')}
+\qquad\Longrightarrow\qquad
+\boxed{\;h^\star \;=\; \left( \frac{R(K)}{\mu_2(K)^2\,R(f'')} \right)^{1/5} n^{-1/5}\; } .
+$$
+
+Two consequences fall straight out of the boxed formula:
+
+- **Rate.** $h^\star \propto n^{-1/5}$: the optimal bandwidth shrinks slowly with sample size. Substituting back gives $\text{AMISE}(h^\star) \propto n^{-4/5}$, the best achievable rate for a twice-differentiable density --- slower than the parametric $n^{-1}$ for an MSE, the price of assuming nothing about the shape.
+
+- **The unknown $R(f'')$.** The optimal $h^\star$ depends on $R(f'') = \int f''^2$, the very curvature of the density we are trying to estimate. This circularity is what bandwidth-selection methods resolve: Silverman replaces $f$ with a reference Normal (giving the $0.9\,\hat\sigma\,n^{-1/5}$-style formula), while cross-validation estimates the error directly from the data and skips $R(f'')$ altogether.
+
+### Why the kernel barely matters
+
+The kernel enters $h^\star$ and the minimised error only through the constant $C(K) = R(K)^{4/5}\,\mu_2(K)^{2/5}$, since $\text{AMISE}(h^\star) = \tfrac{5}{4}\, C(K)\, R(f'')^{1/5} n^{-4/5}$. Across all valid kernels $C(K)$ varies by only a few percent. The standard **efficiency** of a kernel measures this on a square-root-of-error scale relative to the optimal Epanechnikov: $\text{eff}(K) = \big(C(K_{\text{epan}})/C(K)\big)^{5/4} = \mu_2(K_{\text{epan}})^{1/2}R(K_{\text{epan}}) \big/ \big(\mu_2(K)^{1/2}R(K)\big)$. By this measure the Epanechnikov kernel is the benchmark (efficiency 1.000), the Gaussian sits at about 0.951, and the uniform at 0.930. A ~5% loss in efficiency from picking the "wrong" kernel is negligible next to the order-of-magnitude damage a badly chosen *bandwidth* inflicts. That is the precise sense in which "the kernel matters little, the bandwidth matters a lot."
+
+</div>
+</details>
+
+## Computing a KDE
+
+Both panels fit a kernel density estimate to a small batch of patient costs (in SEK), compare Silverman's rule against cross-validation, and evaluate the curve on a grid --- the same pipeline you would run on the clinic's nightly export.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# Base R has everything; np / ks add cross-validation conveniences.
+# install.packages(c("np", "ks"))  # if needed
+
+set.seed(2024)
+# Annual primary-care cost per patient (SEK), a right-skewed bimodal mix:
+# a large low-cost group and a small high-cost ("complex") group.
+cost <- c(rgamma(180, shape = 6, scale = 1200),     # routine patients
+          rgamma( 40, shape = 9, scale = 4000))     # complex patients
+
+## ---- 1. Default KDE with Silverman's rule of thumb ----
+fit_rot <- density(cost, bw = "nrd0")   # nrd0 = Silverman's rule
+cat("Silverman bandwidth:", round(fit_rot$bw), "SEK\n")
+
+## ---- 2. Bandwidth by least-squares cross-validation ----
+bw_cv <- bw.ucv(cost)                   # unbiased (LSCV) cross-validation
+fit_cv <- density(cost, bw = bw_cv, kernel = "gaussian")
+cat("LSCV bandwidth:     ", round(bw_cv), "SEK\n")
+
+## ---- 3. Epanechnikov vs Gaussian at a matched bandwidth ----
+fit_epan <- density(cost, bw = bw_cv, kernel = "epanechnikov")
+
+## ---- 4. Evaluate the estimate at specific cost levels ----
+f_hat <- approxfun(fit_cv$x, fit_cv$y)  # interpolate the fitted curve
+cat("Density at 10,000 SEK:", signif(f_hat(10000), 3), "\n")
+
+# plot(fit_cv, main = "KDE of annual patient cost (LSCV bandwidth)",
+#      xlab = "SEK", col = "#990000", lwd = 2)
+# rug(cost)
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy.stats import gaussian_kde
+from sklearn.neighbors import KernelDensity
+from sklearn.model_selection import GridSearchCV
+
+rng = np.random.default_rng(2024)
+# Annual primary-care cost per patient (SEK): routine + complex clusters.
+cost = np.concatenate([
+    rng.gamma(shape=6, scale=1200, size=180),   # routine patients
+    rng.gamma(shape=9, scale=4000, size=40),    # complex patients
+])
+
+# ---- 1. scipy: Scott/Silverman-style plug-in bandwidth ----
+kde_scipy = gaussian_kde(cost, bw_method="silverman")
+# scipy stores bw as a FACTOR of the data std; convert to data units:
+h_silverman = kde_scipy.factor * cost.std(ddof=1)
+print(f"Silverman bandwidth: {h_silverman:,.0f} SEK")
+
+# ---- 2. sklearn: bandwidth by cross-validated log-likelihood ----
+grid = GridSearchCV(
+    KernelDensity(kernel="gaussian"),
+    {"bandwidth": np.linspace(300, 4000, 40)},
+    cv=5,
+)
+grid.fit(cost[:, None])
+h_cv = grid.best_params_["bandwidth"]
+print(f"CV bandwidth:        {h_cv:,.0f} SEK")
+
+# ---- 3. Epanechnikov vs Gaussian at the same bandwidth ----
+kde_gauss = KernelDensity(kernel="gaussian",      bandwidth=h_cv).fit(cost[:, None])
+kde_epan  = KernelDensity(kernel="epanechnikov",  bandwidth=h_cv).fit(cost[:, None])
+
+# ---- 4. Evaluate the fitted density on a grid ----
+xs = np.linspace(cost.min(), cost.max(), 400)[:, None]
+log_dens = kde_gauss.score_samples(xs)            # returns log f_hat(x)
+f_hat = np.exp(log_dens)
+print(f"Density at 10,000 SEK: {np.exp(kde_gauss.score_samples([[10000]]))[0]:.2e}")
+```
+
+:::
+
+In both languages the cross-validated bandwidth comes out *smaller* than Silverman's --- because the cost data are genuinely bimodal and Silverman's Normal-reference rule oversmooths, blurring the routine and complex clusters that LSCV keeps apart. That is the multimodality warning from the assumptions card, made concrete.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region has $n = 400$ HbA1c readings with sample standard deviation $\hat\sigma = 11$ mmol/mol and interquartile range IQR $= 13$ mmol/mol. Compute Silverman's rule-of-thumb bandwidth. Then state what happens to that bandwidth if the sample grows to $n = 12{,}800$, holding the spread fixed.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The robust spread is $\min(\hat\sigma, \text{IQR}/1.34) = \min(11, \, 13/1.34) = \min(11, \, 9.70) = 9.70$.
+
+$$
+h_{\text{Silverman}} = 0.9 \times 9.70 \times 400^{-1/5}.
+$$
+
+Now $400^{-1/5} = 1/400^{0.2}$. Since $400^{0.2} = e^{0.2 \ln 400} = e^{0.2 \times 5.991} = e^{1.198} \approx 3.314$, we get $400^{-1/5} \approx 0.3017$. Therefore
+
+$$
+h_{\text{Silverman}} \approx 0.9 \times 9.70 \times 0.3017 \approx 2.63 \text{ mmol/mol}.
+$$
+
+**Growing the sample 32-fold** to $n = 12{,}800$: the bandwidth scales as $n^{-1/5}$, so it changes by a factor of $(12800/400)^{-1/5} = 32^{-1/5} = 1/2$. The new bandwidth is about $2.63 / 2 = 1.32$ mmol/mol. Note the lesson: a $32\times$ increase in data only *halves* the optimal bandwidth --- the $n^{-1/5}$ rate is slow.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the bias and variance approximations $\operatorname{Bias} \approx \tfrac12 h^2 \mu_2(K) f''(x)$ and $\operatorname{Var} \approx f(x) R(K)/(nh)$, explain in words (i) why a *small* bandwidth gives high variance but low bias, and (ii) why the second (poorly-controlled) HbA1c cluster is the first feature to disappear as $h$ grows.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(i)** As $h \to 0$, the bias term $\tfrac12 h^2 \mu_2(K) f''(x) \to 0$ --- a narrow bump barely distorts the local shape, so on average the estimate sits on the true density (low bias). But the variance term $f(x)R(K)/(nh) \to \infty$ as $h \to 0$: a narrow window averages over only a handful of nearby points, so the estimate is dominated by the noise of *which* points happened to land nearby. Hence small $h$ = low bias, high variance --- the spiky, sample-chasing regime you saw at the left of the slider.
+
+**(ii)** The bias is proportional to the curvature $f''(x)$. A *peak* in the density is a region of negative curvature (the curve bends downward on both sides), so the bias there is negative --- a wide bump *flattens* peaks. The second cluster near 70 is the first to vanish for two reasons. First, it carries far less mass (here only 35% of patients) and is supported by fewer observations, so it is both lower (peak density roughly 0.028 versus 0.065 at the main mode) and noisier; a modest amount of flattening is enough to erase a short hump. Second, it sits close to the dominant mass at 52, so as the bumps widen the broadening right tail of the main mode floods the valley between the two peaks and absorbs the smaller hump into one wide arch. The big main mode, being tall and well-populated, survives much longer. This is exactly why oversmoothing erases the clinically important second group first.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague fits a Gaussian KDE to annual patient **costs in SEK** (which are non-negative and right-skewed) and notices the estimated density is clearly positive at $-2000$ SEK --- an impossible cost. (a) What assumption has been violated? (b) Give two concrete fixes.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The **unbounded-support** assumption. A Gaussian kernel has infinite support, so it places a bump that extends in *both* directions from every data point --- including past the hard boundary at 0. Points near 0 leak probability mass into the negative region, which both produces impossible negative-cost density and biases the estimate *downward* just inside the boundary (mass that should pile up near 0 is spread across the forbidden region instead).
+
+**(b)** Two standard fixes:
+
+1. **Fit on a transformed scale.** Model $\log(\text{cost})$ with a KDE (cost is positive and right-skewed, so logs are natural), fit the density there where the support is the whole real line, then back-transform with the change-of-variables Jacobian: $\hat f_{\text{cost}}(c) = \hat f_{\log}(\log c)/c$.
+
+2. **Use a boundary-corrected kernel.** Reflect the data across the boundary (the "reflection" method: add the mirror points $-x_i$, fit, then double the density on $[0,\infty)$ and zero it below), or use a kernel with bounded support placed only on the valid region (e.g. a beta or gamma kernel).
+
+Either fix removes the impossible negative-cost mass and de-biases the estimate near 0.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive, set the bandwidth to its smallest value and then to its largest. (a) Describe what the "Error vs. truth (ISE)" tile does at the two extremes and in the middle, and name the U-shape you are tracing out. (b) The kernel toggle barely changes the curve. Using the Math Details, give the precise reason the *kernel* choice is nearly irrelevant while the *bandwidth* is decisive.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At the smallest $h$ the ISE is large (the spiky estimate has high *variance* --- it tracks sampling noise rather than $f$). At the largest $h$ the ISE is again large (the washed-out estimate has high *bias* --- it has erased the second mode). In between, the ISE dips to a minimum where bias and variance are balanced. The curve "ISE versus $h$" is the **bias--variance tradeoff** U-shape; its minimiser is the optimal bandwidth $h^\star$.
+
+**(b)** From the AMISE derivation, the kernel enters the achievable error only through the constant $C(K) = R(K)^{4/5}\mu_2(K)^{2/5}$, which varies by only a few percent across valid kernels (Epanechnikov is the optimal benchmark at efficiency 1.000; the Gaussian is about 0.951). The *bandwidth*, by contrast, controls the $h^4$ bias term and the $1/(nh)$ variance term directly --- moving $h$ across its range swings the AMISE by orders of magnitude. So changing the kernel nudges the answer by a few percent; changing the bandwidth changes it qualitatively (ten spikes versus one blob). The kernel is a footnote; the bandwidth is the headline.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A histogram is a crude density estimate: arbitrary in its bin width *and* its bin origin, discontinuous at every edge. A KDE removes the origin arbitrariness by replacing hard bins with smooth, centred bumps.
+- The kernel density estimator $\hat f_h(x) = \frac{1}{nh}\sum_i K\!\big(\frac{x-x_i}{h}\big)$ places one bump of area $1/n$ at each observation and sums them; it is itself a valid density.
+- The **kernel** $K$ matters little (a few percent of efficiency between Gaussian and Epanechnikov); the **bandwidth** $h$ matters enormously --- it dials the estimate from spiky needles to a featureless blob.
+- The bias--variance tradeoff is exact: bias $\approx \tfrac12 h^2 \mu_2(K) f''(x)$ grows with $h$, variance $\approx f(x)R(K)/(nh)$ shrinks with $h$, and the AMISE-optimal bandwidth is $h^\star \propto n^{-1/5}$.
+- Choose $h$ with Silverman's rule (fast, but oversmooths multimodal data) or least-squares cross-validation (data-driven, resolves multimodality); always report the bandwidth and check boundary/i.i.d. assumptions before claiming a second "population."
+:::
+
+## What Comes Next
+
+We have learned to estimate a *density* without assuming its shape --- the nonparametric estimate of where the data live. The very same machinery of smooth, distance-weighted kernels estimates a *regression function* without assuming its shape: instead of asking "how many observations are near $x$?" we ask "what is the average outcome of the observations near $x$?" The next page, [Kernel and Local Polynomial Regression](kernel-local-regression.qmd), carries the kernel and the bandwidth straight into the conditional mean --- the Nadaraya--Watson estimator and local polynomial fits --- where the same bias--variance tradeoff in $h$ governs how wiggly or how flat your fitted curve is allowed to be.

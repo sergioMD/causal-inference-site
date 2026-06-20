@@ -1,0 +1,842 @@
+---
+title: "The Cox Proportional Hazards Model"
+subtitle: "Semiparametric regression for hazards"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write the Cox model $h(t\mid x) = h_0(t)\exp(x'\beta)$ and explain why covariates *multiply* a common, unspecified baseline hazard
+- State the proportional-hazards assumption and read a coefficient as a log hazard ratio, with $\exp(\beta_j)$ as the headline hazard ratio
+- Explain how *partial* likelihood estimates $\beta$ while leaving the baseline hazard $h_0(t)$ completely unspecified --- the model's defining strength
+- Check the proportional-hazards assumption with Schoenfeld residuals and log-log survival plots, and recognise a crossing-hazards violation
+- Fit the model and interpret hazard ratios in R (`survival::coxph`, `cox.zph`) and Python (`lifelines.CoxPHFitter`)
+:::
+
+## From Curves to Covariates
+
+The [previous page](survival-basics.qmd) gave us the language of durations --- the survival function $S(t)$, the hazard $h(t)$, and the Kaplan--Meier estimator that compares two groups by drawing two staircases. But a Kaplan--Meier curve can only split patients into a handful of strata. A real question at a Swedish *vårdcentral* (primary care center) is regression-shaped.
+
+Consider Region Uppsala's heart-failure follow-up program. Patients are discharged from hospital and the clinic tracks **time to unplanned readmission**. The *verksamhetschef* (clinic manager) wants to know: holding age and baseline severity fixed, does a structured nurse-led follow-up by a *distriktssköterska* (district nurse) *delay* readmission --- and by how much? "By how much" is not a yes/no; it is a number attached to a covariate, exactly what regression delivers.
+
+We cannot, however, run ordinary least squares on the readmission *times*. Two features of duration data break OLS. First, the times are **censored**: many patients have simply not been readmitted by the study's end, so their true time is only known to exceed what we observed. Second, durations are skewed and strictly positive, and what we care about is the *rate* of the event at each instant --- the hazard --- not the raw time. The Cox model (David Cox, 1972) is the workhorse that regresses the **hazard** on covariates while handling censoring gracefully and, remarkably, without ever committing to a shape for how the baseline risk evolves over time.
+
+## The Proportional-Hazards Model
+
+Recall that the hazard $h(t)$ is the instantaneous rate of the event at time $t$, given survival up to $t$. The Cox model says that a patient's covariates act on this hazard **multiplicatively**.
+
+::: {.glass-card .glass-card--definition}
+The **Cox proportional hazards model** specifies the hazard for a patient with covariate vector $x$ as
+
+$$
+h(t \mid x) \;=\; h_0(t)\,\exp\!\big(x'\beta\big)
+\;=\; h_0(t)\,\exp\!\big(\beta_1 x_1 + \dots + \beta_p x_p\big).
+$$
+
+**Read this as**: "the hazard at time $t$ for a patient with covariates $x$ equals a *baseline hazard* $h_0(t)$, common to everyone, multiplied by $\exp(x'\beta)$, a factor that depends only on the patient's covariates --- not on time."
+
+- $h_0(t)$ is the **baseline hazard**: the hazard of a reference patient whose covariates are all zero. It is an arbitrary, **unspecified** function of time --- the model never says what shape it takes.
+- $\exp(x'\beta)$ is the **relative risk** or **hazard multiplier**: a single positive number that scales the entire baseline curve up or down for this patient.
+:::
+
+The model is called **semiparametric** because it has a parametric part (the linear index $x'\beta$, a finite vector of coefficients) and a fully **nonparametric** part (the baseline hazard $h_0(t)$, an infinite-dimensional nuisance left free). This split is the whole point: we get interpretable covariate effects without having to guess whether risk rises, falls, or humps over time.
+
+Taking logs makes the regression structure plain:
+
+$$
+\log h(t\mid x) \;=\; \underbrace{\log h_0(t)}_{\text{free function of }t} \;+\; \underbrace{x'\beta}_{\text{linear in covariates}}.
+$$
+
+On the log-hazard scale the covariates enter additively and in parallel: every patient's log-hazard curve is the baseline log-hazard curve **shifted up or down by a constant** $x'\beta$. The curves never cross. That parallelism *is* the proportional-hazards assumption.
+
+## Hazard Ratios: The Headline Output
+
+Because the baseline hazard cancels when we compare two patients, the natural summary of a Cox fit is a **hazard ratio**. Take two patients who are identical except that patient A has $x_1$ one unit higher than patient B (say, one more chronic diagnosis). Their hazard ratio is
+
+$$
+\frac{h(t\mid x_A)}{h(t\mid x_B)}
+= \frac{h_0(t)\,\exp(\beta_1 x_{A1} + \cdots)}{h_0(t)\,\exp(\beta_1 x_{B1} + \cdots)}
+= \exp(\beta_1).
+$$
+
+The $h_0(t)$ on top and bottom **cancel exactly**, and so does every covariate the two patients share. What remains, $\exp(\beta_1)$, does not depend on $t$ at all.
+
+::: {.glass-card .glass-card--insight}
+**The hazard ratio is the headline number.** For any covariate $x_j$, $\exp(\beta_j)$ is the multiplicative factor by which the hazard changes for a one-unit increase in $x_j$, holding the others fixed --- *and it is constant over the entire follow-up*.
+
+- $\exp(\beta_j) > 1$: the covariate **raises** the hazard (event happens sooner; readmission is more likely at every instant).
+- $\exp(\beta_j) < 1$: the covariate **lowers** the hazard (protective; the nurse-led follow-up we hope reduces readmission).
+- $\exp(\beta_j) = 1$: no effect on the hazard.
+
+A nurse-led follow-up with $\exp(\hat\beta) = 0.70$ means the readmission hazard is $70\%$ of the control hazard at *every* point in time --- a $30\%$ reduction in the instantaneous risk of readmission throughout follow-up.
+:::
+
+A hazard ratio below 1 lifts the *survival* curve everywhere: a lower hazard means patients stay event-free longer. The interactive below makes this proportional lift concrete, and shows what it looks like when the assumption breaks.
+
+## See It: A Hazard Ratio Reshapes Survival
+
+Two groups of discharged heart-failure patients share one baseline hazard --- here a Weibull-shaped baseline that captures the early post-discharge risk spike typical of readmissions. The **comparison group** (slate) is the reference; the **treated group** (red), receiving nurse-led follow-up, has its hazard multiplied by a hazard ratio you control. Drag the slider and watch both the hazard and the survival curve respond. Then flip the **PH-violation** toggle to let the treatment effect *reverse* over time --- an early benefit that turns into late harm --- and watch the survival curves *cross*, the visual signature of a broken assumption.
+
+::: {.interactive-container}
+
+#### Hazard ratio, survival, and a PH violation
+
+```{ojs}
+//| echo: false
+html`<p style="
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 0.85rem;
+    color: ${svcox_pal.axis};
+    background: ${svcox_pal.fill};
+    border-left: 3px solid ${svcox_pal.treated};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> leave PH on and drag the hazard ratio below 1 to
+  see the red survival curve lift <em>proportionally</em> above slate. Then turn
+  <em>Allow PH violation</em> on and watch the curves cross. Full guided tour is
+  below the chart.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof svcox_hr = Inputs.range([0.3, 2.5], {
+  value: 0.7,
+  step: 0.05,
+  label: "Hazard ratio  exp(β)  (treated ÷ comparison)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof svcox_violate = Inputs.toggle({
+  label: "Allow PH violation (effect reverses over time)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+viewof svcox_show = Inputs.radio(["Survival S(t)", "Hazard h(t)"], {
+  label: "Show",
+  value: "Survival S(t)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Uppsala-academic palette, shared across this page's interactives. ──
+svcox_pal = ({
+  treated: "#990000",   // focal / treated (nurse-led follow-up) — Uppsala red
+  control: "#3d5a6c",   // comparison / reference — slate
+  good:    "#2e6f40",   // on-target / PH holds — green
+  ochre:   "#9c7a33",   // true-value / highlight — ochre
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis text (muted ink — Uppsala token)
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Baseline hazard: Weibull with shape k>1 so risk rises then the cumulative
+// hazard accelerates — a stylised "early readmission" baseline. Time in months.
+// h0(t) = (k/λ)(t/λ)^(k-1);  cumulative H0(t) = (t/λ)^k;  S0(t) = exp(-H0(t)).
+svcox_k = 1.6
+svcox_lambda = 9         // scale (months)
+svcox_h0 = t => (svcox_k / svcox_lambda) * Math.pow(t / svcox_lambda, svcox_k - 1)
+svcox_H0 = t => Math.pow(t / svcox_lambda, svcox_k)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Time-varying multiplier for the treated group.
+//   PH holds:      φ(t) = HR                          (constant — the Cox assumption)
+//   PH violated:   the LOG hazard ratio drifts linearly through zero at t = tCross,
+//                  i.e. log φ(t) = log(HR)·(1 − t/tCross). For a protective HR<1 the
+//                  effect is protective early (φ<1), reverses to harmful late (φ>1),
+//                  so the treated HAZARD crosses the baseline at tCross and the
+//                  SURVIVAL curves cross a few months later — the textbook
+//                  non-proportional pattern Schoenfeld residuals and log-log plots
+//                  are built to catch. (Symmetric for a harmful HR>1.)
+svcox_tCross = 9                                       // months at which the effect reverses
+svcox_phi = function (t) {
+  if (!svcox_violate) return svcox_hr;
+  return Math.exp(Math.log(svcox_hr) * (1 - t / svcox_tCross));
+}
+
+// Treated cumulative hazard = ∫ φ(u) h0(u) du, computed by a fine trapezoid sum
+// (closed form only exists when φ is constant). Reference group uses φ ≡ 1.
+svcox_Htreated = function (t) {
+  if (!svcox_violate) return svcox_hr * svcox_H0(t);   // constant φ ⇒ φ·H0
+  const n = 240, dt = t / n;
+  let acc = 0;
+  for (let i = 0; i < n; i++) {
+    const u0 = i * dt, u1 = (i + 1) * dt;
+    acc += 0.5 * (svcox_phi(u0) * svcox_h0(u0) + svcox_phi(u1) * svcox_h0(u1)) * dt;
+  }
+  return acc;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Sample both curves on a month grid out to 24 months.
+svcox_grid = d3.range(0.1, 24.01, 0.2)
+
+svcox_curve = svcox_grid.flatMap(t => {
+  const Sc = Math.exp(-svcox_H0(t));                 // comparison survival
+  const St = Math.exp(-svcox_Htreated(t));           // treated survival
+  const hc = svcox_h0(t);                             // comparison hazard
+  const ht = svcox_phi(t) * svcox_h0(t);             // treated hazard
+  return [
+    { t, group: "Comparison", S: Sc, h: hc },
+    { t, group: "Nurse-led",  S: St, h: ht }
+  ];
+})
+```
+
+```{ojs}
+//| echo: false
+svcox_chart = {
+  const showS = svcox_show === "Survival S(t)";
+  const yField = showS ? "S" : "h";
+  const yLabel = showS ? "↑ Survival  S(t)" : "↑ Hazard  h(t)";
+  const yDomain = showS ? [0, 1] : [0, d3.max(svcox_curve, d => d.h) * 1.05];
+
+  // Pick an annotation time to show the proportional gap (12 months).
+  const tAnn = 12;
+  const Sc12 = Math.exp(-svcox_H0(tAnn));
+  const St12 = Math.exp(-svcox_Htreated(tAnn));
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 360,
+    marginLeft: 64,
+    marginBottom: 46,
+    marginTop: 28,
+    marginRight: 20,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: svcox_pal.axis },
+    x: { label: "Months since discharge  →", domain: [0, 24] },
+    y: { label: yLabel, domain: yDomain, grid: false },
+    color: {
+      domain: ["Comparison", "Nurse-led"],
+      range: [svcox_pal.control, svcox_pal.treated]
+    },
+    marks: [
+      Plot.gridY({ stroke: svcox_pal.hair }),
+      Plot.line(svcox_curve, {
+        x: "t", y: yField, stroke: "group", strokeWidth: 2.8,
+        curve: "basis"
+      }),
+      // Proportional-gap annotation only on the survival view.
+      showS ? Plot.ruleX([tAnn], { stroke: svcox_pal.muted, strokeWidth: 1, strokeDasharray: "3,3" }) : null,
+      showS ? Plot.dot([{ t: tAnn, S: Sc12 }, { t: tAnn, S: St12 }], {
+        x: "t", y: "S", fill: d => d.S === St12 ? svcox_pal.treated : svcox_pal.control, r: 4
+      }) : null,
+      // Headline HR label in the top band (Plot.line carries no text channel).
+      Plot.text([{ t: 0.4 }], {
+        x: "t", frameAnchor: "top-left", dy: 4,
+        text: () => svcox_violate
+          ? `HR reverses: ${svcox_hr.toFixed(2)} → 1.00 → past 1`
+          : `HR = ${svcox_hr.toFixed(2)} (constant)`,
+        fill: svcox_pal.ink, fontWeight: 700, fontSize: 13,
+        textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// Live numeric readout — survival at 12 months for both groups, the gap, and
+// the median (time at which S crosses 0.5). Driven straight from the curves so
+// it can never drift from the chart.
+{
+  const at = t => ({
+    Sc: Math.exp(-svcox_H0(t)),
+    St: Math.exp(-svcox_Htreated(t))
+  });
+  const m = at(12);
+  // Median survival times via linear interpolation on the sampled grid.
+  const medianOf = key => {
+    const pts = svcox_curve.filter(d => d.group === key).sort((a, b) => a.t - b.t);
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].S <= 0.5) {
+        const a = pts[i - 1], b = pts[i];
+        const frac = (0.5 - a.S) / (b.S - a.S);
+        return a.t + frac * (b.t - a.t);
+      }
+    }
+    return null;
+  };
+  const medC = medianOf("Comparison"), medT = medianOf("Nurse-led");
+  const fmtMed = v => v == null ? "> 24" : v.toFixed(1);
+
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7.5rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${svcox_pal.fill}; border:1px solid ${svcox_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${svcox_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("S(12) comparison", (m.Sc * 100).toFixed(0) + "%", svcox_pal.control)}
+    ${tile("S(12) nurse-led", (m.St * 100).toFixed(0) + "%", svcox_pal.treated)}
+    ${tile("Median (mo) comp.", fmtMed(medC), svcox_pal.control)}
+    ${tile("Median (mo) nurse", fmtMed(medT), svcox_pal.treated)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// Context line that switches with the violation toggle.
+html`<div style="
+    font-family:'Inter',system-ui,sans-serif; font-size:0.78rem;
+    color:${svcox_pal.axis}; margin-top:0.5rem; line-height:1.45;
+    border-left:3px solid ${svcox_violate ? svcox_pal.ochre : svcox_pal.good};
+    background:${svcox_pal.fill}; padding:0.45rem 0.7rem;
+    border-radius:0 0.35rem 0.35rem 0;">
+  ${svcox_violate
+    ? html`<strong style="color:${svcox_pal.ochre};">PH violated.</strong> The
+       treated hazard multiplier drifts through 1 around month ${svcox_tCross}, so an
+       early protective effect reverses into a late harmful one. On the survival
+       view the two curves <em>converge and cross</em> — no single hazard ratio
+       summarises this. A Cox model would report an average HR that is misleading
+       at both ends of follow-up.`
+    : html`<strong style="color:${svcox_pal.good};">PH holds.</strong> The hazard
+       multiplier is the same constant at every month, so the red hazard curve is
+       a vertical rescaling of slate and the survival curves never cross — exactly
+       the structure the Cox model assumes.`}
+</div>`
+```
+
+:::
+
+### How to Read the Curves
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Anchor on the comparison group.** The slate curve is the reference group's hazard (or survival), built from the unspecified baseline $h_0(t)$. Its exact shape does not matter for the Cox model --- that is the point of leaving $h_0(t)$ free. Notice the early hump: readmission risk peaks in the weeks after discharge.
+
+**Step 2: Drag the hazard ratio below 1.** Switch to the **Hazard** view and pull the slider to $0.70$. The red hazard curve drops to $70\%$ of slate *at every month* --- a clean vertical rescaling. Switch back to **Survival**: the red curve now sits above slate everywhere, and the gap at the dashed 12-month line is the proportional benefit. A lower hazard buys longer survival.
+
+**Step 3: Push the hazard ratio above 1.** Drag past $1.0$. The treated hazard now exceeds slate and the red survival curve drops *below* slate --- the covariate is harmful. At exactly $1.00$ the curves coincide: no effect.
+
+**Step 4: Read the tiles, then break the assumption.** The tiles report survival at 12 months and the median time-to-readmission; watch the nurse-led median climb as you lower the HR. Then turn on **Allow PH violation**: the treatment multiplier now starts at your HR, drifts through 1 around month 9, and continues past it, so on the survival view the curves **converge and cross** --- an early protective effect that reverses into late harm. No single hazard ratio can describe this; a Cox model would average the early benefit and late harm into one misleading number near 1. Diagnosing exactly this pattern is the job of the next interactive.
+
+## Estimation Without a Baseline: The Partial Likelihood
+
+Here is the genius of Cox's 1972 paper. To estimate $\beta$ we would normally need the full likelihood, which contains the unknown baseline hazard $h_0(t)$. Cox showed we can estimate $\beta$ **without ever specifying $h_0(t)$** by conditioning on the *order* in which events occur rather than their exact times.
+
+The idea is a sequence of small competitions. At each moment an event occurs --- a patient is readmitted --- ask: *among everyone still at risk at that instant (the "risk set"), why did this particular patient fail rather than one of the others?* Under the Cox model the answer depends only on the patients' relative risk scores $\exp(x'\beta)$, and the baseline hazard, shared by everyone in the risk set, **cancels out of the comparison entirely**.
+
+::: {.glass-card .glass-card--definition}
+Order the $D$ distinct event times $t_{(1)} < t_{(2)} < \dots < t_{(D)}$, and let $R(t_{(i)})$ denote the **risk set** --- the patients still under observation and event-free just before $t_{(i)}$. The **partial likelihood** is
+
+$$
+L_p(\beta) \;=\; \prod_{i=1}^{D} \frac{\exp\!\big(x_{(i)}'\beta\big)}{\sum_{j \in R(t_{(i)})} \exp\!\big(x_j'\beta\big)} .
+$$
+
+**Read this as**: "for each event, take the failing patient's risk score $\exp(x_{(i)}'\beta)$ and divide by the sum of risk scores of everyone who *could* have failed at that moment; then multiply these conditional probabilities across all events."
+
+Each factor is the probability that *this* patient is the one who fails at $t_{(i)}$, given that exactly one failure occurs and given the risk set. The baseline $h_0(t_{(i)})$ appears identically in every term of the numerator and denominator, so it **divides out**. We never estimate it to learn $\beta$.
+:::
+
+We maximise the **log partial likelihood** $\ell_p(\beta) = \log L_p(\beta)$, exactly as in [maximum likelihood estimation](../11-mle-gmm/likelihood.qmd): differentiate to get a score, set it to zero, and solve numerically (Newton--Raphson). Although it is a *partial* likelihood --- it discards the information in the actual event times, keeping only their ranks and the censoring pattern --- Cox and later authors showed that the resulting estimator $\hat\beta$ is consistent and asymptotically normal, with the curvature of $\ell_p$ giving valid standard errors, just like a full MLE.
+
+::: {.glass-card .glass-card--insight}
+**Why this is a superpower.** The partial likelihood is *semiparametric efficiency in action*: we throw away the nuisance shape of $h_0(t)$ yet lose surprisingly little precision about the thing we care about, $\beta$. Censoring is handled automatically --- a censored patient simply stays in the risk-set denominators until their censoring time, then drops out, contributing no numerator of their own. This is why the Cox model, not any parametric duration model, became the default for clinical survival analysis.
+:::
+
+### Handling Tied Event Times
+
+The partial likelihood above assumes a strict ordering of event times. In practice durations are recorded in whole days or months, so **ties** --- several patients readmitted "in March" --- are common. Three standard corrections exist:
+
+- **Breslow** approximation: simplest, treats tied events as if they happened in sequence sharing one risk set. Fast but biases $\hat\beta$ toward zero when ties are heavy.
+- **Efron** approximation: a sharper correction that adjusts the risk-set denominators for the tied events. Nearly as fast and far more accurate; it is the **default in R's `coxph`** and the recommended choice.
+- **Exact** partial likelihood: averages over all possible orderings of the tied events. Most accurate, but combinatorially expensive for large ties.
+
+Prefer Efron unless you have a specific reason not to; the older Breslow default in some software can noticeably attenuate hazard ratios when many events share a time.
+
+## Checking Proportional Hazards
+
+The entire interpretation --- one constant hazard ratio per covariate --- rests on proportionality. When it fails (as in the crossing curves above), a single $\exp(\hat\beta)$ is a misleading time-average. Two complementary diagnostics catch violations.
+
+**Log-log survival plots.** If PH holds for a categorical covariate, then $\log\!\big(-\log S(t)\big)$ plotted against $\log t$ yields curves that are **parallel** across groups, separated by the constant vertical distance $\beta$. Curves that converge, diverge, or cross signal non-proportionality. (This follows because $\log(-\log S(t\mid x)) = \log H_0(t) + x'\beta$.)
+
+**Schoenfeld residuals.** For each covariate and each event, the Schoenfeld residual is the covariate value of the failing patient minus the risk-weighted average covariate value over the risk set. If PH holds, these residuals have **no trend in time** --- their slope against (transformed) time is zero. A non-zero slope means the covariate's effect is changing over follow-up. R's `cox.zph` formalises this as a test: a small $p$-value flags a PH violation. The interactive below lets you *see* that trend appear.
+
+::: {.interactive-container}
+
+#### Schoenfeld residuals: a PH check you can see
+
+```{ojs}
+//| echo: false
+html`<p style="
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 0.85rem;
+    color: ${svcox_pal.axis};
+    background: ${svcox_pal.fill};
+    border-left: 3px solid ${svcox_pal.treated};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> with <em>time-varying effect</em> at 0 the
+  residuals scatter flat around zero — PH holds. Slide it away from 0 and a
+  trend line tilts: the smoothed slope and the <em>cox.zph</em>-style p-value
+  flag the violation.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+viewof svcox_tve = Inputs.range([-1, 1], {
+  value: 0,
+  step: 0.05,
+  label: "Time-varying effect: how fast the log-HR drifts over follow-up"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof svcox_resample = Inputs.button("Resample events", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// ── Generate Schoenfeld-style residuals for a single binary covariate. ──
+// We DON'T fit a real Cox model in the browser; instead we synthesise residuals
+// with the statistical SHAPE that cox.zph examines: for each event time t the
+// scaled Schoenfeld residual has mean ≈ β(t) - β̄, where β(t) = β0 + tve·(t-t̄)/s
+// drifts linearly when the effect is time-varying. tve = 0 ⇒ flat (PH holds).
+svcox_resid = {
+  svcox_resample;                                  // re-run on button press
+  const rng = d3.randomNormal.source(d3.randomLcg(0.42 + svcox_resample * 0.137))(0, 1);
+  const nEvents = 60;
+  // Event times: spread over 24 months, denser early (Weibull-ish).
+  const times = d3.range(nEvents).map(i => {
+    const u = (i + 0.5) / nEvents;
+    return 24 * Math.pow(u, 0.85);
+  });
+  const tBar = d3.mean(times);
+  const tSd = d3.deviation(times) || 1;
+  // The scaled Schoenfeld residual has mean ≈ β(t) − β̄. With a linearly drifting
+  // effect β(t) = β0 + tve·(t−t̄)/s and β̄ = β0 (the drift averages to zero over
+  // the symmetric grid), the centred mean is exactly the drift term. tve = 0 ⇒ 0.
+  return times.map(t => {
+    const drift = svcox_tve * (t - tBar) / tSd;     // β(t) − β̄ : linear time trend
+    const noise = 0.55 * rng();                      // Schoenfeld residual scatter
+    return { t, r: drift + noise };
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Ordinary-least-squares slope of residual on time — the quantity cox.zph tests
+// against zero. We also fabricate a chi-square-style statistic and p-value with
+// the right qualitative behaviour (grows with |slope| and sample size).
+svcox_fit = {
+  const d = svcox_resid;
+  const n = d.length;
+  const xb = d3.mean(d, p => p.t);
+  const yb = d3.mean(d, p => p.r);
+  let sxx = 0, sxy = 0, sse0 = 0;
+  for (const p of d) { sxx += (p.t - xb) ** 2; sxy += (p.t - xb) * (p.r - yb); }
+  const slope = sxy / sxx;
+  const intercept = yb - slope * xb;
+  // residual variance about the trend line → standard error of the slope
+  let sse = 0;
+  for (const p of d) { const e = p.r - (intercept + slope * p.t); sse += e * e; }
+  const sigma2 = sse / (n - 2);
+  const seSlope = Math.sqrt(sigma2 / sxx);
+  const z = slope / seSlope;
+  const chisq = z * z;                              // cox.zph reports a chi-square
+  // two-sided p-value from a normal approximation (1 df)
+  const p = 2 * (1 - svcox_normCdf(Math.abs(z)));
+  return { slope, intercept, chisq, p: Math.max(p, 1e-6) };
+}
+
+// Standard normal CDF via erf approximation (Abramowitz & Stegun 7.1.26).
+svcox_normCdf = function (x) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989423 * Math.exp(-x * x / 2);
+  let prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return x > 0 ? 1 - prob : prob;
+}
+```
+
+```{ojs}
+//| echo: false
+svcox_residChart = {
+  const d = svcox_resid;
+  const f = svcox_fit;
+  const xline = [0, 24];
+  const yline = xline.map(t => f.intercept + f.slope * t);
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 320,
+    marginLeft: 64,
+    marginBottom: 46,
+    marginTop: 24,
+    marginRight: 20,
+    style: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: "12px", color: svcox_pal.axis },
+    x: { label: "Event time  t  (months)  →", domain: [0, 24] },
+    y: { label: "↑ Scaled Schoenfeld residual", domain: [-2, 2], grid: false },
+    marks: [
+      Plot.gridY({ stroke: svcox_pal.hair }),
+      Plot.ruleY([0], { stroke: svcox_pal.muted, strokeWidth: 1, strokeDasharray: "4,4" }),
+      Plot.dot(d, { x: "t", y: "r", fill: svcox_pal.control, r: 4, fillOpacity: 0.8 }),
+      // The fitted trend (focal — Uppsala red). A flat line ⇒ PH holds.
+      Plot.line([{ t: xline[0], y: yline[0] }, { t: xline[1], y: yline[1] }], {
+        x: "t", y: "y", stroke: svcox_pal.treated, strokeWidth: 2.8
+      }),
+      Plot.text([{ t: 0.4 }], {
+        x: "t", frameAnchor: "top-left", dy: 4,
+        text: () => `trend slope = ${f.slope.toFixed(3)} / month`,
+        fill: svcox_pal.ink, fontWeight: 700, fontSize: 12,
+        textAnchor: "start", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+// cox.zph-style verdict box driven by the fabricated test statistic.
+{
+  const f = svcox_fit;
+  const holds = f.p >= 0.05;
+  const color = holds ? svcox_pal.good : svcox_pal.ochre;
+  const verdict = holds
+    ? "Fail to reject PH — the residuals show no time trend. A single hazard ratio is defensible."
+    : "Reject PH — the residuals trend with time, so the covariate's effect changes over follow-up. The single hazard ratio is a misleading time-average.";
+  const tile = (label, value, c) => html`<div style="
+      flex:1 1 0; min-width:8rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${svcox_pal.fill}; border:1px solid ${svcox_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${svcox_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${c};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+      ${tile("cox.zph χ²", f.chisq.toFixed(2), svcox_pal.ink)}
+      ${tile("p-value", f.p < 0.001 ? "<0.001" : f.p.toFixed(3), color)}
+      ${tile("PH verdict", holds ? "HOLDS" : "VIOLATED", color)}
+    </div>
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.82rem;
+        color:${svcox_pal.ink}; margin-top:0.6rem; padding:0.5rem 0.8rem;
+        border-left:3px solid ${color}; background:${svcox_pal.fill};
+        border-radius:0 0.35rem 0.35rem 0; line-height:1.45;">${verdict}</div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Residual Plot
+
+**Step 1: Establish the null.** With **time-varying effect** at 0, the slate residuals scatter randomly around the dashed zero line and the red trend is flat. The $p$-value is large, the verdict reads HOLDS --- this is what proportional hazards looks like.
+
+**Step 2: Introduce drift.** Slide the control toward $+1$ or $-1$. The cloud tilts and the red trend line acquires a slope: the covariate's log hazard ratio is drifting over follow-up. The $\chi^2$ grows, the $p$-value falls below $0.05$, and `cox.zph` would flag the violation.
+
+**Step 3: Resample, then remedy.** Press **Resample events** to redraw the residual noise: the verdict's message is stable even as individual points jump, because a real violation is a property of the *trend*, not of any single residual. A flagged covariate is not a dead end --- stratify on it, interact it with a function of time (a *time-varying coefficient*), or split follow-up into periods with separate hazard ratios.
+
+## A Note on Time-Varying Covariates
+
+So far every covariate has been fixed at baseline. But many predictors *change during follow-up*: a patient's medication dose is adjusted, they are referred to the nurse-led program three months after discharge, or a lab value is re-measured. The Cox model accommodates this through **time-varying covariates** $x(t)$:
+
+$$
+h(t\mid x(\cdot)) \;=\; h_0(t)\,\exp\!\big(x(t)'\beta\big).
+$$
+
+Now the relative risk $\exp(x(t)'\beta)$ can move over time *because the covariate moves*, even though $\beta$ itself is constant. This is implemented with a **counting-process (start, stop, event)** data layout: each patient becomes several rows, one per interval of constant covariate values, and the partial likelihood evaluates each event against the risk set with each subject's *current* covariate values.
+
+::: {.glass-card .glass-card--warning}
+**Time-varying covariates vs. time-varying coefficients --- do not confuse them.** A *time-varying covariate* $x(t)$ is a predictor whose value changes (dose, current treatment status); PH on $\beta$ can still hold. A *time-varying coefficient* $\beta(t)$ means the *effect itself* changes over time --- this **is** a PH violation, exactly what the Schoenfeld test detects. Also beware **internal** time-varying covariates that are affected by the disease process (e.g., a deteriorating lab value that is itself a marker of impending readmission): conditioning on them can bias the estimated treatment effect. Use external or exogenous time-varying covariates with care.
+:::
+
+## Fitting the Model
+
+Both panels fit a Cox model to a heart-failure readmission cohort: time to unplanned readmission (months), an event indicator (1 = readmitted, 0 = censored), and covariates for nurse-led follow-up, age, and baseline severity. Each panel reports hazard ratios with confidence intervals and runs the proportional-hazards check.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages("survival")
+library(survival)
+
+## ---- Simulate a readmission cohort (months to unplanned readmission) ----
+set.seed(2024)
+n  <- 600
+nurse    <- rbinom(n, 1, 0.5)                 # 1 = nurse-led follow-up
+age      <- round(rnorm(n, 72, 9))            # years
+severity <- rnorm(n, 0, 1)                    # standardised baseline severity
+
+# True log hazard ratios: nurse-led protective, age & severity raise risk
+lp <- -0.36 * nurse + 0.025 * (age - 72) + 0.45 * severity
+# Weibull baseline; invert to get event times, then censor at 24 months
+U  <- runif(n)
+t_event <- (-log(U) / (exp(lp) * (1 / 9)^1.6))^(1 / 1.6)
+time     <- pmin(t_event, 24)
+status   <- as.integer(t_event <= 24)         # 0 = censored at study end
+
+hf <- data.frame(time, status, nurse, age, severity)
+
+## ---- Fit the Cox proportional hazards model (Efron ties default) ----
+fit <- coxph(Surv(time, status) ~ nurse + age + severity, data = hf)
+summary(fit)                                   # coefficients = log hazard ratios
+
+# Hazard ratios with 95% CIs (exp of coefficients)
+exp(cbind(HR = coef(fit), confint(fit)))
+#            HR  2.5 %  97.5 %
+# nurse    ~0.70 ...    ...    (≈30% lower readmission hazard)
+# age      ~1.03 ...    ...
+# severity ~1.57 ...    ...
+
+## ---- Check the proportional-hazards assumption ----
+ph <- cox.zph(fit)
+print(ph)            # per-covariate and GLOBAL chi-square tests; small p flags PH violation
+plot(ph)             # scaled Schoenfeld residuals vs time, with a smooth (flat ⇒ PH ok)
+
+## ---- Remedy if PH fails: stratify, or add a time interaction ----
+# fit_strat <- coxph(Surv(time, status) ~ nurse + age + strata(severity_grp), data = hf)
+# fit_tt    <- coxph(Surv(time, status) ~ nurse + age + severity + tt(severity),
+#                    data = hf, tt = function(x, t, ...) x * log(t))
+```
+
+### Python
+
+```python
+# pip install lifelines
+import numpy as np
+import pandas as pd
+from lifelines import CoxPHFitter
+
+# ---- Simulate a readmission cohort (months to unplanned readmission) ----
+rng = np.random.default_rng(2024)
+n = 600
+nurse    = rng.binomial(1, 0.5, n)            # 1 = nurse-led follow-up
+age      = np.round(rng.normal(72, 9, n))     # years
+severity = rng.normal(0, 1, n)                # standardised baseline severity
+
+lp = -0.36 * nurse + 0.025 * (age - 72) + 0.45 * severity
+U = rng.uniform(size=n)
+t_event = (-np.log(U) / (np.exp(lp) * (1 / 9) ** 1.6)) ** (1 / 1.6)
+time = np.minimum(t_event, 24)
+status = (t_event <= 24).astype(int)          # 0 = censored at study end
+
+hf = pd.DataFrame({"time": time, "status": status,
+                   "nurse": nurse, "age": age, "severity": severity})
+
+# ---- Fit the Cox proportional hazards model (Efron ties by default) ----
+cph = CoxPHFitter()
+cph.fit(hf, duration_col="time", event_col="status")
+cph.print_summary()                            # coef = log HR; exp(coef) = HR
+
+# Hazard ratios with 95% CIs
+print(cph.summary[["exp(coef)", "exp(coef) lower 95%", "exp(coef) upper 95%"]])
+#            exp(coef)  ...
+# nurse        ~0.70    (≈30% lower readmission hazard)
+# age          ~1.03
+# severity     ~1.57
+
+# ---- Check the proportional-hazards assumption ----
+# Scaled Schoenfeld residual test (analogous to R's cox.zph), with plots:
+cph.check_assumptions(hf, p_value_threshold=0.05, show_plots=True)
+
+# Formal test object only:
+from lifelines.statistics import proportional_hazard_test
+ph = proportional_hazard_test(cph, hf, time_transform="rank")
+print(ph.summary)                              # small p-value flags a PH violation
+
+# ---- Remedy if PH fails: stratify, or model a time-varying coefficient ----
+# cph_strat = CoxPHFitter().fit(hf, "time", "status", strata=["severity_grp"])
+# Or fit a CoxTimeVaryingFitter on a (start, stop, event) long-format dataset.
+```
+
+:::
+
+In both languages the fitted hazard ratios recover the simulation truth: $\exp(\hat\beta_{\text{nurse}}) \approx 0.70$ (a $\sim$30% lower readmission hazard under nurse-led follow-up), $\exp(\hat\beta_{\text{age}}) \approx 1.03$ per year, and $\exp(\hat\beta_{\text{severity}}) \approx 1.57$ per standard deviation. The PH check returns flat Schoenfeld residuals --- the assumption holds for this (correctly specified) simulation.
+
+<details>
+<summary>Math Details: The partial likelihood and why the baseline cancels</summary>
+<div class="details-content">
+
+### Setting up the conditional probability
+
+Consider the event time $t_{(i)}$ at which patient $(i)$ fails. The risk set $R(t_{(i)})$ is everyone still at risk just before $t_{(i)}$. In a small interval $[t_{(i)}, t_{(i)} + dt)$, the probability that patient $j \in R(t_{(i)})$ fails is approximately $h(t_{(i)}\mid x_j)\,dt = h_0(t_{(i)})\exp(x_j'\beta)\,dt$.
+
+Condition on the fact that **exactly one** failure occurs at $t_{(i)}$ and that it comes from the risk set. The probability that it is patient $(i)$ specifically, rather than any other member, is
+
+$$
+\Pr\big(\text{patient }(i)\text{ fails} \mid \text{one failure at } t_{(i)}\big)
+= \frac{h_0(t_{(i)})\exp(x_{(i)}'\beta)\,dt}{\sum_{j \in R(t_{(i)})} h_0(t_{(i)})\exp(x_j'\beta)\,dt}.
+$$
+
+The common factor $h_0(t_{(i)})\,dt$ appears in every term of the denominator and once in the numerator, so it **cancels**:
+
+$$
+= \frac{\exp(x_{(i)}'\beta)}{\sum_{j \in R(t_{(i)})} \exp(x_j'\beta)} .
+$$
+
+This is the defining trick. The nuisance baseline hazard --- the same for every patient in the risk set at a given instant --- divides out of the conditional probability of *who* fails.
+
+### The product over events
+
+Treating the $D$ events as (conditionally) independent contributions and multiplying gives the partial likelihood:
+
+$$
+L_p(\beta) = \prod_{i=1}^{D} \frac{\exp(x_{(i)}'\beta)}{\sum_{j \in R(t_{(i)})} \exp(x_j'\beta)} .
+$$
+
+It is "partial" because it uses only the *ranks* of the event times (which patient failed before which) and the censoring pattern, discarding the absolute times. The log partial likelihood is
+
+$$
+\ell_p(\beta) = \sum_{i=1}^{D}\Big[\, x_{(i)}'\beta - \log\!\sum_{j \in R(t_{(i)})} \exp(x_j'\beta)\,\Big].
+$$
+
+### Score, information, and the estimator
+
+Differentiating, the score for covariate $k$ is
+
+$$
+\frac{\partial \ell_p}{\partial \beta_k}
+= \sum_{i=1}^{D}\Big[\, x_{(i)k} - \bar{x}_k(\beta, t_{(i)})\,\Big],
+\qquad
+\bar{x}_k(\beta, t_{(i)}) = \frac{\sum_{j\in R} x_{jk}\exp(x_j'\beta)}{\sum_{j\in R}\exp(x_j'\beta)},
+$$
+
+where $\bar{x}_k$ is the **risk-weighted average** covariate over the risk set. Setting the score to zero says: at the MLE, the covariate value of each failing patient equals, on average, the risk-weighted mean of those at risk. The term $x_{(i)k} - \bar{x}_k$ is exactly the **Schoenfeld residual** --- which is why, when PH holds, these residuals have mean zero and no trend in time.
+
+The MLE $\hat\beta$ solves the score equation by Newton--Raphson. The negative second derivative of $\ell_p$ is the observed information matrix; its inverse gives the asymptotic covariance, hence standard errors and Wald confidence intervals for the hazard ratios $\exp(\hat\beta)$. Cox's partial-likelihood estimator enjoys the usual MLE properties --- consistency and asymptotic normality --- even though $h_0(t)$ was never estimated.
+
+### The hazard-ratio interpretation, formally
+
+For two covariate vectors $x_A$ and $x_B$,
+
+$$
+\frac{h(t\mid x_A)}{h(t\mid x_B)} = \frac{h_0(t)\exp(x_A'\beta)}{h_0(t)\exp(x_B'\beta)} = \exp\!\big((x_A - x_B)'\beta\big),
+$$
+
+independent of $t$. If $x_A$ and $x_B$ differ only in component $k$ by one unit, the ratio is $\exp(\beta_k)$ --- the hazard ratio. The *time-independence* of this ratio is the proportional-hazards assumption made precise.
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A Cox model for time to unplanned readmission at a Region Skåne *vårdcentral* returns $\hat\beta_{\text{nurse}} = -0.357$ for nurse-led follow-up (vs. usual care) and $\hat\beta_{\text{age}} = 0.030$ per year.
+
+(a) Compute and interpret the hazard ratio for nurse-led follow-up. (b) Compute the hazard ratio for a patient who is 10 years older. (c) Does a hazard ratio of $0.70$ mean 30% of patients avoid readmission? Explain.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\exp(-0.357) \approx 0.70$. The readmission hazard under nurse-led follow-up is about $70\%$ of the usual-care hazard at every instant --- a $30\%$ reduction in the instantaneous rate of readmission throughout follow-up.
+
+**(b)** A 10-year age difference multiplies the linear index by $10 \times 0.030 = 0.30$, so the hazard ratio is $\exp(0.30) \approx 1.35$: a 10-years-older patient has about a $35\%$ higher readmission hazard, holding nurse-led status fixed.
+
+**(c)** No. A hazard ratio is a ratio of *instantaneous rates*, not a proportion of patients. $\mathrm{HR} = 0.70$ says the rate of readmission is scaled by $0.70$ at every moment; the resulting difference in the *probability* of remaining readmission-free by a given time depends on the baseline survival and is generally **not** $30\%$. Hazard ratios are multiplicative on rates, not additive on event counts.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Explain, in your own words, how the partial likelihood lets us estimate $\beta$ without ever specifying the baseline hazard $h_0(t)$. Why is this property so valuable for clinical survival data?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+At each observed event time, the partial likelihood asks only *which* patient in the risk set failed, not *when* in absolute terms. The probability that a particular patient fails is their relative risk $\exp(x'\beta)$ divided by the sum of relative risks over everyone at risk. The baseline hazard $h_0(t)$ multiplies the hazard of *every* patient in the risk set identically, so it appears once in the numerator and in every term of the denominator --- and cancels exactly. Maximising the product of these conditional probabilities therefore identifies $\beta$ while leaving $h_0(t)$ completely unspecified.
+
+This is valuable because the baseline shape of risk is usually unknown and often complicated (e.g., a post-discharge spike that then decays). Forcing a parametric shape (Weibull, exponential) risks misspecification that biases the covariate effects. The Cox model sidesteps that entirely: we get interpretable, defensible hazard ratios without betting on the baseline shape, and censoring is handled automatically through the risk sets.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In the Schoenfeld-residual interactive, set the time-varying effect to 0, then slide it to $+0.8$.
+
+(a) What happens to the scatter and the fitted trend line? (b) What does `cox.zph` conclude, and what does that mean for the covariate's hazard ratio? (c) Name two ways to fix a covariate that fails the PH test.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At 0 the residuals scatter flat around zero and the red trend line is horizontal. At $+0.8$ the cloud tilts upward and the fitted line acquires a positive slope --- the covariate's effect (its log hazard ratio) is growing over follow-up.
+
+**(b)** The $\chi^2$ statistic rises and the $p$-value falls below $0.05$, so `cox.zph` **rejects** proportional hazards for that covariate. This means a single $\exp(\hat\beta)$ is a misleading time-average: the true hazard ratio is smaller early and larger later (or vice versa), and reporting one constant number hides that.
+
+**(c)** Any two of: (i) **stratify** on the offending covariate, giving each stratum its own baseline hazard $h_0(t)$ (no single HR is reported for it); (ii) include a **time interaction** / time-varying coefficient, e.g. $\beta_1 x + \beta_2\, x\cdot g(t)$, so the effect is allowed to drift; (iii) **split follow-up** into intervals and estimate a separate hazard ratio within each period.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Two heart-failure groups have the survival curves shown in the first interactive when **Allow PH violation** is on: the nurse-led curve starts well above the comparison curve but they converge and cross around month 14.
+
+(a) Is a single hazard ratio appropriate here? (b) What would a Cox model that ignores the violation report, and why is it misleading? (c) What does the crossing imply about the log-log survival plots for these two groups?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** No. Crossing survival curves are the hallmark of non-proportional hazards: the treated group has a *lower* hazard early (better survival) but a *higher* hazard late (the curves cross). No single multiplicative factor describes the hazard ratio across all of follow-up.
+
+**(b)** A naive Cox model would report one $\exp(\hat\beta)$ that is roughly a risk-set-weighted average of the early protective effect and the late harmful one --- a number near 1 that suggests "no effect." This is misleading: it masks a genuine early benefit and a genuine late harm, both of which are clinically important and would change the follow-up policy.
+
+**(c)** Under PH the log-log survival curves, $\log(-\log S(t))$ vs $\log t$, are parallel. Crossing survival curves means the log-log curves are **not parallel** --- they converge and cross too. Seeing non-parallel log-log curves is exactly the graphical diagnostic that should stop you from fitting a single-HR Cox model here.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The Cox model $h(t\mid x) = h_0(t)\exp(x'\beta)$ regresses the *hazard* on covariates: an unspecified baseline hazard $h_0(t)$ is multiplied by a covariate-driven factor $\exp(x'\beta)$.
+- The headline output is the **hazard ratio** $\exp(\beta_j)$ --- the constant multiplicative effect of a one-unit change in $x_j$ on the hazard, the same at every point in follow-up.
+- Estimation uses the **partial likelihood**, which compares each failing patient to the risk set so the baseline hazard cancels --- $\beta$ is identified without ever specifying $h_0(t)$, and censoring is handled automatically.
+- The **proportional-hazards assumption** must be checked: flat Schoenfeld residuals (`cox.zph`) and parallel log-log survival curves support it; trends or crossing curves reject it.
+- When PH fails, stratify, add a time-varying coefficient, or split follow-up --- and distinguish a time-varying *covariate* $x(t)$ (allowed) from a time-varying *coefficient* $\beta(t)$ (a PH violation).
+:::
+
+## What Comes Next
+
+The Cox model's great strength --- leaving the baseline hazard unspecified --- is also a limitation. Because $h_0(t)$ is never estimated, the Cox model alone cannot give you an *absolute* prediction such as "this patient's probability of readmission within six months" without a separate baseline-hazard estimate, and it assumes a single event type. When you are willing to model the shape of risk directly, **parametric duration models** (exponential, Weibull, log-normal, generalised gamma) deliver smooth survival predictions, extrapolation beyond the data, and accelerated-failure-time interpretations. And when patients can fail from *several mutually exclusive causes* --- readmission versus death versus recovery --- the single-hazard framework needs to be extended. The next page, [Parametric Duration and Competing Risks](parametric-competing-risks.qmd), develops both: it fits fully parametric hazards by maximum likelihood, contrasts the proportional-hazards and accelerated-failure-time views, and introduces cause-specific hazards and the cumulative-incidence function for competing events.

@@ -1,0 +1,1268 @@
+---
+title: "LATE and Compliers"
+subtitle: "What instrumental variables actually identify"
+---
+
+When effects are heterogeneous, an instrument does not recover the average treatment effect for everyone. It recovers the effect for a specific, often invisible, subpopulation: the **compliers** --- the units whose treatment status the instrument actually moves. This page is about that subpopulation, why it is the only one IV can speak for, and what that means for policy.
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Partition a population into the four latent response types --- compliers, always-takers, never-takers, defiers --- defined by how a unit reacts to a binary instrument.
+- State the **monotonicity** (no-defiers) assumption and explain why it is what turns the Wald ratio into a clean local average treatment effect.
+- Derive that the IV/Wald estimand equals $E[Y(1) - Y(0) \mid \text{complier}]$ --- the **LATE** --- and not the ATE or the ATT.
+- Explain why LATE may differ from the ATE and the ATT, and judge when that gap matters for an external-validity argument.
+- Read the Wald estimator as a ratio of two intention-to-treat effects (reduced form over first stage).
+:::
+
+
+## A Nudge, Not a Mandate
+
+Sweden's 21 *regioner* (regions) run their chronic-disease care through *vårdcentraler* (primary care centers). One region wants to know whether enrolling Type 2 diabetes patients in a structured **diabetes coordination program** (*Diabetessamordning*) --- a dedicated *distriktssköterska* (district nurse), scheduled HbA1c follow-ups, medication review --- actually lowers blood sugar twelve months later.
+
+The region cannot randomize enrollment directly: the program is voluntary, and patients who sign up are exactly the patients who would have improved anyway (the [selection-bias](../01-fundamental-problem/selection-bias.qmd) problem). So instead the region randomizes a **nudge**. Half of eligible patients (chosen by lottery) receive a personal letter and a phone call from their vårdcentral inviting them to join the program; the other half receive the standard generic leaflet. The letter is an *encouragement*, not an order. Patients are still free to enroll or not.
+
+This is an **encouragement design**, and the random letter is an **instrument** $Z$. It is randomly assigned, so it is unconfounded. It plausibly affects HbA1c *only* through whether the patient enrolls (the letter itself does not treat diabetes --- this is the exclusion restriction from the [previous pages](weak-instruments.qmd)). And it has a real first stage: people who get the letter enroll at higher rates.
+
+The picture below draws the causal structure that the three IV assumptions assert. The random letter $Z$ acts **only** through enrollment $D$ (green arrows --- the first stage and the treatment effect). An unobserved confounder $U$ (motivation, baseline severity) opens a **back-door** between $D$ and the outcome $Y$ (red) --- exactly the selection problem that dooms the naive enrolled-vs-not comparison. The instrument's power comes from the *missing* arrow: the **grey dashed** $Z \dashrightarrow Y$ is the **exclusion restriction** made visible --- the direct path that must *not* exist for IV to work. Because $Z$ is randomized, nothing points into it.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Shared static DAG drawing component for this page (page-tag prefixed). ──
+// Pure function of its arguments (depends only on global d3); builds an SVG via
+// d3.create and returns the node. No mutable state.
+//   nodes:  [{id, x, y, label, caption}]  x,y normalized to [0,1] (padded so
+//           nothing clips). `label` short token inside the node; optional
+//           `caption` drawn below.
+//   edges:  [{source, target, kind}]  kind ∈
+//             "causal"        → green (#2e6f40)        an open causal edge
+//             "backdoor-open" → red   (#b3000b)        an open back-door edge
+//             "blocked"       → grey  (#79766e, dashed) an absent / blocked edge
+//   conditioned: [id,...]  drawn as rounded SQUARES (conditioned-on nodes)
+ivlate_drawDAG = function ({ nodes, edges, width = 460, height = 230, conditioned = [] }) {
+  const pad = 48;                         // keep nodes + captions off the edges
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "backdoor-open" ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "ivlate-arrow-green" :
+    k === "backdoor-open" ? "ivlate-arrow-red" : "ivlate-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [
+    ["ivlate-arrow-green", "#2e6f40"],
+    ["ivlate-arrow-red", "#b3000b"],
+    ["ivlate-arrow-gray", "#79766e"]
+  ]) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    const common = sel => sel
+      .attr("fill", "none")
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+    if (e.bow) {
+      // Quadratic arc bowed perpendicular to the edge (keeps collinear edges,
+      // e.g. an excluded direct path, visibly separated from the main chain).
+      const mx = (xa + xb) / 2 + (-uy) * e.bow;
+      const my = (ya + yb) / 2 + (ux) * e.bow;
+      common(eg.append("path").attr("d", `M${xa},${ya} Q${mx},${my} ${xb},${yb}`));
+    } else {
+      common(eg.append("line")
+        .attr("x1", xa).attr("y1", ya).attr("x2", xb).attr("y2", yb));
+    }
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// IV / exclusion DAG: Z → D → Y (causal), U → D and U → Y (open back-door),
+// and the forbidden direct Z ⇢ Y (exclusion restriction, drawn grey/dashed).
+ivlate_drawDAG({
+  width: Math.min(520, width),
+  height: 235,
+  nodes: [
+    { id: "Z", x: 0.04, y: 0.40, label: "Z", caption: "Letter" },
+    { id: "D", x: 0.48, y: 0.40, label: "D", caption: "Enroll" },
+    { id: "Y", x: 0.93, y: 0.40, label: "Y", caption: "HbA1c" },
+    { id: "U", x: 0.705, y: 0.93, label: "U", caption: "Motivation" }
+  ],
+  edges: [
+    { source: "Z", target: "D", kind: "causal" },          // first stage
+    { source: "D", target: "Y", kind: "causal" },           // treatment effect
+    { source: "U", target: "D", kind: "backdoor-open" },    // confounding into D
+    { source: "U", target: "Y", kind: "backdoor-open" },    // confounding into Y
+    { source: "Z", target: "Y", kind: "blocked", bow: -70 }  // EXCLUSION (must be absent), bowed up & clear of the chain
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = causal path the instrument exploits ($Z \to D \to Y$); <span style="color:#b3000b; font-weight:700;">red</span> = open back-door through the unobserved confounder $U$ (why naive enrolled-vs-not is biased); <span style="color:#79766e; font-weight:700;">grey dashed</span> = the **excluded** direct effect $Z \to Y$, which the exclusion restriction assumes is *absent*. ($Z$ = randomized letter, $D$ = enrollment, $Y$ = HbA1c, $U$ = motivation / baseline severity.)
+:::
+
+But here is the subtlety that this whole page exists to unpack. The letter does not move *everyone*. Some patients would enroll no matter what. Some would never enroll, letter or not. The letter only changes the behavior of the patients who are *on the fence* --- and it is **only those patients** whose causal effect the instrument can ever reveal.
+
+::: {.glass-card .glass-card--insight}
+With a binary instrument and **heterogeneous** treatment effects, IV does not estimate the average treatment effect (ATE) or the effect on the treated (ATT). It estimates the **Local Average Treatment Effect (LATE)**: the average effect of the program *among the patients whose enrollment decision the letter actually flipped*. Change who is on the fence, and you change what IV measures --- even though the program's true ATE has not moved at all.
+:::
+
+The framework that makes this precise is due to Imbens and Angrist (1994) and Angrist, Imbens, and Rubin (1996). It starts by sorting every patient into one of four latent types.
+
+
+## The Four Latent Types
+
+Think of each patient as having *two* potential treatment decisions, one for each value of the instrument. Let $D_i(z)$ be patient $i$'s enrollment status if their letter status were $z$:
+
+- $D_i(1)$ --- would patient $i$ enroll **if they received the letter**?
+- $D_i(0)$ --- would patient $i$ enroll **if they received only the leaflet**?
+
+Each of these is $0$ or $1$, so there are exactly four combinations. These four combinations are the four **principal strata** --- groups defined by a *pair of potential outcomes* rather than by anything we can observe, hence "latent."
+
+::: {.glass-card .glass-card--definition}
+Every patient belongs to exactly one of four types, defined by the pair $\big(D_i(0),\, D_i(1)\big)$:
+
+| Type | $D_i(0)$ | $D_i(1)$ | Behavior |
+|:---|:---:|:---:|:---|
+| **Complier** | $0$ | $1$ | Enrolls *only* when nudged. The letter moves them. |
+| **Always-taker** | $1$ | $1$ | Enrolls regardless. Letter is irrelevant. |
+| **Never-taker** | $0$ | $0$ | Never enrolls. Letter is irrelevant. |
+| **Defier** | $1$ | $0$ | Enrolls *only* when **not** nudged. Perverse. |
+
+**Read the complier row as**: "$D_i(0) = 0$ and $D_i(1) = 1$" --- *without* the letter they stay out, *with* the letter they enroll. The instrument changes their decision in the intended direction.
+:::
+
+The pair $\big(D_i(0), D_i(1)\big)$ is naturally a **2×2 grid** --- one axis for what the patient does without the letter, one for what they do with it. The four types are just the four cells. The picture below lays them out so the structure is visible at a glance, and previews the next assumption: the **defier** cell (top-left: enrolls without the letter, refuses with it) is the one **monotonicity** will forbid.
+
+```{ojs}
+//| echo: false
+
+// Static 2×2 (D(0), D(1)) matrix of the four latent types. The defier cell is
+// hatched/crossed to foreshadow monotonicity. Pure d3.create SVG, no mutable.
+ivlate_typeMatrix = {
+  const W = Math.min(420, width);
+  const H = 300;
+  const m = { left: 70, top: 56, right: 18, bottom: 22 };
+  const gw = W - m.left - m.right;
+  const gh = H - m.top - m.bottom;
+  const cw = gw / 2, ch = gh / 2;
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  // Cells keyed by (D(0) col, D(1) row). Columns: D(1)=0 left, D(1)=1 right.
+  // Rows: D(0)=1 top, D(0)=0 bottom — so compliers sit bottom-right, the
+  // intended-direction movers.
+  const cells = [
+    { col: 0, row: 0, name: "Defier",       sub: "D(0)=1, D(1)=0", fill: "#b3000b", forbidden: true },
+    { col: 1, row: 0, name: "Always-taker", sub: "D(0)=1, D(1)=1", fill: "#3d5a6c", forbidden: false },
+    { col: 0, row: 1, name: "Never-taker",  sub: "D(0)=0, D(1)=0", fill: "#79766e", forbidden: false },
+    { col: 1, row: 1, name: "Complier",     sub: "D(0)=0, D(1)=1", fill: "#990000", forbidden: false }
+  ];
+
+  // Hatch pattern for the forbidden (defier) cell.
+  const defs = svg.append("defs");
+  const hatch = defs.append("pattern")
+    .attr("id", "ivlate-hatch").attr("width", 8).attr("height", 8)
+    .attr("patternUnits", "userSpaceOnUse")
+    .attr("patternTransform", "rotate(45)");
+  hatch.append("rect").attr("width", 8).attr("height", 8).attr("fill", "#f6f5f1");
+  hatch.append("line").attr("x1", 0).attr("y1", 0).attr("x2", 0).attr("y2", 8)
+    .attr("stroke", "#b3000b").attr("stroke-width", 2).attr("stroke-opacity", 0.5);
+
+  const g = svg.append("g");
+  for (const c of cells) {
+    const x = m.left + c.col * cw;
+    const y = m.top + c.row * ch;
+    g.append("rect")
+      .attr("x", x + 4).attr("y", y + 4)
+      .attr("width", cw - 8).attr("height", ch - 8)
+      .attr("rx", 8)
+      .attr("fill", c.forbidden ? "url(#ivlate-hatch)" : c.fill)
+      .attr("fill-opacity", c.forbidden ? 1 : 0.12)
+      .attr("stroke", c.fill)
+      .attr("stroke-width", c.forbidden ? 2 : 1.5)
+      .attr("stroke-dasharray", c.forbidden ? "5,4" : null);
+    g.append("text")
+      .attr("x", x + cw / 2).attr("y", y + ch / 2 - 8)
+      .attr("text-anchor", "middle")
+      .attr("font-size", 14).attr("font-weight", 700)
+      .attr("fill", c.fill)
+      .text(c.name);
+    g.append("text")
+      .attr("x", x + cw / 2).attr("y", y + ch / 2 + 12)
+      .attr("text-anchor", "middle")
+      .attr("font-size", 10.5).attr("font-weight", 600)
+      .attr("fill", "#79766e")
+      .text(c.sub);
+    if (c.forbidden) {
+      g.append("text")
+        .attr("x", x + cw / 2).attr("y", y + ch / 2 + 30)
+        .attr("text-anchor", "middle")
+        .attr("font-size", 9.5).attr("font-weight", 700)
+        .attr("fill", "#b3000b")
+        .text("forbidden by monotonicity");
+    }
+  }
+
+  // Axis labels.
+  svg.append("text")
+    .attr("x", m.left + gw / 2).attr("y", 20)
+    .attr("text-anchor", "middle").attr("font-size", 12).attr("font-weight", 700)
+    .attr("fill", "#1c1c1a")
+    .text("D(1): enrolls WITH the letter?");
+  svg.append("text")
+    .attr("x", m.left + cw / 2).attr("y", 40)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .text("no (0)");
+  svg.append("text")
+    .attr("x", m.left + cw + cw / 2).attr("y", 40)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .text("yes (1)");
+  // Vertical (rotated) D(0) axis label.
+  svg.append("text")
+    .attr("transform", `translate(16, ${m.top + gh / 2}) rotate(-90)`)
+    .attr("text-anchor", "middle").attr("font-size", 12).attr("font-weight", 700)
+    .attr("fill", "#1c1c1a")
+    .text("D(0): enrolls WITHOUT the letter?");
+  svg.append("text")
+    .attr("transform", `translate(36, ${m.top + ch / 2}) rotate(-90)`)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .text("yes (1)");
+  svg.append("text")
+    .attr("transform", `translate(36, ${m.top + ch + ch / 2}) rotate(-90)`)
+    .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e")
+    .text("no (0)");
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+The four latent types are the four cells of the $\big(D(0), D(1)\big)$ grid. **Compliers** (red, bottom-right) switch *into* enrollment in the intended direction. **Always-takers** and **never-takers** sit on the diagonal where the letter changes nothing. The **defier** cell (hatched, top-left) is the one the next assumption deletes.
+:::
+
+The tragedy of the four types is the same fundamental problem we met in [potential outcomes](../01-fundamental-problem/potential-outcomes.qmd): for any single patient we observe only *one* of $D_i(0)$ and $D_i(1)$ --- whichever their realized letter status delivers. A patient who got the letter and enrolled ($Z=1$, $D=1$) could be a **complier** or an **always-taker**; we cannot tell which from their own data. The types are *latent*. We can never label an individual, but --- remarkably --- we can still estimate the *average effect* within one of these strata.
+
+Notice immediately why these types matter for identification:
+
+- **Always-takers** are enrolled whether or not the letter arrives. Their treatment status does not respond to $Z$, so the instrument carries **no information** about their treatment effect.
+- **Never-takers** are out whether or not the letter arrives. Same problem: $Z$ never moves them, so it can say nothing about their effect.
+- **Compliers** are the *only* type whose treatment status changes with $Z$. Any effect of $Z$ on the outcome $Y$ must, by the exclusion restriction, run through *their* changed enrollment. So the instrument's leverage is entirely on the compliers.
+- **Defiers** are the saboteurs. They respond to $Z$ in the *wrong* direction, and their effect enters the IV formula with the *opposite* sign --- which can corrupt the whole estimate. The next assumption exists precisely to rule them out.
+
+
+## Monotonicity: No Defiers
+
+::: {.glass-card .glass-card--assumption}
+**Monotonicity** (Imbens & Angrist, 1994). The instrument moves *no one* in the wrong direction. For every patient $i$,
+
+$$
+D_i(1) \;\ge\; D_i(0).
+$$
+
+**Read this as**: "Receiving the letter never makes a patient *less* likely to enroll than they would have been without it." Equivalently: there are **no defiers**. The nudge can turn a non-enroller into an enroller (a complier) or leave a decision unchanged (always-taker, never-taker), but it cannot flip anyone from "would enroll" to "would not enroll."
+:::
+
+Monotonicity is a behavioral assumption, and in an encouragement design it is highly plausible: it is hard to imagine a patient who would enroll *only if no one invited them* and would stubbornly refuse the moment a friendly letter arrives. But it is a genuine assumption, not a free lunch. It can fail when an instrument pushes different people in different directions --- for example, a price subsidy that nudges most people toward a product but triggers a contrarian backlash in others.
+
+Why does ruling out defiers matter so much? Because the instrument's effect on the population is a *net* of the directions it pushes. With defiers present, the letter pulls compliers *into* treatment and pushes defiers *out* of it, and these two movements partially cancel. The observed first stage understates the true churn, and the outcome effect mixes complier effects with sign-flipped defier effects. Monotonicity guarantees that everyone the instrument moves, it moves the *same way* --- so the population splits cleanly into compliers, always-takers, and never-takers, with no defiers to muddy the algebra.
+
+The schematic below makes that cancellation concrete. The letter pushes **compliers into** enrollment (green, rightward) but **defiers out** of it (red, leftward); the *net* first stage is what is left after the two arrows fight. Monotonicity deletes the red arrow, so the green movement stands alone and the first stage counts compliers cleanly.
+
+```{ojs}
+//| echo: false
+
+// Static cancellation schematic: compliers pushed IN (green →), defiers pushed
+// OUT (red ←), and the shorter NET arrow that remains. Pure d3.create SVG.
+ivlate_cancelFig = {
+  const W = Math.min(560, width);
+  const H = 188;
+  const cx = W / 2;
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["ivlate-cx-green", "#2e6f40"], ["ivlate-cx-red", "#b3000b"], ["ivlate-cx-ink", "#1c1c1a"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 8).attr("refY", 0)
+      .attr("markerWidth", 8).attr("markerHeight", 8)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  // A horizontal track: "not enrolled" (left) ↔ "enrolled" (right).
+  const yTrack = 58;
+  svg.append("line").attr("x1", 60).attr("y1", yTrack + 64).attr("x2", W - 60).attr("y2", yTrack + 64)
+    .attr("stroke", "#e6e3db").attr("stroke-width", 2);
+  svg.append("text").attr("x", 60).attr("y", yTrack + 84).attr("font-size", 10).attr("fill", "#79766e").text("not enrolled");
+  svg.append("text").attr("x", W - 60).attr("y", yTrack + 84).attr("text-anchor", "end").attr("font-size", 10).attr("fill", "#79766e").text("enrolled");
+
+  // Complier arrow: pushed IN (rightward, green), longer.
+  svg.append("line")
+    .attr("x1", cx - 150).attr("y1", yTrack).attr("x2", cx + 10).attr("y2", yTrack)
+    .attr("stroke", "#2e6f40").attr("stroke-width", 4)
+    .attr("marker-end", "url(#ivlate-cx-green)");
+  svg.append("text").attr("x", cx - 150).attr("y", yTrack - 12)
+    .attr("font-size", 11.5).attr("font-weight", 700).attr("fill", "#2e6f40")
+    .text("Compliers pushed IN  →");
+
+  // Defier arrow: pushed OUT (leftward, red), shorter.
+  svg.append("line")
+    .attr("x1", cx + 120).attr("y1", yTrack + 28).attr("x2", cx + 50).attr("y2", yTrack + 28)
+    .attr("stroke", "#b3000b").attr("stroke-width", 4)
+    .attr("marker-end", "url(#ivlate-cx-red)");
+  svg.append("text").attr("x", cx + 50).attr("y", yTrack + 46)
+    .attr("font-size", 11.5).attr("font-weight", 700).attr("fill", "#b3000b")
+    .text("←  Defiers pushed OUT");
+
+  // Net arrow (what the first stage actually measures): green minus red.
+  svg.append("line")
+    .attr("x1", cx - 150).attr("y1", yTrack + 102).attr("x2", cx - 40).attr("y2", yTrack + 102)
+    .attr("stroke", "#1c1c1a").attr("stroke-width", 4)
+    .attr("marker-end", "url(#ivlate-cx-ink)");
+  svg.append("text").attr("x", cx - 150).attr("y", yTrack + 122)
+    .attr("font-size", 11).attr("font-weight", 700).attr("fill", "#1c1c1a")
+    .text("NET first stage (what you observe) — understated by the defiers");
+
+  return svg.node();
+}
+```
+
+::: {.aside}
+With defiers present, the observed (net) first stage is the green complier movement *minus* the red defier movement --- so it understates the true churn and contaminates the numerator with sign-flipped defier effects. Monotonicity removes the red arrow entirely.
+:::
+
+::: {.glass-card .glass-card--insight}
+Under monotonicity, the **share of compliers in the population is identified** and equals the first stage:
+
+$$
+P(\text{complier}) = E[D \mid Z = 1] - E[D \mid Z = 0].
+$$
+
+**Read this as**: "The fraction of compliers equals the enrollment rate among the letter group minus the enrollment rate among the leaflet group." With no defiers, the only people who switch from "not enrolled" to "enrolled" when the letter arrives *are* the compliers, so the jump in the enrollment rate counts exactly them. A weak first stage is therefore not just a statistical nuisance --- it literally means there are *very few compliers*, so IV is reporting an effect for a tiny sliver of the population.
+:::
+
+
+## The Wald Estimator: A Ratio of Two ITT Effects
+
+With a single binary instrument and a single binary treatment, the IV estimate has a beautifully simple closed form: the **Wald estimator**. It is the ratio of two **intention-to-treat (ITT)** quantities.
+
+::: {.glass-card .glass-card--definition}
+The **Wald estimator** is
+
+$$
+\widehat{\beta}_{\text{IV}}
+= \frac{\overbrace{E[Y \mid Z = 1] - E[Y \mid Z = 0]}^{\text{reduced form (ITT on outcome)}}}
+       {\underbrace{E[D \mid Z = 1] - E[D \mid Z = 0]}_{\text{first stage (ITT on treatment)}}}.
+$$
+
+**Read this as**: "Take the effect of the *letter* on HbA1c, and divide it by the effect of the *letter* on enrollment." The numerator is the **reduced form**: the average outcome difference between the letter group and the leaflet group --- the effect of being *offered* the program. The denominator is the **first stage**: how much the letter actually raised enrollment.
+:::
+
+The intuition behind the division is the engine of the whole method. The letter raised HbA1c improvement by some amount (the reduced form), but it did so *only* by pushing compliers into the program. If the letter moved, say, 30% of patients into enrollment, then the reduced-form benefit was generated by that 30%. Dividing the reduced form by the first stage **rescales** the diluted, population-wide ITT effect back up to a per-complier effect:
+
+$$
+\underbrace{\text{effect of the offer}}_{\text{reduced form}}
+= \underbrace{P(\text{complier})}_{\text{first stage}} \times \underbrace{\text{effect per complier}}_{\text{LATE}}
+\quad\Longrightarrow\quad
+\text{LATE} = \frac{\text{reduced form}}{\text{first stage}}.
+$$
+
+This rearrangement *is* the Wald estimator, and it makes the punchline unavoidable: **the thing in the numerator was produced entirely by compliers, so the quotient is a complier-specific effect.**
+
+::: {.glass-card .glass-card--insight}
+**The IV estimand is the LATE.** Under (1) random assignment of $Z$, (2) the exclusion restriction, (3) a nonzero first stage, and (4) monotonicity,
+
+$$
+\beta_{\text{IV}} = E\big[\,Y(1) - Y(0) \;\big|\; \text{complier}\,\big] = \text{LATE}.
+$$
+
+**Read this as**: "The instrumental-variables estimand equals the average treatment effect, restricted to compliers." (An *estimand* is the population quantity you are trying to learn --- the target, defined before any data --- as distinct from the *estimate* your sample produces.) It is *local* in two senses: local to the compliers (not the whole population) and local to *this* instrument (a different nudge defines a different complier group, and so a different LATE).
+:::
+
+We derive this identity carefully in the Math Details below. First, let us *see* it.
+
+
+## See It: The Population of Four Types
+
+The interactive below builds a population of 600 diabetes patients and sorts them into the four types. You control the type mix and the per-type treatment effects. The visualization shows you three things at once: the composition of the population, the IV/Wald estimate computed from the simulated experiment, and --- crucially --- the **true ATE** of the whole population, which IV is *not* trying to estimate. Watch the two numbers diverge.
+
+::: {.interactive-container}
+
+#### Compliers, the Wald ratio, and why LATE ≠ ATE
+
+::: {.callout-note appearance="minimal"}
+**Start here.** Drag the sliders to set the type mix and the per-type effects, then watch the IV / Wald dot track the **True LATE** (compliers), not the **True ATE** (everyone). New here? Follow the 6-step guide below the chart.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof ivlate_complierShare = Inputs.range([0.05, 0.9], {
+  value: 0.4,
+  step: 0.01,
+  label: "Complier share"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivlate_atShare = Inputs.range([0, 0.5], {
+  value: 0.2,
+  step: 0.01,
+  label: "Always-taker share"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivlate_tauComplier = Inputs.range([-2.0, 0.5], {
+  value: -1.2,
+  step: 0.05,
+  label: "Effect on compliers (τ, HbA1c pts; − = improvement)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivlate_tauOther = Inputs.range([-2.0, 0.5], {
+  value: -0.3,
+  step: 0.05,
+  label: "Effect on always/never-takers (τ, HbA1c pts; − = improvement)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivlate_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family: 'Inter', sans-serif; font-size: 0.8rem;
+    color: #79766e; margin: 0.1rem 0 0.4rem;">
+  Press <strong>Draw new sample</strong> to redraw the randomized letter — the
+  estimate jumps most when the complier share is small (active mainly at a weak first stage).
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Build the population deterministically from the sliders. ──
+// Shares: compliers (c) and always-takers (a) are set directly; never-takers
+// fill the rest. Monotonicity holds by construction: we never create defiers.
+// Each unit gets:
+//   * a type,
+//   * a baseline Y(0) (HbA1c ~ 8.0, with type-correlated severity so the
+//     pedagogy that "compliers can be a special subgroup" is visible),
+//   * an individual effect τ centred on the per-type mean the reader controls,
+//   * a randomly assigned instrument Z (the letter), 50/50,
+//   * the realized treatment D = D(Z) implied by its type,
+//   * the realized outcome Y under the switching equation.
+ivlate_pop = {
+  ivlate_draw;                                   // re-roll on button press
+  const N = 600;
+  const cShare = ivlate_complierShare;
+  const aShare = Math.min(ivlate_atShare, 1 - cShare);   // guard: shares ≤ 1
+  const nShare = Math.max(0, 1 - cShare - aShare);
+
+  const nC = Math.round(N * cShare);
+  const nA = Math.round(N * aShare);
+  const nN = N - nC - nA;                          // never-takers fill remainder
+
+  const rnorm = d3.randomNormal.source(d3.randomLcg(0.7))(0, 0.45);
+  const center = 8.0;
+
+  const make = (type, count, sevShift, tauMean) => {
+    const arr = [];
+    for (let k = 0; k < count; k++) {
+      // Compliers are drawn slightly sicker at baseline so the reader can see
+      // LATE describing a non-representative subgroup. This is cosmetic for the
+      // outcome means (effects are what drive LATE) but realistic.
+      const y0 = center + sevShift + rnorm();
+      const tau = tauMean + 0.25 * rnorm();         // mild within-type spread
+      const z = Math.random() < 0.5 ? 1 : 0;        // randomized letter
+      // Realized treatment by type under monotonicity:
+      //   complier:  D = z          always-taker: D = 1   never-taker: D = 0
+      const d = type === "Complier" ? z
+              : type === "Always-taker" ? 1
+              : 0;
+      const y = y0 + d * tau;                        // switching equation
+      arr.push({ type, y0, tau, z, d, y });
+    }
+    return arr;
+  };
+
+  const compliers   = make("Complier",     nC, +0.30, ivlate_tauComplier);
+  const alwaysTakers = make("Always-taker", nA, -0.10, ivlate_tauOther);
+  const neverTakers  = make("Never-taker",  nN, +0.05, ivlate_tauOther);
+
+  return [...compliers, ...alwaysTakers, ...neverTakers];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Estimands and estimates computed from the simulated population. ──
+ivlate_stats = {
+  const pop = ivlate_pop;
+  const z1 = pop.filter(u => u.z === 1);
+  const z0 = pop.filter(u => u.z === 0);
+
+  // Reduced form (ITT on outcome) and first stage (ITT on treatment).
+  const reducedForm = d3.mean(z1, u => u.y) - d3.mean(z0, u => u.y);
+  const firstStage  = d3.mean(z1, u => u.d) - d3.mean(z0, u => u.d);
+
+  // Wald / IV estimate.
+  const wald = reducedForm / firstStage;
+
+  // Naive OLS: enrolled vs not enrolled (the biased comparison IV avoids).
+  const enrolled = pop.filter(u => u.d === 1);
+  const notEnrolled = pop.filter(u => u.d === 0);
+  const naive = d3.mean(enrolled, u => u.y) - d3.mean(notEnrolled, u => u.y);
+
+  // TRUTHS (computable only because this is a simulation):
+  const ATE  = d3.mean(pop, u => u.tau);                                  // everyone
+  const trueLATE = d3.mean(pop.filter(u => u.type === "Complier"), u => u.tau); // compliers only
+
+  // Realized type shares in this draw.
+  const share = t => pop.filter(u => u.type === t).length / pop.length;
+
+  return {
+    reducedForm, firstStage, wald, naive, ATE, trueLATE,
+    shareC: share("Complier"),
+    shareA: share("Always-taker"),
+    shareN: share("Never-taker")
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Composition bar: the four types stacked along [0, 1]. ──
+{
+  const s = ivlate_stats;
+  const segs = [
+    { label: "Compliers",     short: "Compliers", value: s.shareC, fill: "#990000" },
+    { label: "Always-takers", short: "Always",    value: s.shareA, fill: "#3d5a6c" },
+    { label: "Never-takers",  short: "Never",     value: s.shareN, fill: "#79766e" }
+  ];
+  let cursor = 0;
+  const stacked = segs.map(d => {
+    const x1 = cursor; const x2 = cursor + d.value; cursor = x2;
+    return { ...d, x1, x2 };
+  });
+
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 134,
+    marginLeft: 12, marginRight: 12, marginTop: 26, marginBottom: 30,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { domain: [0, 1], label: "Share of population →",
+         tickFormat: d3.format(".0%"), grid: false },
+    y: { axis: null, domain: ["bar"] },
+    marks: [
+      Plot.barX(stacked, {
+        x1: "x1", x2: "x2", y: () => "bar", fill: "fill", fillOpacity: 0.92,
+        insetTop: 10, insetBottom: 10,
+        title: d => `${d.label}: ${(d.value * 100).toFixed(0)}%`
+      }),
+      // Wide segments: type name + percent. Narrow (>6%, <12%): percent only.
+      Plot.text(stacked.filter(d => d.value >= 0.12), {
+        x: d => (d.x1 + d.x2) / 2, y: () => "bar",
+        text: d => `${d.short}\n${(d.value * 100).toFixed(0)}%`,
+        fill: "white", fontWeight: "bold", fontSize: 11, lineHeight: 1.15
+      }),
+      Plot.text(stacked.filter(d => d.value >= 0.06 && d.value < 0.12), {
+        x: d => (d.x1 + d.x2) / 2, y: () => "bar",
+        text: d => `${(d.value * 100).toFixed(0)}%`,
+        fill: "white", fontWeight: "bold", fontSize: 11
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The headline comparison: IV (Wald) vs the true LATE vs the true ATE. ──
+// A horizontal "number line" of effects so the reader sees IV land on the
+// complier effect, NOT on the population ATE.
+{
+  const s = ivlate_stats;
+  // A near-zero first stage makes the Wald ratio explode (→ ±∞). Use the stable
+  // estimands to set the axis range and cap the spread so the plot never gets a
+  // non-finite or runaway x-domain. The honest "unstable" value still shows in
+  // the numeric panel; here we only need the dot to stay on-frame.
+  const finite = v => Number.isFinite(v) ? v : 0;
+  const stableMax = Math.max(0.4,
+    Math.abs(finite(s.ATE)), Math.abs(finite(s.trueLATE)), Math.abs(finite(s.naive)));
+  const waldMag = Math.min(Math.abs(finite(s.wald)), stableMax * 1.4);  // cap runaway Wald
+  const span = Math.max(stableMax, waldMag) * 1.3;                       // headroom for labels
+  // Clamp each plotted x into the frame so a runaway dot pins to the edge
+  // rather than flying off (the true number is reported in the numeric panel).
+  const clamp = v => Math.max(-span, Math.min(span, finite(v)));
+
+  const markers = [
+    { label: "True ATE — everyone",       x: clamp(s.ATE),      raw: s.ATE,      fill: "#9c7a33", y: "ATE" },
+    { label: "True LATE — compliers",     x: clamp(s.trueLATE), raw: s.trueLATE, fill: "#990000", y: "LATE" },
+    { label: "IV / Wald estimate",        x: clamp(s.wald),     raw: s.wald,     fill: "#1c1c1a", y: "IV" },
+    { label: "Naive — enrolled − not",    x: clamp(s.naive),    raw: s.naive,    fill: "#3d5a6c", y: "Naive" }
+  ];
+  const labelOf = { ATE: "True ATE", LATE: "True LATE", IV: "IV / Wald", Naive: "Naive" };
+  const fmtNum = v => Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}` : "n/a";
+
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 220,
+    marginLeft: 132, marginRight: 40, marginTop: 16, marginBottom: 42,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { domain: [-span, span], grid: true,
+         label: "Effect on HbA1c (lower = better →)" },
+    y: { domain: ["ATE", "LATE", "IV", "Naive"], label: null,
+         tickFormat: d => labelOf[d] },
+    marks: [
+      Plot.ruleX([0], { stroke: "#1c1c1a", strokeWidth: 1 }),
+      Plot.ruleY(markers, { y: "y", x1: () => 0, x2: "x", stroke: "fill",
+                            strokeWidth: 2, strokeOpacity: 0.4 }),
+      Plot.dot(markers, { x: "x", y: "y", fill: "fill", r: 7 }),
+      Plot.text(markers, {
+        x: "x", y: "y", text: d => fmtNum(d.raw),
+        dy: -12, fill: "fill", fontWeight: "bold", fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke",
+        clip: false
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Additive color legend + live LATE−ATE gap readout for the number line. ──
+// Purely additive: reads the existing ivlate_stats; does not touch the widget.
+{
+  const s = ivlate_stats;
+  const gap = s.trueLATE - s.ATE;
+  const gapStr = `${gap >= 0 ? "+" : ""}${gap.toFixed(2)}`;
+  const chip = (color, txt) => html`<span style="display:inline-flex; align-items:center;
+      gap:0.3rem; white-space:nowrap;">
+    <span style="width:0.7rem; height:0.7rem; border-radius:50%; background:${color};
+        display:inline-block;"></span>${txt}</span>`;
+  return html`<div style="font-family:'Inter',sans-serif; font-size:0.72rem;
+      color:#79766e; display:flex; flex-wrap:wrap; gap:0.85rem; justify-content:center;
+      margin:-0.3rem 0 0.5rem;">
+    ${chip("#990000", "True LATE (compliers)")}
+    ${chip("#9c7a33", "True ATE (everyone)")}
+    ${chip("#1c1c1a", "IV / Wald estimate")}
+    ${chip("#3d5a6c", "Naive (enrolled − not)")}
+    <span style="white-space:nowrap; color:#1c1c1a; font-weight:600;">
+      LATE − ATE gap = <span style="color:${Math.abs(gap) < 0.08 ? "#2e6f40" : "#990000"};">${gapStr}</span></span>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Numeric panel: reduced form, first stage, Wald = ratio. ──
+{
+  const s = ivlate_stats;
+  const fmt = v => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  // Guard against a near-zero first stage (tiny complier share → unstable Wald).
+  const fsTiny = Math.abs(s.firstStage) < 0.02;
+  const waldStr = fsTiny ? "unstable" : fmt(s.wald);
+  const item = (name, value, color, bg) => html`<div style="
+      min-height: 3.6rem; text-align: center;
+      padding: 0.5rem 0.25rem; border-radius: 0.5rem; background: ${bg};
+      display: flex; flex-direction: column; justify-content: center;">
+    <div style="font-family: 'Inter', sans-serif; font-size: 0.68rem;
+        font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+        color: #79766e;">${name}</div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.15rem;
+        font-weight: 700; color: ${color};">${value}</div>
+  </div>`;
+
+  // Does IV recover the complier effect? (It should, up to sampling noise.)
+  const ivHitsLate = !fsTiny && Math.abs(s.wald - s.trueLATE) < 0.15;
+
+  // Live equation line: reduced form ÷ first stage = Wald.
+  const eq = html`<div style="font-family: 'JetBrains Mono', monospace;
+      font-size: 0.92rem; text-align: center; margin-top: 0.6rem; color: #1c1c1a;">
+    ${fmt(s.reducedForm)} <span style="color:#79766e;">÷</span> ${fmt(s.firstStage)}
+    <span style="color:#79766e;">=</span>
+    <span style="color:${fsTiny ? "#b3000b" : (ivHitsLate ? "#2e6f40" : "#990000")};
+        font-weight:700;">${waldStr}</span>
+    <span style="color:#79766e;">  (reduced form ÷ first stage = Wald)</span>
+  </div>`;
+
+  const cards = html`<div style="display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+      gap: 0.5rem; margin-top: 0.5rem;">
+    ${item("Reduced form", fmt(s.reducedForm), "#1c1c1a", "rgba(153,0,0,0.05)")}
+    ${item("÷ First stage", fmt(s.firstStage), "#1c1c1a", "rgba(153,0,0,0.05)")}
+    ${item("= Wald / IV", waldStr,
+        fsTiny ? "#b3000b" : (ivHitsLate ? "#2e6f40" : "#1c1c1a"),
+        fsTiny ? "rgba(179,0,11,0.08)" : (ivHitsLate ? "rgba(46,111,64,0.12)" : "rgba(0,0,0,0.03)"))}
+    ${item("True LATE", fmt(s.trueLATE), "#990000", "rgba(153,0,0,0.08)")}
+    ${item("True ATE", fmt(s.ATE), "#9c7a33", "rgba(156,122,51,0.10)")}
+  </div>`;
+
+  return html`<div>${cards}${eq}</div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Plain-language verdict that updates with the sliders. ──
+{
+  const s = ivlate_stats;
+  const gap = s.trueLATE - s.ATE;
+  // When the first stage is near zero the Wald ratio is unstable; show that
+  // honestly rather than printing "Infinity"/"NaN" in the prose.
+  const waldTxt = Math.abs(s.firstStage) < 0.02 || !Number.isFinite(s.wald)
+    ? "unstable (near-zero first stage)"
+    : s.wald.toFixed(2);
+  let msg, color;
+  if (Math.abs(gap) < 0.08) {
+    msg = `Compliers respond about like everyone else, so LATE (${s.trueLATE.toFixed(2)}) ≈ ATE (${s.ATE.toFixed(2)}). Here IV happens to recover something close to the population effect — but only because the effects are homogeneous, not because IV targets the ATE.`;
+    color = "#2e6f40";
+  } else {
+    msg = `Compliers are a special subgroup: their effect (${s.trueLATE.toFixed(2)}) differs from the population ATE (${s.ATE.toFixed(2)}) by ${gap >= 0 ? "+" : ""}${gap.toFixed(2)} HbA1c pts. IV (${waldTxt}) tracks the complier effect, NOT the ATE. Extrapolating this number to always-takers or never-takers would be an external-validity error.`;
+    color = "#990000";
+  }
+  return html`<div style="margin-top: 0.75rem; padding: 0.6rem 0.9rem;
+      border-radius: 0.5rem; border-left: 3px solid ${color};
+      background: #f6f5f1; font-family: 'Inter', sans-serif;
+      font-size: 0.86rem; line-height: 1.45; color: #1c1c1a;">${msg}</div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Additive: baseline HbA1c (y0) by type — makes the naive-bias source
+// VISIBLE. The naive enrolled-vs-not gap is driven partly by these baseline
+// differences (always-takers self-select). Reads existing ivlate_pop; the
+// widget's DGP is untouched. Mean diamonds make the level shift legible. ──
+{
+  const pop = ivlate_pop;
+  const order = ["Complier", "Always-taker", "Never-taker"];
+  const colorOf = { "Complier": "#990000", "Always-taker": "#3d5a6c", "Never-taker": "#79766e" };
+  const means = order.map(t => {
+    const g = pop.filter(u => u.type === t);
+    return { type: t, m: g.length ? d3.mean(g, u => u.y0) : 0 };
+  });
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 200,
+    marginLeft: 110, marginRight: 24, marginTop: 28, marginBottom: 45,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { label: "Baseline HbA1c before treatment (y₀) →", grid: true },
+    y: { domain: order, label: null },
+    marks: [
+      Plot.dot(pop, { x: "y0", y: "type", fill: d => colorOf[d.type],
+                      fillOpacity: 0.18, r: 2.6 }),
+      Plot.dot(means, { x: "m", y: "type", fill: d => colorOf[d.type],
+                        symbol: "diamond", r: 8, stroke: "white", strokeWidth: 1.5 }),
+      Plot.text(means, { x: "m", y: "type", text: d => d.m.toFixed(2),
+        dy: -15, fill: d => colorOf[d.type], fontWeight: "bold", fontSize: 11,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; line-height:1.5;
+    color:#44443f; background:#f6f5f1; border-left:3px solid #9c7a33;
+    border-radius:0 0.35rem 0.35rem 0; padding:0.55rem 0.85rem; margin-top:0.4rem;">
+  <strong style="color:#9c7a33;">Two different ways the types differ.</strong>
+  The diamonds show the types start at <em>different baseline HbA1c levels</em> (a cosmetic
+  level shift the simulation builds in) — this is what makes the <strong>naive</strong>
+  enrolled-vs-not comparison drift, since it mixes self-selected groups. But because
+  the letter <em>Z</em> is randomized, these baseline differences do <strong>not</strong>
+  bias the Wald estimate. The reason LATE ≠ ATE is the separate fact that compliers can
+  have a different <em>treatment effect</em> (the τ sliders), not that they start sicker.
+</div>`
+```
+
+:::
+
+### How to Read the Type-Mix Lab
+
+Work through these steps in order; each isolates one idea about what IV identifies.
+
+**Step 1: Read the composition bar.** The top bar splits the 600 patients into **compliers** (red), **always-takers** (slate), and **never-takers** (grey). There are no defiers --- monotonicity is wired into the simulation. Start with the default mix (40% compliers). Notice the first-stage readout below: it equals the complier share, exactly as the theory says ($P(\text{complier}) = E[D|Z{=}1] - E[D|Z{=}0]$).
+
+**Step 2: Confirm IV lands on the complier effect.** Look at the number-line panel. The dark **IV / Wald** dot sits essentially on top of the red **True LATE** dot, and the "= Wald / IV" tile turns *green* to flag the match. IV recovers the average effect *among compliers*. Meanwhile the ochre **True ATE** dot --- the effect averaged over *everyone* --- sits somewhere else entirely. IV is not aiming at it and does not hit it.
+
+**Step 3: Make compliers special.** Drag **Effect on compliers** to a strong $-1.6$ while leaving **Effect on always/never-takers** near $-0.3$. Now compliers benefit far more than the rest of the population. Watch the red LATE dot and the dark IV dot move *together* to the left, while the ochre ATE dot barely budges (compliers are only part of the population). This is the central lesson: **IV chases the compliers, not the average.**
+
+**Step 4: Shrink the complier pool.** Drag **Complier share** down toward 0.05. Two things happen. The first-stage readout collapses toward zero --- there are barely any patients for the letter to move --- and the Wald estimate gets visibly *noisier* from draw to draw (press **Draw new sample** a few times to feel the jitter). A weak first stage and a tiny complier group are the *same* phenomenon. This is why the [weak-instruments](weak-instruments.qmd) page matters: few compliers means a fragile, high-variance LATE.
+
+**Step 5: See the naive comparison drift.** The slate **Naive** dot is the simple difference between enrolled and non-enrolled patients --- ignoring the instrument. Because always-takers (who enroll voluntarily) are a healthier, self-selected group and never-takers are a different one again, this comparison mixes the treatment effect with a baseline severity gap. It does *not* recover the LATE that IV targets, and there is no assumption under which it cleanly equals the ATE, the ATT, or the complier effect --- exactly how far it drifts depends on how the type-specific baselines differ. IV's entire job is to avoid this selection trap by leaning only on the randomized letter.
+
+**Step 6: Find the homogeneous case.** Set both effect sliders to the *same* value. Now LATE, ATE, and IV all coincide (the verdict turns green). This is the special case where heterogeneity vanishes: when everyone has the same effect, *every* sub-average equals the ATE, and the LATE-vs-ATE distinction dissolves. The gap between LATE and ATE is, precisely, a gap created by **heterogeneity**.
+
+
+## Why LATE Is Not the ATE (or the ATT)
+
+The interactive made it visible; here is the principle. LATE answers a narrow question --- "what is the effect for the patients this particular nudge moves?" --- and three forces can drive a wedge between that and the broader estimands.
+
+**Compliers are a self-selected subpopulation.** They are, by definition, the patients who sit on the margin of enrolling: undecided enough that a letter tips them, but not so motivated that they would have enrolled anyway. There is no reason this marginal group resembles the population average. Marginal patients might be *more* responsive (they were curious and engaged) or *less* responsive (they were lukewarm and half-hearted) than the always-takers who sought the program out on their own.
+
+::: {.glass-card .glass-card--warning}
+**The external-validity caveat.** LATE is silent about three of the four types:
+
+- It says **nothing** about **always-takers** --- the eager patients who enroll without any nudge. These are often the people a program manager cares about most, yet IV cannot speak for them.
+- It says **nothing** about **never-takers** --- the patients no letter will reach. If the policy question is "should we *mandate* the program for everyone," the never-takers are exactly the group you are forcing in, and LATE has no information about them.
+- It is tied to **this instrument**. A gentler nudge (a text message) and a stronger nudge (a nurse home visit) define *different* complier groups and therefore estimate *different* LATEs. There is no single "the LATE" --- only "the LATE for compliers with respect to instrument $Z$."
+
+Reporting a LATE as if it were the ATE --- "the diabetes program lowers HbA1c by 1.2 points" with no qualifier --- is one of the most common errors in applied IV work.
+:::
+
+**When does LATE coincide with the ATE or ATT?** Two clean cases:
+
+1. **Constant treatment effects.** If $Y_i(1) - Y_i(0) = \tau$ for every patient, then the effect is the same in every stratum, so LATE $=$ ATT $=$ ATU $=$ ATE $= \tau$. Heterogeneity is the *only* reason these differ; remove it and they collapse (you saw this in Step 6).
+2. **Everyone is a complier.** If the instrument moves the entire population --- no always-takers and no never-takers --- then the complier group *is* the population, and LATE $=$ ATE. This happens when the "instrument" is, in effect, a perfectly enforced randomized assignment (full compliance), in which case IV reduces to a simple experiment.
+
+In every other case, be precise: IV gives you the complier effect, and "compliers" is a population you cannot point to in your data.
+
+
+<details>
+<summary>Math Details: Deriving LATE = E[Y(1) − Y(0) | complier] from monotonicity</summary>
+<div class="details-content">
+
+We prove that the Wald estimand equals the average treatment effect among compliers, under four assumptions: (A1) **independence** --- $Z$ is independent of the potential outcomes and potential treatments, $\big(Y(0), Y(1), D(0), D(1)\big) \perp Z$ (the symbol $\perp$ reads "is statistically independent of": the letter carries no information about a patient's latent type or potential outcomes), guaranteed here by randomizing the letter; (A2) **exclusion** --- $Z$ affects $Y$ only through $D$, so we may write potential outcomes as $Y(d)$ rather than $Y(z, d)$; (A3) **relevance** --- the first stage is nonzero; (A4) **monotonicity** --- $D_i(1) \ge D_i(0)$ for all $i$ (no defiers).
+
+### Step 1 — The first stage is the complier share
+
+Under monotonicity, $D_i(1) - D_i(0) \in \{0, 1\}$: it is $1$ for compliers and $0$ for everyone else (always-takers, never-takers; defiers are excluded). By independence, $E[D \mid Z = z] = E[D(z)]$, so
+
+$$
+\begin{aligned}
+E[D \mid Z{=}1] - E[D \mid Z{=}0]
+&= E[D(1)] - E[D(0)] \\
+&= E[D(1) - D(0)] \\
+&= P\big(D(1) - D(0) = 1\big) = P(\text{complier}).
+\end{aligned}
+$$
+
+**Read this as**: the first stage counts exactly the compliers, because they are the only people for whom $D(1) - D(0)$ is nonzero, and that difference is $+1$ (never $-1$, thanks to monotonicity).
+
+### Step 2 — The reduced form is the complier share times the complier effect
+
+By independence and exclusion, $E[Y \mid Z = z] = E[Y(D(z))]$. Take the difference:
+
+$$
+E[Y \mid Z{=}1] - E[Y \mid Z{=}0] = E\big[\,Y(D(1)) - Y(D(0))\,\big].
+$$
+
+Now decompose by type, using that $Y(D(1)) - Y(D(0))$ vanishes whenever $D(1) = D(0)$:
+
+- **Always-takers** ($D(1) = D(0) = 1$): the term is $Y(1) - Y(1) = 0$.
+- **Never-takers** ($D(1) = D(0) = 0$): the term is $Y(0) - Y(0) = 0$.
+- **Compliers** ($D(1) = 1,\ D(0) = 0$): the term is $Y(1) - Y(0)$.
+- **Defiers**: excluded by monotonicity.
+
+Only compliers contribute. By the law of total expectation,
+
+$$
+E\big[\,Y(D(1)) - Y(D(0))\,\big]
+= P(\text{complier}) \cdot E\big[\,Y(1) - Y(0) \mid \text{complier}\,\big].
+$$
+
+**Read this as**: the letter changes the outcome for nobody except compliers, so the population-wide reduced form is just the complier share multiplied by the average effect *within* that group.
+
+### Step 3 — Take the ratio
+
+Divide Step 2 by Step 1. The $P(\text{complier})$ factors cancel (nonzero by relevance, A3):
+
+$$
+\beta_{\text{IV}}
+= \frac{E[Y \mid Z{=}1] - E[Y \mid Z{=}0]}{E[D \mid Z{=}1] - E[D \mid Z{=}0]}
+= \frac{P(\text{complier}) \cdot E[Y(1) - Y(0) \mid \text{complier}]}{P(\text{complier})}
+= E\big[\,Y(1) - Y(0) \mid \text{complier}\,\big].
+$$
+
+$$
+\boxed{\;\beta_{\text{IV}} = \text{LATE} = E\big[Y(1) - Y(0) \mid \text{complier}\big].\;}
+$$
+
+### What breaks without monotonicity
+
+Drop A4 and re-run Step 2. Defiers ($D(1) = 0,\ D(0) = 1$) now contribute a term $Y(0) - Y(1) = -\big(Y(1) - Y(0)\big)$ --- their effect enters with a *flipped sign*. The reduced form becomes
+
+$$
+P(\text{complier})\,E[Y(1){-}Y(0)\mid\text{complier}] \;-\; P(\text{defier})\,E[Y(1){-}Y(0)\mid\text{defier}],
+$$
+
+and the denominator becomes $P(\text{complier}) - P(\text{defier})$. The ratio is now a *difference* of two effects over a *difference* of two shares --- no longer a clean weighted average of treatment effects, and capable of lying outside the range of every unit's true effect. Monotonicity is exactly the assumption that deletes the defier terms and restores the clean LATE.
+
+</div>
+</details>
+
+
+## Compute the Wald Estimate
+
+Both implementations simulate the encouragement design --- a randomized letter, four latent types, monotonicity by construction --- then recover the LATE three equivalent ways: the Wald ratio by hand, 2SLS, and a check against the *known* complier effect baked into the simulation.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+library(AER)        # ivreg()
+library(fixest)     # feols() with IV syntax
+
+set.seed(1994)      # Imbens & Angrist
+
+# ── Simulate an encouragement design with 4 latent types ──────────────
+N <- 6000
+# Type shares: 40% compliers, 20% always-takers, 40% never-takers.
+type <- sample(c("complier", "always", "never"),
+               size = N, replace = TRUE, prob = c(0.40, 0.20, 0.40))
+
+# Per-type treatment effects on HbA1c (negative = improvement).
+# Compliers benefit a lot; always/never-takers much less. Hence LATE != ATE.
+tau <- case_when(
+  type == "complier" ~ rnorm(N, -1.2, 0.4),
+  TRUE               ~ rnorm(N, -0.3, 0.4)
+)
+
+y0 <- rnorm(N, 8.0, 0.5)                 # baseline HbA1c
+z  <- rbinom(N, 1, 0.5)                   # randomized letter (the instrument)
+
+# Realized enrollment under MONOTONICITY (no defiers):
+d <- case_when(
+  type == "complier" ~ z,                 # enroll only if nudged
+  type == "always"   ~ 1L,                # always enroll
+  type == "never"    ~ 0L                  # never enroll
+)
+
+y <- y0 + d * tau                          # switching equation
+dat <- tibble(y, d, z, type, tau)
+
+# ── 1. Wald estimator by hand: reduced form / first stage ─────────────
+rf <- mean(dat$y[dat$z == 1]) - mean(dat$y[dat$z == 0])   # reduced form
+fs <- mean(dat$d[dat$z == 1]) - mean(dat$d[dat$z == 0])   # first stage
+wald <- rf / fs
+
+# ── 2. 2SLS (numerically identical to Wald for one binary instrument) ─
+iv  <- ivreg(y ~ d | z, data = dat)        # AER
+iv2 <- feols(y ~ 1 | d ~ z, data = dat)    # fixest
+
+# ── 3. Ground truth (only knowable in a simulation) ───────────────────
+true_LATE <- mean(dat$tau[dat$type == "complier"])   # compliers only
+true_ATE  <- mean(dat$tau)                            # everyone
+
+cat(sprintf("First stage (= complier share):  %.3f\n", fs))
+cat(sprintf("Reduced form:                    %.3f\n", rf))
+cat(sprintf("Wald = RF / FS:                  %.3f\n", wald))
+cat(sprintf("2SLS coefficient on d (ivreg):   %.3f\n", coef(iv)["d"]))
+cat(sprintf("TRUE LATE (compliers):           %.3f\n", true_LATE))
+cat(sprintf("TRUE ATE  (everyone):            %.3f\n", true_ATE))
+# Wald and 2SLS recover the LATE (~ -1.2), NOT the ATE (~ -0.66).
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from linearmodels.iv import IV2SLS
+
+rng = np.random.default_rng(1994)   # Imbens & Angrist
+
+# ── Simulate an encouragement design with 4 latent types ──────────────
+N = 6000
+type_ = rng.choice(["complier", "always", "never"],
+                   size=N, p=[0.40, 0.20, 0.40])
+
+# Per-type treatment effects (negative = HbA1c improvement).
+tau = np.where(type_ == "complier",
+               rng.normal(-1.2, 0.4, N),
+               rng.normal(-0.3, 0.4, N))
+
+y0 = rng.normal(8.0, 0.5, N)            # baseline HbA1c
+z  = rng.binomial(1, 0.5, N)            # randomized letter (instrument)
+
+# Realized enrollment under MONOTONICITY (no defiers):
+d = np.select(
+    [type_ == "complier", type_ == "always", type_ == "never"],
+    [z,                    np.ones(N),        np.zeros(N)]
+).astype(int)
+
+y = y0 + d * tau                        # switching equation
+dat = pd.DataFrame({"y": y, "d": d, "z": z, "type": type_, "tau": tau})
+
+# ── 1. Wald estimator by hand: reduced form / first stage ─────────────
+rf = dat.loc[dat.z == 1, "y"].mean() - dat.loc[dat.z == 0, "y"].mean()
+fs = dat.loc[dat.z == 1, "d"].mean() - dat.loc[dat.z == 0, "d"].mean()
+wald = rf / fs
+
+# ── 2. 2SLS (identical to Wald for one binary instrument) ─────────────
+dat["const"] = 1.0
+iv = IV2SLS(dependent=dat["y"], exog=dat["const"],
+            endog=dat["d"], instruments=dat["z"]).fit()
+
+# ── 3. Ground truth (only knowable in a simulation) ───────────────────
+true_LATE = dat.loc[dat.type == "complier", "tau"].mean()   # compliers
+true_ATE  = dat["tau"].mean()                                # everyone
+
+print(f"First stage (= complier share):  {fs:.3f}")
+print(f"Reduced form:                    {rf:.3f}")
+print(f"Wald = RF / FS:                  {wald:.3f}")
+print(f"2SLS coefficient on d:           {iv.params['d']:.3f}")
+print(f"TRUE LATE (compliers):           {true_LATE:.3f}")
+print(f"TRUE ATE  (everyone):            {true_ATE:.3f}")
+# Wald and 2SLS recover the LATE (~ -1.2), NOT the ATE (~ -0.66).
+```
+
+:::
+
+Both languages print the same story: the Wald ratio and the 2SLS coefficient land near $-1.2$ --- the complier effect --- while the population ATE is roughly $-0.66$ (a $0.40$/$0.60$ mix of the $-1.2$ complier effect and the $-0.3$ effect on the other 60% of patients). IV recovered the LATE, exactly as the derivation promised, and was never aiming at the ATE.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region runs an encouragement design for a *fall-prevention program* at its vårdcentraler. Eligible elderly patients are randomized to receive a personal invitation (the instrument $Z = 1$) or the standard leaflet ($Z = 0$). The outcome $Y$ is fall-related emergency visits per 100 patients over one year. The data give:
+
+- Enrollment rate: $E[D \mid Z{=}1] = 0.55$, $E[D \mid Z{=}0] = 0.20$.
+- Outcome: $E[Y \mid Z{=}1] = 12.6$, $E[Y \mid Z{=}0] = 15.4$.
+
+(a) Compute the first stage, the reduced form, and the Wald/IV estimate. (b) Assuming monotonicity, what fraction of patients are compliers? (c) Interpret the IV number --- whose effect is it, and on what?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** First stage $= 0.55 - 0.20 = 0.35$. Reduced form $= 12.6 - 15.4 = -2.8$ visits. Wald $= -2.8 / 0.35 = -8.0$ fall-related visits per 100 patients.
+
+**(b)** Under monotonicity the first stage *is* the complier share: $P(\text{complier}) = 0.35$, i.e. 35% of patients. The other 65% are always-takers (the 20% who enroll without any invitation) plus never-takers (the remaining 45%).
+
+**(c)** The IV estimate is the **LATE**: among the *compliers* --- the patients who enroll only when invited --- the program reduces fall-related emergency visits by 8 per 100 patients per year. It says nothing about the always-takers (who would have enrolled anyway) or the never-takers (whom no invitation reaches).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the same numbers as Exercise 1, a colleague computes the *naive* comparison: among the invited group, enrolled patients ($D=1$) had 11.0 visits and non-enrolled ($D=0$) had 16.5 visits, so "the program cuts visits by 5.5." Explain why $-5.5$ is **not** a valid causal estimate of anything, and why the IV estimate of $-8.0$ is preferable.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The naive comparison contrasts patients who *chose* to enroll against those who did not, *within* a single group. But enrollment is self-selected: the enrolled group mixes compliers (who took the invitation) with always-takers (who enroll regardless), while the non-enrolled group is never-takers. These subpopulations differ systematically --- always-takers are typically the most health-engaged patients, never-takers the least --- so the $-5.5$ difference confounds the program's effect with the baseline frailty gap between self-selecting groups. It estimates neither the LATE, the ATT, nor the ATE.
+
+The IV estimate avoids this because it leans only on the **randomized** invitation $Z$. Comparing the invited group to the leaflet group (both randomly formed) is unconfounded, and dividing the resulting reduced form by the first stage rescales it to the per-complier effect. IV trades the naive estimate's bias for a precisely defined --- if local --- causal quantity.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Suppose monotonicity *fails*: 10% of patients are defiers (they enroll only when *not* invited), and the true effect among defiers is the same as among compliers, $-1.0$ HbA1c points. The population is 30% compliers, 10% defiers, 30% always-takers, 30% never-takers, and the complier effect is also $-1.0$. (a) Write the reduced form and the first stage in terms of the type shares and effects. (b) Show that the Wald ratio still happens to equal $-1.0$ here, and explain why this is a coincidence rather than a guarantee. (c) What single change to the defier effect would make the Wald ratio mislead?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With defiers, both the numerator and denominator pick up signed defier terms (see the Math Details). Writing $\tau_c$ and $\tau_d$ for the complier and defier effects:
+
+$$
+\text{Reduced form} = P_c\,\tau_c - P_d\,\tau_d, \qquad
+\text{First stage} = P_c - P_d.
+$$
+
+Plugging in $P_c = 0.30$, $P_d = 0.10$, $\tau_c = \tau_d = -1.0$:
+
+- Reduced form $= 0.30(-1.0) - 0.10(-1.0) = -0.30 + 0.10 = -0.20$.
+- First stage $= 0.30 - 0.10 = 0.20$.
+- Wald $= -0.20 / 0.20 = -1.0$.
+
+**(b)** It equals $-1.0$ only because the defier effect *exactly equals* the complier effect ($\tau_c = \tau_d$). When the two effects are identical, the formula $\frac{P_c \tau - P_d \tau}{P_c - P_d} = \frac{(P_c - P_d)\tau}{P_c - P_d} = \tau$ collapses cleanly. This is a knife-edge coincidence, not a property of IV --- nothing in the design forces defiers to respond like compliers.
+
+**(c)** Make the defier effect *positive* (the program harms defiers), say $\tau_d = +2.0$. Then reduced form $= 0.30(-1.0) - 0.10(+2.0) = -0.30 - 0.20 = -0.50$, first stage $= 0.20$, and Wald $= -0.50/0.20 = -2.5$ --- a number more extreme than *any* individual's true effect ($-1.0$ for compliers, $+2.0$ for defiers). The estimate now lies outside the range of every unit's effect, which is exactly the pathology monotonicity rules out.
+
+The figure makes the pathology visceral: the shaded band spans every real per-unit effect, $[-1.0, +2.0]$, yet the broken Wald estimate ($-2.5$) lands *outside* it on the left.
+
+```{ojs}
+//| echo: false
+
+// Static figure for Exercise 3(c): the Wald estimate (-2.5) lands OUTSIDE the
+// [-1.0, +2.0] range of every true per-unit effect when monotonicity fails.
+{
+  const lo = -1.0, hi = 2.0, wald = -2.5;
+  const span = 3.0;  // axis padding beyond the extremes
+  return Plot.plot({
+    width: Math.min(560, width),
+    height: 150,
+    marginLeft: 60, marginRight: 40, marginTop: 30, marginBottom: 45,
+    style: { fontFamily: "Inter, sans-serif" },
+    x: { domain: [-span, span], grid: true,
+         label: "Effect on HbA1c (lower = better →)" },
+    y: { domain: ["effects"], axis: null },
+    marks: [
+      Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1 }),
+      // Band of true per-unit effects.
+      Plot.rectX([{ x1: lo, x2: hi }], {
+        x1: "x1", x2: "x2", y: () => "effects",
+        fill: "#2e6f40", fillOpacity: 0.14, insetTop: 18, insetBottom: 18
+      }),
+      Plot.tickX([lo, hi], { x: d => d, y: () => "effects",
+        stroke: "#2e6f40", strokeWidth: 2 }),
+      Plot.text([{ x: (lo + hi) / 2, t: "range of every true effect" }], {
+        x: "x", y: () => "effects", text: "t", dy: -34,
+        fill: "#2e6f40", fontSize: 11, fontWeight: 700,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ x: lo, t: "complier −1.0" }], {
+        x: "x", y: () => "effects", text: "t", dy: 30, fill: "#2e6f40",
+        fontSize: 10, fontWeight: 600, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      Plot.text([{ x: hi, t: "defier +2.0" }], {
+        x: "x", y: () => "effects", text: "t", dy: 30, fill: "#2e6f40",
+        fontSize: 10, fontWeight: 600, stroke: "white", strokeWidth: 3, paintOrder: "stroke" }),
+      // The broken Wald estimate, outside the band.
+      Plot.dot([{ x: wald }], { x: "x", y: () => "effects", fill: "#b3000b", r: 7 }),
+      Plot.text([{ x: wald, t: "Wald = −2.5 (out of range!)" }], {
+        x: "x", y: () => "effects", text: "t", dy: -16, fill: "#b3000b",
+        fontSize: 11, fontWeight: 700, stroke: "white", strokeWidth: 3, paintOrder: "stroke" })
+    ]
+  });
+}
+```
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the Type-Mix Lab, set both effect sliders to the same value and confirm that LATE, ATE, and the IV estimate coincide. (a) Explain in one paragraph *why* they must coincide in this case. (b) Now suppose a health economist reports a single IV estimate from a text-message nudge and writes: "Enrolling in the diabetes program lowers HbA1c by 0.9 points." State two distinct ways this sentence over-claims, referencing the locality of LATE.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** When every patient has the *same* treatment effect $\tau$, treatment-effect heterogeneity is zero. The complier effect $E[Y(1)-Y(0)\mid\text{complier}]$ is then just $\tau$, but so is the average over *any* subpopulation --- always-takers, never-takers, the whole population. With no heterogeneity, every conditional average of the effect equals $\tau$, so LATE $=$ ATT $=$ ATU $=$ ATE $= \tau$, and IV (which targets the LATE) numerically coincides with all of them. The LATE-vs-ATE distinction is *created* by heterogeneity; remove it and the distinction vanishes.
+
+**(b)** Two over-claims: **(i) Population locality.** The estimate is the effect for *compliers* --- the patients the text message moved --- not for "enrolling" patients in general. It says nothing about always-takers (who enroll without any nudge) or never-takers (whom no nudge reaches), so it cannot justify a claim about everyone who enrolls or a mandate forcing everyone in. **(ii) Instrument locality.** The complier group is defined relative to *this specific* text-message nudge. A stronger instrument (a nurse home visit) or weaker one (a generic email) would move a different set of marginal patients and so estimate a *different* LATE. There is no single "the effect of enrolling" --- only the effect for the compliers with respect to the instrument used, which the sentence should state explicitly.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A binary instrument sorts the population into four latent types via $\big(D(0), D(1)\big)$: **compliers**, **always-takers**, **never-takers**, **defiers**. Only compliers have treatment status the instrument actually moves.
+- **Monotonicity** (no defiers, $D_i(1) \ge D_i(0)$) is what makes the algebra clean: it deletes the sign-flipped defier terms and makes the first stage equal the complier share.
+- The **Wald estimator** is the reduced form divided by the first stage --- the effect of the *offer* rescaled by how many people the offer moved --- and it identifies the **LATE** $= E[Y(1) - Y(0) \mid \text{complier}]$, not the ATE or ATT.
+- LATE differs from the ATE whenever effects are heterogeneous *and* compliers are a special subgroup. It is silent about always-takers, never-takers, and any other instrument's compliers --- the **external-validity caveat**.
+- A weak first stage *is* a small complier pool: IV then speaks for a tiny, high-variance sliver of the population. Always report *whose* effect your IV estimate is.
+:::
+
+
+## What Comes Next
+
+LATE taught us that with heterogeneous effects, an instrument identifies a *local* effect --- the effect for the marginal units it actually moves. That theme of "the effect at the margin" reappears, in a different guise, in the next module. **[Regression Discontinuity Design](../08-rdd/index.qmd)** studies settings where treatment is assigned by a sharp cutoff on a running variable --- a patient just above an HbA1c threshold is referred to a specialist, one just below is not. There, the credibly identified quantity is again *local*: the effect *at the cutoff*, for the patients right at the threshold. We will see RDD as a limiting form of the LATE logic, where "compliers" become "units arbitrarily close to the boundary," and the same external-validity discipline applies --- the estimate is sharp, but local.

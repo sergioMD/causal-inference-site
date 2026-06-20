@@ -1,0 +1,648 @@
+---
+title: "Stationarity and ARIMA"
+subtitle: "The building blocks of time-series modeling"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Define *(weak) stationarity* --- constant mean, constant variance, and an autocovariance that depends only on the lag --- and explain why it is the precondition for valid time-series inference
+- Read the *autocorrelation function* (ACF) and *partial autocorrelation function* (PACF) as diagnostic fingerprints that distinguish AR, MA, and ARMA dynamics
+- Write the AR($p$), MA($q$), and ARMA($p,q$) models, and state the stationarity condition $|\phi| < 1$ for the AR(1)
+- Use *differencing* to remove a trend, turning a non-stationary series into a stationary one and giving the ARIMA($p,d,q$) model, with a note on seasonality
+- Fit an ARIMA model and produce a forecast in both R (`forecast`/`fable`) and Python (`statsmodels` SARIMAX)
+:::
+
+## The Question Behind Every Time Series
+
+Region Uppsala publishes the number of *besök i primärvården* (primary-care visits) at its *vårdcentraler* every month. The *verksamhetschef* (operations manager) staring at the dashboard does not want a single average --- she wants to know **what next month will look like**, and how confident she can be. January is always busy; July empties out as families leave for *semester*. Visits this month are tied to visits last month: a flu wave does not vanish in thirty days. The observations are not a cloud of independent draws --- they are a *chain*, ordered in time, where each value leans on the ones before it.
+
+This ordering and this leaning are the whole subject. A cross-section asks "how do units differ from each other?" A time series asks "**how does one unit evolve through time, and what does its past tell us about its future?**" The dependence between today and yesterday --- *serial dependence* --- is exactly the structure we exploit to forecast, and exactly the structure that breaks the independence assumptions behind every standard error you have met so far.
+
+This page builds the machinery from the ground up. We first pin down the one property that makes a time series learnable --- *stationarity* --- then read its memory off the *autocorrelation function*, then assemble the AR, MA, and ARIMA models that turn that memory into forecasts. The [next page](unit-roots-cointegration.qmd) confronts the case where stationarity *fails* outright: the random walk, unit roots, and the spurious regressions they cause.
+
+## What Makes a Time Series Learnable
+
+A time series is a sequence $\{y_t\}_{t=1}^{T}$ indexed by time. We only ever observe **one realization** of it --- one history of Uppsala's primary-care visits, not a thousand parallel Uppsalas. To learn anything about the underlying process from that single path, the process must hold still long enough for its past to be informative about its future. That "holding still" is stationarity.
+
+::: {.glass-card .glass-card--definition}
+A series $\{y_t\}$ is **(weakly) stationary** if its first two moments do not change over time:
+
+1. **Constant mean**: $E[y_t] = \mu$ for all $t$.
+2. **Constant variance**: $\operatorname{Var}(y_t) = \gamma_0$ for all $t$.
+3. **Lag-only autocovariance**: $\operatorname{Cov}(y_t, y_{t-k}) = \gamma_k$ depends only on the gap $k$, never on the date $t$.
+
+**Read condition 3 as**: "the covariance between the series now and the series $k$ periods ago is the same number $\gamma_k$ whether 'now' is January 2019 or January 2024 --- only the *distance* $k$ matters, not *where* you are in calendar time."
+:::
+
+Weak stationarity (also called *covariance stationarity*) is what we need in practice; it asks only that the mean, variance, and autocovariances be stable, not that the whole distribution be frozen. A series that drifts upward, or whose swings grow wider over the years, violates it. Most raw economic and health series --- visit counts that grow with the population, prices that inflate, sick-leave (*sjukfrånvaro*) that trends with the labor market --- are *not* stationary as recorded, which is precisely why differencing (below) earns its place.
+
+::: {.glass-card .glass-card--insight}
+**Why stationarity is not optional.** With one realization, our only hope of estimating $\mu$ is to average across time: $\hat\mu = \frac1T\sum_t y_t$. That average estimates a single, well-defined $\mu$ *only if* $E[y_t]$ is the same at every $t$. If the mean drifts, the time average chases a moving target and converges to nothing meaningful. Stationarity is what lets a single path stand in for the whole ensemble --- it is the time-series analogue of "i.i.d. sampling" that makes averages, variances, and standard errors interpretable.
+:::
+
+## Memory: The Autocorrelation Function
+
+Serial dependence is measured by how strongly $y_t$ correlates with its own past. Scaling the autocovariance $\gamma_k$ by the variance $\gamma_0$ gives a unit-free correlation.
+
+::: {.glass-card .glass-card--definition}
+The **autocorrelation function** (ACF) at lag $k$ is the correlation between the series and its own $k$-step-lagged self:
+
+$$
+\rho_k \;=\; \frac{\operatorname{Cov}(y_t,\,y_{t-k})}{\operatorname{Var}(y_t)} \;=\; \frac{\gamma_k}{\gamma_0}, \qquad \rho_0 = 1.
+$$
+
+**Read this as**: "the lag-$k$ autocorrelation is the covariance between $y_t$ and $y_{t-k}$ divided by the variance --- a number in $[-1, 1]$ telling you how much of today's deviation from the mean is shared with the deviation $k$ months ago." At lag 0 a series is perfectly correlated with itself, so $\rho_0 = 1$ always.
+:::
+
+The **partial** autocorrelation function (PACF) at lag $k$ measures the correlation between $y_t$ and $y_{t-k}$ *after removing* the influence of the intervening lags $y_{t-1}, \dots, y_{t-k+1}$. It is the "direct" link at lag $k$, net of everything in between. The two functions together are the diagnostic fingerprint of a model:
+
+| Model | ACF | PACF |
+|:------|:----|:-----|
+| **AR($p$)** | tails off (decays geometrically) | **cuts off after lag $p$** |
+| **MA($q$)** | **cuts off after lag $q$** | tails off |
+| **ARMA($p,q$)** | tails off | tails off |
+
+**Read the table as**: an AR process leaves a *sharp* PACF (it has exactly $p$ direct lags) and a *smoothly decaying* ACF; an MA process is the mirror image. This duality is the single most useful thing the ACF/PACF buys you --- it turns "which model?" into "look at two pictures."
+
+## The Building Blocks: AR, MA, ARMA
+
+### Autoregression: AR($p$)
+
+An autoregressive model says the present is a linear function of its own recent past plus a fresh shock. The order-1 case, AR(1), is the workhorse:
+
+$$
+y_t = c + \phi\, y_{t-1} + \varepsilon_t, \qquad \varepsilon_t \sim \text{white noise}(0,\sigma^2).
+$$
+
+**Read this as**: "this month's visits equal a constant $c$, plus a fraction $\phi$ of last month's visits, plus an unpredictable shock $\varepsilon_t$." The coefficient $\phi$ is the *persistence*: a flu surge of size $\varepsilon$ this month carries $\phi$ of itself into next month, $\phi^2$ into the month after, and so on --- an exponentially fading echo. The general AR($p$) just adds more lags: $y_t = c + \phi_1 y_{t-1} + \dots + \phi_p y_{t-p} + \varepsilon_t$.
+
+::: {.glass-card .glass-card--assumption}
+**The AR(1) stationarity condition.** The AR(1) is (weakly) stationary if and only if
+
+$$
+|\phi| < 1.
+$$
+
+**Read this as**: "the persistence coefficient must be strictly inside the unit interval $(-1, 1)$." If $|\phi| < 1$, shocks decay and the series reverts to its mean $\mu = c/(1-\phi)$. At $\phi = 1$ the process becomes a **random walk** --- shocks never die, the variance grows without bound, and stationarity fails. That boundary case is the *unit root* of the next page. For higher-order AR($p$), the analogous condition is that all roots of the characteristic polynomial lie outside the unit circle.
+:::
+
+### Moving average: MA($q$)
+
+A moving-average model says the present is a weighted sum of the current and recent *shocks* --- not of past *values*:
+
+$$
+y_t = \mu + \varepsilon_t + \theta_1 \varepsilon_{t-1} + \dots + \theta_q \varepsilon_{t-q}.
+$$
+
+**Read this as**: "this month equals a baseline $\mu$ plus today's shock plus echoes of the last $q$ shocks, weighted by $\theta_1, \dots, \theta_q$." An MA($q$) has memory of exactly $q$ periods: a shock affects the series for $q$ months and then is gone entirely. This is why its ACF *cuts off* after lag $q$ --- there is simply no correlation beyond the window of remembered shocks.
+
+### Putting them together: ARMA($p,q$)
+
+Real series often need both --- some persistence in levels (AR) and some short-lived shock structure (MA). The combined model is
+
+$$
+y_t = c + \underbrace{\phi_1 y_{t-1} + \dots + \phi_p y_{t-p}}_{\text{AR}(p)\ \text{part}} + \varepsilon_t + \underbrace{\theta_1 \varepsilon_{t-1} + \dots + \theta_q \varepsilon_{t-q}}_{\text{MA}(q)\ \text{part}}.
+$$
+
+ARMA($p,q$) is the flexible engine of stationary time-series modeling: a small handful of parameters can reproduce a wide range of ACF/PACF shapes. But it assumes the series is *already* stationary. When it is not, we difference first.
+
+## From ARMA to ARIMA: Differencing
+
+Most raw series trend. Uppsala's monthly visit count grows as the population grows; it is not mean-stationary. The fix is **differencing**: instead of modeling the level, model the *change*.
+
+::: {.glass-card .glass-card--definition}
+The **first difference** of a series is
+
+$$
+\Delta y_t = y_t - y_{t-1}.
+$$
+
+A series that becomes stationary after differencing $d$ times is **integrated of order $d$**, written $I(d)$. Modeling an ARMA($p,q$) on the $d$-times-differenced series gives the **ARIMA($p,d,q$)** model: **A**uto**R**egressive **I**ntegrated **M**oving **A**verage.
+
+**Read ARIMA($p,d,q$) as**: "difference the series $d$ times to make it stationary, then fit $p$ autoregressive lags and $q$ moving-average lags to the result." A linear trend is removed by $d=1$; a quadratic trend by $d=2$. Most economic and health series need $d=0$ or $d=1$.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Do not over-difference.** Differencing a series that is *already* stationary injects an artificial $-1$ autocorrelation at lag 1 (an MA(1) unit root) and inflates the variance of your forecasts. Difference only as much as a unit-root test (next page) and the ACF tell you to. The mantra: difference to *remove a trend*, never reflexively. Equally, *under*-differencing leaves a trend in the residuals and the model's standard errors are not trustworthy.
+:::
+
+**Seasonality.** Monthly health data carries a yearly rhythm: every January spikes, every July dips. A *seasonal* difference $y_t - y_{t-12}$ removes a fixed monthly pattern, and the **SARIMA**($p,d,q$)($P,D,Q$)$_s$ model adds seasonal AR/MA terms at the seasonal lag $s$ (here $s = 12$). For Swedish monthly primary-care data, a seasonal component is almost always required --- a non-seasonal ARIMA will leave a tell-tale spike at lag 12 in the residual ACF.
+
+## See It: AR(1) Persistence and Its ACF
+
+The interactive below simulates an AR(1) series of monthly primary-care visits for a Swedish region. Drag the persistence coefficient $\phi$ from $0$ (pure white noise --- no memory) toward $1$ (near-random-walk --- shocks never fade) and watch two things move in lockstep: the **series itself** grows smoother and more wandering, and its **theoretical ACF** $\rho_k = \phi^k$ decays more slowly. Toggle the MA(1) term to see how a single $\theta$ injects one period of extra short-run memory on top of the AR persistence.
+
+::: {.interactive-container}
+
+#### Simulating an AR(1) (with optional MA term) for monthly primary-care visits
+
+```{ojs}
+//| echo: false
+viewof tsarima_phi = Inputs.range([0, 0.98], {
+  value: 0.6,
+  step: 0.02,
+  label: "Persistence φ  (0 = white noise, →1 = random walk)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof tsarima_useMA = Inputs.toggle({
+  label: "Add an MA(1) term θ",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+viewof tsarima_theta = Inputs.range([-0.8, 0.8], {
+  value: 0.4,
+  step: 0.05,
+  label: "MA(1) coefficient θ  (active only when toggled on)"
+})
+```
+
+```{ojs}
+//| echo: false
+// Re-draw button: increment a counter to resample a fresh shock sequence.
+// (reduce-on-click pattern: never read+write a mutable in one cell.)
+viewof tsarima_draw = Inputs.button("Draw a new random sample", {
+  value: 0,
+  reduce: v => v + 1
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Uppsala-academic palette tokens shared across this page's interactives.
+tsarima_pal = ({
+  focal:  "#990000",   // focal series (Uppsala red)
+  slate:  "#3d5a6c",   // secondary / comparison
+  good:   "#2e6f40",   // on-target / good
+  ochre:  "#9c7a33",   // highlight / true value
+  bad:    "#b3000b",   // alarm
+  ink:    "#1c1c1a",   // ink text & reference lines
+  axis:   "#79766e",   // axis text
+  hair:   "#e6e3db",   // gridlines / hairlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Series length: 10 years of monthly observations.
+tsarima_T = 120
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Regional baseline level: mean monthly visits per 1,000 residents — a
+// realistic primary-care intensity for a Swedish region.
+tsarima_mu = 95
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Shock standard deviation.
+tsarima_sigma = 6
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Generate the AR(1) [+ optional MA(1)] path. Reading tsarima_draw makes the
+// cell re-run (a new random path) each time the button is clicked, WITHOUT
+// reading-and-writing any mutable. Randomness via d3.randomNormal.
+tsarima_series = {
+  tsarima_draw;                          // reactive dependency: resample on click
+  const phi = tsarima_phi;
+  const theta = tsarima_useMA ? tsarima_theta : 0;
+  const rnorm = d3.randomNormal(0, tsarima_sigma);
+  const eps = d3.range(tsarima_T + 1).map(() => rnorm());  // shocks (incl. e_{-1})
+  const out = [];
+  let prev = 0;                          // deviation from the mean μ
+  for (let t = 1; t <= tsarima_T; t++) {
+    // y_t - μ = φ (y_{t-1} - μ) + ε_t + θ ε_{t-1}
+    const dev = phi * prev + eps[t] + theta * eps[t - 1];
+    out.push({ t, y: tsarima_mu + dev });
+    prev = dev;
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Theoretical AR(1) ACF: ρ_k = φ^k. (With the MA term the true ACF differs
+// slightly at low lags; we plot the pure-AR geometric decay as the reference
+// envelope, which is the key intuition the slider is meant to convey.)
+tsarima_acf = d3.range(0, 19).map(k => ({
+  k,
+  rho: Math.pow(tsarima_phi, k)
+}))
+```
+
+```{ojs}
+//| echo: false
+// Top panel: the simulated series through time.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 250,
+  marginLeft: 62,
+  marginBottom: 45,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: tsarima_pal.axis
+  },
+  x: { label: "Month  t  →", domain: [1, tsarima_T], grid: false },
+  y: {
+    label: "↑ Visits per 1,000 residents",
+    grid: true,
+    domain: [tsarima_mu - 28, tsarima_mu + 28]
+  },
+  marks: [
+    Plot.gridY({ stroke: tsarima_pal.hair }),
+    // Mean reference line (ochre = the level the series reverts to).
+    Plot.ruleY([tsarima_mu], {
+      stroke: tsarima_pal.ochre, strokeWidth: 1.5, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ t: tsarima_T, y: tsarima_mu }], {
+      x: "t", y: "y", text: () => "mean μ",
+      fill: tsarima_pal.ochre, fontSize: 11, fontWeight: 600,
+      textAnchor: "end", dy: -6,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // The simulated AR(1) series (focal — Uppsala red).
+    Plot.line(tsarima_series, {
+      x: "t", y: "y", stroke: tsarima_pal.focal, strokeWidth: 1.6
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Bottom panel: the theoretical ACF, ρ_k = φ^k, as a stem (lollipop) plot.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 230,
+  marginLeft: 62,
+  marginBottom: 45,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: tsarima_pal.axis
+  },
+  x: { label: "Lag  k  (months)  →", domain: [-0.5, 18.5] },
+  y: { label: "↑ Autocorrelation  ρ(k)", domain: [-0.25, 1.05], grid: true },
+  marks: [
+    Plot.gridY({ stroke: tsarima_pal.hair }),
+    Plot.ruleY([0], { stroke: tsarima_pal.ink, strokeWidth: 1 }),
+    // ACF stems (slate) with dots at the tips (focal red).
+    Plot.ruleX(tsarima_acf, {
+      x: "k", y1: 0, y2: "rho", stroke: tsarima_pal.slate, strokeWidth: 2
+    }),
+    Plot.dot(tsarima_acf, {
+      x: "k", y: "rho", fill: tsarima_pal.focal, r: 4
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tying the picture to the numbers. Built inside an ojs cell with
+// html`` so the reactive values interpolate (markdown ${...} would render
+// literally). Reports persistence, the implied lag-1 ACF, and a half-life.
+{
+  const phi = tsarima_phi;
+  // Half-life: number of months for a shock's echo to fall to half its size,
+  // φ^h = 0.5  ⇒  h = ln(0.5) / ln(φ). Undefined at φ = 0 (no persistence).
+  const halfLife = phi <= 0 ? 0 : Math.log(0.5) / Math.log(phi);
+  const hlText = phi <= 0
+    ? "0 (no memory)"
+    : (phi >= 0.98 ? "≈ ∞ (random walk)" : halfLife.toFixed(1) + " months");
+  const regime = phi < 0.15 ? "≈ white noise"
+    : phi < 0.55 ? "weak persistence"
+    : phi < 0.85 ? "moderate persistence"
+    : "near random walk";
+  const regimeColor = phi < 0.15 ? tsarima_pal.good
+    : phi < 0.85 ? tsarima_pal.slate
+    : tsarima_pal.bad;
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7.5rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${tsarima_pal.fill}; border: 1px solid ${tsarima_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${tsarima_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem;
+      margin-top:0.75rem;">
+    ${tile("Persistence φ", phi.toFixed(2), tsarima_pal.focal)}
+    ${tile("Lag-1 ACF  ρ₁ = φ", phi.toFixed(2), tsarima_pal.ink)}
+    ${tile("Shock half-life", hlText, tsarima_pal.ochre)}
+    ${tile("Regime", regime, regimeColor)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the AR(1) Simulator
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Start at white noise.** Drag **persistence $\phi$** all the way to $0$. The top series jitters around its mean $\mu$ with no memory at all --- each month is an independent draw. The ACF below is a single spike of height $1$ at lag $0$ and essentially zero everywhere else. This is the "no serial dependence" baseline: a time series with nothing to forecast beyond its mean.
+
+**Step 2: Add persistence.** Raise $\phi$ to about $0.6$. The series now *wanders* --- runs of above-average months and runs of below-average months appear, because each value pulls the next toward itself. The ACF stems decay geometrically: $\rho_1 = \phi$, $\rho_2 = \phi^2$, and so on. Read the "Shock half-life" tile: at $\phi = 0.6$ a flu surge has faded to half its size in roughly $1.4$ months.
+
+**Step 3: Approach the random walk.** Push $\phi$ toward $0.98$. The series becomes a slow, smooth drift that can stay far from its mean for years; the ACF barely decays at all over 18 lags. The "Regime" tile turns red and the half-life explodes toward infinity --- shocks essentially *never* die. This is the edge of stationarity: at $\phi = 1$ exactly, the process is a random walk and the mean-reverting pull vanishes entirely (the subject of the next page).
+
+**Step 4: Toggle the MA term.** Turn on **Add an MA(1) term $\theta$** and set $\theta$ to $+0.4$. The series gains one extra period of short-run smoothing layered on top of the AR persistence --- consecutive months are stitched a little tighter because they share the previous shock. Set $\theta$ negative and consecutive months instead tend to *zig-zag*, partly cancelling. This is the MA part of ARMA: memory carried by *shocks*, not by *levels*.
+
+**Step 5: Resample.** Click **Draw a new random sample** a few times at a fixed $\phi$. The individual path changes every time --- it is one realization of a random process --- but its *character* (smoothness, wandering, the decay rate of the ACF) is governed entirely by $\phi$, not by the particular shocks. That invariance across redraws is exactly what stationarity guarantees: the *structure* is stable even though the *path* is not.
+
+## Forecasting Intuition
+
+Once an ARIMA model is fitted, forecasting is mechanical: feed the model its own recent values (and shocks) and roll forward. For the AR(1), the $h$-step-ahead forecast is
+
+$$
+\hat y_{T+h} = \mu + \phi^{h}\,(y_T - \mu).
+$$
+
+**Read this as**: "the forecast $h$ months out equals the long-run mean $\mu$, plus the current deviation $y_T - \mu$ shrunk by $\phi^h$." Because $|\phi| < 1$, the factor $\phi^h \to 0$ as the horizon $h$ grows: **all forecasts decay back to the mean**, fast if $\phi$ is small, slowly if $\phi$ is near $1$. This is the single most important forecasting intuition for stationary series --- the distant future is just the unconditional mean, and the forecast *interval* widens to the unconditional variance. A non-stationary (random-walk) series behaves entirely differently: its best forecast is the *last value* and the interval fans out without bound, which is exactly why distinguishing the two cases (next page) matters so much in practice.
+
+<details>
+<summary>Math Details: AR(1) mean, variance, ACF, and the stationarity condition</summary>
+<div class="details-content">
+
+Start from the AR(1) in deviation form. Write $\tilde y_t = y_t - \mu$ so the constant drops out:
+
+$$
+\tilde y_t = \phi\,\tilde y_{t-1} + \varepsilon_t, \qquad E[\varepsilon_t] = 0,\ \operatorname{Var}(\varepsilon_t)=\sigma^2,\ \varepsilon_t \perp \tilde y_{t-1}.
+$$
+
+### Mean
+
+Take expectations of the level equation $y_t = c + \phi y_{t-1} + \varepsilon_t$. Under stationarity $E[y_t] = E[y_{t-1}] = \mu$, so
+
+$$
+\mu = c + \phi\mu \;\Longrightarrow\; \mu = \frac{c}{1-\phi},
+$$
+
+which requires $\phi \ne 1$. (At $\phi = 1$ the mean is undefined --- a first signal of non-stationarity.)
+
+### Variance
+
+Take the variance of $\tilde y_t = \phi \tilde y_{t-1} + \varepsilon_t$. Because $\varepsilon_t$ is independent of $\tilde y_{t-1}$, the cross term vanishes:
+
+$$
+\operatorname{Var}(\tilde y_t) = \phi^2 \operatorname{Var}(\tilde y_{t-1}) + \sigma^2.
+$$
+
+Under stationarity $\operatorname{Var}(\tilde y_t) = \operatorname{Var}(\tilde y_{t-1}) = \gamma_0$, so
+
+$$
+\gamma_0 = \phi^2 \gamma_0 + \sigma^2 \;\Longrightarrow\; \gamma_0 = \frac{\sigma^2}{1 - \phi^2}.
+$$
+
+For this to be a **finite, positive** variance we need $1 - \phi^2 > 0$, i.e. $|\phi| < 1$. **This is the stationarity condition.** As $\phi \to 1$, $\gamma_0 \to \infty$: the variance blows up, the series can wander arbitrarily far from its mean, and weak stationarity fails.
+
+### Autocovariance and ACF
+
+Multiply $\tilde y_t = \phi \tilde y_{t-1} + \varepsilon_t$ by $\tilde y_{t-k}$ (for $k \ge 1$) and take expectations. Since $\varepsilon_t$ is uncorrelated with the past $\tilde y_{t-k}$:
+
+$$
+\gamma_k = E[\tilde y_t \tilde y_{t-k}] = \phi\, E[\tilde y_{t-1}\tilde y_{t-k}] = \phi\,\gamma_{k-1}.
+$$
+
+This recursion $\gamma_k = \phi\,\gamma_{k-1}$ unwinds to $\gamma_k = \phi^k \gamma_0$. Dividing by $\gamma_0$ gives the autocorrelation function:
+
+$$
+\boxed{\;\rho_k = \frac{\gamma_k}{\gamma_0} = \phi^{\,k}\;}, \qquad k = 0, 1, 2, \dots
+$$
+
+The ACF decays **geometrically** at rate $\phi$ --- exactly the envelope drawn in the simulator. When $0 < \phi < 1$ it decays monotonically; when $-1 < \phi < 0$ it alternates sign while decaying in magnitude. The geometric decay (rather than a sharp cutoff) is the AR signature in the ACF; the PACF, by contrast, cuts off after lag 1 for an AR(1) because there is exactly one direct lag.
+
+</div>
+</details>
+
+## Fitting an ARIMA Model
+
+Below we simulate a seasonal monthly primary-care series, inspect its ACF/PACF, let an automatic routine pick the orders, and forecast 12 months ahead with a prediction interval. The R panel uses the `forecast`/`fable` ecosystem; the Python panel uses `statsmodels` SARIMAX.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("fpp3", "forecast"))   # if needed
+library(fpp3)        # tsibble + fable + feasts (tidy time series)
+library(forecast)    # auto.arima + classic API
+
+## ---- Simulate 10 years of monthly primary-care visits ----------------
+## A trend (population growth) + a yearly seasonal pattern + AR(1) noise.
+set.seed(2024)
+n  <- 120
+mu <- 95
+trend  <- 0.15 * (1:n)                                   # slow upward drift
+season <- 8 * sin(2 * pi * (1:n) / 12)                   # yearly rhythm
+ar_noise <- as.numeric(arima.sim(list(ar = 0.6), n = n, sd = 6))
+visits <- mu + trend + season + ar_noise
+
+clinic <- tsibble(
+  month  = yearmonth("2014 Jan") + 0:(n - 1),
+  visits = visits,
+  index  = month
+)
+
+## ---- Diagnose: ACF and PACF of the (differenced) series --------------
+clinic |> gg_tsdisplay(difference(visits), plot_type = "partial")
+
+## ---- Let fable choose orders by AICc (seasonal ARIMA) ----------------
+fit <- clinic |>
+  model(auto = ARIMA(visits))          # searches p,d,q (+ seasonal P,D,Q)
+
+report(fit)                            # e.g. ARIMA(1,1,0)(0,1,1)[12]
+
+## ---- Forecast 12 months ahead with an 80%/95% interval --------------
+fc <- fit |> forecast(h = 12)
+fc |> autoplot(clinic) +
+  labs(title = "Monthly primary-care visits: 12-month forecast",
+       y = "Visits per 1,000 residents")
+
+## Classic forecast::auto.arima gives the same idea on a plain ts object:
+visits_ts <- ts(visits, frequency = 12, start = c(2014, 1))
+fit2 <- auto.arima(visits_ts)          # AICc-optimal (S)ARIMA
+summary(fit2)
+plot(forecast(fit2, h = 12))
+```
+
+### Python
+
+```python
+# pip install statsmodels pandas numpy matplotlib
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+# ---- Simulate 10 years of monthly primary-care visits ----------------
+rng = np.random.default_rng(2024)
+n, mu = 120, 95
+t = np.arange(n)
+trend  = 0.15 * t                                  # slow upward drift
+season = 8 * np.sin(2 * np.pi * t / 12)            # yearly rhythm
+
+# AR(1) noise with phi = 0.6
+phi, sigma = 0.6, 6.0
+eps = rng.normal(0, sigma, n)
+ar = np.zeros(n)
+for k in range(1, n):
+    ar[k] = phi * ar[k - 1] + eps[k]
+
+visits = mu + trend + season + ar
+idx = pd.period_range("2014-01", periods=n, freq="M")
+y = pd.Series(visits, index=idx, name="visits")
+
+# ---- Diagnose: ACF and PACF of the first difference -----------------
+dy = y.diff().dropna()
+fig, ax = plt.subplots(1, 2, figsize=(11, 3))
+plot_acf(dy, lags=24, ax=ax[0]); ax[0].set_title("ACF of Δ visits")
+plot_pacf(dy, lags=24, ax=ax[1]); ax[1].set_title("PACF of Δ visits")
+
+# ---- Fit a seasonal ARIMA(1,1,0)(0,1,1)[12] by ML -------------------
+model = SARIMAX(y, order=(1, 1, 0), seasonal_order=(0, 1, 1, 12),
+                enforce_stationarity=True, enforce_invertibility=True)
+res = model.fit(disp=False)
+print(res.summary())
+
+# ---- Forecast 12 months ahead with a 95% prediction interval --------
+fc = res.get_forecast(steps=12)
+mean_fc = fc.predicted_mean
+ci = fc.conf_int(alpha=0.05)
+
+ax = y.plot(label="observed", color="#990000")
+mean_fc.plot(ax=ax, label="forecast", color="#3d5a6c")
+ax.fill_between(ci.index, ci.iloc[:, 0], ci.iloc[:, 1],
+                color="#3d5a6c", alpha=0.15, label="95% PI")
+ax.legend(); ax.set_ylabel("Visits per 1,000 residents")
+plt.show()
+```
+
+:::
+
+Both routines diagnose the series the same way --- a trend that calls for one regular difference ($d=1$) and a yearly spike that calls for one seasonal difference ($D=1$) --- and then fit AR/MA terms to the stationary remainder. The forecast decays the seasonal pattern forward while the prediction interval widens with the horizon, exactly as the AR(1) intuition predicts.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A regional series of monthly *sjukfrånvaro* (sick-leave) rates follows an AR(1): $y_t = 4 + 0.8\, y_{t-1} + \varepsilon_t$, with $\operatorname{Var}(\varepsilon_t) = \sigma^2 = 9$.
+
+(a) Is the series stationary? (b) Compute the long-run mean $\mu$. (c) Compute the variance $\gamma_0$ and the lag-2 autocorrelation $\rho_2$.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Stationary iff $|\phi| < 1$. Here $\phi = 0.8$, so $|0.8| < 1$ --- **yes, stationary**.
+
+**(b)** $\mu = \dfrac{c}{1-\phi} = \dfrac{4}{1 - 0.8} = \dfrac{4}{0.2} = 20$.
+
+**(c)** Variance: $\gamma_0 = \dfrac{\sigma^2}{1-\phi^2} = \dfrac{9}{1 - 0.64} = \dfrac{9}{0.36} = 25$.
+
+Lag-2 ACF: $\rho_2 = \phi^2 = 0.8^2 = 0.64$. (A shock retains 64% of its correlation two months out --- high persistence, as expected from $\phi = 0.8$.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+You plot the ACF and PACF of a stationary (already-differenced) series of monthly waiting times. The ACF shows a single significant spike at lag 1 and is essentially zero thereafter; the PACF tails off geometrically. Which ARMA model does this fingerprint suggest, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+This is the classic **MA(1)** signature. Recall the duality from the diagnostic table:
+
+- an **MA($q$)** has an ACF that *cuts off* after lag $q$ and a PACF that *tails off*;
+- an **AR($p$)** is the mirror image (PACF cuts off, ACF tails off).
+
+Here the ACF cuts off sharply after lag 1 while the PACF decays smoothly --- so $q = 1$ and there is no AR part: **MA(1)**, i.e. $y_t = \mu + \varepsilon_t + \theta_1 \varepsilon_{t-1}$. The single ACF spike says the series remembers exactly one period of shocks; the geometric PACF is what an MA process always produces when you try to express it through direct lags of the level.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague fits an ARIMA(2,2,1) to a series of monthly primary-care visits that has only a mild *linear* upward trend and no curvature. The residual ACF shows a strong *negative* spike at lag 1. Diagnose the likely problem and propose a fix.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The series has a *linear* trend, which one regular difference ($d=1$) removes. Choosing $d=2$ **over-differences** it: differencing an already-stationary (once-differenced) series injects an artificial MA(1) structure with a coefficient near $-1$, which shows up as exactly the **strong negative lag-1 autocorrelation** in the residuals described here.
+
+**Fix:** reduce the differencing order to $d=1$ (an ARIMA($p$,1,$q$)). Confirm with a unit-root test (next page) and by checking that the once-differenced series is mean-stationary with no remaining trend. The guiding rule from the Caution card: difference only enough to remove the trend --- never reflexively, and a negative lag-1 residual spike is the tell-tale sign you went one difference too far.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the AR(1) forecast formula $\hat y_{T+h} = \mu + \phi^h(y_T - \mu)$, suppose a region's primary-care visits have $\mu = 90$, $\phi = 0.5$, and the most recent observation is $y_T = 110$. (a) Forecast 1, 2, and 4 months ahead. (b) What value do the forecasts approach as $h \to \infty$, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The current deviation from the mean is $y_T - \mu = 110 - 90 = 20$.
+
+**(a)** Apply $\hat y_{T+h} = 90 + 0.5^h \times 20$:
+
+- $h=1$: $90 + 0.5^1 \times 20 = 90 + 10 = \mathbf{100}$.
+- $h=2$: $90 + 0.5^2 \times 20 = 90 + 0.25 \times 20 = 90 + 5 = \mathbf{95}$.
+- $h=4$: $90 + 0.5^4 \times 20 = 90 + 0.0625 \times 20 = 90 + 1.25 = \mathbf{91.25}$.
+
+**(b)** As $h \to \infty$, $\phi^h = 0.5^h \to 0$, so $\hat y_{T+h} \to \mu = \mathbf{90}$. Because $|\phi| < 1$, the influence of the current value decays geometrically and every long-horizon forecast collapses to the unconditional mean. The series is mean-reverting: the further out you look, the less the present tells you, until the best guess is simply the long-run average.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A time series is a single, time-ordered realization with *serial dependence*; learning from it requires *(weak) stationarity* --- constant mean, constant variance, and a lag-only autocovariance.
+- The ACF $\rho_k = \gamma_k/\gamma_0$ measures memory; the ACF/PACF pair is a diagnostic fingerprint --- AR processes leave a cutoff PACF and a decaying ACF, MA processes the mirror image.
+- AR($p$) models persistence in levels, MA($q$) models short-lived shock structure, and ARMA($p,q$) combines them; the AR(1) is stationary iff $|\phi| < 1$, with mean $c/(1-\phi)$, variance $\sigma^2/(1-\phi^2)$, and ACF $\phi^k$.
+- Differencing $d$ times removes a trend and turns ARMA into ARIMA($p,d,q$); seasonal differencing handles yearly rhythms (SARIMA). Over-differencing is a real hazard, flagged by a negative lag-1 residual spike.
+- For a stationary series every forecast decays to the unconditional mean at rate $\phi^h$, and the prediction interval widens toward the unconditional variance.
+:::
+
+## What Comes Next
+
+We now have the core toolkit for a *stationary* time series: diagnose its memory with the ACF/PACF, fit an ARIMA model, and roll it forward into a forecast that reverts to the mean. But everything here rested on the line $|\phi| < 1$. The next page, [Unit Roots and Cointegration](unit-roots-cointegration.qmd), steps onto the boundary $\phi = 1$ and beyond: it defines the *random walk* and the *unit root*, shows how to test for one (the Dickey--Fuller and ADF tests), exposes the *spurious regression* trap that makes two unrelated trending series look strongly related, and introduces *cointegration* --- the powerful idea that two non-stationary series can share a common stochastic trend whose deviations are, themselves, stationary.

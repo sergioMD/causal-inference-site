@@ -1,0 +1,1234 @@
+---
+title: "Validity and Falsification"
+subtitle: "Manipulation, balance, and placebo tests"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain why an RD design lives or dies on the **continuity** assumption, and how *manipulation* of the running variable breaks it by sorting units across the cutoff.
+- Run and read the **McCrary / Cattaneo density test**: a jump in the density of the running variable at the cutoff is direct evidence of sorting.
+- Use **covariate-continuity (balance) tests** --- predetermined characteristics should *not* jump at the cutoff --- as a placebo check that the design behaves like a local experiment.
+- Falsify a design with **placebo cutoffs** (no jump should appear at fake thresholds) and stress-test it with **bandwidth sensitivity** and the **donut-RD** robustness check.
+- Assemble these tests into an honest validity dossier for a Swedish primary-care RD study.
+:::
+
+## A Threshold Worth Gaming
+
+The previous pages took the assignment rule as given: a patient is enrolled in a program if and only if a running variable crosses a cutoff, and we read the program's effect off the jump in outcomes at that line. The whole edifice rests on a quiet premise --- that units *cannot precisely position themselves* on one side of the cutoff or the other. The moment they can, the comparison of "just-above" to "just-below" stops being a comparison of near-identical patients and becomes a comparison of two self-selected groups. The design silently turns back into the [selection-bias](../01-fundamental-problem/selection-bias.qmd) trap it was supposed to escape.
+
+Sweden's primary care gives us a vivid case. Suppose *Socialstyrelsen* (the National Board of Health and Welfare) ties a *vårdcentral*'s (primary care center's) extra funding to a quality score: any center whose annual **diabetes-control index** --- the share of enrolled Type 2 diabetes patients with HbA1c below a target --- falls **below 60** is flagged as underperforming and receives a funded **diabetes-coordination team** (a dedicated *distriktssköterska*, or district nurse, plus protected *läkare*, physician, time). The running variable is the index $X_i$; the cutoff is $c = 60$; treatment is $D_i = \mathbf{1}\{X_i < 60\}$. An analyst wants the causal effect of the funded team on next year's HbA1c and waiting times.
+
+Here is the problem. The index is *self-reported and self-coded* by each center. A center sitting at 61 or 62 --- just safe --- has every incentive to nudge its reported index down to 59 to capture the funded team and the staffing it brings. A center at 58, comfortably eligible, has no such incentive. If centers **sort** across the threshold this way, the units just below 60 are no longer exchangeable with those just above: the just-below group is contaminated by *strategic* centers that engineered their position. The jump in outcomes at 60 now mixes the program's effect with the difference between gamers and non-gamers. This is **manipulation of the running variable**, and detecting it is the first job of RD validity testing.
+
+::: {.glass-card .glass-card--warning}
+RD's credibility is *not* self-certifying. A clean-looking jump in the outcome plot can be entirely spurious if units sorted across the cutoff, if the cutoff coincides with some *other* policy, or if the functional form is doing the work. Validity testing is the set of falsification exercises that try to *break* the design before you trust it. A design that survives them is credible; one you never tried to break is merely unexamined.
+:::
+
+## Why Manipulation Breaks Continuity
+
+Recall the identifying assumption of sharp RD ([continuity](sharp-rd.qmd)): the conditional mean of each *potential outcome* is continuous in the running variable at the cutoff,
+
+$$
+\lim_{x \uparrow c} E[Y_i(0) \mid X_i = x] \;=\; \lim_{x \downarrow c} E[Y_i(0) \mid X_i = x],
+$$
+
+and likewise for $Y_i(1)$. **Read this as**: "just below and just above the cutoff, units would have had the *same* average untreated outcome (and the same average treated outcome) had the threshold not intervened." Continuity is what lets us treat the just-below units as a valid counterfactual for the just-above units --- the "local randomization" intuition (just on either side of the line, *which* side a unit lands on is essentially a coin flip, so the two groups are comparable like treatment and control in a small experiment).
+
+Manipulation destroys exactly this. If a center can choose its side of the line, then which side it lands on is informative about its *type* --- its ambition, its baseline competence, how much it wanted the funding. Those types carry their own potential outcomes. Formally, sorting makes $E[Y_i(0)\mid X_i = x]$ **jump** at $c$: the just-below population now over-represents strategic, motivated centers whose untreated trajectory differs from the just-above population. The limits no longer match, and the observed jump in $Y$ is
+
+$$
+\underbrace{\tau_{\text{RD}}}_{\text{program effect}} \;+\; \underbrace{\Big(\lim_{x \uparrow c} E[Y_i(0)\mid X_i{=}x] - \lim_{x \downarrow c} E[Y_i(0)\mid X_i{=}x]\Big)}_{\text{sorting bias}} .
+$$
+
+**Read this as**: "the jump we measure is the true local effect *plus* a sorting bias equal to the discontinuity in the untreated potential outcome." When no one sorts, the second term is zero and RD identifies $\tau_{\text{RD}}$; when centers sort, it is not, and we have no way to separate the two from the outcome plot alone.
+
+The reason this matters operationally is that the bias term is **unobservable** --- it is a statement about counterfactual untreated outcomes. We cannot test it directly. What we *can* do is test an **observable fingerprint** of the behavior that creates it. That fingerprint is the **density of the running variable**.
+
+The causal picture behind the bias is small but worth drawing. A center's hidden *type* --- its ambition and latent competence, written $\theta$ --- pushes two things at once: it shapes the untreated outcome $Y(0)$, *and* it drives the decision to manipulate the reported index $X$, which is what assigns treatment $D$. That shared origin is the trouble: manipulation makes the *type* leak into which side of the cutoff a center lands on, so the running variable stops being an innocent dividing line. The green arrows below are the legitimate machinery (type affects outcome; the index assigns the funded team); the red arrow is the one manipulation switches on, and it is the back-door route that contaminates the comparison.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Small static DAG component for this page (d3.create -> svg.node()). ──
+// Pure function: depends only on global d3. nodes {id,x,y,label,caption} in
+// normalized [0,1]; conditioned ids drawn as rounded SQUARES; edges
+// {source,target,kind}: 'causal'=#2e6f40, 'biasing'=#b3000b, 'blocked'=#79766e.
+rdv_drawDAG = function ({ nodes, edges, width = 460, height = 220, conditioned = [] }) {
+  const pad = 52;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    (k === "biasing" || k === "backdoor-open") ? "#b3000b" : "#79766e";
+  const markerId = k =>
+    k === "causal" ? "rdv-arrow-green" :
+    (k === "biasing" || k === "backdoor-open") ? "rdv-arrow-red" : "rdv-arrow-gray";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  for (const [id, col] of [["rdv-arrow-green", "#2e6f40"],
+                            ["rdv-arrow-red", "#b3000b"],
+                            ["rdv-arrow-gray", "#79766e"]]) {
+    defs.append("marker")
+      .attr("id", id).attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    eg.append("line")
+      .attr("x1", x1 + ux * r).attr("y1", y1 + uy * r)
+      .attr("x2", x2 - ux * (r + 4)).attr("y2", y2 - uy * (r + 4))
+      .attr("stroke", colorFor(e.kind))
+      .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+      .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+      .attr("marker-end", `url(#${markerId(e.kind)})`);
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const g = ng.append("g");
+    if (condSet.has(n.id)) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#eef0ee").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 14)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 10.5).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+rdv_drawDAG({
+  width: Math.min(480, width),
+  height: 215,
+  nodes: [
+    { id: "T", x: 0.06, y: 0.30, label: "θ", caption: "center type" },
+    { id: "X", x: 0.52, y: 0.16, label: "X", caption: "reported index" },
+    { id: "D", x: 0.52, y: 0.82, label: "D", caption: "funded team" },
+    { id: "Y", x: 0.94, y: 0.55, label: "Y", caption: "next-yr HbA1c" }
+  ],
+  edges: [
+    { source: "T", target: "X", kind: "biasing" },   // manipulation: type → reported index
+    { source: "T", target: "Y", kind: "causal" },     // type → untreated outcome
+    { source: "X", target: "D", kind: "causal" },     // index assigns treatment
+    { source: "D", target: "Y", kind: "causal" }      // treatment → outcome (the effect we want)
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = legitimate causal edge, <span style="color:#b3000b; font-weight:700;">red</span> = the back-door edge that *manipulation* switches on. ($\theta$ = a center's hidden type/ambition; $X$ = its reported diabetes-control index; $D$ = whether it gets the funded team; $Y$ = next-year HbA1c.) Without manipulation the red arrow is absent, $X$ depends only on chance, and the $D \to Y$ effect is clean. With manipulation, $\theta \to X$ opens a back-door $D \leftarrow X \leftarrow \theta \to Y$ that the outcome plot alone cannot separate from the program effect.
+:::
+
+::: {.glass-card .glass-card--insight}
+**The McCrary logic.** If units cannot manipulate $X$, the cutoff is invisible to them and the *density* of $X$ should pass smoothly through $c$ --- there is no reason for a pile-up on one side. If units *do* sort to capture (or avoid) treatment, they bunch on the favorable side, leaving a hole on the unfavorable side. A **discontinuity in the density at the cutoff** is therefore a directly observable signal of the very behavior that biases the design. We cannot see the sorting bias; we *can* see the bunching it produces.
+:::
+
+## Test 1: The Density (Manipulation) Test
+
+McCrary (2008) turned this insight into a formal test: estimate the density of the running variable separately on each side of the cutoff and test whether the two limits agree. Let $f(x)$ be the density of $X$. The null hypothesis of *no manipulation* is
+
+$$
+H_0:\quad \lim_{x \uparrow c} f(x) \;=\; \lim_{x \downarrow c} f(x),
+\qquad\text{tested via}\qquad
+\theta \;=\; \log \lim_{x \downarrow c} f(x) - \log \lim_{x \uparrow c} f(x).
+$$
+
+**Read this as**: "$\theta$ is the log ratio of the density just above the cutoff to the density just below; under no manipulation it is zero, and a significantly nonzero $\hat\theta$ flags sorting." McCrary's original estimator first bins the data into a histogram and then runs a local linear regression on the bin heights on each side. Cattaneo, Jansson, and Ma (2020) later proposed a **binless** version (implemented in `rddensity`) that estimates the density directly with local polynomials and avoids the arbitrary first-stage binning --- it is the modern default.
+
+A subtlety of sign: in our funding example treatment is assigned *below* the cutoff ($X<60$). Centers therefore bunch *just below* 60 (the favorable, funded side), so we expect **excess mass to the left** and a *deficit* to the right --- the mirror image of the textbook "treated above" case. The test is agnostic to direction; what matters is that the two one-sided limits disagree.
+
+### See It: Inject Sorting and Watch the Test Flag It
+
+The lab below simulates 2,000 vårdcentraler. Their *latent* diabetes-control index is drawn from a smooth distribution centered just above the cutoff, so with **no manipulation** the density glides through 60 without a bump. The **Manipulation strength** slider then lets a fraction of the centers sitting *just above* 60 (in the "I could game this" zone) shift to *just below* 60 to capture the funded team. Watch two things move together: the histogram grows a spike on the left and a divot on the right, and the **McCrary-style density-jump readout** climbs from "pass" into "fail."
+
+::: {.interactive-container}
+
+#### The Manipulation Lab: Density at the Cutoff
+
+::: {.callout-note appearance="minimal"}
+**Start here:** leave **Manipulation strength** at 0 to see a clean density, then drag it up and watch the spike (and the verdict) appear. Follow steps 1 → 5 in "How to Read" below.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rdvalid_manip = Inputs.range([0, 1], {
+  value: 0,
+  step: 0.05,
+  label: "Manipulation strength (share of gameable centers that sort)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdvalid_window = Inputs.range([1, 6], {
+  value: 3,
+  step: 0.5,
+  label: "Gaming window (points just above 60 that can sort)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof rdvalid_draw = Inputs.button("Draw new sample", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.8rem; color:#79766e;
+    margin:0.1rem 0 0.4rem; line-height:1.4;">
+  <strong>Draw new sample</strong> reshuffles the simulated centers without changing the
+  slider settings — use it to see how much the verdict moves with sampling noise alone.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Cutoff for the diabetes-control index.
+rdvalid_c = 60
+
+// ── Generate the latent (un-manipulated) running variable. ──
+// A truncated-normal-ish cloud centered just above the cutoff so there is
+// realistic mass on both sides. rdvalid_draw is REFERENCED (never written) so
+// pressing "Draw new sample" reseeds the cloud without any mutable.
+rdvalid_latent = {
+  rdvalid_draw;                       // dependency: reseed on button press
+  const n = 2000;
+  const rnorm = d3.randomNormal(61.5, 7.5);
+  const out = [];
+  while (out.length < n) {
+    const x = rnorm();
+    if (x >= 35 && x <= 90) out.push(x);   // keep the index on a sane scale
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Apply manipulation. ──
+// Each center whose LATENT index sits in the gaming window (c, c+window]
+// independently sorts to JUST BELOW the cutoff with probability `manip`.
+// "Just below" = a tight pile-up in [c-1, c). This is the observable
+// fingerprint of strategic under-reporting to capture the funded team.
+rdvalid_sample = {
+  const c = rdvalid_c;
+  const w = rdvalid_window;
+  const p = rdvalid_manip;
+  const u = Math.random;             // browser RNG for the sort coin-flips
+  return rdvalid_latent.map(x => {
+    const gameable = x > c && x <= c + w;
+    if (gameable && u() < p) {
+      // Land in a tight band just below the cutoff: [c-1, c).
+      return c - 1 + 0.999 * u();
+    }
+    return x;
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── McCrary-style density-jump readout. ──
+// A lightweight, transparent stand-in for rddensity: estimate the local
+// density just on each side of the cutoff with a local-linear fit on small
+// bins inside a symmetric bandwidth, take the one-sided limits at c, and
+// report theta = log(f+ / f-) plus a crude SE from the bin counts.
+rdvalid_density = {
+  const c = rdvalid_c;
+  const h = 6;                       // estimation bandwidth (points)
+  const bw = 0.5;                    // bin width for the local fit
+  const x = rdvalid_sample;
+  const n = x.length;
+
+  // Build symmetric bins on each side; bin "center" and density height.
+  const side = (lo, hi) => {
+    const bins = [];
+    for (let b = lo; b < hi - 1e-9; b += bw) {
+      const mid = b + bw / 2;
+      const cnt = x.filter(v => v >= b && v < b + bw).length;
+      bins.push({ mid, dens: cnt / (n * bw) });
+    }
+    return bins;
+  };
+
+  // Local-linear extrapolation of density to the cutoff from one side.
+  const limitAt = (bins, atC) => {
+    const xs = bins.map(d => d.mid - atC);   // center on cutoff
+    const ys = bins.map(d => d.dens);
+    const k = xs.length;
+    const sx = d3.sum(xs), sy = d3.sum(ys);
+    const sxx = d3.sum(xs, v => v * v);
+    const sxy = d3.sum(xs.map((v, i) => v * ys[i]));
+    const denom = k * sxx - sx * sx;
+    const slope = denom === 0 ? 0 : (k * sxy - sx * sy) / denom;
+    const intercept = (sy - slope * sx) / k;
+    return Math.max(intercept, 1e-6);        // density at x = c
+  };
+
+  const left  = side(c - h, c);
+  const right = side(c, c + h);
+  const fMinus = limitAt(left,  c);
+  const fPlus  = limitAt(right, c);
+
+  // Counts within the bandwidth, for an approximate SE of log-density jump.
+  const nL = x.filter(v => v >= c - h && v < c).length;
+  const nR = x.filter(v => v >= c && v < c + h).length;
+  const theta = Math.log(fPlus) - Math.log(fMinus);     // log(f+ / f-)
+  // Crude SE of the log-density jump. The inflation factor calibrates this
+  // transparent stand-in so the test behaves like rddensity at n≈2000: a clean
+  // baseline passes, mild sorting is borderline, and blatant sorting fails hard.
+  const se = Math.sqrt(1 / Math.max(nL, 1) + 1 / Math.max(nR, 1)) * 9;
+  const z = theta / se;
+  const pass = Math.abs(z) < 1.96;
+
+  return { fMinus, fPlus, theta, se, z, pass, nL, nR };
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Histogram of the (possibly manipulated) running variable, with the cutoff
+// rule and a Plot.text callout of the bunching when it appears.
+Plot.plot({
+  width: Math.min(680, width),
+  height: 360,
+  marginLeft: 60,
+  marginRight: 20,
+  marginTop: 36,
+  marginBottom: 44,
+  style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+  x: { label: "Diabetes-control index (running variable)  →", domain: [40, 85] },
+  y: { label: "Number of vårdcentraler", grid: true },
+  marks: [
+    // Shade the gaming window (c, c+w] so the second slider has a visible effect.
+    Plot.rect([{ x1: rdvalid_c, x2: rdvalid_c + rdvalid_window }], {
+      x1: "x1", x2: "x2", fill: "#9c7a33", fillOpacity: 0.1
+    }),
+    Plot.rectY(rdvalid_sample, Plot.binX(
+      { y: "count" },
+      {
+        x: d => d,
+        thresholds: d3.range(40, 85.5, 1),
+        fill: d => d < rdvalid_c ? "#990000" : "#3d5a6c",
+        fillOpacity: 0.78
+      }
+    )),
+    Plot.ruleX([rdvalid_c], { stroke: "#1c1c1a", strokeWidth: 2, strokeDasharray: "5,4" }),
+    Plot.text([{}], {
+      frameAnchor: "top-left",
+      text: () => "cutoff c = 60\nfunded if index < 60",
+      dx: 6, dy: 6, textAnchor: "start", lineHeight: 1.2,
+      fill: "#1c1c1a", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{}], {
+      frameAnchor: "top-right",
+      text: () => "gaming window",
+      dx: -6, dy: 6, textAnchor: "end",
+      fill: "#9c7a33", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    rdvalid_manip > 0 ? Plot.text([{}], {
+      frameAnchor: "top",
+      text: () => "engineered bunching ↓",
+      dx: -28, dy: 6, textAnchor: "middle",
+      fill: "#990000", fontWeight: 700, fontSize: 11,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }) : null
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// The verdict panel: one-sided density limits, theta = log(f+/f-), z, p, pass/fail.
+{
+  const d = rdvalid_density;
+  const ok = d.pass;
+  const fmt = v => (v >= 0 ? "+" : "") + v.toFixed(3);
+  const pApprox = 2 * (1 - rdvalid_normalCdf(Math.abs(d.z)));
+  const tile = (label, value, color) => html`<div style="
+      min-width: 0; text-align: center; min-height: 4.1rem;
+      display:flex; flex-direction:column; justify-content:center;
+      padding: 0.55rem 0.4rem; border-radius: 0.5rem;
+      background: #f6f5f1;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${tile("f⁻ below", d.fMinus.toFixed(4), "#1c1c1a")}
+      ${tile("f⁺ above", d.fPlus.toFixed(4), "#1c1c1a")}
+      ${tile("θ = log(f⁺/f⁻)", fmt(d.theta), "#1c1c1a")}
+      ${tile("z-stat", fmt(d.z), ok ? "#2e6f40" : "#b3000b")}
+      ${tile("p (approx)", pApprox.toFixed(3), ok ? "#2e6f40" : "#b3000b")}
+    </div>
+    <div style="margin-top:0.7rem; padding:0.6rem 0.9rem; border-radius:0.5rem;
+        border-left:3px solid ${ok ? "#2e6f40" : "#b3000b"};
+        background:#f6f5f1; font-family:'Inter',sans-serif;
+        font-size:0.86rem; line-height:1.45; color:#1c1c1a;">
+      ${ok
+        ? html`<strong style="color:#2e6f40;">PASS — no detectable manipulation.</strong>
+            The density passes smoothly through the cutoff (θ ≈ 0). The just-below and
+            just-above centers look like the same population split by an arbitrary line.`
+        : html`<strong style="color:#b3000b;">FAIL — sorting detected.</strong>
+            Excess mass piled up just below 60 (θ = ${fmt(d.theta)}, |z| = ${Math.abs(d.z).toFixed(2)} > 1.96).
+            θ is negative because the excess mass is on the funded (left) side.
+            Centers appear to be under-reporting their index to capture the funded team.
+            The RD comparison at this cutoff is no longer credible.`}
+    </div>
+    <div style="margin-top:0.5rem; font-family:'Inter',sans-serif; font-size:0.74rem;
+        color:#79766e; line-height:1.4;">
+      Illustrative stand-in, not a calibrated <code>rddensity</code> output: the z and p
+      come from a stylized SE. |z| above ~1.96 means the gap is too big to be chance at
+      the 5% level.
+    </div>
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standard-normal CDF (Abramowitz & Stegun 7.1.26) for the approximate p-value.
+rdvalid_normalCdf = function (z) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp(-z * z / 2);
+  let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 +
+          t * (-1.821256 + t * 1.330274))));
+  return z > 0 ? 1 - p : p;
+}
+```
+
+:::
+
+### How to Read the Manipulation Lab
+
+Work through it in order; each step isolates one idea. Two quick glosses for the readout: $\theta$ (theta) is just the **log ratio of the density above the cutoff to the density below** --- zero means the two sides match, and a negative value means there is more mass *below*. The **$z$-stat** rescales that gap by its noise, so $|z|$ above about **1.96** means the gap is too large to be sampling chance at the conventional 5% level (and the **p-value** is the same statement on a 0-to-1 scale: small p = surprising under "no manipulation").
+
+**Step 1: Establish the clean baseline.** Leave **Manipulation strength** at 0. The histogram is a single smooth cloud; the dashed line at 60 cuts through it without disturbing the shape. The readout shows $\theta \approx 0$, a small $z$, and a green **PASS**. This is what a valid running variable looks like: the cutoff is invisible to the centers, so nothing special happens to the *density* there. (Press **Draw new sample** a few times to see that the PASS is stable to sampling noise, not a fluke of one draw.)
+
+**Step 2: Introduce a little gaming.** Nudge **Manipulation strength** to about 0.3. A modest spike appears just left of 60 and a matching divot just right of it. The just-above density $f^+$ falls below the just-below density $f^-$, so $\theta$ goes *negative* and $|z|$ starts to climb. Depending on the draw, the test may still pass --- mild sorting can hide in sampling noise, which is exactly why effect sizes, not just p-values, matter.
+
+**Step 3: Push it to blatant manipulation.** Drag the slider toward 1. Now most gameable centers have fled to the left of the cutoff. The spike is unmistakable, $\theta$ is strongly negative, $|z| \gg 1.96$, and the verdict flips to a red **FAIL**. You have reproduced the McCrary signature of manipulation: a cliff in the density exactly at the policy line.
+
+**Step 4: Vary the gaming window.** Widen the **Gaming window** (e.g. to 6). More centers are now "close enough to bother," so for a given manipulation strength the pile-up is larger and the test fails sooner. Narrow it to 1 and only centers extremely close to the line sort --- the bunching is subtle and harder to detect. This mirrors reality: manipulation is easiest to catch when many units are near the threshold and the incentive to cross is strong.
+
+**Step 5: Connect density to bias.** Remember what the density test can and cannot see. It detects *bunching*, which is the **fingerprint** of sorting. It does *not* directly measure the **sorting bias** in the outcome equation --- that term is counterfactual and unobservable. The logic is one-directional: a failed density test is strong evidence the continuity assumption is broken; a *passed* density test is *necessary but not sufficient* for validity. Sorting that leaves no density footprint (or other continuity violations) can still lurk. That is why we need more than one test.
+
+::: {.glass-card .glass-card--warning}
+**A clean density does not prove a clean design.** Picture two failures the density test would *wave through*. (i) *Sorting without bunching:* if every center could nudge its index by exactly the same small amount, units would shift but the density would slide over smoothly --- no pile-up, no $\theta$, yet the just-below group is still self-selected. (ii) *A coincident policy:* if a *different* program (say, a separate staffing grant) also switches on at 60, the density of *this* running variable can be perfectly smooth while the outcome jump still mixes two effects. In both cases the density test PASSES and the design is still broken. This is why the balance and placebo tests below are not redundant --- they catch the failures the density test cannot.
+:::
+
+## Test 2: Covariate Continuity (Balance)
+
+A second, independent check exploits a different prediction of "local randomization." If the cutoff really does split units into two near-identical groups, then **predetermined covariates** --- characteristics fixed *before* treatment is assigned --- should be **continuous at the cutoff**, just like potential outcomes. There is no reason for a center's *number of enrolled patients last year*, its *urban/rural status*, or its *prior-year staffing* to jump discontinuously at 60, because those were all determined before the funding rule bit.
+
+The test is mechanical and reassuringly familiar: **run the exact same RD you ran on the outcome, but put a predetermined covariate on the left-hand side.** A significant "effect" of crossing the cutoff on a pre-treatment covariate is a red flag --- it means the two groups differ in ways the design assumed away.
+
+::: {.glass-card .glass-card--assumption}
+**Covariate continuity (balance).** Let $Z_i$ be any covariate determined *before* treatment. Under a valid RD design,
+
+$$
+\lim_{x \uparrow c} E[Z_i \mid X_i = x] \;=\; \lim_{x \downarrow c} E[Z_i \mid X_i = x].
+$$
+
+**Read this as**: "predetermined characteristics should not jump at the cutoff." A placebo RD estimate on $Z$ that is statistically and economically close to zero is *consistent with* validity; a large, significant jump is evidence that the just-below and just-above units are not exchangeable.
+:::
+
+Two cautions keep this honest. First, **only predetermined covariates count.** A variable measured *after* treatment can legitimately jump --- it may be an outcome of the program --- so finding a jump there tells you nothing about design validity. Second, with many covariates tested, some will cross the 5% line by chance; correct for multiplicity (or read the whole pattern rather than hunting for the one significant coefficient). Balance on covariates, like a passed density test, is *supporting* evidence, never proof.
+
+The balance plot below makes this concrete. Each row is a placebo RD --- the same jump estimate, but with a *covariate* on the left-hand side instead of the outcome. The three **predetermined** covariates (fixed before the funding rule bit) all sit on the zero line with confidence intervals that comfortably cross it: balanced, as a valid design demands. The fourth row, **next-year nurse visits**, is *not* predetermined --- it is measured after the funded *distriktssköterska* arrives --- so it jumps hard, in red. That jump is not a validity failure; it is the program working, which is exactly why a post-treatment variable is the wrong thing to put on a balance test (the point of Exercise 3).
+
+```{ojs}
+//| echo: false
+
+// Static balance forest plot: standardized RD jump (in SD units) ± 95% CI for
+// several covariates. Predetermined covariates straddle zero (balanced); the
+// post-treatment variable (nurse visits) jumps. Illustrative fixed numbers.
+{
+  const rows = [
+    { v: "Prior-year enrolled patients", est: 0.03, se: 0.06, kind: "pre" },
+    { v: "Urban / rural classification", est: -0.05, se: 0.07, kind: "pre" },
+    { v: "Prior-year staffing (läkare)", est: 0.02, se: 0.06, kind: "pre" },
+    { v: "Next-year nurse visits (post!)", est: 0.46, se: 0.08, kind: "post" }
+  ].map(d => ({ ...d, lo: d.est - 1.96 * d.se, hi: d.est + 1.96 * d.se }));
+  const col = d => d.kind === "post" ? "#b3000b" : "#3d5a6c";
+  const order = rows.map(d => d.v);
+
+  return Plot.plot({
+    width: Math.min(660, width),
+    height: 270,
+    marginLeft: 188,
+    marginRight: 24,
+    marginTop: 30,
+    marginBottom: 46,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "RD jump at the cutoff (standardized, SD units)  →", domain: [-0.25, 0.65], grid: true },
+    y: { label: null, domain: order },
+    marks: [
+      Plot.ruleX([0], { stroke: "#79766e", strokeWidth: 1.2, strokeDasharray: "3,3" }),
+      Plot.ruleY(rows, { y: "v", x1: "lo", x2: "hi", stroke: col, strokeWidth: 2.5 }),
+      Plot.dot(rows, { y: "v", x: "est", r: 5, fill: col, stroke: "white", strokeWidth: 1 }),
+      Plot.text([{ x: 0, y: order[0] }], {
+        x: "x", y: "y", text: () => "balanced ↑ (CI crosses 0)",
+        dy: -16, dx: 4, textAnchor: "start", fill: "#3d5a6c", fontWeight: 700, fontSize: 10.5,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 0.46, y: order[3] }], {
+        x: "x", y: "y", text: () => "jumps — but it is post-treatment",
+        dy: -16, textAnchor: "middle", fill: "#b3000b", fontWeight: 700, fontSize: 10.5,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Dots = standardized RD jump for each variable; bars = 95% confidence intervals; dashed line = zero (perfect balance). Slate = predetermined covariates (their intervals cross zero: balanced). Red = next-year nurse visits, a *post-treatment* variable that legitimately jumps because the funded team increases nurse contact --- so it does not belong on a balance test at all.
+:::
+
+## Test 3: Placebo Cutoffs
+
+The density and balance tests ask "is the cutoff special in a *bad* way?" Placebo cutoffs ask the complementary question: "is the cutoff special at *all*, beyond the policy?" The idea is to re-run the RD pretending the threshold sits at some **fake value** $c' \ne c$ where *no policy changes*. Because nothing actually happens at $c'$, a correctly specified RD should estimate an effect indistinguishable from zero there.
+
+If you find a "significant effect" at a placebo cutoff of 55 or 65 --- where no funding rule exists --- something is wrong: your functional form is manufacturing jumps out of curvature, or some other discontinuity (another program, a reporting artifact) is contaminating the running variable. A credible design produces a tight band of near-zero placebo estimates and a single conspicuous spike at the *true* cutoff.
+
+::: {.glass-card .glass-card--insight}
+**The placebo-cutoff portrait.** Estimate the RD at a grid of fake cutoffs to the left and right of the true one (staying far enough from $c$ that the genuine jump does not leak in). Plot the estimates with their confidence intervals. The signature of a valid design is *flat and near zero everywhere except at the real cutoff*, where a clear, well-separated jump appears. A "forest" of significant placebo effects means the real estimate is just one tree in a noisy wood.
+:::
+
+The figure below draws exactly that portrait for the funded-team RD (these are the numbers from Exercise 2). Each dot is an RD estimate at one cutoff; the vertical bar is its 95% confidence interval. Read it left to right: the placebo cutoffs hover on the zero line with intervals that comfortably straddle it, while the *true* cutoff at 60 stands alone --- a clear, well-separated jump whose interval is nowhere near zero. That isolated spike against a flat background is what a credible design looks like.
+
+```{ojs}
+//| echo: false
+
+// Static "placebo-cutoff portrait": RD estimate ± 95% CI across fake cutoffs,
+// with one well-separated spike at the true cutoff c = 60. Numbers mirror the
+// page's Exercise 2 (estimate + p-value), with CIs reconstructed from the
+// estimate and a plausible SE so the placebo bars straddle zero.
+{
+  const rows = [
+    { c: 53, est: -0.04, se: 0.11, kind: "placebo" },
+    { c: 56, est: +0.05, se: 0.10, kind: "placebo" },
+    { c: 60, est: -0.31, se: 0.11, kind: "true"    },
+    { c: 64, est: -0.02, se: 0.14, kind: "placebo" },
+    { c: 67, est: +0.03, se: 0.11, kind: "placebo" }
+  ].map(d => ({ ...d, lo: d.est - 1.96 * d.se, hi: d.est + 1.96 * d.se }));
+  const col = d => d.kind === "true" ? "#990000" : "#3d5a6c";
+
+  return Plot.plot({
+    width: Math.min(640, width),
+    height: 340,
+    marginLeft: 64,
+    marginRight: 22,
+    marginTop: 40,
+    marginBottom: 46,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Cutoff used for the RD (only c = 60 has a real policy)  →",
+         domain: [50, 70], grid: false },
+    y: { label: "Estimated jump in HbA1c (points)", domain: [-0.55, 0.30], grid: true },
+    marks: [
+      Plot.ruleY([0], { stroke: "#79766e", strokeWidth: 1, strokeDasharray: "3,3" }),
+      // 95% CI bars.
+      Plot.ruleX(rows, { x: "c", y1: "lo", y2: "hi", stroke: col, strokeWidth: 2.5 }),
+      // Point estimates.
+      Plot.dot(rows, { x: "c", y: "est", r: 5, fill: col, stroke: "white", strokeWidth: 1 }),
+      // Callout on the true spike (white halo, lifted clear of the bar).
+      Plot.text([{ c: 60, y: -0.50 }], {
+        x: "c", y: "y", text: () => "true cutoff\n(real policy)",
+        fill: "#990000", fontWeight: 700, fontSize: 11, lineHeight: 1.15,
+        textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ c: 56.5, y: 0.24 }], {
+        x: "c", y: "y", text: () => "placebos hug zero",
+        fill: "#3d5a6c", fontWeight: 700, fontSize: 11,
+        textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Dots = RD point estimates; bars = 95% confidence intervals. Slate = placebo cutoffs (53, 56, 64, 67), where no funding rule exists; red = the true cutoff at 60. The placebo intervals all cross the dashed zero line (no detectable effect), while the true-cutoff estimate sits well below it with an interval nowhere near zero --- the textbook signature of a credible design.
+:::
+
+## Test 4: Bandwidth Sensitivity and Donut RD
+
+The two remaining checks probe *specification*, not behavior.
+
+**Bandwidth sensitivity.** Local-linear RD uses only observations within a bandwidth $h$ of the cutoff. A small $h$ is less biased (closer to the local comparison RD promises) but noisier; a large $h$ is more precise but leans on units far from the cutoff whose comparability is shakier. A trustworthy estimate is **stable** as you sweep $h$ across a reasonable range (for example, around the data-driven CCT/MSE-optimal bandwidth and its halves and doubles). If the point estimate lurches --- or flips sign --- as $h$ changes, the result is an artifact of which functional form the bandwidth implicitly imposed, not a robust effect.
+
+**Donut RD.** If you fear that the units *immediately adjacent* to the cutoff are the contaminated ones --- precisely the centers that gamed their index into $[59, 60)$ --- you can **drop a small "donut hole"** of observations within $\pm \delta$ of the cutoff and re-estimate using only the units just outside the hole. If the manipulators are concentrated in the hole, the donut estimate is cleaner; comparing it to the full estimate quantifies how much the suspect units were driving the headline number.
+
+::: {.glass-card .glass-card--warning}
+Donut RD is a *diagnostic*, not a cure. Excising the units nearest the cutoff trades bias for variance and changes the *estimand* slightly --- the **estimand** is the precise quantity you are trying to estimate, and dropping the boundary units means you are now extrapolating across the hole, so the number you target is no longer quite the same one. A large gap between the donut and full-sample estimates is informative --- it says the boundary units matter --- but it does not by itself tell you which estimate is right. Use it to understand fragility, alongside (never instead of) a hard look at *why* units might be sorting in the first place.
+:::
+
+A picture sharpens what "bandwidth sensitivity" means. Below, the line traces the RD point estimate as the bandwidth $h$ sweeps from narrow to wide, with a shaded 95% confidence band; the dashed reference line marks the true $-0.30$. The left panel shows a **stable** sweep --- the estimate barely moves and never approaches zero --- which is what reassures you the result is not an artifact of how far from the cutoff you looked. The right panel shows an **unstable** sweep that drifts and even changes character as $h$ grows: that lurching is the warning sign described above.
+
+```{ojs}
+//| echo: false
+
+// Static bandwidth-sweep portrait: estimate ± 95% CI vs bandwidth h, contrasting
+// a stable sweep (left, mirroring Exercise 4: -0.44/-0.45/-0.46) with an
+// unstable one (right) that drifts toward zero. Illustrative, fixed numbers.
+{
+  const truth = -0.30;
+  const stable = [
+    { h: 3, est: -0.44, se: 0.10 }, { h: 4, est: -0.445, se: 0.085 },
+    { h: 5, est: -0.45, se: 0.07 }, { h: 6, est: -0.455, se: 0.062 },
+    { h: 7, est: -0.46, se: 0.058 }, { h: 8, est: -0.455, se: 0.052 },
+    { h: 9, est: -0.45, se: 0.05 }
+  ].map(d => ({ ...d, lo: d.est - 1.96 * d.se, hi: d.est + 1.96 * d.se, panel: "Stable (robust)" }));
+  const unstable = [
+    { h: 3, est: -0.46, se: 0.13 }, { h: 4, est: -0.38, se: 0.10 },
+    { h: 5, est: -0.27, se: 0.085 }, { h: 6, est: -0.16, se: 0.072 },
+    { h: 7, est: -0.07, se: 0.064 }, { h: 8, est: +0.01, se: 0.058 },
+    { h: 9, est: +0.08, se: 0.053 }
+  ].map(d => ({ ...d, lo: d.est - 1.96 * d.se, hi: d.est + 1.96 * d.se, panel: "Unstable (fragile)" }));
+  const rows = stable.concat(unstable);
+
+  return Plot.plot({
+    width: Math.min(660, width),
+    height: 320,
+    marginLeft: 62,
+    marginRight: 20,
+    marginTop: 34,
+    marginBottom: 46,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    facet: { data: rows, x: "panel" },
+    fx: { label: null },
+    x: { label: "Bandwidth h (points)  →", domain: [2.5, 9.5] },
+    y: { label: "Estimated jump in HbA1c (points)", domain: [-0.78, 0.22], grid: true },
+    marks: [
+      Plot.ruleY([0], { stroke: "#79766e", strokeWidth: 1 }),
+      Plot.ruleY([truth], { stroke: "#1c1c1a", strokeWidth: 1, strokeDasharray: "4,4" }),
+      Plot.areaY(rows, { x: "h", y1: "lo", y2: "hi", fill: "#3d5a6c", fillOpacity: 0.15 }),
+      Plot.line(rows, { x: "h", y: "est", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+      Plot.dot(rows, { x: "h", y: "est", r: 3, fill: "#3d5a6c" }),
+      Plot.text([{ panel: "Stable (robust)", h: 6, y: -0.30 }], {
+        fx: "panel", x: "h", y: "y", text: () => "true = −0.30",
+        dy: -8, fill: "#1c1c1a", fontWeight: 700, fontSize: 10.5,
+        textAnchor: "middle", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Line = RD estimate at each bandwidth $h$; shaded band = 95% confidence interval; dashed line = the true $-0.30$. *Left:* a stable sweep (the numbers from Exercise 4) stays pinned near the truth at every bandwidth. *Right:* a fragile sweep drifts from clearly negative up through zero as $h$ widens --- the estimate is being driven by functional form, not a robust effect. Bandwidth stability speaks only to specification; it says nothing about manipulation, which sits *at* the cutoff and biases every bandwidth alike.
+:::
+
+## Reading the Outcome Plot With and Without Manipulation
+
+It helps to see how sorting corrupts the headline RD plot itself. The figure below overlays the *honest* fit (no sorting) and the *contaminated* fit (the same gaming you injected above), so you can watch the estimated jump move even though the program's true local effect never changes.
+
+::: {.interactive-container}
+
+#### How Sorting Bends the Estimated Jump
+
+::: {.callout-note appearance="minimal"}
+**Start here:** set **Sorting contamination** to 0 to see the honest fit, then slide it up and watch the solid (contaminated) fit pull away from the dashed (honest) one. Steps 1 → 3 in "How to Read" walk this through.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof rdvalid_sortBias = Inputs.range([0, 1], {
+  value: 0.6,
+  step: 0.05,
+  label: "Sorting contamination (gamers are better-managed centers)"
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.8rem; color:#79766e;
+    margin:0.1rem 0 0.4rem; line-height:1.4;">
+  This slider is an <em>independent</em> re-illustration of the same kind of sorting from
+  the Manipulation Lab above — it is not linked to that lab's slider, so set it here to see
+  the effect on the outcome plot.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// True LOCAL effect of the funded team on next-year HbA1c at the cutoff:
+// a 0.30-point reduction (negative = good). This is FIXED; only sorting moves
+// the estimate.
+rdvalid_trueEffect = -0.30
+
+// Build a clean RD cloud, then a contaminated version where the gamers who
+// crossed from just-above to just-below are SYSTEMATICALLY better-managed
+// (lower true HbA1c) than the genuine just-below centers — the realistic
+// direction, since ambitious centers both game AND run tighter shops.
+rdvalid_outcome = {
+  rdvalid_draw;
+  const c = rdvalid_c;
+  const beta = -0.02;           // smooth slope of HbA1c in the index
+  const base = 7.6;             // HbA1c anchor at the cutoff
+  const rnoise = d3.randomNormal(0, 0.45);
+  const n = 1400;
+  const rx = d3.randomNormal(61, 7);
+  const pts = [];
+  while (pts.length < n) {
+    const x = rx();
+    if (x < 40 || x > 85) continue;
+    const treated = x < c ? 1 : 0;
+    // Smooth confounding trend + program effect (only below cutoff).
+    const y0 = base + beta * (x - c);
+    const yClean = y0 + (treated ? rdvalid_trueEffect : 0) + rnoise();
+    pts.push({ x, treated, yClean });
+  }
+  return pts;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Apply sorting: a share `s` of the genuine just-above centers (in (60,63])
+// move to just-below AND bring a better (lower) HbA1c, dragging the just-below
+// average down and EXAGGERATING the apparent program benefit.
+rdvalid_outcomeContam = {
+  const c = rdvalid_c;
+  const s = rdvalid_sortBias;
+  const u = Math.random;
+  return rdvalid_outcome.map(p => {
+    const gameable = p.x > c && p.x <= c + 3;
+    if (gameable && u() < s) {
+      return {
+        x: c - 0.5 - 0.5 * u(),       // now sits just below the cutoff
+        treated: 1,
+        yClean: p.yClean - 0.6        // better-managed: lower HbA1c
+      };
+    }
+    return p;
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Local-linear RD jump estimator within a fixed bandwidth h, on either dataset.
+rdvalid_fit = function (data) {
+  const c = rdvalid_c;
+  const h = 6;
+  const fitSide = below => {
+    const pts = data.filter(p => below ? (p.x < c && p.x >= c - h)
+                                       : (p.x >= c && p.x <= c + h));
+    const xs = pts.map(p => p.x - c);
+    const ys = pts.map(p => p.yClean);
+    const k = xs.length;
+    const sx = d3.sum(xs), sy = d3.sum(ys);
+    const sxx = d3.sum(xs, v => v * v);
+    const sxy = d3.sum(xs.map((v, i) => v * ys[i]));
+    const denom = k * sxx - sx * sx;
+    const slope = denom === 0 ? 0 : (k * sxy - sx * sy) / denom;
+    const intercept = (sy - slope * sx) / k;     // limit at x = c
+    return { slope, intercept };
+  };
+  const lo = fitSide(true);    // below cutoff = treated
+  const hi = fitSide(false);   // above cutoff = control
+  // Effect = treated limit − control limit (below minus above).
+  return { jump: lo.intercept - hi.intercept, lo, hi };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+rdvalid_fitClean = rdvalid_fit(rdvalid_outcome.map(p => ({ ...p })))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+rdvalid_fitDirty = rdvalid_fit(rdvalid_outcomeContam)
+```
+
+```{ojs}
+//| echo: false
+
+// Binned scatter of the contaminated data + both local-linear fits at the cutoff.
+{
+  const c = rdvalid_c;
+  const h = 6;
+  // Bin the contaminated cloud for legibility.
+  const binned = d3.rollups(
+    rdvalid_outcomeContam,
+    v => ({ x: d3.mean(v, d => d.x), y: d3.mean(v, d => d.yClean), n: v.length }),
+    d => Math.round(d.x)
+  ).map(d => d[1]).filter(d => d.x >= 45 && d.x <= 80);
+
+  const seg = (fit, below) => {
+    const x1 = below ? c - h : c;
+    const x2 = below ? c : c + h;
+    return [
+      { x: x1, y: fit.intercept + fit.slope * (x1 - c) },
+      { x: x2, y: fit.intercept + fit.slope * (x2 - c) }
+    ];
+  };
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 380,
+    marginLeft: 64,
+    marginRight: 20,
+    marginTop: 40,
+    marginBottom: 44,
+    style: { fontFamily: "'Inter', sans-serif", fontSize: "12px" },
+    x: { label: "Diabetes-control index (running variable)  →", domain: [45, 80] },
+    y: { label: "Next-year HbA1c (%)", domain: [6.6, 8.5], grid: true },
+    color: {
+      domain: ["Funded (<60)", "Not funded (≥60)"],
+      range: ["#990000", "#3d5a6c"], legend: true
+    },
+    marks: [
+      Plot.dot(binned, {
+        x: "x", y: "y", r: d => Math.sqrt(d.n),
+        fill: d => d.x < c ? "Funded (<60)" : "Not funded (≥60)", fillOpacity: 0.35
+      }),
+      Plot.ruleX([c], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "5,4" }),
+      // Contaminated fit (solid, what the analyst sees).
+      Plot.line(seg(rdvalid_fitDirty.lo, true),  { stroke: "#990000", strokeWidth: 3 }),
+      Plot.line(seg(rdvalid_fitDirty.hi, false), { stroke: "#3d5a6c", strokeWidth: 3 }),
+      // Honest fit (dashed, no sorting) for reference.
+      Plot.line(seg(rdvalid_fitClean.lo, true),  { stroke: "#990000", strokeWidth: 1.5, strokeDasharray: "3,3", strokeOpacity: 0.7 }),
+      Plot.line(seg(rdvalid_fitClean.hi, false), { stroke: "#3d5a6c", strokeWidth: 1.5, strokeDasharray: "3,3", strokeOpacity: 0.7 }),
+      Plot.text([{}], {
+        frameAnchor: "top",
+        text: () => `apparent jump = ${rdvalid_fitDirty.jump.toFixed(2)}   (true = ${rdvalid_trueEffect.toFixed(2)})`,
+        dy: -8, textAnchor: "middle", fill: "#1c1c1a", fontWeight: 700, fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-family:'Inter',sans-serif; font-size:0.78rem; color:#79766e;
+    margin-top:0.25rem; line-height:1.4;">
+  Next-year HbA1c — lower is better. Solid lines = contaminated fit (what the analyst
+  sees); dashed lines = honest fit with no sorting. Red = funded (&lt;60), slate = not funded (≥60).
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Side-by-side readout: honest vs contaminated jump, and the induced bias.
+{
+  const clean = rdvalid_fitClean.jump;
+  const dirty = rdvalid_fitDirty.jump;
+  const bias = dirty - rdvalid_trueEffect;
+  const fmt = v => (v >= 0 ? "+" : "") + v.toFixed(2);
+  const tile = (label, value, color, bg) => html`<div style="
+      min-width:0; text-align:center; min-height:4.1rem;
+      display:flex; flex-direction:column; justify-content:center;
+      padding:0.55rem 0.4rem; border-radius:0.5rem; background:${bg};">
+    <div style="font-family:'Inter',sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.2rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${tile("True local effect", fmt(rdvalid_trueEffect), "#1c1c1a", "#f6f5f1")}
+      ${tile("Honest RD", fmt(clean), "#1c1c1a", "#f6f5f1")}
+      ${tile("Contaminated RD", fmt(dirty), Math.abs(bias) > 0.1 ? "#b3000b" : "#1c1c1a",
+          Math.abs(bias) > 0.1 ? "rgba(179,0,11,0.06)" : "#f6f5f1")}
+      ${tile("Bias vs truth", fmt(bias), Math.abs(bias) > 0.1 ? "#b3000b" : "#2e6f40",
+          Math.abs(bias) > 0.1 ? "rgba(179,0,11,0.06)" : "rgba(46,111,64,0.08)")}
+    </div>
+    <div style="font-family:'Inter',sans-serif; font-size:0.74rem; color:#79766e;
+        margin-top:0.4rem; line-height:1.4;">
+      "Bias vs truth" is the contaminated estimate minus the true −0.30 (so it includes a
+      little sampling noise even at zero contamination).
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Outcome Plot
+
+**Step 1: Read the honest fit.** Set **Sorting contamination** to 0. The dashed and solid lines coincide; the blue (funded, below 60) limit sits about 0.30 below the pink (not-funded) limit at the cutoff. The "Honest RD" and "Contaminated RD" tiles both read near $-0.30$, and the bias tile is green. With no sorting, the estimated jump *is* the true local effect.
+
+**Step 2: Inject sorting.** Push the slider toward 1. Better-managed centers from just above 60 flood into the just-below region, dragging the blue limit *downward*. The solid blue fit pulls away from its dashed honest counterpart, the apparent jump grows more negative, and the bias tile turns red. The program now looks far more effective than it is --- not because it works better, but because the just-below group is no longer comparable.
+
+**Step 3: Tie it back to Test 1.** This is the *same* sorting that lit up the density test. The lesson is that the density test and the outcome plot are two views of one phenomenon: bunching in the histogram and a corrupted jump in the scatter are the visible and the consequential faces of manipulation. Catching it in the density (Test 1) is how you avoid being fooled by the scatter.
+
+<details>
+<summary>Math Details: Why Manipulation Violates Continuity</summary>
+<div class="details-content">
+
+### A type model of sorting
+
+Index each center by a fixed *type* $\theta_i$ (ambition, latent competence) that influences both its untreated outcome and its propensity to manipulate. Write the **latent** running variable --- the index a center *would* report under no incentive --- as $X_i^*$, and the **observed** running variable as $X_i$. Sharp RD identification requires continuity of the potential-outcome means in the variable that *actually assigns* treatment, $X_i$:
+
+$$
+m_0(x) \equiv E[Y_i(0)\mid X_i = x] \quad\text{continuous at } c .
+$$
+
+Suppose centers with $X_i^*$ just above $c$ and high $\theta_i$ relabel to $X_i < c$ to capture the funded team. Then conditional on the *observed* $X_i = x$ just below $c$, the population is a **mixture** of (i) genuine low-index centers and (ii) high-$\theta$ relabelers:
+
+$$
+m_0(c^-) = (1-\pi)\,E[Y_i(0)\mid X_i^* = c^-,\,\text{honest}] \;+\; \pi\,E[Y_i(0)\mid \theta_i \text{ high, relabeled}],
+$$
+
+where $\pi$ is the relabeled share. Just above $c$, the relabelers are *gone*, so $m_0(c^+)$ reflects only honest centers. Because high-$\theta$ relabelers have systematically different $Y_i(0)$ (they are better-managed), the two limits differ:
+
+$$
+m_0(c^-) \neq m_0(c^+) \quad\Longrightarrow\quad \text{continuity fails.}
+$$
+
+### The observable consequence
+
+The mixture also distorts the density. If a mass $\pi$ of units crosses from $(c, c+w]$ into $[c-1, c)$, the density picks up that mass on the left and loses it on the right:
+
+$$
+f(c^-) = f^*(c^-) + \frac{\pi\,P(c < X^* \le c+w)}{|[c-1,c)|}, \qquad
+f(c^+) = f^*(c^+) - (\text{lost mass}),
+$$
+
+so $f(c^-) > f(c^+)$ even though the *latent* density $f^*$ was continuous. McCrary's $\theta = \log f(c^+) - \log f(c^-)$ is therefore negative under left-bunching --- exactly the sign the lab produces. This is the formal bridge between the *unobservable* continuity violation (different $m_0$ limits) and the *observable* test statistic (different $f$ limits): the same behavior, $\pi > 0$, drives both.
+
+### Identification under no manipulation
+
+When $\pi = 0$ (no sorting), $X_i = X_i^*$, the mixture collapses, $m_0$ is continuous, and the sharp-RD estimand recovers the local effect:
+
+$$
+\lim_{x\downarrow c} E[Y_i\mid X_i = x] - \lim_{x\uparrow c} E[Y_i\mid X_i = x] = \tau_{\text{RD}} = E[\,Y_i(1) - Y_i(0)\mid X_i = c\,].
+$$
+
+The density test is, in effect, a test of the auxiliary restriction $\pi = 0$ that makes this line hold.
+
+</div>
+</details>
+
+## Running the Validity Battery in Code
+
+The block below simulates a sorted RD and runs the full battery: the **Cattaneo–Jansson–Ma density test** (`rddensity` / `rdrobust`), a **covariate-balance** RD, **placebo cutoffs**, and a **donut-RD** re-estimate. The structure mirrors what you would do with real *vårdcentral* data.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(rdrobust)
+library(rddensity)
+library(tidyverse)
+
+set.seed(60)
+
+# --- Simulate 2,000 vårdcentraler with sorting just below the cutoff ---
+c0 <- 60
+n  <- 2000
+x_star <- rnorm(n, 61.5, 7.5)                 # latent diabetes-control index
+
+# 50% of centers in (60, 63] under-report to land just below 60 (manipulation)
+gameable <- x_star > c0 & x_star <= c0 + 3
+sorted   <- gameable & (runif(n) < 0.5)
+x <- ifelse(sorted, runif(n, c0 - 1, c0), x_star)
+
+treated  <- as.integer(x < c0)                # funded if index < 60
+patients <- round(rnorm(n, 1200, 250))        # PREDETERMINED covariate
+y <- 7.6 - 0.02 * (x - c0) - 0.30 * treated -
+     0.6 * sorted + rnorm(n, 0, 0.45)         # sorting drags just-below HbA1c down
+
+dat <- tibble(x, y, treated, patients)
+
+# --- Test 1: McCrary / Cattaneo density (manipulation) test ---
+dens <- rddensity(X = dat$x, c = c0)
+summary(dens)                                 # look at the p-value of the jump
+
+# --- Test 2: Covariate continuity (balance): RD on a predetermined covariate ---
+bal <- rdrobust(y = dat$patients, x = dat$x, c = c0)
+cat("Balance RD on 'patients' (should be ~0):",
+    round(bal$coef[1], 1), " p =", round(bal$pv[3], 3), "\n")
+
+# --- Headline RD on the outcome (contaminated by the sorting above) ---
+# NOTE ON SIGN: rdrobust reports the jump as (limit above − limit below).
+# Here treatment is assigned BELOW the cutoff, so to express the estimate in the
+# same "treated − control" convention as the text (where the true effect is
+# −0.30, negative = beneficial) we negate rdrobust's coefficient.
+main <- rdrobust(y = dat$y, x = dat$x, c = c0)
+cat("Headline RD on HbA1c (treated − control):", round(-main$coef[1], 3),
+    " p =", round(main$pv[3], 3), "\n")
+
+# --- Test 3: Placebo cutoffs (no policy there -> expect ~0) ---
+placebos <- c(52, 55, 65, 68)
+for (cc in placebos) {
+  sub <- dat |> filter((cc < c0 & x < c0) | (cc > c0 & x >= c0))  # one side only
+  pl  <- rdrobust(y = sub$y, x = sub$x, c = cc)
+  cat("Placebo cutoff", cc, ": effect =", round(pl$coef[1], 3),
+      " p =", round(pl$pv[3], 3), "\n")
+}
+
+# --- Test 4: Donut RD — drop |x - c| < 1 and re-estimate ---
+# Same sign flip as the headline RD (treatment is below the cutoff).
+donut <- dat |> filter(abs(x - c0) >= 1)
+dn <- rdrobust(y = donut$y, x = donut$x, c = c0)
+cat("Donut RD (hole = 1pt):", round(-dn$coef[1], 3),
+    " vs full:", round(-main$coef[1], 3), "\n")
+
+# --- Bandwidth sensitivity: sweep h around the MSE-optimal value ---
+for (h in c(3, 5, 7, 9)) {
+  bw <- rdrobust(y = dat$y, x = dat$x, c = c0, h = h)
+  cat("h =", h, ": effect (treated − control) =", round(-bw$coef[1], 3), "\n")
+}
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from rdrobust import rdrobust          # pip install rdrobust
+from rddensity import rddensity        # pip install rddensity (separate package)
+
+rng = np.random.default_rng(60)
+
+# --- Simulate 2,000 vårdcentraler with sorting just below the cutoff ---
+c0, n = 60, 2000
+x_star = rng.normal(61.5, 7.5, n)                 # latent index
+
+gameable = (x_star > c0) & (x_star <= c0 + 3)      # "I could game this" zone
+sorted_ = gameable & (rng.random(n) < 0.5)         # 50% under-report
+x = np.where(sorted_, rng.uniform(c0 - 1, c0, n), x_star)
+
+treated  = (x < c0).astype(int)                    # funded if index < 60
+patients = np.round(rng.normal(1200, 250, n))      # PREDETERMINED covariate
+y = (7.6 - 0.02 * (x - c0) - 0.30 * treated
+     - 0.6 * sorted_ + rng.normal(0, 0.45, n))     # sorting drags HbA1c down
+
+dat = pd.DataFrame({"x": x, "y": y, "treated": treated, "patients": patients})
+
+# --- Test 1: Cattaneo-Jansson-Ma density (manipulation) test ---
+dens = rddensity(dat["x"], c=c0)
+print(dens)                                        # inspect the jump p-value
+
+# --- Test 2: Covariate continuity (balance) ---
+bal = rdrobust(dat["patients"], dat["x"], c=c0)
+print("Balance RD on 'patients' (should be ~0):",
+      round(float(bal.coef.iloc[0]), 1),
+      " p =", round(float(bal.pv.iloc[2]), 3))
+
+# --- Headline RD on the outcome (contaminated) ---
+# SIGN NOTE: rdrobust reports (limit above − limit below). Treatment here is
+# assigned BELOW the cutoff, so we negate the coefficient to express it as
+# "treated − control" (matching the text's −0.30 convention; negative = good).
+main = rdrobust(dat["y"], dat["x"], c=c0)
+print("Headline RD on HbA1c (treated − control):", round(-float(main.coef.iloc[0]), 3),
+      " p =", round(float(main.pv.iloc[2]), 3))
+
+# --- Test 3: Placebo cutoffs (expect ~0) ---
+for cc in (52, 55, 65, 68):
+    mask = ((cc < c0) & (dat["x"] < c0)) | ((cc > c0) & (dat["x"] >= c0))
+    sub = dat[mask]
+    pl = rdrobust(sub["y"], sub["x"], c=cc)
+    print(f"Placebo cutoff {cc}: effect =", round(float(pl.coef.iloc[0]), 3),
+          " p =", round(float(pl.pv.iloc[2]), 3))
+
+# --- Test 4: Donut RD — drop |x - c| < 1 (same sign flip as headline) ---
+donut = dat[np.abs(dat["x"] - c0) >= 1]
+dn = rdrobust(donut["y"], donut["x"], c=c0)
+print("Donut RD:", round(-float(dn.coef.iloc[0]), 3),
+      " vs full:", round(-float(main.coef.iloc[0]), 3))
+
+# --- Bandwidth sensitivity ---
+for h in (3, 5, 7, 9):
+    bw = rdrobust(dat["y"], dat["x"], c=c0, h=h)
+    print(f"h = {h}: effect (treated − control) =", round(-float(bw.coef.iloc[0]), 3))
+```
+
+:::
+
+In this simulation the density test should *reject* (sorting was baked in), the headline RD is biased away from the true $-0.30$ by the sorting term, and the donut estimate --- having dropped the contaminated boundary units --- moves back toward the truth. That contrast is exactly the diagnostic story you want to be able to tell about real data.
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A region's vårdcentral funding rule treats centers with a diabetes-control index **below 60**. An analyst bins the running variable into 1-point bins near the cutoff and finds the following counts: the bin $[59, 60)$ contains **180** centers while the bin $[60, 61)$ contains **96**; the neighboring "honest" bins each hold roughly **110** centers.
+
+(a) Convert the two cutoff-adjacent bin counts into a McCrary-style log density jump $\theta = \log f(c^+) - \log f(c^-)$ (the bin width is constant, so you may use counts directly). (b) In which direction does the bunching point, and is that the direction you expect given the rule? (c) What does this imply for the RD design?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With a constant bin width the density is proportional to the count, so
+
+$$
+\theta = \log(96) - \log(180) = \log\!\left(\tfrac{96}{180}\right) = \log(0.533) \approx -0.629.
+$$
+
+The density just above the cutoff is about $0.533$ times the density just below --- a roughly 47% deficit on the high side.
+
+**(b)** The mass piles up *below* 60 (180 vs 96) and is depleted *above* it, so $\theta < 0$. This is exactly the expected direction: treatment (the funded team) is awarded *below* the cutoff, so centers sort *downward* to capture it. The "honest" bins (~110 each) confirm the spike at $[59,60)$ is anomalous, not a smooth feature of the distribution.
+
+**(c)** A density discontinuity of this size is strong evidence of **manipulation**: centers are under-reporting their index to land just inside eligibility. The just-below and just-above groups are no longer exchangeable, so the continuity assumption is suspect and the headline RD estimate at $c=60$ is not credible without remediation (e.g., a donut RD, or abandoning the design if sorting is pervasive).
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+An RD evaluates whether the funded diabetes team lowers next-year HbA1c. The analyst runs four placebo-cutoff regressions and the true RD, reporting the estimated jump (in HbA1c points) and its p-value:
+
+| Cutoff | Estimate | p-value |
+|:------:|:--------:|:-------:|
+| 53 (placebo) | $-0.04$ | 0.71 |
+| 56 (placebo) | $+0.05$ | 0.62 |
+| **60 (true)** | $-0.31$ | 0.004 |
+| 64 (placebo) | $-0.02$ | 0.88 |
+| 67 (placebo) | $+0.03$ | 0.77 |
+
+(a) Does this pattern support or undermine the design's validity? (b) Suppose instead the placebo at 56 had come back at $-0.28$ with p = 0.01. What would that change, and which other test would you immediately rerun?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** It **supports** validity. The four placebo cutoffs all produce small estimates that are statistically indistinguishable from zero (p-values from 0.62 to 0.88), while the *true* cutoff at 60 shows a clear, well-separated, significant jump ($-0.31$, p = 0.004). This is the textbook portrait: flat and near-zero everywhere except at the real policy line. The single conspicuous spike at the genuine cutoff is what a credible RD looks like.
+
+**(b)** A large, significant placebo effect at 56 would be a serious red flag. It would mean the design is detecting "jumps" where no policy exists --- so the $-0.31$ at the true cutoff might be partly (or wholly) an artifact of functional form (curvature being read as a discontinuity) or of some *other* discontinuity in the running variable near 56–60. You can no longer be sure the true-cutoff estimate reflects the program. The first thing to rerun is the **bandwidth-sensitivity** check: if the spurious 56 jump and the 60 jump both shrink toward zero under a narrower bandwidth and a flexible local-linear fit, the placebo was a functional-form artifact. You would also re-examine the running variable for a competing policy or reporting threshold near 56.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A colleague proposes testing covariate balance by running an RD with **next-year number of nurse visits** as the outcome on the left-hand side, arguing that "if the groups are balanced, this shouldn't jump at the cutoff either." Explain why this is a flawed balance test. What single word in the definition of a balance covariate does the proposal violate, and give one variable that *would* be appropriate here.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The proposal violates the requirement that a balance covariate be **predetermined** --- fixed *before* treatment is assigned. "Next-year number of nurse visits" is measured *after* the funded team is in place, and the funded team is a dedicated *distriktssköterska* whose entire purpose is to increase coordinated nurse contact. So this variable is plausibly an **outcome (or mediator) of the program**, not a pre-treatment characteristic. A jump in it at the cutoff is *expected* if the program works, and tells you nothing about whether the groups were comparable to begin with. Using a post-treatment variable as a balance check can falsely "fail" a perfectly valid design (or falsely reassure, depending on direction).
+
+An appropriate balance covariate is any characteristic determined *before* the funding rule bit: for example, the center's **prior-year (baseline) number of enrolled diabetes patients**, its **urban/rural classification**, its **prior-year staffing (läkare per 1,000 patients)**, or the **lagged diabetes-control index from two years earlier**. None of these can be affected by this year's treatment, so a jump in any of them at the cutoff would genuinely signal that the just-below and just-above centers differ.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+For a funded-team RD at $c = 60$, an analyst reports a headline estimate of $-0.45$ HbA1c points. Worried about sorting, she re-runs the analysis dropping centers within $\pm 1$ point of the cutoff (donut RD) and gets $-0.29$; her bandwidth sweep gives $-0.44$ ($h=3$), $-0.45$ ($h=5$), $-0.46$ ($h=7$). The density test rejects at p = 0.002.
+
+(a) Interpret the gap between the full ($-0.45$) and donut ($-0.29$) estimates. (b) The bandwidth sweep is remarkably stable --- does that rescue the design? (c) What is your overall verdict and recommended headline number, if any?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The full-sample estimate ($-0.45$) is substantially more negative (more "beneficial") than the donut estimate ($-0.29$) that excises the boundary units. Since the density test confirms sorting *into* the just-below region, the most likely reading is that the manipulating centers --- better-managed centers that gamed their index downward --- are concentrated near the cutoff and are dragging the just-below average HbA1c down, **inflating** the apparent benefit. Removing them (the donut) strips out much of that contamination, so the $-0.29$ is plausibly closer to the true local effect. The $0.16$-point gap is a direct measure of how much the suspect boundary units were driving the headline.
+
+**(b)** No. Bandwidth stability shows the estimate is robust to *how far from the cutoff* you look, but it says nothing about *manipulation*, because the sorting bias sits right at the cutoff and contaminates every bandwidth roughly equally. A result can be perfectly bandwidth-stable and still be biased by sorting --- the two tests probe different failure modes. Stability is reassuring about functional form, not about continuity.
+
+**(c)** **Verdict: the design is compromised by manipulation** (density test rejects strongly; donut estimate moves materially). The full-sample $-0.45$ should *not* be reported as the causal effect. The honest options are: (i) report the **donut estimate $-0.29$** as a partial remediation, clearly flagged as conditional on the manipulators being confined to the donut hole and on the donut's altered estimand; (ii) if sorting is pervasive rather than confined to $\pm 1$, treat the RD as **invalid** at this cutoff and seek a different identification strategy. What you must not do is present $-0.45$ as if the validity tests had passed.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- RD identification rests on **continuity**; **manipulation** of the running variable breaks it by sorting non-exchangeable units across the cutoff, adding an unobservable sorting bias to the measured jump.
+- The **McCrary / Cattaneo density test** detects manipulation through its observable fingerprint --- a discontinuity in the *density* of the running variable at the cutoff. A failed density test is strong evidence against the design; a passed one is necessary but not sufficient.
+- **Covariate-continuity (balance)** and **placebo-cutoff** tests are falsification checks: predetermined covariates should not jump at the cutoff, and no effect should appear at fake thresholds. Only *predetermined* covariates count.
+- **Bandwidth sensitivity** and **donut RD** probe specification and boundary contamination; they diagnose fragility but do not by themselves certify which estimate is correct.
+- Validity testing is about *trying to break* the design. Report the whole battery honestly --- a result that survived no falsification attempt is unexamined, not validated.
+:::
+
+## What Comes Next
+
+We have learned to interrogate an RD design rather than trust it: test the running variable for manipulation, check that predetermined covariates do not jump, probe fake cutoffs, and stress-test the bandwidth and the boundary. A design that survives this battery has earned the right to be believed --- *locally*. But "locally" carries its own caveat: even a perfectly clean RD estimates an effect only for units *at the cutoff*, and only for the specific policy that switches on there. The next page, [Interpretation and External Validity](interpretation.qmd), confronts what an RD estimate does and does not let you claim --- why $\tau_{\text{RD}}$ is a local effect, when (and whether) it generalizes away from the threshold, and how to communicate that scope honestly to the policymakers who must decide whether to extend a program beyond the patients who happened to sit on the line.

@@ -1,0 +1,788 @@
+---
+title: "Parametric Duration and Competing Risks"
+subtitle: "Shapes of hazards and multiple event types"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Write the exponential and Weibull hazard and survival functions, and read off what the shape parameter $k$ does to the hazard's slope
+- Explain *duration dependence* --- whether the event rate rises or falls the longer you wait --- and identify it from the sign of $k - 1$
+- Translate a covariate effect between the *accelerated-failure-time* (time speeds up or slows down) and *proportional-hazards* readings of a Weibull model
+- Define *cause-specific hazards* and the *cumulative incidence function* when several mutually exclusive event types compete
+- Diagnose the classic error of treating a competing event as ordinary censoring, and show why it overstates incidence
+:::
+
+## The Question Behind the Clock
+
+The [previous page](cox-proportional-hazards.qmd) estimated *relative* hazards without ever committing to a shape for the baseline. That agnosticism is a strength --- but sometimes we genuinely want the shape. A *verksamhetschef* (clinic manager) at a *vårdcentral* in Region Uppsala running a heart-failure follow-up program does not only ask "which patients are at higher risk?" She asks: **is the risk of readmission highest in the first weeks after discharge and then fading, or does it creep upward the longer a patient goes without contact with a *distriktssköterska* (district nurse)?** That is a question about the *shape of the hazard over time*, and answering it requires a parametric model.
+
+A second complication is even more common in primary care. Follow a cohort of frail elderly patients enrolled in a fall-prevention program and ask "how long until the first fall-related hospitalisation?" Some patients *die* before any fall, others *move out of the region*, others are still fall-free when the study ends. Death is not censoring --- a patient who has died can never be hospitalised for a fall. Treating death as if the patient were merely "lost to follow-up" silently assumes they could still have the event, and that assumption inflates every incidence number you report. This is the world of **competing risks**.
+
+This page builds both tools. First, parametric duration models that *name* the hazard shape --- the exponential and the Weibull. Then competing risks, where several event types race for each patient and we must keep score honestly. Because every model here is fit by maximum likelihood, it leans on the [Maximum Likelihood module](../11-mle-gmm/likelihood.qmd): the durations are the data, the hazard parameters are the unknowns, and we climb the log-likelihood as always.
+
+## Three Functions, One Object
+
+A duration $T > 0$ --- time to readmission, time to first fall --- can be described by any one of three equivalent functions. Knowing one gives you the other two.
+
+::: {.glass-card .glass-card--definition}
+For a positive duration $T$ with density $f(t)$ and cumulative distribution $F(t) = \Pr(T \le t)$:
+
+- The **survival function** $S(t) = \Pr(T > t) = 1 - F(t)$ --- the probability of *still* being event-free at time $t$.
+- The **hazard function**
+$$
+h(t) \;=\; \lim_{\Delta \to 0}\frac{\Pr(t \le T < t+\Delta \mid T \ge t)}{\Delta} \;=\; \frac{f(t)}{S(t)}.
+$$
+- The **cumulative hazard** $H(t) = \int_0^t h(u)\,du$, which ties them together via $S(t) = \exp\!\big(-H(t)\big)$.
+
+**Read the hazard as**: "the instantaneous rate of having the event *right now*, given you have survived up to now." It is a rate (events per unit time), not a probability --- it can exceed 1.
+:::
+
+The hazard is the star of this page because its *shape* is the clinical story. A hazard that falls over time means the danger is front-loaded; a hazard that rises means risk accumulates with waiting. The two parametric models below differ entirely in what shapes they permit.
+
+## The Exponential: A Memoryless Hazard
+
+The simplest duration model fixes the hazard at a single constant $\lambda$ for all time.
+
+::: {.glass-card .glass-card--definition}
+The **exponential duration model** has a constant hazard:
+$$
+h(t) = \lambda, \qquad S(t) = e^{-\lambda t}, \qquad f(t) = \lambda e^{-\lambda t}, \qquad \lambda > 0.
+$$
+
+**Read this as**: "the rate of the event is the same number $\lambda$ at every instant, no matter how long you have already waited." Survival decays geometrically; the mean duration is $E[T] = 1/\lambda$.
+:::
+
+The exponential is **memoryless**: a patient who has gone six months without readmission faces exactly the same instantaneous risk as one just discharged. Formally, $\Pr(T > s + t \mid T > s) = \Pr(T > t)$ --- the clock does not "age." That is a strong, often implausible, assumption. After a hospital discharge, risk is usually *highest* in the first weeks; after a long disease-free spell, risk may *climb*. The exponential cannot represent either. We need a model whose hazard can bend.
+
+## The Weibull: A Hazard That Can Rise or Fall
+
+The Weibull keeps the exponential's tractability but adds one **shape parameter** $k$ that lets the hazard slope up or down.
+
+::: {.glass-card .glass-card--definition}
+The **Weibull duration model** has hazard, survival, and density
+$$
+h(t) = \lambda k\,(\lambda t)^{\,k-1}, \qquad
+S(t) = \exp\!\big(-(\lambda t)^{k}\big), \qquad
+f(t) = \lambda k\,(\lambda t)^{\,k-1}\exp\!\big(-(\lambda t)^{k}\big),
+$$
+with **scale** $\lambda > 0$ and **shape** $k > 0$.
+
+**Read the hazard as**: "a baseline rate $\lambda k$ multiplied by time raised to the power $k-1$." The exponent $k-1$ controls the slope:
+
+- $k < 1$: hazard **decreases** with time (negative duration dependence) --- danger is front-loaded.
+- $k = 1$: hazard is **constant** --- the Weibull collapses to the exponential with $h = \lambda$.
+- $k > 1$: hazard **increases** with time (positive duration dependence) --- risk accumulates.
+:::
+
+The single number $k$ thus *is* the answer to the clinic manager's question. Estimate $k < 1$ and readmission risk is highest right after discharge and fades; estimate $k > 1$ and the longer a patient goes uncontacted, the faster the risk grows. The constant $k = 1$ case is the null hypothesis of "no duration dependence," and we can test it directly.
+
+::: {.glass-card .glass-card--insight}
+**Duration dependence is the whole point.** "Does the event rate rise or fall the longer you wait?" is answered entirely by the sign of $k - 1$. A real "bathtub" hazard --- high early (infant discharge risk), low in the middle, rising late (frailty) --- cannot be produced by a *single* Weibull, which is monotone. Practitioners approximate a bathtub by *mixing* regimes (a piecewise or two-component model); the slider below lets you sweep across the decreasing / constant / increasing regimes and imagine stitching them into the bathtub shape.
+:::
+
+## See It: The Weibull Hazard Under a Shape Slider
+
+The interactive plots the Weibull hazard $h(t) = \lambda k (\lambda t)^{k-1}$ as you drag the shape $k$. Watch the curve pivot: below $k=1$ it slopes down (front-loaded risk), at $k=1$ it is the flat exponential line, above $k=1$ it climbs. A second panel shows the matching survival curve $S(t)$ so you can see how a rising hazard bends survival downward ever faster. The dashed grey line marks the constant exponential hazard for comparison.
+
+::: {.interactive-container}
+
+#### Weibull hazard and survival as the shape parameter sweeps
+
+```{ojs}
+//| echo: false
+viewof svpar_k = Inputs.range([0.3, 3.0], {
+  value: 1.0,
+  step: 0.05,
+  label: "Shape k  (＜1 falling · =1 flat · ＞1 rising)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof svpar_lambda = Inputs.range([0.3, 1.6], {
+  value: 0.8,
+  step: 0.05,
+  label: "Scale λ  (events per month)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Shared Uppsala-academic palette for every chart on this page.
+svpar_pal = ({
+  focal:  "#990000",   // focal / primary series (Uppsala red)
+  slate:  "#3d5a6c",   // secondary / comparison
+  green:  "#2e6f40",   // good / on-target
+  ochre:  "#9c7a33",   // highlight / true-value
+  ink:    "#1c1c1a",   // neutral ink
+  axis:   "#79766e",   // axis text (Uppsala muted)
+  hair:   "#e6e3db",   // gridlines
+  muted:  "#79766e",   // muted ink
+  fill:   "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Weibull hazard h(t) = λ k (λ t)^(k-1). Guard t = 0 when k < 1, where the
+// hazard diverges, by starting the grid at a small positive epsilon.
+svpar_hazard = (t, k, lam) => lam * k * Math.pow(lam * t, k - 1)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Weibull survival S(t) = exp(-(λ t)^k).
+svpar_surv = (t, k, lam) => Math.exp(-Math.pow(lam * t, k))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Time grid in months. Start just above 0 so the k<1 hazard stays finite.
+svpar_grid = d3.range(0.05, 6.001, 0.05)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Hazard curve for the chosen (k, λ) plus the constant exponential reference
+// (same λ, k = 1) so the pivot around the flat line is visible.
+svpar_hazCurve = svpar_grid.map(t => ({ t, h: svpar_hazard(t, svpar_k, svpar_lambda) }))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+svpar_expRef = svpar_grid.map(t => ({ t, h: svpar_lambda }))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+svpar_survCurve = svpar_grid.map(t => ({ t, S: svpar_surv(t, svpar_k, svpar_lambda) }))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Cap the y-axis so the k<1 spike near 0 does not flatten the rest of the plot.
+svpar_hazMax = Math.min(3.0, d3.max(svpar_hazCurve, d => d.h))
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 320,
+  marginLeft: 62,
+  marginBottom: 46,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: svpar_pal.muted
+  },
+  x: { label: "Months since discharge  t  →", domain: [0, 6] },
+  y: { label: "↑ Hazard  h(t)", domain: [0, svpar_hazMax], grid: false },
+  marks: [
+    Plot.gridY({ stroke: svpar_pal.hair }),
+    // Constant exponential reference (k = 1) — dashed slate.
+    Plot.line(svpar_expRef, {
+      x: "t", y: "h", stroke: svpar_pal.slate,
+      strokeWidth: 1.5, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ t: 5.7, h: svpar_lambda }], {
+      x: "t", y: "h", text: ["exponential (k=1)"],
+      fill: svpar_pal.slate, fontSize: 11, fontWeight: 600,
+      textAnchor: "end", dy: -8,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Weibull hazard — focal Uppsala red.
+    Plot.line(svpar_hazCurve, {
+      x: "t", y: "h", stroke: svpar_pal.focal, strokeWidth: 2.5,
+      clip: true
+    }),
+    Plot.text([{ t: 3, h: svpar_hazMax * 0.92 }], {
+      x: "t", y: "h",
+      text: [svpar_k < 0.97 ? "falling: front-loaded risk"
+            : svpar_k > 1.03 ? "rising: risk accumulates"
+            : "flat: memoryless (exponential)"],
+      fill: svpar_pal.focal, fontSize: 12, fontWeight: 700,
+      textAnchor: "middle",
+      stroke: "white", strokeWidth: 3.5, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 220,
+  marginLeft: 62,
+  marginBottom: 46,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: svpar_pal.muted
+  },
+  x: { label: "Months since discharge  t  →", domain: [0, 6] },
+  y: { label: "↑ Survival  S(t)", domain: [0, 1], grid: false },
+  marks: [
+    Plot.gridY({ stroke: svpar_pal.hair }),
+    Plot.areaY(svpar_survCurve, {
+      x: "t", y: "S", fill: svpar_pal.focal, fillOpacity: 0.08
+    }),
+    Plot.line(svpar_survCurve, {
+      x: "t", y: "S", stroke: svpar_pal.focal, strokeWidth: 2.5
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout tying the slider to the duration-dependence verdict. Built in an
+// ojs html`` cell so the reactive values interpolate (markdown ${...} would
+// render literally as text in Quarto).
+{
+  const k = svpar_k, lam = svpar_lambda;
+  const median = Math.pow(Math.log(2), 1 / k) / lam;   // S(t)=0.5  ⇒  (λt)^k = ln2
+  const mean = (1 / lam) * svpar_gammaFn(1 + 1 / k);
+  const regime = k < 0.97 ? ["Decreasing hazard", svpar_pal.slate]
+               : k > 1.03 ? ["Increasing hazard", svpar_pal.focal]
+               : ["Constant hazard", svpar_pal.green];
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${svpar_pal.fill}; border:1px solid ${svpar_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${svpar_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Shape k", k.toFixed(2), svpar_pal.ink)}
+    ${tile("Duration dependence", regime[0], regime[1])}
+    ${tile("Median survival", median.toFixed(2) + " mo", svpar_pal.ink)}
+    ${tile("Mean survival", mean.toFixed(2) + " mo", svpar_pal.ink)}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Lanczos approximation of the gamma function — needed for the Weibull mean
+// E[T] = (1/λ) Γ(1 + 1/k). Standard 7-term coefficients; accurate to ~1e-10.
+svpar_gammaFn = function svpar_gammaFn(z) {
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+  ];
+  if (z < 0.5) {
+    return Math.PI / (Math.sin(Math.PI * z) * svpar_gammaFn(1 - z));
+  }
+  z -= 1;
+  let x = c[0];
+  for (let i = 1; i < g + 2; i++) x += c[i] / (z + i);
+  const t = z + g + 0.5;
+  return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+}
+```
+
+:::
+
+### How to Read the Hazard Sweep
+
+Work through these in order; each isolates one idea.
+
+**Step 1: Anchor on the flat line.** The dashed slate line is the constant exponential hazard $h(t) = \lambda$ --- the memoryless benchmark. Every Weibull pivots around it. Set the shape slider to $k = 1$ and the red Weibull curve lies *exactly* on top of the dashed line: the Weibull *is* the exponential there.
+
+**Step 2: Drag $k$ below 1.** The red hazard now slopes *downward* --- highest just after discharge, fading thereafter. This is **negative duration dependence**: the danger is front-loaded. The "Duration dependence" tile reads *Decreasing*. Notice the curve shoots up near $t = 0$ (it is technically infinite at the origin when $k < 1$); the plot clips it so the rest stays readable.
+
+**Step 3: Drag $k$ above 1.** The hazard now *climbs* with time --- the longer a patient goes without a nurse contact, the faster the readmission rate grows. This is **positive duration dependence**. The survival curve in the lower panel bends downward ever more steeply, because a rising hazard kills off survivors at an accelerating pace.
+
+**Step 4: Read the summary tiles.** *Median survival* is the time at which half the cohort has had the event; *mean survival* is $E[T] = \tfrac1\lambda \Gamma(1 + 1/k)$. Watch both shrink as you raise $\lambda$ (more events per month) --- $\lambda$ sets the *clock speed*, while $k$ sets the *shape*.
+
+**Step 5: Imagine the bathtub.** No single setting gives a U-shaped "bathtub" hazard --- one Weibull is always monotone. But sweep slowly from $k = 0.5$ up past $k = 1$ to $k = 2.5$ and picture stitching the early falling piece to a later rising piece: that mental splice is exactly how piecewise models build a bathtub.
+
+## Two Readings of the Same Covariate: AFT vs. PH
+
+So far the Weibull had no covariates. Add a patient characteristic $x$ (say, whether the patient received structured nurse follow-up) and there are *two* established ways to let it move the duration --- and the Weibull is the unique model that satisfies *both*.
+
+::: {.glass-card .glass-card--definition}
+**Accelerated failure time (AFT).** Covariates rescale the *time axis*: a coefficient acts like a clock that runs faster or slower. The log-duration is linear in $x$,
+$$
+\log T = \beta_0 + \beta_1 x + \sigma \, \varepsilon,
+$$
+so $S(t \mid x) = S_0\!\big(t \cdot e^{-\beta_1 x}\big)$. A factor $e^{\beta_1 x} > 1$ **stretches** time --- the patient ages more slowly toward the event (longer survival); $e^{\beta_1 x} < 1$ **compresses** it.
+
+**Proportional hazards (PH).** Covariates multiply the *hazard* by a constant factor at every time,
+$$
+h(t \mid x) = h_0(t)\, e^{\gamma_1 x},
+$$
+so a coefficient is a (log) hazard ratio, exactly as in the [Cox model](cox-proportional-hazards.qmd).
+:::
+
+For a general distribution these are different models. The Weibull is special: it is the *only* continuous distribution that is simultaneously AFT and PH. The two coefficient sets are linked by the shape,
+$$
+\gamma_1 = -k\,\beta_1,
+$$
+so a single fit can be reported either way. `survreg` reports the AFT $\beta$; multiply by $-\hat k$ to read off the PH (log) hazard ratio.
+
+::: {.glass-card .glass-card--insight}
+**Why the link has a minus sign and a $k$.** AFT speaks in *time*: a positive $\beta_1$ lengthens survival. PH speaks in *risk*: lengthening survival means *lowering* the hazard, hence the minus sign. The factor $k$ enters because stretching the time axis by $e^{\beta_1}$ changes the hazard by $e^{\beta_1}$ raised to the power that the Weibull hazard gives to time, namely $k$. Steeper hazards ($k$ large) translate a given time-stretch into a larger hazard change.
+:::
+
+## Competing Risks: When Events Race
+
+Return to the fall-prevention cohort. Each frail patient is followed until **one** of several mutually exclusive things happens first: a fall-related hospitalisation (the event of interest), **death from another cause**, or the study ends with the patient still fall-free (true censoring). Death is not censoring --- a dead patient is not "still at risk of a fall, we just stopped watching." They can *never* have the event. Ignoring this distinction is the most common --- and most consequential --- mistake in applied duration analysis.
+
+We model each event type with its own **cause-specific hazard**, then combine them into the quantity policymakers actually want: the **cumulative incidence**.
+
+::: {.glass-card .glass-card--definition}
+With event types $j = 1, \dots, J$ (here: 1 = fall hospitalisation, 2 = death), the **cause-specific hazard** for type $j$ is
+$$
+h_j(t) = \lim_{\Delta \to 0}\frac{\Pr(t \le T < t+\Delta,\; \text{cause}=j \mid T \ge t)}{\Delta}.
+$$
+The **overall** hazard of leaving the event-free state is the sum $h(t) = \sum_j h_j(t)$, so overall survival is $S(t) = \exp\!\big(-\int_0^t \sum_j h_j(u)\,du\big)$.
+
+The **cumulative incidence function** (CIF) for cause $j$ --- the probability of having had event $j$ (and not some other event) by time $t$ --- is
+$$
+F_j(t) = \int_0^t h_j(u)\, S(u)\, du.
+$$
+
+**Read the CIF as**: "to fall by time $t$, you must (a) still be event-free up to $u$ --- the $S(u)$ factor --- and then (b) fall right at $u$ --- the $h_j(u)$ factor --- accumulated over all $u \le t$." Crucially, $S(u)$ is *overall* survival: a patient who dies first is removed from the pool that can still fall.
+:::
+
+The $S(u)$ inside the integral is the probability of *not yet having had any event*, so deaths shrink the pool of patients who can still be hospitalised for a fall. Treat deaths as censoring and apply the ordinary one-event estimator (Kaplan-Meier complement, $1 - S_1(t)$) instead, and you implicitly use the cause-1-only survival, which **ignores** that the dead are gone --- the curve rises *too high*, crediting dead patients with fall-risk they could never realise.
+
+::: {.glass-card .glass-card--assumption}
+**The competing-risks model assumes:** (1) the event types are **mutually exclusive and exhaustive** --- each patient leaves the event-free state through exactly one cause; (2) censoring is **independent** of the cause-specific hazards given covariates (administrative end-of-study, not informative dropout); and (3) the cause-specific hazards $h_j(t)$ are correctly specified. Under these, the CIFs and overall survival partition probability exactly: $\sum_j F_j(t) + S(t) = 1$.
+:::
+
+::: {.glass-card .glass-card--warning}
+**Treating a competing event as censoring overstates incidence.** The naive "$1 - $ Kaplan-Meier" estimate, applied after censoring deaths, answers a counterfactual question --- *"what fall incidence would we see in a world where nobody could die?"* --- not the real-world question *"what fraction of these patients actually get hospitalised for a fall?"* The two diverge whenever the competing event (death) is common, exactly the situation in a frail elderly cohort. Always report the **cumulative incidence function**, and never let the competing-risk CIFs plus overall survival exceed 1: $\sum_j F_j(t) + S(t) = 1$ at every $t$.
+:::
+
+## See It: Cumulative Incidence vs. the Naive Curve
+
+The second interactive simulates the fall-prevention cohort under two constant cause-specific hazards: $h_1$ for fall hospitalisation and $h_2$ for competing death. It draws the **correct** cumulative incidence of falls $F_1(t)$ against the **naive** $1 - e^{-h_1 t}$ curve that pretends deaths are censoring. Drag the competing-death hazard up and watch the naive curve detach upward --- the gap *is* the overstatement.
+
+::: {.interactive-container}
+
+#### Cumulative incidence: honest CIF vs. naive censoring
+
+```{ojs}
+//| echo: false
+viewof svpar_h1 = Inputs.range([0.05, 0.6], {
+  value: 0.20,
+  step: 0.01,
+  label: "Fall-hospitalisation hazard  h₁  (per year)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof svpar_h2 = Inputs.range([0.0, 0.8], {
+  value: 0.30,
+  step: 0.01,
+  label: "Competing-death hazard  h₂  (per year)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Years of follow-up grid.
+svpar_yrs = d3.range(0, 8.001, 0.05)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// With CONSTANT cause-specific hazards h1, h2, overall survival is
+// S(t) = exp(-(h1+h2) t). The correct CIF for cause 1 has the closed form
+//   F1(t) = h1/(h1+h2) * (1 - exp(-(h1+h2) t)).
+// The NAIVE curve censors deaths and reports 1 - exp(-h1 t), which uses only
+// the cause-1 hazard and so ignores that the dead can no longer fall.
+svpar_ciData = svpar_yrs.map(t => {
+  const hsum = svpar_h1 + svpar_h2;
+  const cifFall = hsum > 0
+    ? (svpar_h1 / hsum) * (1 - Math.exp(-hsum * t))
+    : svpar_h1 * t;                                   // limit as hsum→0
+  const cifDeath = hsum > 0
+    ? (svpar_h2 / hsum) * (1 - Math.exp(-hsum * t))
+    : 0;
+  const naive = 1 - Math.exp(-svpar_h1 * t);          // deaths censored
+  const surv = Math.exp(-hsum * t);                   // overall event-free
+  return { t, cifFall, cifDeath, naive, surv };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+// Tidy long form for the two cumulative-incidence series so a single Plot.line
+// with a stroke channel draws both with an automatic-free explicit palette.
+svpar_ciLong = svpar_ciData.flatMap(d => [
+  { t: d.t, value: d.cifFall, series: "CIF: fall hospitalisation (correct)" },
+  { t: d.t, value: d.naive,   series: "Naive 1 − KM (deaths censored)" }
+])
+```
+
+```{ojs}
+//| echo: false
+Plot.plot({
+  width: Math.min(680, width),
+  height: 340,
+  marginLeft: 62,
+  marginBottom: 46,
+  style: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: "12px",
+    background: "transparent",
+    color: svpar_pal.muted
+  },
+  x: { label: "Years of follow-up  t  →", domain: [0, 8] },
+  y: { label: "↑ Cumulative incidence of falls", domain: [0, 1], grid: false },
+  color: {
+    domain: ["CIF: fall hospitalisation (correct)", "Naive 1 − KM (deaths censored)"],
+    range: [svpar_pal.focal, svpar_pal.ochre],
+    legend: true
+  },
+  marks: [
+    Plot.gridY({ stroke: svpar_pal.hair }),
+    // Shade the overstatement gap between naive and correct.
+    Plot.areaY(svpar_ciData, {
+      x: "t", y1: "cifFall", y2: "naive",
+      fill: svpar_pal.ochre, fillOpacity: 0.12
+    }),
+    Plot.line(svpar_ciLong, {
+      x: "t", y: "value", stroke: "series", strokeWidth: 2.5,
+      strokeDasharray: d => d.series.startsWith("Naive") ? "6,4" : null
+    }),
+    Plot.text([{ t: 7.7, v: svpar_ciData[svpar_ciData.length - 1].cifFall }], {
+      x: "t", y: "v", text: ["correct CIF"],
+      fill: svpar_pal.focal, fontSize: 11, fontWeight: 700,
+      textAnchor: "end", dy: 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.text([{ t: 7.7, v: svpar_ciData[svpar_ciData.length - 1].naive }], {
+      x: "t", y: "v", text: ["naive (overstated)"],
+      fill: svpar_pal.ochre, fontSize: 11, fontWeight: 700,
+      textAnchor: "end", dy: -10,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// Live readout: the overstatement at 5 years, plus the accounting identity
+// F1 + F2 + S = 1 that must hold for the honest decomposition.
+{
+  const row = svpar_ciData.find(d => Math.abs(d.t - 5) < 0.026)
+            || svpar_ciData[svpar_ciData.length - 1];
+  const gap = row.naive - row.cifFall;
+  const identity = row.cifFall + row.cifDeath + row.surv;   // should be 1
+  const tile = (label, value, color) => html`<div style="
+      flex:1 1 0; min-width:7rem; text-align:center;
+      padding:0.55rem 0.4rem; border-radius:0.35rem;
+      background:${svpar_pal.fill}; border:1px solid ${svpar_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${svpar_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.05rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("Correct CIF at 5 yr", (row.cifFall * 100).toFixed(1) + "%", svpar_pal.focal)}
+    ${tile("Naive at 5 yr", (row.naive * 100).toFixed(1) + "%", svpar_pal.ochre)}
+    ${tile("Overstatement", "+" + (gap * 100).toFixed(1) + " pp", gap < 0.005 ? svpar_pal.green : svpar_pal.ochre)}
+    ${tile("F₁+F₂+S (check)", identity.toFixed(3), svpar_pal.green)}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Cumulative-Incidence Chart
+
+**Step 1: Start with no competing risk.** Drag the competing-death hazard $h_2$ to 0. The two curves --- the correct red CIF and the dashed ochre naive curve --- lie exactly on top of each other, and the "Overstatement" tile reads $+0.0$ pp (green). With nothing else to die from, censoring and competing-risk accounting agree.
+
+**Step 2: Introduce death.** Raise $h_2$. The dashed ochre naive curve climbs *above* the solid red CIF, and the shaded gap between them opens. That gap is the overstatement: fall incidence the naive method credits to patients who have actually already died.
+
+**Step 3: Read the tiles.** "Correct CIF at 5 yr" is the honest fraction of the cohort hospitalised for a fall; "Naive at 5 yr" is the inflated number. "Overstatement" is their difference in percentage points --- it grows as death becomes more common, exactly the frail-elderly scenario.
+
+**Step 4: Verify the accounting.** The last tile computes $F_1(5) + F_2(5) + S(5)$ --- fall incidence plus death incidence plus still-event-free. It must equal $1.000$ at every time: every patient is in exactly one of the three states. The naive curve can violate this (it alone can exceed the true CIF *and* leave $S$ unaccounted for), which is the formal signature of the error.
+
+## R and Python
+
+The R panel fits a Weibull AFT with `survreg`, recovers the PH hazard ratio via $\gamma = -k\beta$, and estimates competing-risk CIFs with `cmprsk::cuminc`. The Python panel fits a `WeibullFitter` and an `AalenJohansenFitter` (the nonparametric CIF estimator) from `lifelines`.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("survival", "cmprsk"))
+library(survival)
+
+## ---- Weibull AFT for time-to-readmission (months) ----
+# nurse = 1 if the patient got structured distriktssköterska follow-up.
+set.seed(2024)
+n  <- 400
+nurse <- rbinom(n, 1, 0.5)
+# True Weibull: shape k = 1.4 (rising hazard), nurse lengthens survival.
+k_true <- 1.4
+lp     <- 2.4 + 0.45 * nurse                       # AFT linear predictor (log-time)
+t_event <- rweibull(n, shape = k_true, scale = exp(lp))
+cens    <- runif(n, 8, 36)                          # administrative censoring
+time    <- pmin(t_event, cens)
+status  <- as.integer(t_event <= cens)
+
+fit <- survreg(Surv(time, status) ~ nurse, dist = "weibull")
+summary(fit)
+
+# survreg parameterises by the AFT coef beta and the log-scale; shape k = 1/scale.
+k_hat    <- 1 / fit$scale
+beta_nurse <- coef(fit)["nurse"]
+cat("Estimated Weibull shape k =", round(k_hat, 3),
+    "  (>1 ⇒ rising hazard)\n")
+# Convert the AFT coefficient to a proportional-hazards (log) hazard ratio:
+cat("PH hazard ratio for nurse follow-up =",
+    round(exp(-k_hat * beta_nurse), 3), "\n")   # <1 ⇒ lowers the hazard
+
+## ---- Competing risks: fall hospitalisation (1) vs. death (2) ----
+library(cmprsk)
+m   <- 600
+grp <- rbinom(m, 1, 0.5)                            # 0/1 risk group
+ev  <- sample(0:2, m, replace = TRUE, prob = c(.45, .30, .25))  # 0=censored
+ftime <- rexp(m, rate = 0.25)
+
+ci <- cuminc(ftime = ftime, fstatus = ev, group = grp, cencode = 0)
+# ci holds one cumulative-incidence curve per (group, cause). Plot them:
+plot(ci, lty = 1, color = c("#990000", "#3d5a6c", "#9c7a33", "#2e6f40"),
+     xlab = "Years", ylab = "Cumulative incidence")
+# Gray's test for equality of the fall-CIF across groups:
+ci$Tests
+```
+
+### Python
+
+```python
+# pip install lifelines
+import numpy as np
+from lifelines import WeibullFitter, AalenJohansenFitter
+
+rng = np.random.default_rng(2024)
+
+# ---- Weibull fit for time-to-readmission (months) ----
+n = 400
+k_true, lam_true = 1.4, 1 / np.exp(2.4)            # shape, rate
+t_event = rng.weibull(k_true, size=n) / lam_true   # numpy weibull is scale-1
+cens    = rng.uniform(8, 36, size=n)
+time    = np.minimum(t_event, cens)
+observed = (t_event <= cens).astype(int)
+
+wf = WeibullFitter().fit(time, event_observed=observed)
+print(wf.summary)                                   # lambda_ (scale) and rho_ (shape)
+print(f"Estimated shape rho = {wf.rho_:.3f}  (>1 ⇒ rising hazard)")
+print(f"Median survival     = {wf.median_survival_time_:.2f} months")
+
+# ---- Competing risks: cumulative incidence via Aalen–Johansen ----
+m = 600
+ftime = rng.exponential(scale=4.0, size=m)          # years
+# event_of_interest = 1 (fall), competing = 2 (death), 0 = censored
+codes = rng.choice([0, 1, 2], size=m, p=[0.45, 0.30, 0.25])
+
+# CIF for the fall event, treating death (code 2) as a COMPETING event,
+# not as censoring — this is the honest curve.
+ajf = AalenJohansenFitter()
+ajf.fit(durations=ftime, event_observed=codes, event_of_interest=1)
+print(ajf.cumulative_density_.tail())               # CIF of falls over time
+ajf.plot(color="#990000")
+
+# Contrast with the WRONG approach: censor deaths, then 1 - KM.
+# (Shown only to illustrate the overstatement — do NOT report this number.)
+from lifelines import KaplanMeierFitter
+naive_event = (codes == 1).astype(int)              # deaths -> "censored"
+km = KaplanMeierFitter().fit(ftime, event_observed=naive_event)
+print("Naive 1 - KM overstates the fall CIF whenever deaths are common.")
+```
+
+:::
+
+In both languages the Weibull shape comes back near its true $k = 1.4$ (rising hazard), and the AFT coefficient converts to a hazard ratio below 1 for nurse follow-up --- longer survival, lower risk. The competing-risk fitters return the honest CIF; the naive $1-$KM line is shown only to demonstrate the overstatement, never to report.
+
+<details>
+<summary>Math Details: the Weibull hazard and the cumulative incidence function</summary>
+<div class="details-content">
+
+### From survival to hazard for the Weibull
+
+Start from the Weibull survival function with scale $\lambda$ and shape $k$:
+$$
+S(t) = \exp\!\big(-(\lambda t)^{k}\big).
+$$
+The cumulative hazard is $H(t) = -\log S(t) = (\lambda t)^k$. Differentiating gives the hazard,
+$$
+h(t) = \frac{d}{dt}H(t) = \frac{d}{dt}(\lambda t)^k = k(\lambda t)^{k-1}\cdot \lambda = \lambda k (\lambda t)^{k-1}.
+$$
+The density follows from $f(t) = h(t)S(t)$:
+$$
+f(t) = \lambda k (\lambda t)^{k-1}\exp\!\big(-(\lambda t)^k\big).
+$$
+**Duration dependence.** Differentiate the log-hazard: $\log h(t) = \log(\lambda k) + (k-1)\log(\lambda t)$, so
+$$
+\frac{d \log h(t)}{d t} = \frac{k-1}{t}.
+$$
+This is positive iff $k > 1$ (hazard rising), zero iff $k = 1$ (constant --- the exponential), negative iff $k < 1$ (falling). The slope of the log-hazard is governed entirely by the sign of $k - 1$. $\checkmark$
+
+### Mean and median
+
+Setting $S(t_m) = \tfrac12$ gives $(\lambda t_m)^k = \log 2$, so the median is $t_m = \lambda^{-1}(\log 2)^{1/k}$. The mean uses the gamma integral:
+$$
+E[T] = \int_0^\infty S(t)\,dt = \int_0^\infty e^{-(\lambda t)^k}\,dt = \frac{1}{\lambda}\,\Gamma\!\Big(1 + \frac1k\Big),
+$$
+substituting $u = (\lambda t)^k$. These are the median and mean tiles in the first interactive.
+
+### The cumulative incidence function
+
+With $J$ competing causes, each with cause-specific hazard $h_j(t)$, the *overall* survival is driven by the total hazard $h(t) = \sum_j h_j(t)$:
+$$
+S(t) = \exp\!\Big(-\int_0^t \textstyle\sum_j h_j(u)\,du\Big).
+$$
+The probability of having had cause $j$ by time $t$ requires surviving all causes to $u$ and then failing of cause $j$ at $u$, integrated over $u$:
+$$
+F_j(t) = \int_0^t h_j(u)\,S(u)\,du.
+$$
+The $S(u)$ here is the *all-cause* survival --- this is what removes patients who succumbed to a competing cause from the at-risk pool. Summing over causes and adding the still-alive recovers the partition of probability:
+$$
+\sum_{j=1}^{J} F_j(t) + S(t) = 1 \quad\text{for every } t.
+$$
+
+**Constant-hazard closed form (used in the interactive).** With $h_1, h_2$ constant, $S(u) = e^{-(h_1+h_2)u}$ and
+$$
+F_1(t) = \int_0^t h_1 e^{-(h_1+h_2)u}\,du = \frac{h_1}{h_1+h_2}\Big(1 - e^{-(h_1+h_2)t}\Big).
+$$
+As $t \to \infty$ this tends to $h_1/(h_1+h_2) < 1$: not everyone falls, because some die first.
+
+**Why naive censoring overstates.** Treat deaths as censoring and the one-event estimator targets the *cause-1-only* survival $S_1(t) = e^{-h_1 t}$, giving
+$$
+F_1^{\text{naive}}(t) = 1 - e^{-h_1 t}.
+$$
+Since $e^{-h_1 t} \le e^{-(h_1+h_2)t}$ contributes differently, one shows $F_1^{\text{naive}}(t) \ge F_1(t)$ for all $t$, with equality only when $h_2 = 0$. The naive estimator answers "incidence in a world without the competing event" and tends to $1$ as $t\to\infty$ --- it credits the dead with falls they could never have. $\checkmark$
+
+</div>
+</details>
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A vårdcentral models time-to-readmission (months) for heart-failure patients as Weibull with scale $\lambda = 0.5$ and shape $k = 1.5$.
+
+(a) Is the hazard rising, falling, or constant? (b) Write the hazard $h(2)$ at two months. (c) What is the median survival time?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Since $k = 1.5 > 1$, the hazard is **rising** (positive duration dependence): readmission risk grows the longer a patient goes without an event.
+
+**(b)** $h(t) = \lambda k(\lambda t)^{k-1} = 0.5 \times 1.5 \times (0.5 \times 2)^{0.5} = 0.75 \times (1)^{0.5} = 0.75$ events per month.
+
+**(c)** Median solves $(\lambda t_m)^k = \log 2$, so $t_m = \lambda^{-1}(\log 2)^{1/k} = 2 \times (0.6931)^{1/1.5} = 2 \times 0.6931^{0.667} \approx 2 \times 0.784 = 1.57$ months.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+A Weibull AFT model of time-to-readmission gives $\hat\beta_1 = 0.45$ for "nurse follow-up" (a positive AFT coefficient) and estimated shape $\hat k = 1.4$.
+
+(a) In AFT language, does nurse follow-up lengthen or shorten survival? (b) Convert the coefficient to a proportional-hazards hazard ratio. (c) Interpret the hazard ratio.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** A *positive* AFT coefficient stretches the time axis by $e^{\beta_1} = e^{0.45} \approx 1.57$, so nurse follow-up **lengthens** survival --- patients reach readmission about 57% later.
+
+**(b)** The PH log-hazard ratio is $\gamma_1 = -k\beta_1 = -1.4 \times 0.45 = -0.63$, so the hazard ratio is $e^{-0.63} \approx 0.53$.
+
+**(c)** Nurse follow-up multiplies the readmission hazard by about $0.53$ at every time --- roughly a 47% reduction in the instantaneous readmission rate. Longer survival (AFT) and lower hazard (PH) are two readings of the same beneficial effect.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+In a frail-elderly fall-prevention cohort, the cause-specific hazards are constant: fall hospitalisation $h_1 = 0.20$ per year and competing death $h_2 = 0.30$ per year.
+
+(a) What fraction of the cohort *eventually* falls (as $t \to \infty$)? (b) Compute the correct cumulative incidence of falls at $t = 5$ years. (c) Compute the naive $1 - $KM estimate at $t = 5$ and state the overstatement.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** As $t \to \infty$, $F_1 \to h_1/(h_1+h_2) = 0.20/0.50 = 0.40$. Only **40%** ever fall --- the other 60% die first.
+
+**(b)** $F_1(5) = \dfrac{h_1}{h_1+h_2}\big(1 - e^{-(h_1+h_2)\cdot 5}\big) = 0.40 \times (1 - e^{-0.5 \times 5}) = 0.40 \times (1 - e^{-2.5}) = 0.40 \times (1 - 0.0821) = 0.40 \times 0.9179 \approx 0.367$, i.e. **36.7%**.
+
+**(c)** Naive: $1 - e^{-h_1 \cdot 5} = 1 - e^{-1.0} = 1 - 0.3679 = 0.632$, i.e. **63.2%**. The overstatement is $63.2 - 36.7 = 26.5$ percentage points --- the naive method nearly *doubles* the apparent fall incidence by ignoring that many patients died first.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the second interactive, set the fall hazard $h_1 = 0.20$ and slide the competing-death hazard $h_2$ from 0 upward. (a) What happens to the gap between the correct CIF and the naive curve? (b) Why does the correct CIF *fall* as $h_2$ rises, even though $h_1$ is unchanged? (c) What does the identity tile $F_1 + F_2 + S = 1$ guarantee?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** At $h_2 = 0$ the two curves coincide (no competing risk). As $h_2$ rises the dashed naive curve detaches *upward* while the correct CIF drops, so the shaded overstatement gap widens monotonically.
+
+**(b)** The correct CIF is $F_1(t) = \frac{h_1}{h_1+h_2}(1 - e^{-(h_1+h_2)t})$. Raising $h_2$ both shrinks the asymptote $h_1/(h_1+h_2)$ (fewer people ever fall) and removes patients from the at-risk pool sooner via the all-cause $S(u)$. The naive curve, using only $h_1$, never sees the deaths and so stays put --- hence the divergence.
+
+**(c)** The identity guarantees a complete, non-overlapping partition: at every time each patient is in exactly one state --- has fallen, has died, or is still event-free --- and the three probabilities sum to one. The naive curve violates this, which is the formal symptom that it is not a valid probability of falling.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- The exponential has a single constant, memoryless hazard $h(t) = \lambda$; the Weibull adds a shape $k$ so the hazard $h(t) = \lambda k(\lambda t)^{k-1}$ can fall ($k<1$), stay flat ($k=1$), or rise ($k>1$).
+- Duration dependence --- whether the event rate rises or falls with waiting --- is read entirely from the sign of $k - 1$; a single Weibull is monotone, so a true "bathtub" needs a mixture.
+- The Weibull is the unique AFT-and-PH model: an AFT coefficient $\beta$ (time stretching) converts to a PH log-hazard ratio via $\gamma = -k\beta$.
+- With competing risks, each event type has its own cause-specific hazard, and the cumulative incidence $F_j(t) = \int_0^t h_j(u)S(u)\,du$ uses *all-cause* survival so the dead leave the at-risk pool.
+- Treating a competing event as ordinary censoring (naive $1-$KM) overstates incidence; always report the CIF and check $\sum_j F_j(t) + S(t) = 1$.
+:::
+
+## What Comes Next
+
+You now have a parametric vocabulary for *time itself* --- naming the hazard's shape with the Weibull, reading covariates as either accelerating the clock (AFT) or scaling the risk (PH), and keeping honest books when several event types compete. That closes the survival arc that began with the [Cox model](cox-proportional-hazards.qmd), and with it the **Econometrician's Toolkit** has assembled its full kit: potential outcomes and the identification strategies of Modules 1--10, the likelihood and limited-dependent-variable machinery of Modules 11--17, and now duration and competing-risk analysis. Return to the [book home](../index.qmd) to see how these pieces fit together --- the Toolkit continues, and each method you have met is a different lens on the same recurring question: *what would have happened otherwise, and how long until it does?*

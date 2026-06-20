@@ -1,0 +1,1181 @@
+---
+title: "Weak Instruments"
+subtitle: "When a valid instrument is still dangerous"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain why a *valid* instrument --- one that satisfies relevance and exclusion --- can still produce a badly biased and wildly unstable IV estimate when its first-stage correlation is small.
+- Read the first-stage $F$ statistic as the diagnostic for instrument strength, and state precisely what the "$F > 10$" rule of thumb does and does not guarantee.
+- Predict the direction of weak-instrument bias --- always *toward OLS* --- and quantify it with the approximation $E[\hat\beta_{IV}] - \beta \approx \text{bias}_{OLS} / (F + 1)$.
+- Distinguish the classical first-stage $F$ from the modern **effective $F$** (Montiel-Olea--Pflueger) and explain why robust standard errors change the rules.
+:::
+
+## A Valid Instrument That Still Fails You
+
+On the [previous page](relevance-exclusion.qmd) we built an instrument the careful way. A Swedish region is rolling out a **diabetes coordination program** (*Diabetessamordning*) across its *vårdcentraler* (primary care centers), and we want the causal effect of program enrollment on a patient's twelve-month HbA1c. Enrollment is endogenous --- sicker, more motivated, or better-connected patients select in --- so we reach for an instrument: each patient's **travel distance to the nearest enrolling vårdcentral**. Patients who live closer enroll more often (relevance), and --- we argue --- distance to a clinic affects HbA1c *only* through whether the patient enrolls, not directly (exclusion).
+
+Suppose we have convinced ourselves the instrument is valid. Both assumptions hold. Are we safe?
+
+Not necessarily. There is a third danger that has nothing to do with validity and everything to do with *strength*. If distance barely moves enrollment --- if the first-stage correlation is small --- then the instrumental-variables estimator becomes a near-catastrophe: its bias swings back *toward the OLS estimate we were trying to escape*, its sampling distribution stops looking like a bell curve and grows enormous tails, and the tiniest violation of exclusion gets amplified into a large bias. The instrument is valid. It is also useless, or worse: dangerous, because the machinery still produces a confident-looking point estimate and standard error.
+
+This page is about that third danger. A weak instrument is the IV analyst's quicksand: it looks like solid ground.
+
+::: {.glass-card .glass-card--warning}
+Validity and strength are **independent** properties. An instrument can be:
+
+- **valid and strong** --- the only case where IV works as advertised;
+- **valid but weak** --- unbiased *in infinite samples* but, in any real sample, biased toward OLS with a fat-tailed, non-normal distribution (this page);
+- **strong but invalid** --- precisely estimated and precisely wrong (the [exclusion violations](relevance-exclusion.qmd) of the previous page).
+
+Checking exclusion does nothing to protect you from weakness, and checking the first-stage $F$ does nothing to protect you from an exclusion violation. You need both diagnostics, always.
+:::
+
+## The IV Estimator Is a Ratio --- and Ratios Are Treacherous
+
+Recall the workhorse formula. With instrument $Z$, treatment $D$, and outcome $Y$, the just-identified IV estimator (one instrument, one endogenous regressor) is the **ratio of two covariances**:
+
+$$
+\hat\beta_{IV} = \frac{\widehat{\text{Cov}}(Z, Y)}{\widehat{\text{Cov}}(Z, D)} = \frac{\text{reduced form}}{\text{first stage}}.
+$$
+
+**Read this as**: "The IV estimate is how much the *outcome* moves with the instrument, divided by how much the *treatment* moves with the instrument." The numerator is the **reduced form** (distance $\to$ HbA1c); the denominator is the **first stage** (distance $\to$ enrollment) --- the *first stage* being the regression of treatment $D$ on the instrument $Z$, whose slope $\pi$ is exactly the "strength" this page is about. IV rescales the reduced-form effect by how strongly the instrument shifts treatment.
+
+The causal structure behind that formula is the picture below. The instrument $Z$ (distance) reaches the outcome $Y$ (HbA1c) by **exactly one route** --- through the treatment $D$ (enrollment). That is the whole content of the two assumptions: *relevance* is the green $Z \to D$ arrow existing at all, and *exclusion* is the **absence** of any direct $Z \to Y$ arrow (the unobserved confounder $U$ is what makes plain OLS of $Y$ on $D$ biased, drawn in red).
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Static DAG drawing component for this page (page-tag-prefixed). ───────────
+// Pure function of its arguments (depends only on global d3). Builds an SVG with
+// d3.create and returns the node. Conditioned ids are drawn as rounded SQUARES.
+//   nodes:  [{id, x, y, label, caption}]  x,y normalized in [0,1]
+//   edges:  [{source, target, kind}]  kind ∈
+//             "causal"        → green (#2e6f40)  a wanted causal edge
+//             "biasing"       → red   (#b3000b)  a confounding / exclusion-leak edge
+//             "blocked"       → grey  (#79766e, dashed)  an absent/blocked edge
+//   conditioned: [id, ...]
+ivwk_drawDAG = function ({ nodes, edges, width = 460, height = 230, conditioned = [] }) {
+  const pad = 48;
+  const r = 24;
+  const sx = v => pad + v * (width - 2 * pad);
+  const sy = v => pad + v * (height - 2 * pad);
+  const byId = new Map(nodes.map(d => [d.id, d]));
+  const condSet = new Set(conditioned);
+
+  const colorFor = k =>
+    k === "causal" ? "#2e6f40" :
+    k === "biasing" ? "#b3000b" : "#79766e";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  const markers = [
+    ["ivwk-arrow-green", "#2e6f40"],
+    ["ivwk-arrow-red", "#b3000b"],
+    ["ivwk-arrow-gray", "#79766e"]
+  ];
+  const markerId = k =>
+    k === "causal" ? "ivwk-arrow-green" :
+    k === "biasing" ? "ivwk-arrow-red" : "ivwk-arrow-gray";
+  for (const [id, col] of markers) {
+    defs.append("marker")
+      .attr("id", id)
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9).attr("refY", 0)
+      .attr("markerWidth", 7).attr("markerHeight", 7)
+      .attr("orient", "auto-start-reverse")
+      .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  }
+
+  const eg = svg.append("g");
+  for (const e of edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    const x1 = sx(s.x), y1 = sy(s.y), x2 = sx(t.x), y2 = sy(t.y);
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const xa = x1 + ux * r, ya = y1 + uy * r;
+    const xb = x2 - ux * (r + 4), yb = y2 - uy * (r + 4);
+    if (e.bend) {
+      // Arc the edge clear of any node sitting on the straight chord (e.g. the
+      // direct Z→Y exclusion leak, which would otherwise overprint D). bend is a
+      // signed fraction of the chord length; positive bows downward (larger y).
+      const mx = (xa + xb) / 2, my = (ya + yb) / 2;
+      const nx = -uy, ny = ux;                       // unit normal to the chord
+      const off = e.bend * len;
+      const cx = mx + nx * off, cy = my + ny * off;  // quadratic control point
+      eg.append("path")
+        .attr("d", `M${xa},${ya} Q${cx},${cy} ${xb},${yb}`)
+        .attr("fill", "none")
+        .attr("stroke", colorFor(e.kind))
+        .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+        .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+        .attr("marker-end", `url(#${markerId(e.kind)})`);
+    } else {
+      eg.append("line")
+        .attr("x1", xa).attr("y1", ya)
+        .attr("x2", xb).attr("y2", yb)
+        .attr("stroke", colorFor(e.kind))
+        .attr("stroke-width", e.kind === "blocked" ? 2 : 3)
+        .attr("stroke-dasharray", e.kind === "blocked" ? "5,4" : null)
+        .attr("marker-end", `url(#${markerId(e.kind)})`);
+    }
+  }
+
+  const ng = svg.append("g");
+  for (const n of nodes) {
+    const cx = sx(n.x), cy = sy(n.y);
+    const boxed = condSet.has(n.id);
+    const g = ng.append("g");
+    if (boxed) {
+      g.append("rect")
+        .attr("x", cx - r).attr("y", cy - r)
+        .attr("width", 2 * r).attr("height", 2 * r)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", "#f6f5f1").attr("stroke", "#1c1c1a").attr("stroke-width", 4);
+    } else {
+      g.append("circle")
+        .attr("cx", cx).attr("cy", cy).attr("r", r)
+        .attr("fill", "#f6f5f1").attr("stroke", "#1c1c1a").attr("stroke-width", 2);
+    }
+    g.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+      .attr("font-size", 15).attr("font-weight", 700).attr("fill", "#1c1c1a")
+      .text(n.label);
+    if (n.caption) {
+      g.append("text")
+        .attr("x", cx).attr("y", cy + r + 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", 11).attr("font-weight", 600).attr("fill", "#79766e")
+        .text(n.caption);
+    }
+  }
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+
+// The valid-IV structure: Z affects Y ONLY through D; U confounds D and Y.
+ivwk_drawDAG({
+  width: Math.min(480, width),
+  height: 210,
+  nodes: [
+    { id: "Z", x: 0.05, y: 0.62, label: "Z", caption: "Distance" },
+    { id: "D", x: 0.48, y: 0.62, label: "D", caption: "Enrollment" },
+    { id: "Y", x: 0.93, y: 0.62, label: "Y", caption: "HbA1c" },
+    { id: "U", x: 0.705, y: 0.10, label: "U", caption: "Motivation" }
+  ],
+  edges: [
+    { source: "Z", target: "D", kind: "causal" },
+    { source: "D", target: "Y", kind: "causal" },
+    { source: "U", target: "D", kind: "biasing" },
+    { source: "U", target: "Y", kind: "biasing" }
+  ]
+})
+```
+
+::: {.aside}
+Color key: <span style="color:#2e6f40; font-weight:700;">green</span> = wanted causal edge, <span style="color:#b3000b; font-weight:700;">red</span> = confounding (here the unobserved $U$). **Relevance** = the $Z \to D$ arrow is real and large; **exclusion** = there is *no* $Z \to Y$ arrow. ($Z$ = distance, $D$ = enrollment, $Y$ = HbA1c, $U$ = patient motivation.)
+:::
+
+Now stare at the denominator. The first-stage covariance $\widehat{\text{Cov}}(Z, D)$ measures instrument *strength*. When the instrument is strong, this number is comfortably far from zero and the ratio is stable. When the instrument is weak, the denominator is a small number estimated with sampling noise --- and **dividing by a small, noisy number is one of the most dangerous things you can do in statistics**. A denominator that is supposed to be $0.30$ but lands at $0.05$ in your sample triples or sextuples the estimate; one that wanders near zero sends the ratio toward $\pm\infty$.
+
+This single fact --- IV divides by an estimate of instrument strength --- is the source of every pathology on this page.
+
+::: {.glass-card .glass-card--definition}
+A **weak instrument** is one whose correlation with the endogenous regressor is small *relative to sampling noise*, so that the estimated first stage $\widehat{\text{Cov}}(Z, D)$ is small and unstable. Formally, with sample size $n$ and population first-stage coefficient $\pi$ (the "concentration" of the instrument), weakness is a statement about the **concentration parameter**
+
+$$
+\mu^2 \;=\; \frac{n\,\pi^2 \,\text{Var}(Z)}{\sigma_v^2},
+$$
+
+the population signal-to-noise ratio of the first-stage regression, where $\sigma_v^2$ is the variance of the first-stage error. The sample first-stage $F$ statistic estimates $\mu^2 + 1$. Because $\mu^2$ scales with $n\pi^2$, the weak-instrument asymptotics that model a *fixed* fragile design hold $\mu^2$ constant by letting $\pi$ shrink at rate $1/\sqrt{n}$ (so $\pi\sqrt{n}$ stays fixed); along that sequence more data never rescues IV. When $\mu^2$ is small (single digits), IV is in trouble at the sample size you actually have.
+:::
+
+## See It: A Monte Carlo Where Weakness Breaks IV
+
+The cleanest way to *feel* the danger is to run the same study thousands of times and watch the distribution of estimates. The lab below simulates the diabetes-program design under a *known* truth: the real causal effect of enrollment on HbA1c is fixed at $\beta = -0.80$ percentage points (enrollment helps). *Percentage points* (pp) here are absolute units on the HbA1c scale --- a drop from 7.0% to 6.2% is $-0.8$ pp --- not a *percent* change of HbA1c. Enrollment is endogenous --- the unobserved "patient motivation" that drives enrollment *also* lowers HbA1c directly --- so plain **OLS is biased**, pulled toward zero (less helpful-looking) by motivated patients who would have improved anyway. The data-generating process bakes in an OLS bias of about $+0.44$ (so OLS converges to roughly $-0.36$ instead of the true $-0.80$); the live panel reports the exact value for the settings you pick.
+
+The one knob you control is the **first-stage strength** $\pi$ --- how much one extra unit of "closeness" raises the enrollment probability. For each setting we draw a fresh sample of patients, compute the IV estimate, and repeat 600 times to trace out the full **sampling distribution** of $\hat\beta_{IV}$. The readout reports the **first-stage $F$** that a real analyst would see.
+
+::: {.interactive-container}
+
+#### Weak-Instrument Monte Carlo: the IV sampling distribution
+
+**Start here.** Drag the **first-stage strength π** slider and watch the histogram of IV estimates slide between the green *true effect* and the ochre *OLS target*. Press **Draw new sample** to reshuffle the random data. (A fuller step-by-step tour follows below the chart.)
+
+```{ojs}
+//| echo: false
+
+// Compact color key for the chart below (green = true β, ochre dashed = OLS
+// target, ink = realized mean of the IV draws).
+html`<div style="display:flex; flex-wrap:wrap; gap:1rem; margin:0.4rem 0 0.2rem;
+    font-family:'Inter',sans-serif; font-size:0.78rem; color:#1c1c1a;">
+  <span style="display:inline-flex; align-items:center; gap:0.35rem;">
+    <span style="width:1.1rem; height:0; border-top:3px solid #2e6f40;"></span>
+    true β (the known truth)</span>
+  <span style="display:inline-flex; align-items:center; gap:0.35rem;">
+    <span style="width:1.1rem; height:0; border-top:3px dashed #9c7a33;"></span>
+    OLS target (what weak IV drifts toward)</span>
+  <span style="display:inline-flex; align-items:center; gap:0.35rem;">
+    <span style="width:1.1rem; height:0; border-top:2px solid #1c1c1a;"></span>
+    mean IV (realized average)</span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivweak_strength = Inputs.range([0.02, 0.60], {
+  value: 0.08,
+  step: 0.01,
+  label: "First-stage strength π (closeness → enrollment)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivweak_n = Inputs.range([100, 2000], {
+  value: 400,
+  step: 50,
+  label: "Sample size n (patients)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivweak_reps = Inputs.radio([200, 600, 1500], {
+  value: 600,
+  label: "Repeated studies (smooths the histogram)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof ivweak_draw = Inputs.button("Draw new Monte Carlo sample", {
+  value: 0,
+  reduce: v => v + 1
+})
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="margin:0.1rem 0 0.2rem; font-family:'Inter',sans-serif;
+    font-size:0.78rem; color:#79766e; line-height:1.4;">
+  Moving the sliders recomputes with the <em>same</em> random seed; press
+  <strong>Draw new Monte Carlo sample</strong> to see a fresh draw.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// ── Fixed truth of the data-generating process. ───────────────────────────
+// Y = beta * D + gamma * U + noise        (U = unobserved patient motivation)
+// D = pi   * Z + delta * U + noise         (Z = standardized "closeness")
+// Because U enters BOTH D and Y, OLS of Y on D is biased upward (toward 0,
+// i.e. less-negative / less-helpful-looking). Z is excluded from Y, so a
+// strong-enough Z identifies beta. Weakness (small pi) makes IV collapse
+// back toward the OLS bias.
+ivweak_beta  = -0.80        // TRUE causal effect of enrollment on HbA1c (pp)
+ivweak_gamma =  0.90        // how strongly motivation lowers HbA1c directly
+ivweak_delta =  0.80        // how strongly motivation raises enrollment
+ivweak_sZ    =  1.0         // SD of the (standardized) instrument
+ivweak_sV    =  1.0         // SD of first-stage idiosyncratic error
+ivweak_sE    =  1.0         // SD of outcome idiosyncratic error
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Population OLS bias implied by the DGP above (the target IV drifts toward).
+// Cov(D,U) = delta*Var(U); Var(D) = pi^2 Var(Z) + delta^2 Var(U) + sV^2.
+// OLS estimates beta + gamma * Cov(D,U)/Var(D).
+ivweak_olsBias = {
+  const varU = 1;                       // motivation is standard normal
+  const varD = ivweak_strength ** 2 * ivweak_sZ ** 2
+             + ivweak_delta ** 2 * varU + ivweak_sV ** 2;
+  const covDU = ivweak_delta * varU;
+  return ivweak_gamma * covDU / varD;   // positive => OLS biased toward 0
+}
+
+ivweak_olsTarget = ivweak_beta + ivweak_olsBias
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// One simulated study: draw n patients, return {betaIV, betaOLS, F}.
+ivweak_oneStudy = function (n, rng) {
+  const Z = [], D = [], Y = [];
+  for (let i = 0; i < n; i++) {
+    const u = rng();                                   // unobserved motivation
+    const z = ivweak_sZ * rng();                       // closeness instrument
+    const d = ivweak_strength * z + ivweak_delta * u + ivweak_sV * rng();
+    const y = ivweak_beta * d + ivweak_gamma * u + ivweak_sE * rng();
+    Z.push(z); D.push(d); Y.push(y);
+  }
+  const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+  const zb = mean(Z), db = mean(D), yb = mean(Y);
+
+  let szz = 0, szd = 0, szy = 0, sdd = 0, sdy = 0;
+  for (let i = 0; i < n; i++) {
+    const dz = Z[i] - zb, dd = D[i] - db, dy = Y[i] - yb;
+    szz += dz * dz; szd += dz * dd; szy += dz * dy;
+    sdd += dd * dd; sdy += dd * dy;
+  }
+
+  // Just-identified IV = reduced form / first stage.
+  const betaIV  = szy / szd;
+  const betaOLS = sdy / sdd;
+
+  // First-stage regression D ~ Z: slope pihat, its SE, and F = (pihat/SE)^2.
+  const pihat = szd / szz;
+  let sse = 0;
+  for (let i = 0; i < n; i++) {
+    const resid = (D[i] - db) - pihat * (Z[i] - zb);
+    sse += resid * resid;
+  }
+  const sigma2 = sse / (n - 2);
+  const sePi   = Math.sqrt(sigma2 / szz);
+  const F      = (pihat / sePi) ** 2;                  // t^2 = F with 1 instrument
+
+  return { betaIV, betaOLS, F, pihat };
+};
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Run the whole Monte Carlo. Referencing ivweak_draw makes the button reshuffle.
+ivweak_sim = {
+  ivweak_draw;                                  // reactive dependency: redraw
+  const rng = d3.randomNormal.source(d3.randomLcg(0.42 + 0.01 * ivweak_draw))(0, 1);
+  const reps = ivweak_reps, n = ivweak_n;
+  const ivEst = [], olsEst = [], Fs = [];
+  for (let r = 0; r < reps; r++) {
+    const s = ivweak_oneStudy(n, rng);
+    ivEst.push(s.betaIV);
+    olsEst.push(s.betaOLS);
+    Fs.push(s.F);
+  }
+  return { ivEst, olsEst, Fs };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Summaries used by the chart and the readout panel.
+ivweak_stats = {
+  const iv = ivweak_sim.ivEst;
+  const sorted = [...iv].sort((a, b) => a - b);
+  const q = p => sorted[Math.floor(p * (sorted.length - 1))];
+  return {
+    medF:    d3.median(ivweak_sim.Fs),
+    meanIV:  d3.mean(iv),
+    medIV:   d3.median(iv),
+    sdIV:    d3.deviation(iv),
+    iqrLo:   q(0.25),
+    iqrHi:   q(0.75),
+    meanOLS: d3.mean(ivweak_sim.olsEst)
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Clip the IV estimates to a viewing window so a few enormous tail draws don't
+// flatten the histogram. The count of clipped draws is reported as a warning.
+ivweak_window = [-3.0, 1.5]
+ivweak_clipped = ivweak_sim.ivEst.filter(b => b < ivweak_window[0] || b > ivweak_window[1]).length
+ivweak_shown = ivweak_sim.ivEst.map(b =>
+  Math.max(ivweak_window[0], Math.min(ivweak_window[1], b)))
+```
+
+```{ojs}
+//| echo: false
+
+// The keystone chart: histogram of the IV sampling distribution, with the TRUE
+// effect (green), the OLS target it drifts toward (ochre), and the realized
+// mean of IV (ink). Watch the mass slide from green toward ochre as π shrinks.
+// Labels are anchored to the frame top with staggered dy and white halos so
+// they stay legible even when the rules cluster in the strong-instrument regime.
+{
+  const meanNearTrue = Math.abs(ivweak_stats.meanIV - ivweak_beta) < 0.06;
+  // In the weak regime the (unclipped) mean IV can be dragged far outside the
+  // plotting window by fat-tailed draws. Suppress its on-chart label when it
+  // lands outside the window so the annotation can never clip at the frame
+  // edge; the rule and the panel readout still report the value.
+  const meanInWindow = ivweak_stats.meanIV >= ivweak_window[0]
+                    && ivweak_stats.meanIV <= ivweak_window[1];
+  const showMeanLabel = !meanNearTrue && meanInWindow;
+  return Plot.plot({
+    height: 340,
+    width: Math.min(680, width),
+    marginLeft: 60,
+    marginRight: 50,
+    marginTop: 18,
+    marginBottom: 48,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+    x: {
+      label: "IV estimate of program effect on HbA1c (pp) →",
+      domain: ivweak_window,
+      grid: true
+    },
+    y: { label: "Count of simulated studies" },
+    marks: [
+      Plot.rectY(ivweak_shown, Plot.binX(
+        { y: "count" },
+        { x: d => d, thresholds: 50, fill: "#990000", fillOpacity: 0.55 }
+      )),
+      // True causal effect (green).
+      Plot.ruleX([ivweak_beta], { stroke: "#2e6f40", strokeWidth: 3 }),
+      Plot.text([{ x: ivweak_beta }], {
+        x: "x", y: () => 0, frameAnchor: "top",
+        text: () => `true β = ${ivweak_beta.toFixed(2)}`,
+        fill: "#2e6f40", fontWeight: 700, dy: 8, dx: -4, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The OLS target the IV distribution collapses toward when weak (ochre).
+      Plot.ruleX([ivweak_olsTarget], {
+        stroke: "#9c7a33", strokeWidth: 3, strokeDasharray: "5,4"
+      }),
+      Plot.text([{ x: ivweak_olsTarget }], {
+        x: "x", y: () => 0, frameAnchor: "top",
+        text: () => `OLS target = ${ivweak_olsTarget.toFixed(2)}`,
+        fill: "#9c7a33", fontWeight: 700, dy: 8, dx: 4, textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // Realized mean of the IV draws (ink). Suppressed when it sits on top of
+      // the true-β rule so the two bold labels don't overprint in the strong
+      // regime; the rule itself is still drawn.
+      Plot.ruleX([ivweak_stats.meanIV], { stroke: "#1c1c1a", strokeWidth: 2 }),
+      Plot.text(showMeanLabel ? [{ x: ivweak_stats.meanIV }] : [], {
+        x: "x", y: () => 0, frameAnchor: "top",
+        text: () => `mean IV = ${ivweak_stats.meanIV.toFixed(2)}`,
+        fill: "#1c1c1a", fontWeight: 700, dy: 44, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live diagnostic panel: first-stage F, the F>10 verdict, bias, spread, clipping.
+{
+  const F = ivweak_stats.medF;
+  const strong = F >= 10;
+  const verdict = F >= 10
+    ? "F ≥ 10 — passes the rule of thumb"
+    : (F >= 5 ? "5 ≤ F < 10 — borderline, treat with suspicion"
+              : "F < 5 — weak: IV is badly biased and unstable");
+  const vColor = F >= 10 ? "#2e6f40" : (F >= 5 ? "#9c7a33" : "#b3000b");
+  const bias = ivweak_stats.meanIV - ivweak_beta;
+
+  const tile = (label, value, color) => html`<div style="
+      min-width: 8.5rem; min-height: 4.4rem; text-align: center;
+      display: flex; flex-direction: column; justify-content: center; gap: 0.3rem;
+      padding: 0.5rem 0.4rem; border-radius: 0.5rem;
+      background: #f6f5f1;">
+    <div style="font-family:'Inter',sans-serif; font-size:0.68rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.02em;
+        color:#79766e;">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.2rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+
+  return html`<div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));
+        gap:0.5rem; margin-top:0.75rem;">
+      ${tile("Median first-stage F", F.toFixed(1), vColor)}
+      ${tile("Bias of IV (mean)", `${bias >= 0 ? "+" : ""}${bias.toFixed(2)}`,
+             Math.abs(bias) < 0.1 ? "#2e6f40" : "#b3000b")}
+      ${tile("SD of IV estimate", ivweak_stats.sdIV.toFixed(2), "#1c1c1a")}
+      ${tile("OLS bias (target)", `+${ivweak_olsBias.toFixed(2)}`, "#9c7a33")}
+    </div>
+    <div style="margin-top:0.6rem; padding:0.55rem 0.9rem; border-radius:0.5rem;
+        border-left:3px solid ${vColor}; background:#f6f5f1;
+        font-family:'Inter',sans-serif; font-size:0.84rem;
+        line-height:1.45; color:#1c1c1a;">
+      <strong>${verdict}.</strong>
+      ${strong
+        ? `The IV distribution is tight and centered near the true effect — the instrument is doing its job.`
+        : `The IV distribution is wide and its center has slid toward the ochre OLS target (${ivweak_olsTarget.toFixed(2)}). The instrument is too weak to escape OLS bias.`}
+      ${ivweak_clipped > 0
+        ? html`<br><span style="color:#b3000b;">${ivweak_clipped} of ${ivweak_reps} estimates fell outside the plotting window [${ivweak_window[0]}, ${ivweak_window[1]}] — the fat tails of a weak-IV distribution.</span>`
+        : ``}
+    </div>
+    <div style="margin-top:0.5rem; font-family:'Inter',sans-serif; font-size:0.78rem;
+        color:#79766e; line-height:1.4;">
+      Now showing π = ${ivweak_strength.toFixed(2)}, n = ${ivweak_n},
+      ${ivweak_reps} repeated studies. The bias tile uses the
+      <em>mean</em> IV, which is deliberately unstable between redraws when the
+      instrument is weak — that volatility is the lesson.
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Monte Carlo
+
+Work through these in order; each isolates one symptom of weakness.
+
+**Step 1: Start strong and confirm IV works.** Drag **First-stage strength** to its maximum (around $\pi = 0.60$) and press **Draw new Monte Carlo sample**. The histogram is a tight, symmetric, bell-shaped pile sitting almost exactly on the green line --- the true effect $\beta = -0.80$. The **Median first-stage $F$** tile is large (well above 10), the **bias** tile is near zero and green, and no estimates spill into the tails. This is the textbook promise of IV: a valid, strong instrument recovers the truth, unbiased, with a normal-looking distribution.
+
+**Step 2: Weaken the instrument and watch the slide.** Now drag **First-stage strength** down toward $\pi = 0.08$. Three things happen at once. (i) The whole histogram *slides to the right*, away from the green true effect and toward the **ochre dashed OLS target** ($\approx -0.36$). (ii) The pile gets dramatically *wider* --- the **SD of IV** tile balloons. (iii) The **bias** tile turns red. The instrument is still valid (we never touched exclusion), yet it now delivers an estimate biased *toward the very OLS number we wanted to avoid*.
+
+**Step 3: Find the danger zone.** Set $\pi \approx 0.05$. The **Median first-stage $F$** collapses to around $1$ --- far below any sane threshold --- and the distribution becomes visibly *non-normal*: skewed, with a heavy tail, and a red warning that several estimates fell *outside the entire plotting window*. Those off-chart draws are not bugs; they are the fat tails of a ratio whose denominator wandered near zero. An analyst who ran this study *once* could have drawn any value from this mess and reported it with a confident standard error.
+
+**Step 4: See what *does* and *does not* cure weakness.** Hold $\pi = 0.08$ and crank **Sample size $n$** from 400 up to 2000. The median $F$ rises substantially (roughly in proportion to $n$, because the concentration parameter is $\mu^2 = n\pi^2\text{Var}(Z)/\sigma_v^2$), and the bias shrinks with it. Push $n$ far enough and the instrument *would* become strong --- consistency is real. But that is precisely the trap: strength is governed by $\mu^2$, which couples $n$ *and* $\pi^2$. For a genuinely tiny $\pi$ you would need an impractically enormous sample, and --- the lesson that surprises people most --- in the asymptotics that describe a *fixed* weak design (where $\pi$ is modeled as shrinking as fast as $\sqrt n$ grows, so $\mu^2$ stays constant), more data never rescues you at all. With the dataset you actually have, a small $\pi$ leaves you weak.
+
+**Step 5: Cross the $F > 10$ threshold deliberately.** At $n = 400$, nudge $\pi$ up to about $0.21$ --- the median $F$ tile sits just above 10 and turns green. Notice the distribution is *acceptable but not pristine* --- still a touch of bias and spread. That is exactly the spirit of the "$F > 10$" rule: a rough floor below which IV is untrustworthy, not a guarantee of perfection above it.
+
+## Why Weakness Biases IV Toward OLS
+
+The Monte Carlo showed the symptom; here is the mechanism. The IV estimator's bias has a famous, intuitive approximation. With one endogenous regressor and one instrument, in a sample of size $n$, the bias of 2SLS is approximately
+
+$$
+E[\hat\beta_{IV}] - \beta \;\approx\; \big(E[\hat\beta_{OLS}] - \beta\big)\cdot\frac{1}{F + 1} \;=\; \frac{\text{bias}_{OLS}}{F + 1},
+$$
+
+where $F$ is the population first-stage $F$ statistic (closely tracked by the sample $F$ you observe). This is the single most useful formula on the page.
+
+**Read this as**: "The bias of IV is the bias of OLS, *shrunk* by a factor of one-over-($F$ plus one)." When the instrument is strong ($F$ large), $1/(F+1)$ is tiny and IV's bias nearly vanishes --- IV escapes OLS bias. When the instrument is weak ($F$ small), $1/(F+1)$ is close to 1, and IV inherits *almost the entire OLS bias*. In the limit $F \to 0$, IV and OLS are equally biased: the instrument bought you nothing.
+
+The number line below unifies the three ways the page describes this drift. The true effect sits at $\beta = -0.80$ (green); the OLS plim sits at $-0.36$ (ochre); the gap between them is the $+0.44$ OLS bias. "Toward OLS," "toward zero," and "understates the benefit" are *the same arrow* --- the rightward slide a weak instrument inherits.
+
+```{ojs}
+//| echo: false
+
+// Static number line: true β (green) → OLS plim (ochre), with the +bias gap and
+// the "weak IV slides this way" arrow. Uses the lab's fixed truth (-0.80) and the
+// nominal OLS plim (-0.36) quoted throughout the prose. Pure static figure.
+{
+  const trueB = -0.80, olsPlim = -0.36, gap = olsPlim - trueB;  // +0.44
+  return Plot.plot({
+    height: 150,
+    width: Math.min(560, width),
+    marginLeft: 60,
+    marginRight: 60,
+    marginTop: 40,
+    marginBottom: 45,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+    x: { domain: [-1.0, -0.05], label: "Effect on HbA1c (pp) →", grid: false },
+    y: { domain: [0, 1], axis: null },
+    marks: [
+      Plot.ruleY([0.42], { stroke: "#79766e", strokeWidth: 1 }),
+      // The +bias gap as a thick ochre arrow from true β to OLS plim.
+      Plot.arrow([{ x1: trueB, x2: olsPlim }], {
+        x1: "x1", x2: "x2", y1: 0.42, y2: 0.42,
+        stroke: "#9c7a33", strokeWidth: 2.5, headLength: 9
+      }),
+      Plot.text([{ x: (trueB + olsPlim) / 2 }], {
+        x: "x", y: () => 0.62,
+        text: () => `OLS bias = +${gap.toFixed(2)} pp`,
+        fill: "#9c7a33", fontWeight: 700, fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // True β marker (green).
+      Plot.dot([{ x: trueB }], { x: "x", y: 0.42, r: 6, fill: "#2e6f40" }),
+      Plot.text([{ x: trueB }], {
+        x: "x", y: () => 0.18, text: () => `true β = ${trueB.toFixed(2)}`,
+        fill: "#2e6f40", fontWeight: 700, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // OLS plim marker (ochre).
+      Plot.dot([{ x: olsPlim }], { x: "x", y: 0.42, r: 6, fill: "#9c7a33" }),
+      Plot.text([{ x: olsPlim }], {
+        x: "x", y: () => 0.18, text: () => `OLS plim = ${olsPlim.toFixed(2)}`,
+        fill: "#9c7a33", fontWeight: 700, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The "weak IV slides this way" annotation above the gap.
+      Plot.text([{ x: (trueB + olsPlim) / 2 }], {
+        x: "x", y: () => 0.92,
+        text: () => "weak IV (small F) slides this way ⟶",
+        fill: "#990000", fontWeight: 700, fontSize: 11, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+As $F \to \infty$ the IV estimate sits on the green dot (the truth); as $F \to 0$ it slides all the way to the ochre dot (the OLS plim). "Toward OLS" and "toward zero" point the same way here because the true effect is negative and the bias is positive.
+:::
+
+Plug in numbers from the lab. With OLS bias $\approx +0.44$:
+
+- At $F = 30$: IV bias $\approx 0.44/31 \approx 0.01$ --- negligible. IV $\approx -0.79$, essentially the truth.
+- At $F = 9$: IV bias $\approx 0.44/10 \approx 0.04$ --- small but real.
+- At $F = 3$: IV bias $\approx 0.44/4 = 0.11$ --- a quarter of the way back to OLS.
+- At $F = 1$: IV bias $\approx 0.44/2 = 0.22$ --- *halfway* back to OLS, and that is just the *bias*; the variance is exploding simultaneously.
+
+Those four bullets are one curve. The shrinkage factor $1/(F+1)$ is the "dial" the insight card below names: it falls steeply through the single-digit $F$ region, which is exactly why the difference between $F=1$ and $F=9$ matters so much, and why pushing past $F\approx 10$ buys progressively less.
+
+```{ojs}
+//| echo: false
+
+// Static curve of the bias-shrinkage factor 1/(F+1) vs F, with the four
+// reference F values from the prose marked, plus the F=9 ("~10% of OLS bias")
+// calibration point that anchors the Staiger–Stock "10". Pure static figure.
+{
+  const curve = d3.range(0, 40.05, 0.25).map(F => ({ F, frac: 1 / (F + 1) }));
+  const refs = [
+    { F: 1,  label: "F=1" },
+    { F: 3,  label: "F=3" },
+    { F: 9,  label: "F=9" },
+    { F: 30, label: "F=30" }
+  ].map(d => ({ ...d, frac: 1 / (d.F + 1) }));
+  return Plot.plot({
+    height: 320,
+    width: Math.min(620, width),
+    marginLeft: 62,
+    marginRight: 24,
+    marginTop: 24,
+    marginBottom: 48,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+    x: { domain: [0, 40], label: "First-stage F →", grid: true },
+    y: { domain: [0, 1], label: "Fraction of OLS bias kept: 1/(F+1) ↑", grid: true,
+         tickFormat: ".0%" },
+    marks: [
+      // The F=10 reference line (Staiger–Stock rule of thumb).
+      Plot.ruleX([10], { stroke: "#79766e", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      Plot.text([{ x: 10, y: 0.78 }], {
+        x: "x", y: "y", text: () => "F = 10 rule of thumb",
+        fill: "#79766e", fontWeight: 700, fontSize: 11, textAnchor: "start", dx: 6,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // The shrinkage curve itself.
+      Plot.line(curve, { x: "F", y: "frac", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+      // Reference dots at F = 1, 3, 9, 30.
+      Plot.dot(refs, { x: "F", y: "frac", r: 5, fill: "#990000" }),
+      Plot.text(refs, {
+        x: "F", y: "frac", text: d => `${d.label}: ${(d.frac * 100).toFixed(0)}%`,
+        fill: "#990000", fontWeight: 700, fontSize: 11, textAnchor: "start",
+        dx: 8, dy: -8, stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+At $F=9$ the dial reads $1/10 = 10\%$: IV keeps about a tenth of the OLS bias --- the precise calibration behind the famous "$F > 10$." The curve is steep on the left (every unit of $F$ matters when the instrument is weak) and nearly flat on the right (diminishing returns once it is strong).
+:::
+
+::: {.glass-card .glass-card--insight}
+Weak-instrument bias always points **toward OLS**, never away from it and never in a random direction. This is why "I used IV, so endogeneity is handled" is a dangerous reflex: a weak instrument hands you back a *disguised OLS estimate*, dressed up with the credibility of an instrumental-variables design and a standard error that does not warn you. The $1/(F+1)$ factor is the exact dial measuring how much disguising is going on.
+:::
+
+This also explains the *bias toward zero of nothing in particular*: IV does not shrink toward $\beta$, it shrinks toward the OLS **probability limit** (the *plim* --- the single number an estimator settles on as the sample grows without bound), which is $\beta + \text{bias}_{OLS}$. In our diabetes example OLS understates the benefit (motivated patients improve anyway), so weak IV understates the benefit too --- it makes the program look less helpful than it is.
+
+## The First-Stage F and the "F > 10" Rule
+
+Since strength is what matters, we need a diagnostic for it. The standard one is the **first-stage $F$ statistic**: run the first-stage regression of the endogenous regressor on the instrument(s) (and any controls), and test whether the *excluded instruments* jointly have zero coefficients.
+
+$$
+\text{First-stage } F = \frac{\hat\pi^2}{\widehat{\text{Var}}(\hat\pi)} \quad \text{(just-identified case: } F = t^2\text{)}.
+$$
+
+**Read this as**: "The squared first-stage coefficient divided by its squared standard error" --- the ordinary $t$-statistic on the instrument, squared. A large $F$ means the instrument moves treatment by an amount that is large *relative to its sampling noise*. The population $F$ is essentially $\mu^2 + 1$, the concentration parameter plus one --- so $F$ is a direct readout of the signal-to-noise ratio that governs all the pathologies above.
+
+::: {.glass-card .glass-card--assumption}
+**Staiger--Stock (1997) rule of thumb.** Treat an instrument as adequately strong if the first-stage $F$ on the excluded instruments **exceeds 10**.
+
+The "10" is not magic. Staiger and Stock observed that, with one instrument and homoskedastic errors, $F \approx 10$ corresponds to a worst-case 2SLS bias of roughly **10% of the OLS bias** --- exactly the $1/(F+1) \approx 1/11$ from the bias formula. It is a *floor*, not a certificate: above 10 you are probably fine for bias; below 10 you should be alarmed.
+:::
+
+### What the rule of thumb does *not* tell you
+
+The "$F > 10$" heuristic is genuinely useful but routinely over-trusted. Three caveats:
+
+1. **It is calibrated to bias, not to size.** $F > 10$ controls the *bias* of 2SLS at the 10% level. It does **not** guarantee that your $t$-tests have correct size or that your confidence intervals have correct coverage. Controlling test distortion requires a *much* higher $F$ --- Stock and Yogo's size-based critical values can exceed 16, 20, even 37 depending on how much distortion you will tolerate and how many instruments you have.
+
+2. **It assumes homoskedasticity.** The classical $F$ and the "10" were derived under i.i.d. homoskedastic errors. With heteroskedastic, clustered, or autocorrelated errors --- the norm in regional health-policy panels --- the relevant statistic is the **effective $F$**, and the threshold changes (next section).
+
+3. **It degrades with many instruments.** With several weak instruments, 2SLS bias toward OLS gets *worse*, and the appropriate critical value rises with the number of instruments. A first-stage $F$ of 10 on twenty instruments is far more worrying than $F = 10$ on one.
+
+### Stock--Yogo critical values
+
+Stock and Yogo (2005) replaced the rough "10" with a proper table of critical values, derived two ways:
+
+- **Bias-based critical values**: the threshold for $F$ such that the 2SLS bias is at most (say) 5%, 10%, 20%, or 30% of the OLS bias. A subtle but important caveat: this *relative-bias* measure is only defined when there are **at least three instruments** (with one or two instruments the 2SLS bias moments do not exist), so Stock and Yogo tabulate it only for the over-identified case. For three instruments the 10%-bias critical value is **9.08** --- which is exactly the lineage of the famous "about 10."
+- **Size-based critical values**: the threshold for $F$ such that a nominal 5% Wald test has actual size at most (say) 10%, 15%, 20%, or 25%. These *are* defined for a single instrument. For one instrument the 10%-size critical value is **16.38** --- notably higher than the rough "10."
+
+::: {.glass-card .glass-card--definition}
+Selected **Stock--Yogo critical values** for the first-stage $F$, single endogenous regressor:
+
+| Tolerance | Size ≤ this % (1 instrument) | Bias ≤ this % (3 instruments) |
+|:---|:---:|:---:|
+| Strictest | $16.38$ (10% size) | $13.91$ (5% bias) |
+| Common | $8.96$ (15% size) | $9.08$ (10% bias) |
+| Lenient | $5.53$ (25% size) | $5.39$ (30% bias) |
+
+The size column is for **one** instrument; the bias column is for **three** (the relative-bias measure is undefined with fewer). The lesson holds either way: if all you care about is keeping *bias* near 10%, a single-digit $F$ in the $9$--$11$ range is the rough floor --- but if you want your *confidence intervals to mean what they say*, you need $F$ pushed up toward the size critical value of **16** or beyond. The single number "10" papers over this distinction.
+:::
+
+Laid out on one axis, the thresholds tell the whole story: the *bias-controlling* values cluster low (near the casual "10"), while the *size-controlling* values --- the ones you need for honest confidence intervals --- sit far to the right. The popular "10" lives at the cheap end of the scale.
+
+```{ojs}
+//| echo: false
+
+// Static threshold number line placing the Stock–Yogo (and effective-F) critical
+// values on one F axis, split into bias-controlling (low) vs size-controlling
+// (high). Shows that "10" sits at the bias-only end. Pure static figure.
+{
+  const biasVals = [
+    { F: 5.39,  t: "30% bias" },
+    { F: 9.08,  t: "10% bias" },
+    { F: 13.91, t: "5% bias" }
+  ];
+  const sizeVals = [
+    { F: 5.53,  t: "25% size" },
+    { F: 8.96,  t: "15% size" },
+    { F: 16.38, t: "10% size" },
+    { F: 23.1,  t: "eff-F strict" }
+  ];
+  return Plot.plot({
+    height: 230,
+    width: Math.min(640, width),
+    marginLeft: 62,
+    marginRight: 30,
+    marginTop: 28,
+    marginBottom: 48,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "12px" },
+    x: { domain: [3, 26], label: "First-stage F threshold →", grid: true },
+    y: { domain: [0, 1], axis: null },
+    marks: [
+      // The "10" reference.
+      Plot.ruleX([10], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "4,4" }),
+      Plot.text([{ x: 10, y: 0.97 }], {
+        x: "x", y: "y", text: () => 'the casual "10"',
+        fill: "#1c1c1a", fontWeight: 700, fontSize: 11, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // Bias-controlling row (ochre, lower band).
+      Plot.ruleY([0.32], { x1: 5.0, x2: 14.5, stroke: "#9c7a33", strokeWidth: 1.5 }),
+      Plot.dot(biasVals, { x: "F", y: 0.32, r: 5, fill: "#9c7a33" }),
+      Plot.text(biasVals, {
+        x: "F", y: () => 0.18, text: d => `${d.F}`,
+        fill: "#9c7a33", fontWeight: 700, fontSize: 11, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text(biasVals, {
+        x: "F", y: () => 0.44, text: d => d.t,
+        fill: "#9c7a33", fontWeight: 600, fontSize: 9.5, textAnchor: "middle",
+        stroke: "white", strokeWidth: 2.5, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 5.0, y: 0.32 }], {
+        x: "x", y: "y", text: () => "bias-controlling", fill: "#9c7a33",
+        fontWeight: 700, fontSize: 10, textAnchor: "end", dx: -6,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // Size-controlling row (slate, upper band).
+      Plot.ruleY([0.68], { x1: 5.0, x2: 23.6, stroke: "#3d5a6c", strokeWidth: 1.5 }),
+      Plot.dot(sizeVals, { x: "F", y: 0.68, r: 5, fill: "#3d5a6c" }),
+      Plot.text(sizeVals, {
+        x: "F", y: () => 0.82, text: d => `${d.F}`,
+        fill: "#3d5a6c", fontWeight: 700, fontSize: 11, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text(sizeVals, {
+        x: "F", y: () => 0.56, text: d => d.t,
+        fill: "#3d5a6c", fontWeight: 600, fontSize: 9.5, textAnchor: "middle",
+        stroke: "white", strokeWidth: 2.5, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 5.0, y: 0.68 }], {
+        x: "x", y: "y", text: () => "size-controlling", fill: "#3d5a6c",
+        fontWeight: 700, fontSize: 10, textAnchor: "end", dx: -6,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+<span style="color:#9c7a33; font-weight:700;">Ochre</span> = bias-controlling thresholds (defined for $\geq 3$ instruments); <span style="color:#3d5a6c; font-weight:700;">slate</span> = size-controlling thresholds (defined for one instrument), plus the strict effective-$F$ value near $23.1$. The casual "10" sits among the *bias* values --- well short of the $16.38$ you need for a trustworthy 5% test.
+:::
+
+## Modern Guidance: the Effective F
+
+The classical $F$ and Stock--Yogo table assume homoskedastic, i.i.d. errors. Real Swedish health-policy data are clustered (patients within vårdcentraler, vårdcentraler within regioner) and heteroskedastic. **Montiel-Olea and Pflueger (2013)** generalized the diagnostic to this world with the **effective $F$ statistic**.
+
+::: {.glass-card .glass-card--insight}
+The **effective $F$** (Montiel-Olea--Pflueger) replaces the classical first-stage $F$ when errors are non-i.i.d. It is built from a *robust* (heteroskedasticity- and cluster-consistent) variance estimator, so it correctly reflects instrument strength under realistic error structures. Modern practice:
+
+- Report the **effective $F$**, not the classical $F$, whenever you use robust or clustered standard errors --- which is almost always.
+- Compare it to the Montiel-Olea--Pflueger critical value for your chosen worst-case bias (often the value near 23.1 for the strictest threshold, but it depends on the design).
+- When in doubt, report **weak-instrument-robust confidence intervals** (Anderson--Rubin --- an interval built by keeping every value of $\beta$ the data cannot reject, rather than by inverting a single noisy standard error), which have correct coverage *regardless* of instrument strength and sidestep the threshold debate entirely.
+:::
+
+The practical upshot for an applied health economist: the old advice "check that $F > 10$" is a useful first reflex, but a publishable IV analysis in 2024 reports the *effective* $F$ (because errors are clustered), and ideally backs the point estimate with an **Anderson--Rubin confidence interval** that does not fall apart when the instrument is weak. If your distance instrument yields an effective $F$ of 4, the honest move is not to publish a 2SLS estimate with a tidy standard error --- it is to report an Anderson--Rubin interval (which may be very wide, or even unbounded) and say plainly that the data cannot pin down the effect.
+
+## Tiny Exclusion Violations Get Amplified
+
+There is a final, under-appreciated danger that couples weakness to the *previous* page's topic. Recall that IV is the ratio reduced-form / first-stage. Suppose the instrument has a *small* direct effect on the outcome --- a minor exclusion violation, say distance to the clinic also proxies for rural deprivation, which independently affects HbA1c. This contaminates the *numerator* (the reduced form) by some small amount $\rho$.
+
+In the DAG this is the **dashed-no-more red arrow** $Z \to Y$ that should not exist. Compare it to the clean valid-IV picture above: the only change is one extra edge of strength $\rho$, carrying a leak straight into the reduced form.
+
+```{ojs}
+//| echo: false
+
+// The broken-exclusion variant: same valid-IV graph, plus a small DIRECT Z→Y
+// leak (red), which is the ρ contamination. Reuses the page's DAG component.
+ivwk_drawDAG({
+  width: Math.min(480, width),
+  height: 230,
+  nodes: [
+    { id: "Z", x: 0.05, y: 0.55, label: "Z", caption: "Distance" },
+    { id: "D", x: 0.48, y: 0.55, label: "D", caption: "Enrollment" },
+    { id: "Y", x: 0.93, y: 0.55, label: "Y", caption: "HbA1c" },
+    { id: "U", x: 0.705, y: 0.08, label: "U", caption: "Motivation" }
+  ],
+  edges: [
+    { source: "Z", target: "D", kind: "causal" },
+    { source: "D", target: "Y", kind: "causal" },
+    { source: "U", target: "D", kind: "biasing" },
+    { source: "U", target: "Y", kind: "biasing" },
+    { source: "Z", target: "Y", kind: "biasing", bend: 0.20 }
+  ]
+})
+```
+
+::: {.aside}
+The lower red $Z \to Y$ arrow (strength $\rho$, the "rural deprivation" leak) is the exclusion violation. Its bias enters the IV estimate as $\rho/\pi$ --- so the *same* leak is far more damaging when the green $Z \to D$ first stage ($\pi$) is small. ($Z$ = distance, $D$ = enrollment, $Y$ = HbA1c, $U$ = motivation.)
+:::
+
+The bias this injects into the IV estimate is approximately $\rho / \pi$: the direct-effect contamination **divided by the first-stage strength**. When $\pi$ is large (strong instrument), even a moderate exclusion violation is divided down to little. But when $\pi$ is small (weak instrument), the *same tiny* violation is divided by a tiny number and **blown up into a large bias**.
+
+$$
+\text{exclusion bias in } \hat\beta_{IV} \;\approx\; \frac{\rho}{\pi} \;=\; \frac{\text{direct effect of } Z \text{ on } Y}{\text{first-stage strength}}.
+$$
+
+**Read this as**: "A small leak in the exclusion restriction, divided by a small first stage, is a big bias." A weak instrument is therefore *doubly* fragile: it is biased toward OLS even when perfectly valid, and it magnifies any imperfection in its validity. The two failure modes compound. This is why "the instrument is only *slightly* invalid" is no comfort when the instrument is also weak --- weakness is the amplifier.
+
+<details>
+<summary>Math Details: Deriving the weak-instrument bias approximation</summary>
+<div class="details-content">
+
+### Setup
+
+Take the just-identified model with everything demeaned (no intercept to track):
+
+$$
+Y = \beta D + \varepsilon, \qquad D = \pi Z + v,
+$$
+
+where $Z$ is the instrument, $\pi$ is the first-stage coefficient, and the endogeneity is the correlation between the structural error $\varepsilon$ and the first-stage error $v$: $\text{Cov}(\varepsilon, v) = \sigma_{\varepsilon v} \neq 0$. (In the Monte Carlo this correlation is generated by the shared motivation term $U$.) $Z$ is valid: $\text{Cov}(Z, \varepsilon) = 0$.
+
+### The IV estimator as truth plus a ratio of errors
+
+The IV estimator is $\hat\beta_{IV} = \widehat{\text{Cov}}(Z, Y) / \widehat{\text{Cov}}(Z, D)$. Substitute $Y = \beta D + \varepsilon$ into the numerator:
+
+$$
+\hat\beta_{IV}
+= \frac{\widehat{\text{Cov}}(Z, \beta D + \varepsilon)}{\widehat{\text{Cov}}(Z, D)}
+= \beta + \frac{\widehat{\text{Cov}}(Z, \varepsilon)}{\widehat{\text{Cov}}(Z, D)}.
+$$
+
+The estimation error is the ratio $\widehat{\text{Cov}}(Z, \varepsilon) / \widehat{\text{Cov}}(Z, D)$. In the population, $\text{Cov}(Z, \varepsilon) = 0$, so this ratio has expectation zero *in the limit* --- IV is **consistent**. The trouble is in *finite samples*, where the sample covariance $\widehat{\text{Cov}}(Z, \varepsilon)$ is not exactly zero, and we are dividing it by $\widehat{\text{Cov}}(Z, D) = \pi\,\widehat{\text{Var}}(Z) + \widehat{\text{Cov}}(Z, v)$.
+
+### Why the bias points toward OLS
+
+Both the numerator's sampling error $\widehat{\text{Cov}}(Z, \varepsilon)$ and the denominator's sampling error $\widehat{\text{Cov}}(Z, v)$ are driven by the *same draws of $Z$*. When $\pi$ is large, the denominator is dominated by the deterministic term $\pi\,\text{Var}(Z)$ and the noise is irrelevant. When $\pi$ is small, the denominator is *mostly noise* ($\widehat{\text{Cov}}(Z, v)$), and that noise is correlated with the numerator's noise through the endogeneity $\sigma_{\varepsilon v}$. A standard expansion (Nagar 1959; Bound, Jaeger, Baker 1995) gives the approximate finite-sample bias
+
+$$
+E[\hat\beta_{IV}] - \beta \;\approx\; \frac{\sigma_{\varepsilon v}}{\sigma_v^2}\cdot\frac{1}{\mu^2 + 1},
+$$
+
+where $\mu^2 = n\pi^2\text{Var}(Z)/\sigma_v^2$ is the concentration parameter.
+
+### Recognizing the two pieces
+
+The first factor, $\sigma_{\varepsilon v}/\sigma_v^2$, is **the asymptotic bias of OLS in the weak-instrument limit**: regressing $Y$ on $D$, the OLS slope converges to $\beta + \text{Cov}(D,\varepsilon)/\text{Var}(D)$, with $\text{Cov}(D,\varepsilon) = \sigma_{\varepsilon v}$ (because $Z$ is valid) and $\text{Var}(D) = \pi^2\text{Var}(Z) + \sigma_v^2$. When $\pi$ is small --- the regime that matters here --- the $\pi^2\text{Var}(Z)$ term is negligible and the OLS bias is $\approx \sigma_{\varepsilon v}/\sigma_v^2$. The second factor is $1/(\mu^2 + 1)$. Since the population first-stage $F$ satisfies $E[F] \approx \mu^2 + 1$, we substitute $F$ for $\mu^2 + 1$ to obtain the headline result:
+
+$$
+\boxed{\,E[\hat\beta_{IV}] - \beta \;\approx\; \frac{\text{bias}_{OLS}}{F + 1}\,.}
+$$
+
+### Reading the boxed formula
+
+- $F \to \infty$ (very strong instrument): the bias $\to 0$. IV is approximately unbiased, escaping OLS bias.
+- $F \to 0$ (no first stage): the bias $\to \text{bias}_{OLS}$. IV *is* OLS --- the instrument added nothing.
+- $F = 9$: bias is $1/10$ of the OLS bias, i.e. IV has removed 90% of the endogeneity bias. This is precisely the calibration behind the "$F > 10$" rule.
+
+The variance of $\hat\beta_{IV}$ tells a parallel story: as $\pi \to 0$, the denominator can approach zero, so the *second moment of the ratio diverges* --- the IV estimator in the just-identified weak case has no finite variance, which is why the Monte Carlo histogram sprouts the enormous tails you clipped out of the plot.
+
+</div>
+</details>
+
+## Code: Detecting and Diagnosing a Weak Instrument
+
+Both implementations simulate the diabetes-program design with a tunable first-stage strength, fit 2SLS, and report the first-stage $F$. Flip `pi` between a strong and a weak value to reproduce the two regimes from the interactive.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(fixest)   # feols / iv with first-stage diagnostics
+library(AER)      # ivreg + diagnostics as a cross-check
+
+set.seed(2024)
+
+simulate_iv <- function(n = 400, pi = 0.40,
+                        beta = -0.80, gamma = 0.90, delta = 0.80) {
+  U <- rnorm(n)                              # unobserved patient motivation
+  Z <- rnorm(n)                              # standardized "closeness" instrument
+  D <- pi * Z + delta * U + rnorm(n)         # endogenous enrollment
+  Y <- beta * D + gamma * U + rnorm(n)       # HbA1c outcome
+  data.frame(Y, D, Z)
+}
+
+run_one <- function(pi) {
+  dat <- simulate_iv(pi = pi)
+
+  # OLS (biased toward 0 because motivation lifts both D and Y).
+  ols <- coef(lm(Y ~ D, data = dat))["D"]
+
+  # 2SLS via fixest:  Y ~ 1 | D ~ Z
+  iv <- feols(Y ~ 1 | D ~ Z, data = dat)
+
+  # First-stage F on the excluded instrument (fixest reports it directly).
+  fs_F <- fitstat(iv, "ivf1")$`ivf1::D`$stat
+
+  c(OLS = unname(ols),
+    IV  = unname(coef(iv)["fit_D"]),
+    first_stage_F = unname(fs_F))
+}
+
+cat("STRONG instrument (pi = 0.40):\n"); print(round(run_one(0.40), 3))
+cat("\nWEAK instrument   (pi = 0.06):\n"); print(round(run_one(0.06), 3))
+
+# --- Monte Carlo: distribution of the IV estimate at each strength ---
+mc <- function(pi, reps = 1000) {
+  est <- replicate(reps, {
+    dat <- simulate_iv(pi = pi)
+    coef(feols(Y ~ 1 | D ~ Z, data = dat))["fit_D"]
+  })
+  c(mean = mean(est), sd = sd(est),
+    pct_outside = mean(est < -3 | est > 1.5))
+}
+cat("\nWeak-IV sampling distribution (pi = 0.06):\n")
+print(round(mc(0.06), 3))   # mean drifts toward OLS; sd large; fat tails
+
+# Modern: weak-instrument-robust (Anderson-Rubin) CI via ivreg / AER
+m <- AER::ivreg(Y ~ D | Z, data = simulate_iv(pi = 0.06))
+summary(m, diagnostics = TRUE)$diagnostics  # weak-instr test + Wu-Hausman
+```
+
+### Python
+
+```python
+import numpy as np
+import pandas as pd
+from linearmodels.iv import IV2SLS
+
+rng = np.random.default_rng(2024)
+
+def simulate_iv(n=400, pi=0.40, beta=-0.80, gamma=0.90, delta=0.80):
+    U = rng.standard_normal(n)               # unobserved motivation
+    Z = rng.standard_normal(n)               # closeness instrument
+    D = pi * Z + delta * U + rng.standard_normal(n)
+    Y = beta * D + gamma * U + rng.standard_normal(n)
+    return pd.DataFrame({"Y": Y, "D": D, "Z": Z, "const": 1.0})
+
+def run_one(pi):
+    dat = simulate_iv(pi=pi)
+    # OLS, biased toward 0
+    ols = np.polyfit(dat["D"], dat["Y"], 1)[0]
+    # 2SLS:  Y on D (endogenous) instrumented by Z
+    fit = IV2SLS(dat["Y"], dat[["const"]], dat["D"], dat["Z"]).fit()
+    # First-stage F on the excluded instrument Z (= squared t-stat in the
+    # just-identified case). linearmodels exposes it via the first_stage object.
+    first_stage = fit.first_stage.diagnostics
+    F = float(first_stage["f.stat"].iloc[0])
+    return {"OLS": ols, "IV": float(fit.params["D"]), "first_stage_F": F}
+
+print("STRONG instrument (pi = 0.40):", {k: round(v, 3) for k, v in run_one(0.40).items()})
+print("WEAK   instrument (pi = 0.06):", {k: round(v, 3) for k, v in run_one(0.06).items()})
+
+# --- Monte Carlo: distribution of the IV estimate ---
+def mc(pi, reps=1000):
+    ests = []
+    for _ in range(reps):
+        dat = simulate_iv(pi=pi)
+        fit = IV2SLS(dat["Y"], dat[["const"]], dat["D"], dat["Z"]).fit()
+        ests.append(float(fit.params["D"]))
+    ests = np.array(ests)
+    return {"mean": ests.mean(), "sd": ests.std(),
+            "pct_outside": np.mean((ests < -3) | (ests > 1.5))}
+
+print("Weak-IV sampling distribution (pi = 0.06):",
+      {k: round(v, 3) for k, v in mc(0.06).items()})
+
+# Modern diagnostics: linearmodels reports the effective (robust) F and
+# Anderson-Rubin / Stock-Wright weak-instrument-robust tests:
+fit = IV2SLS(simulate_iv(pi=0.06)["Y"],
+             simulate_iv(pi=0.06)[["const"]],
+             simulate_iv(pi=0.06)["D"],
+             simulate_iv(pi=0.06)["Z"]).fit(cov_type="robust")
+print(fit.first_stage)          # robust first-stage F (effective F)
+print(fit.wald_test)            # and weak-instrument-robust inference
+```
+
+:::
+
+Run the `STRONG` case and you will see the IV estimate land near $-0.80$ with a large first-stage $F$; run the `WEAK` case and the IV estimate drifts toward the OLS value while the $F$ collapses to single digits. The Monte Carlo blocks reproduce the fat-tailed sampling distribution from the interactive.
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A regional study instruments diabetes-program enrollment with travel distance. The plain OLS estimate is biased by $+0.50$ percentage points (motivated patients select in). Using the rule-of-thumb approximation $E[\hat\beta_{IV}] - \beta \approx \text{bias}_{OLS}/(F+1)$:
+
+(a) The reported first-stage $F$ is $4$. How much weak-instrument bias remains in the IV estimate, and what fraction of the OLS bias has IV removed?
+
+(b) A referee asks the team to find an instrument strong enough to cut the residual bias to about $0.02$ (roughly 4% of the OLS bias). What first-stage $F$ does that require?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With $F = 4$ and $\text{bias}_{OLS} = +0.50$:
+
+$$
+E[\hat\beta_{IV}] - \beta \approx \frac{0.50}{4 + 1} = \frac{0.50}{5} = 0.10.
+$$
+
+So about $+0.10$ pp of bias survives. IV has removed $1 - \tfrac{1}{F+1} = 1 - \tfrac{1}{5} = 80\%$ of the OLS bias --- helpful, but a fifth of the contamination remains, and at $F = 4$ the *variance* is also badly inflated.
+
+**(b)** Solve $0.50/(F+1) = 0.02 \Rightarrow F + 1 = 0.50/0.02 = 25 \Rightarrow F = 24$. You would need a first-stage $F$ of roughly **24** --- far above the casual "$F > 10$" floor, and close to the Stock--Yogo *size* critical values. This is exactly why "$F > 10$" controls bias but not inference: trustworthy intervals need a much stronger first stage.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+The instrument $Z$ is binary (lives within 5 km of an enrolling vårdcentral, or not). In a just-identified design the IV estimate is the **Wald ratio** $\widehat{\text{Cov}}(Z,Y)/\widehat{\text{Cov}}(Z,D)$, which for a binary instrument equals the reduced-form difference in $Y$ divided by the first-stage difference in $D$. Suppose living close lowers mean HbA1c by $0.12$ pp (reduced form) and raises the enrollment rate by $4$ percentage points (first stage, $\Delta = 0.04$).
+
+(a) Compute the IV (Wald) estimate.
+
+(b) Suppose better targeting raised the first-stage jump to $30$ percentage points instead. Recompute. What does the comparison reveal about why a *small denominator* is dangerous?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The Wald ratio is
+
+$$
+\hat\beta_{IV} = \frac{\text{reduced form}}{\text{first stage}} = \frac{-0.12}{0.04} = -3.0 \text{ pp}.
+$$
+
+A reduced-form effect of only $-0.12$ pp is *magnified* into a $-3.0$ pp treatment-effect estimate because it is divided by a tiny first stage of $0.04$.
+
+**(b)** With a first stage of $0.30$:
+
+$$
+\hat\beta_{IV} = \frac{-0.12}{0.30} = -0.40 \text{ pp}.
+$$
+
+Same numerator, but a sevenfold-larger denominator collapses the estimate from $-3.0$ to $-0.40$. The point: when the first stage is small, the IV estimate is enormously sensitive to the reduced form. A little sampling noise (or a little exclusion leak) in the numerator, divided by $0.04$, swings the answer wildly --- the mechanism behind both the fat tails and the exclusion-amplification on this page.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Distance to a clinic is suspected of a *small* direct effect on HbA1c (it also proxies for rural deprivation), contaminating the reduced form by $\rho = 0.02$. The exclusion-amplification approximation says the resulting bias in $\hat\beta_{IV}$ is about $\rho/\pi$.
+
+(a) With a weak first stage $\pi = 0.05$, how large is the exclusion-induced bias?
+
+(b) With a strong first stage $\pi = 0.40$, how large is it? Combine this with the previous section's verdict to explain why "the instrument is only *slightly* invalid" is especially dangerous when the instrument is also weak.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\text{bias} \approx \rho/\pi = 0.02/0.05 = 0.40$ pp --- a *large* bias, half the size of the true effect $\beta = -0.80$, produced by a "tiny" exclusion leak.
+
+**(b)** $\text{bias} \approx 0.02/0.40 = 0.05$ pp --- eight times smaller, because the same leak is divided by a first stage eight times larger.
+
+**Why this compounds:** a weak instrument is biased *toward OLS even when perfectly valid* (the $1/(F+1)$ story), and on top of that it *amplifies* any exclusion imperfection by $1/\pi$. The two failure modes stack: weakness is the common amplifier. So "only slightly invalid" offers no protection when $\pi$ is small --- a slight leak and a weak first stage together can dominate the estimate.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A published IV study of a Swedish regional health program reports a classical first-stage $F$ of $12$, with **clustered** standard errors (patients within vårdcentraler). The authors conclude "the instrument is strong ($F > 10$)." Critique this conclusion on two grounds, and state what you would ask them to report instead.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**Ground 1 --- wrong statistic for clustered errors.** The classical first-stage $F$ and the "10" threshold are derived under i.i.d. homoskedastic errors. With clustering, the relevant diagnostic is the **effective $F$** (Montiel-Olea--Pflueger), built from a cluster-robust variance estimator. The classical $F$ of $12$ may correspond to a much smaller effective $F$, so the "$F > 10$" claim is not even using the right number.
+
+**Ground 2 --- bias floor, not inference.** Even taken at face value, $F = 12$ only clears the rough *bias* floor. It is **below** the Stock--Yogo one-instrument 10%-*size* critical value of $16.38$, so a nominal 5% Wald test can have substantially distorted size and the reported confidence interval may undercover.
+
+**What to ask for:** report the **effective $F$** with its Montiel-Olea--Pflueger critical value, and --- because $F$ is in the borderline range --- back the point estimate with a weak-instrument-robust **Anderson--Rubin** confidence interval, which has correct coverage regardless of instrument strength (it may come back wide, which is the honest answer if the data cannot pin the effect down).
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A **valid** instrument can still be **weak**: relevance and exclusion say nothing about *strength*. Weakness is a separate, independent failure mode you must diagnose every time.
+- Weak-instrument bias points **toward OLS**, governed by $E[\hat\beta_{IV}] - \beta \approx \text{bias}_{OLS}/(F+1)$. A weak instrument hands you back a disguised OLS estimate with the false credibility of an IV design.
+- The first-stage $F$ measures strength. "$F > 10$" is a rough *bias* floor (10% of OLS bias), **not** a guarantee of correct test size --- valid inference needs $F$ closer to the Stock--Yogo size critical values (about $16.38$ for one instrument, higher with more).
+- With clustered or heteroskedastic errors --- the norm in regional health data --- report the **effective $F$** (Montiel-Olea--Pflueger), and back the estimate with a weak-instrument-robust **Anderson--Rubin** confidence interval.
+- Weakness *amplifies* exclusion violations: a tiny direct effect $\rho$ becomes a bias of roughly $\rho/\pi$, so a weak instrument is doubly fragile.
+:::
+
+## What Comes Next
+
+We have seen *when* IV breaks (weak first stage) and *how* to detect it (first-stage $F$, effective $F$, Anderson--Rubin intervals). But even a strong, valid instrument estimates something subtler than "the" treatment effect. Because different patients respond differently to the same nudge --- living closer to a clinic persuades some patients to enroll but not others --- IV recovers a weighted average over only the patients the instrument actually moves. The next page, [LATE and Compliers](late.qmd), unpacks exactly *whose* effect IV estimates: the **Local Average Treatment Effect** for the **compliers**, and why that population --- not the whole population --- is the one your instrument can speak for.

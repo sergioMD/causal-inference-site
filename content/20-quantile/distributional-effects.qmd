@@ -1,0 +1,837 @@
+---
+title: "Distributional Treatment Effects"
+subtitle: "Effects beyond the average"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Explain how a near-zero *average* treatment effect can conceal large, sign-varying effects that cancel across the distribution
+- Define the quantile treatment effect (QTE) as the horizontal gap between the treated and control quantile functions, $\text{QTE}(\tau)=Q_1(\tau)-Q_0(\tau)$
+- Distinguish an effect on the *distribution* (which QTE always identifies) from an effect on a *fixed individual's rank* (which requires rank invariance)
+- Read changes-in-changes and quantile difference-in-differences as tools for distributional effects that evolve over time
+- Argue why policymakers often care about who wins and who loses, not only the average impact
+:::
+
+## When the Average Lies
+
+Region Skåne pilots a new *digital egenmonitorering* program --- patients with Type 2 diabetes measure their own blood glucose at home and upload readings, which *distriktssköterskor* (district nurses) review weekly. After a year, the evaluation lands on the *verksamhetschef*'s desk with a single headline number: the average change in HbA1c between the program *vårdcentraler* and the comparison centers is $-0.1$ mmol/mol. Essentially zero. The program "doesn't work," concludes the dashboard.
+
+But the average is hiding a war. When the analysts split patients by their baseline severity, a different picture emerges. The *sickest* patients --- those who started with dangerously high HbA1c --- improved dramatically: their values fell by 8 mmol/mol. The *healthiest* patients, already well-controlled, drifted slightly *worse* by about 6 mmol/mol, perhaps because the app nagged stable patients into over-correcting. Average these together and they nearly cancel. The mean says "nothing happened." The truth is that a lot happened --- it just had **winners and losers**.
+
+This is the central message of distributional treatment effects: **a zero average effect is consistent with enormous heterogeneity**. The mean is one number summarizing a comparison of two entire distributions. If those distributions differ in *shape* but not in *location*, the mean sees nothing while the policy reshuffles outcomes substantially. For a clinician deciding whether to expand the program, "it helps the sick and mildly harms the healthy" is a completely different --- and more actionable --- conclusion than "it does nothing."
+
+The tool that recovers this lost information is the **quantile treatment effect** (QTE). Instead of comparing the two distributions at their *centers*, it compares them at every quantile: the 10th percentile of the treated against the 10th percentile of the control, the median against the median, the 90th against the 90th, and so on.
+
+## Two Distributions, Compared Quantile by Quantile
+
+Let $Y$ denote the outcome (HbA1c, mmol/mol). Imagine two outcome distributions for the same population:
+
+- The **control distribution** of $Y(0)$ --- what HbA1c values look like under standard care.
+- The **treated distribution** of $Y(1)$ --- what they look like under the program.
+
+The average treatment effect compares the *means* of these two distributions. The quantile treatment effect compares their *quantiles*.
+
+::: {.glass-card .glass-card--definition}
+Let $Q_0(\tau)$ be the $\tau$-th quantile of the control outcome distribution and $Q_1(\tau)$ the $\tau$-th quantile of the treated outcome distribution, for a rank $\tau \in (0,1)$. The **quantile treatment effect** at rank $\tau$ is their difference:
+
+$$
+\text{QTE}(\tau) \;=\; Q_1(\tau) - Q_0(\tau).
+$$
+
+**Read this as**: "the QTE at rank tau equals the tau-th quantile of the treated distribution minus the tau-th quantile of the control distribution." At $\tau = 0.5$ it is the gap between the two *medians*; at $\tau = 0.9$ the gap between the two 90th percentiles. The whole *function* $\tau \mapsto \text{QTE}(\tau)$ is the object of interest, not a single number.
+:::
+
+Equivalently --- and this is the picture worth carrying in your head --- the QTE is the **horizontal distance between the two cumulative distribution functions (CDFs)**. The quantile function $Q(\tau)$ is the inverse of the CDF $F(y)$: where $F$ maps an outcome value to the fraction below it, $Q$ maps a fraction back to the outcome value. So comparing quantiles is the same as asking, at a fixed height $\tau$ on the vertical CDF axis, "how far apart are the two curves horizontally?"
+
+::: {.glass-card .glass-card--insight}
+**The mean is a vertical gap; the QTE is a horizontal one.** Stack the two CDFs on the same axes. The ATE relates to the *area* between them; the QTE at rank $\tau$ is the *horizontal* gap measured at height $\tau$. When the two CDFs are parallel shifts of each other, every horizontal gap is identical and $\text{QTE}(\tau)$ is a flat line equal to the ATE --- a *location shift*. When the treated CDF is steeper or flatter (different spread), the horizontal gaps vary with $\tau$, the QTE slopes, and the average can sit anywhere --- even at zero.
+:::
+
+So a QTE that *crosses zero* is the winners-and-losers case: some quantiles are pushed up, others down, and the average can vanish even as the policy does a great deal. That is the case the lab below is built to expose.
+
+## See It: A Zero Mean Hiding a Storm
+
+The lab below puts two HbA1c distributions side by side --- standard care (slate) and the digital monitoring program (red). You control two things about the treated distribution: a **location shift** (slide it left or right) and a **spread change** (squeeze or stretch it around its center). Below the densities, the QTE curve is drawn across all ranks $\tau$, and a live readout reports the implied ATE.
+
+The keystone is the **"Zero-mean trap" preset**: it sets the location shift to zero but *compresses the spread*, so the program pulls the high tail down (helps the sickest) and the low tail up (mildly harms the already-healthy) by offsetting amounts. The ATE reads $\approx 0$, the two distributions share a center --- yet the QTE curve swings from strongly negative at high $\tau$ to positive at low $\tau$. The average is silent; the distribution is shouting. The mirror-image **"Polarization" preset** stretches the spread instead, flipping who wins while keeping the ATE at zero.
+
+::: {.interactive-container}
+
+#### Distributional effects: location vs. spread
+
+```{ojs}
+//| echo: false
+
+// Concise "Start here" prompt above the controls; the full guided tour is below.
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.85rem;
+    color: ${qrdte_pal.axis};
+    background: ${qrdte_pal.fill};
+    border-left: 3px solid ${qrdte_pal.treated};
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    margin: 0 0 0.75rem;">
+  <strong>Start here:</strong> choose the <em>Zero-mean trap</em> preset and read
+  the ATE tile &mdash; it sits near 0. Then look at the QTE curve below: it swings
+  from positive to negative. A silent average, a loud distribution. Full tour is
+  beneath the charts.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+
+viewof qrdte_preset = Inputs.radio(
+  [
+    "Pure location shift (program helps everyone equally)",
+    "Zero-mean trap (helps the sickest, mildly harms the healthy)",
+    "Polarization (harms the sickest, helps the healthy)",
+    "Custom"
+  ],
+  {
+    label: "Scenario preset",
+    value: "Zero-mean trap (helps the sickest, mildly harms the healthy)"
+  }
+)
+```
+
+```{ojs}
+//| echo: false
+
+html`<p style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${qrdte_pal.muted};
+    margin: -0.2rem 0 0.4rem;">
+  Heads up: switching presets <em>resets</em> the two sliders below. Use
+  <em>Custom</em> to keep your own values while you explore.
+</p>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Each preset pins the two control sliders. Values are mmol/mol of HbA1c.
+// "Custom" leaves the sliders alone so the reader can dial in any combination.
+qrdte_presetConfig = {
+  const table = {
+    "Pure location shift (program helps everyone equally)":
+      { shift: -6, spreadMult: 1.0 },
+    // Mean-preserving COMPRESSION (sd shrinks): pulls the high HbA1c tail DOWN
+    // (helps the sickest, QTE<0 at high tau) and the low tail UP (mildly harms
+    // the healthy, QTE>0 at low tau). ATE stays ~0. This is the opening story.
+    "Zero-mean trap (helps the sickest, mildly harms the healthy)":
+      { shift: 0, spreadMult: 0.30 },
+    // Mean-preserving STRETCH (sd grows): the mirror image — raises the high
+    // tail (harms the sickest) and lowers the low tail (helps the healthy).
+    "Polarization (harms the sickest, helps the healthy)":
+      { shift: 0, spreadMult: 1.8 },
+    "Custom":
+      { shift: -3, spreadMult: 0.7 }
+  };
+  return table[qrdte_preset];
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Sliders are re-created (and re-defaulted) whenever the preset changes,
+// because each viewof cell reads qrdte_presetConfig.
+viewof qrdte_shift = Inputs.range([-12, 6], {
+  value: qrdte_presetConfig.shift,
+  step: 0.5,
+  label: "Location shift of treated distribution (mmol/mol)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof qrdte_spread = Inputs.range([0.4, 2.2], {
+  value: qrdte_presetConfig.spreadMult,
+  step: 0.05,
+  label: "Spread multiplier of treated distribution (×)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Uppsala-academic palette tokens shared across this page's interactives.
+qrdte_pal = ({
+  treated: "#990000",   // focal / treated (program) series — Uppsala red
+  control: "#3d5a6c",   // comparison / control (standard care) series — slate
+  good:    "#2e6f40",   // success / on-target (green)
+  bad:     "#b3000b",   // alarm (bright red)
+  ochre:   "#9c7a33",   // highlight / true-value (ochre)
+  ink:     "#1c1c1a",   // ink text & reference lines
+  axis:    "#79766e",   // axis / muted label text
+  hair:    "#e6e3db",   // gridlines / hairlines
+  muted:   "#79766e",   // muted ink
+  fill:    "#f6f5f1"    // subtle tile fill
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Control distribution: HbA1c under standard care. A realistic mean (~58
+// mmol/mol, above the 52 target) with moderate spread.
+qrdte_mu0 = 58
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+qrdte_sd0 = 9
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Treated distribution parameters derive from the control via the two controls.
+// The treated mean is the control mean PLUS the location shift; the treated SD
+// is the control SD TIMES the spread multiplier. Crucially, the spread change
+// is applied AROUND the treated mean, so it redistributes mass symmetrically:
+// stretching pushes the high tail up and the low tail down by equal amounts,
+// leaving the mean (and hence the ATE) governed ONLY by the location shift.
+qrdte_mu1 = qrdte_mu0 + qrdte_shift
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+qrdte_sd1 = qrdte_sd0 * qrdte_spread
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Standard normal pdf / cdf / quantile helpers (no external import needed).
+qrdte_normPdf = (x, mu, sd) =>
+  Math.exp(-0.5 * ((x - mu) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI))
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Beasley-Springer-Moro inverse standard normal (probit). Accurate enough for
+// drawing the quantile/QTE curve across tau in (0,1).
+qrdte_stdNormInv = function (p) {
+  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2,
+             1.383577518672690e2, -3.066479806614716e1, 2.506628277459239e0];
+  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2,
+             6.680131188771972e1, -1.328068155288572e1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838e0,
+             -2.549732539343734e0, 4.374664141464968e0, 2.938163982698783e0];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996e0,
+             3.754408661907416e0];
+  const plow = 0.02425, phigh = 1 - plow;
+  let q, r;
+  if (p < plow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  } else if (p <= phigh) {
+    q = p - 0.5; r = q * q;
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+           (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+            ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+qrdte_normInv = (p, mu, sd) => mu + sd * qrdte_stdNormInv(p)
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Density curves for both groups, sampled on a shared HbA1c grid.
+qrdte_densData = {
+  const xs = d3.range(30, 90.001, 0.5);
+  const ctrl = xs.map(x => ({ x, density: qrdte_normPdf(x, qrdte_mu0, qrdte_sd0), grp: "Standard care" }));
+  const trt  = xs.map(x => ({ x, density: qrdte_normPdf(x, qrdte_mu1, qrdte_sd1), grp: "Program" }));
+  return ctrl.concat(trt);
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── Density overlay: control (slate) vs treated (red). ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 240,
+  marginLeft: 60,
+  marginBottom: 46,
+  marginTop: 30,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px", color: qrdte_pal.axis },
+  x: { label: "HbA1c (mmol/mol)  →", domain: [30, 90] },
+  y: { label: "↑ Density", grid: true, ticks: 4 },
+  color: {
+    domain: ["Standard care", "Program"],
+    range: [qrdte_pal.control, qrdte_pal.treated]
+  },
+  marks: [
+    Plot.gridY({ stroke: qrdte_pal.hair }),
+    // Clinical target line at 52 mmol/mol (ochre).
+    Plot.ruleX([52], { stroke: qrdte_pal.ochre, strokeWidth: 1.5, strokeDasharray: "4,4" }),
+    Plot.text([{ x: 52 }], {
+      x: "x", frameAnchor: "top", text: () => "Target 52",
+      fill: qrdte_pal.ochre, fontSize: 10, fontWeight: 600, dy: -4,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    Plot.areaY(qrdte_densData.filter(d => d.grp === "Standard care"), {
+      x: "x", y: "density", fill: qrdte_pal.control, fillOpacity: 0.14
+    }),
+    Plot.areaY(qrdte_densData.filter(d => d.grp === "Program"), {
+      x: "x", y: "density", fill: qrdte_pal.treated, fillOpacity: 0.14
+    }),
+    Plot.line(qrdte_densData, {
+      x: "x", y: "density", stroke: "grp", strokeWidth: 2.5
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// On-chart color key for the density overlay.
+html`<div style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${qrdte_pal.axis};
+    margin-top: 0.25rem; margin-bottom: 0.5rem;">
+  <span style="color:${qrdte_pal.control};font-weight:600;">&#9679; Standard care</span>
+  &nbsp;&nbsp;
+  <span style="color:${qrdte_pal.treated};font-weight:600;">&#9679; Program</span>
+  &nbsp;&mdash; lower HbA1c is better; the ochre line marks the clinical target.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// QTE curve: at each rank tau, the treated quantile minus the control quantile.
+// For two normals this is closed-form: QTE(tau) = (mu1-mu0) + (sd1-sd0)*z(tau).
+qrdte_qteData = {
+  const taus = d3.range(0.02, 0.981, 0.01);
+  return taus.map(tau => ({
+    tau,
+    q0: qrdte_normInv(tau, qrdte_mu0, qrdte_sd0),
+    q1: qrdte_normInv(tau, qrdte_mu1, qrdte_sd1),
+    qte: qrdte_normInv(tau, qrdte_mu1, qrdte_sd1) - qrdte_normInv(tau, qrdte_mu0, qrdte_sd0)
+  }));
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The ATE is just the location shift (spread changes are mean-preserving here),
+// equal to the average of QTE(tau) over tau — shown to the reader as a check.
+qrdte_ate = qrdte_mu1 - qrdte_mu0
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Symmetric y-extent for the QTE panel. Presets stay well within ±22, but the
+// Custom sliders can push the curve to ±34 (e.g. a large location shift stacked
+// on a 2.2× stretch). A FIXED domain would silently clip the line at the frame
+// edge, hiding part of the curve. So we enforce a stable minimum half-span of 22
+// (keeps the presets visually consistent) and expand to fit the data plus a small
+// pad whenever Custom mode reaches further out.
+qrdte_yExtent = {
+  const peak = d3.max(qrdte_qteData, d => Math.abs(d.qte));
+  return Math.max(22, Math.ceil((peak + 2) / 2) * 2);
+}
+```
+
+```{ojs}
+//| echo: false
+
+// ── The QTE curve across ranks. Crossing zero ⇒ winners and losers. ──
+Plot.plot({
+  width: Math.min(680, width),
+  height: 260,
+  marginLeft: 60,
+  marginBottom: 48,
+  marginTop: 30,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px", color: qrdte_pal.axis },
+  x: { label: "Quantile / rank  τ  →", domain: [0, 1], grid: false },
+  y: {
+    label: "↑ QTE(τ) = Q₁(τ) − Q₀(τ)   (mmol/mol)",
+    grid: true,
+    domain: [-qrdte_yExtent, qrdte_yExtent]
+  },
+  marks: [
+    Plot.gridY({ stroke: qrdte_pal.hair }),
+    // Zero line: below = treatment LOWERS HbA1c (helps); above = raises (harms).
+    Plot.ruleY([0], { stroke: qrdte_pal.ink, strokeWidth: 1.25 }),
+    // The ATE as a flat dashed reference (ochre = true average).
+    Plot.ruleY([qrdte_ate], {
+      stroke: qrdte_pal.ochre, strokeWidth: 1.75, strokeDasharray: "5,4"
+    }),
+    Plot.text([{ tau: 0.5 }], {
+      x: "tau", y: qrdte_ate, frameAnchor: "right",
+      text: () => `ATE ≈ ${qrdte_ate.toFixed(1)}`,
+      fill: qrdte_pal.ochre, fontSize: 11, fontWeight: 700,
+      dx: -6, dy: qrdte_ate >= 0 ? -8 : 12,
+      stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+    }),
+    // Shade where the treatment HELPS (QTE < 0, lower HbA1c).
+    Plot.areaY(qrdte_qteData.filter(d => d.qte <= 0), {
+      x: "tau", y: "qte", fill: qrdte_pal.good, fillOpacity: 0.10
+    }),
+    // Shade where the treatment HARMS (QTE > 0, higher HbA1c).
+    Plot.areaY(qrdte_qteData.filter(d => d.qte >= 0), {
+      x: "tau", y: "qte", fill: qrdte_pal.bad, fillOpacity: 0.10
+    }),
+    Plot.line(qrdte_qteData, {
+      x: "tau", y: "qte", stroke: qrdte_pal.treated, strokeWidth: 2.75
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+
+// Caption explaining the QTE shading and sign convention.
+html`<div style="
+    font-family: Inter, sans-serif;
+    font-size: 0.78rem;
+    color: ${qrdte_pal.axis};
+    margin-top: 0.25rem; line-height: 1.45;">
+  Sign convention: <span style="color:${qrdte_pal.good};font-weight:600;">QTE &lt; 0 (green)</span>
+  means the program <em>lowers</em> HbA1c at that rank &mdash; a win;
+  <span style="color:${qrdte_pal.bad};font-weight:600;">QTE &gt; 0 (red)</span>
+  means it <em>raises</em> HbA1c &mdash; a loss. The
+  <span style="color:${qrdte_pal.ochre};font-weight:600;">ochre dashed line</span>
+  is the ATE; when the curve crosses it on both sides, the average masks the spread.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// Live numeric panel: ATE plus three signpost QTEs (10th, 50th, 90th).
+{
+  const q10 = qrdte_normInv(0.10, qrdte_mu1, qrdte_sd1) - qrdte_normInv(0.10, qrdte_mu0, qrdte_sd0);
+  const q50 = qrdte_normInv(0.50, qrdte_mu1, qrdte_sd1) - qrdte_normInv(0.50, qrdte_mu0, qrdte_sd0);
+  const q90 = qrdte_normInv(0.90, qrdte_mu1, qrdte_sd1) - qrdte_normInv(0.90, qrdte_mu0, qrdte_sd0);
+  const sgn = v => (v > 0 ? "+" : "") + v.toFixed(1);
+  const col = v => Math.abs(v) < 0.5 ? qrdte_pal.ink : (v < 0 ? qrdte_pal.good : qrdte_pal.bad);
+  const tile = (label, value, color) => html`<div style="
+      flex: 1 1 0; min-width: 7rem; text-align: center;
+      padding: 0.55rem 0.4rem; border-radius: 0.35rem;
+      background: ${qrdte_pal.fill}; border: 1px solid ${qrdte_pal.hair};">
+    <div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;
+        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+        color:${qrdte_pal.muted};">${label}</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;
+        font-weight:700; color:${color};">${value}</div>
+  </div>`;
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;">
+    ${tile("ATE (mean)", sgn(qrdte_ate), Math.abs(qrdte_ate) < 0.5 ? qrdte_pal.ink : col(qrdte_ate))}
+    ${tile("QTE @ τ=0.10", sgn(q10), col(q10))}
+    ${tile("QTE @ τ=0.50", sgn(q50), col(q50))}
+    ${tile("QTE @ τ=0.90", sgn(q90), col(q90))}
+  </div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// One-line plain-language verdict that updates with the sliders.
+{
+  const q10 = qrdte_normInv(0.10, qrdte_mu1, qrdte_sd1) - qrdte_normInv(0.10, qrdte_mu0, qrdte_sd0);
+  const q90 = qrdte_normInv(0.90, qrdte_mu1, qrdte_sd1) - qrdte_normInv(0.90, qrdte_mu0, qrdte_sd0);
+  const sgn = v => (v > 0 ? "+" : "") + v.toFixed(1);
+  let msg, color;
+  if (Math.abs(q90 - q10) < 1.0) {
+    // Flat QTE: pure location shift, mean is sufficient.
+    msg = `A near-flat QTE: the program is close to a pure location shift of about ${qrdte_ate.toFixed(1)} mmol/mol — here the mean really does tell the whole story.`;
+    color = qrdte_pal.good;
+  } else if (Math.abs(qrdte_ate) < 0.6 && q90 < -0.6 && q10 > 0.6) {
+    // Mean-preserving COMPRESSION: helps the high tail, harms the low tail.
+    msg = `The ATE is essentially zero (${sgn(qrdte_ate)}), yet the program HELPS the sickest (QTE at τ=0.90 = ${sgn(q90)}) and mildly HARMS the healthiest (QTE at τ=0.10 = ${sgn(q10)}). The mean is silent; the distribution is not.`;
+    color = qrdte_pal.bad;
+  } else if (Math.abs(qrdte_ate) < 0.6 && q90 > 0.6 && q10 < -0.6) {
+    // Mean-preserving STRETCH (polarization): harms the high tail, helps the low.
+    msg = `The ATE is essentially zero (${sgn(qrdte_ate)}), but the program HARMS the sickest (QTE at τ=0.90 = ${sgn(q90)}) while helping the healthiest (QTE at τ=0.10 = ${sgn(q10)}) — it polarizes outcomes. The mean cancels the two.`;
+    color = qrdte_pal.bad;
+  } else {
+    msg = `The QTE varies across ranks (ATE = ${sgn(qrdte_ate)}): the program's effect depends on where a patient sits in the distribution, not just on the average.`;
+    color = qrdte_pal.ochre;
+  }
+  return html`<div style="
+      margin-top: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.5rem;
+      border-left: 3px solid ${color}; background: ${qrdte_pal.fill};
+      font-family: 'Inter', sans-serif; font-size: 0.86rem; line-height: 1.45;
+      color: ${qrdte_pal.ink};">${msg}</div>`;
+}
+```
+
+:::
+
+### How to Read the Distributional Lab
+
+Work through these in order; each isolates one idea.
+
+**Step 1: See a pure location shift.** Choose **"Pure location shift"**. The red program density is the slate control density slid left (lower HbA1c) by 6 mmol/mol, same shape. Look at the QTE panel: the red curve is *flat* and sits right on the ochre ATE line. Every quantile moves by the same amount, so the mean is a complete summary. This is the special case where the average tells the whole story.
+
+**Step 2: Spring the zero-mean trap.** Switch to **"Zero-mean trap"**. The location shift is zero, but the spread multiplier is *below 1*, so the program *compresses* the distribution around its center. The two densities share the same mean and the **ATE tile reads near 0**. Now read the QTE curve: it slopes steeply, **green (helps) at high $\tau$** and **red (harms) at low $\tau$**, crossing zero at the median. The sickest patients (high HbA1c, high $\tau$) improve a lot --- the compression pulls the high tail *down*; the already-healthy (low $\tau$) drift slightly worse as the low tail is pulled *up* toward the center. The average cancels them; the QTE reveals them. This is the opening digital-monitoring story, exactly.
+
+**Step 3: Flip it to polarization.** Switch to **"Polarization"**. Now the spread multiplier is *above 1*, so the program *stretches* the distribution. The ATE is still near 0, but the QTE curve now tilts the *other way*: red (harms) at high $\tau$ and green (helps) at low $\tau$. The program pushes the sickest even higher and the healthy even lower --- it widens the outcome gap. Same zero mean, opposite distributional story. The sign of the spread change decides who wins.
+
+**Step 4: Drive it yourself.** Switch to **"Custom"** and move the two sliders independently. The **location shift** slides the whole QTE curve up or down (and moves the ATE with it). The **spread multiplier** *tilts* the QTE curve around its center without moving the ATE --- because changing spread around the mean is mean-preserving. Confirm: you can hold the ATE fixed and make the QTE as steep as you like, in either direction. Location and spread are two separate dials, and only one of them is visible to the mean.
+
+**Step 5: Read the verdict.** The colored banner at the bottom translates the current sliders into a sentence a *verksamhetschef* could act on. Notice that "ATE = 0" and "the program does a great deal" are perfectly compatible statements --- the whole point of the page.
+
+## The Caveat That Matters Most: Distribution, Not Person
+
+Here is the subtlety that separates a careful analyst from a careless one. The QTE compares the *treated distribution* to the *control distribution* at matched ranks. It does **not**, in general, tell you what would happen to a *specific individual* if you moved them from control to treatment.
+
+::: {.glass-card .glass-card--warning}
+**QTE is an effect on the distribution, not on a fixed person's rank.** $\text{QTE}(0.9) = -8$ means "the 90th percentile of HbA1c under the program is 8 mmol/mol lower than the 90th percentile under standard care." It does **not** mean "the patient who *would have been* at the 90th percentile under control is improved by 8 under treatment." The patient at the 90th percentile of the treated distribution and the patient at the 90th percentile of the control distribution may be *different people*. The QTE is a statement about two population summaries, not about a person's journey from one world to the other.
+:::
+
+When *does* the QTE describe a person? Only under an extra, strong assumption.
+
+::: {.glass-card .glass-card--assumption}
+**Rank invariance** (also "rank preservation") holds if each individual occupies the *same rank* $\tau$ in the treated distribution as they would in the control distribution. Formally, $Y_i(1) = Q_1(U_i)$ and $Y_i(0) = Q_0(U_i)$ for the *same* rank $U_i \in (0,1)$ --- a single latent "type" $U_i$ that places person $i$ at quantile $U_i$ in *both* worlds.
+
+Under rank invariance, the person at rank $\tau$ under control is the *same* person at rank $\tau$ under treatment, so $\text{QTE}(\tau) = Q_1(\tau) - Q_0(\tau)$ equals that individual's own treatment effect $Y_i(1) - Y_i(0)$. The distributional QTE then *is* the individual QTE.
+:::
+
+Rank invariance is a substantive, often heroic, claim. It says the program never reorders patients: a patient who would have been the second-sickest under standard care is still the second-sickest (relatively) under the program. In our digital-monitoring example this is exactly what we should doubt --- the *point* of the program may be that it helps some sick patients leapfrog past others who barely engage with the app. A weaker, more defensible version, **rank similarity** (Chernozhukov & Hansen, 2005), allows ranks to be shuffled randomly but requires the *distribution* of ranks to be the same in both worlds; it is enough to identify QTEs in instrumental-variable settings without forcing the literal "same person, same rank" story.
+
+::: {.glass-card .glass-card--insight}
+**Two honest sentences.** Always safe: "The program lowers the upper quantiles of HbA1c" (a distributional claim, identified without extra assumptions). Safe *only under rank invariance*: "The program lowers the HbA1c of patients who would otherwise be in the upper tail" (an individual claim). Most disputes about QTE results are really disputes about whether that second sentence is licensed.
+:::
+
+## Distributional Effects Over Time
+
+So far we compared a treated and a control distribution measured at the same time. In policy evaluation we often have *panels* --- the same centers before and after a reform --- and want distributional effects net of common time trends. Two workhorses extend the difference-in-differences logic (Module 6) from means to whole distributions.
+
+**Quantile difference-in-differences.** The naive move is to run a DiD at each quantile: take the change in the $\tau$-th quantile for the treated group and subtract the change in the $\tau$-th quantile for the control group. This is intuitive but rests on a *quantile* version of parallel trends --- that, absent treatment, each quantile of the treated group would have moved by the same amount as the corresponding quantile of the control group. That assumption is much stronger and more fragile than parallel trends in means, because quantile-by-quantile comparisons are not invariant to monotone transformations of the outcome (a parallel-trends-in-levels world is generally *not* a parallel-trends-in-logs world).
+
+**Changes-in-changes (CiC).** Athey & Imbens (2006) replace the additive parallel-trends assumption with a model in which an individual's outcome is a *monotone* function of an unobserved type and time, with the *production function* common across groups. CiC asks: take a treated unit at rank $\tau$ in the pre-period; find where that rank sits in the control group's pre-period distribution; track how the control group moved that rank to the post-period; apply the same move to the treated. The result is a counterfactual *distribution* for the treated group, not just a counterfactual mean --- and it is invariant to monotone transformations of the outcome, fixing the log-vs-levels fragility of quantile DiD. The QTE then compares the observed treated distribution to this CiC counterfactual.
+
+::: {.glass-card .glass-card--insight}
+**Why CiC over quantile DiD.** Quantile DiD assumes parallel trends *separately at every quantile* --- a strong, scale-dependent assumption. Changes-in-changes instead assumes a common, monotone outcome-production model and is invariant to how you measure the outcome (mmol/mol, percent, log). When the question is genuinely distributional and the outcome scale is arbitrary, CiC is the more credible tool.
+:::
+
+## Why Policymakers Care
+
+A regional health authority does not maximize an average; it balances competing goals --- effectiveness, equity, and cost --- under a fixed budget in SEK.
+
+- **Equity.** A program that lowers mean HbA1c by improving already-healthy patients while ignoring the sickest may *widen* health inequalities even as the dashboard number improves. The QTE at high $\tau$ is precisely the "does it reach the sickest?" question. Swedish health policy, anchored in *vård på lika villkor* (care on equal terms), often weights the lower (here, *upper*-HbA1c) tail heavily.
+- **Targeting and cost-effectiveness.** If the QTE is large only at high $\tau$, the program's value is concentrated in the sickest patients --- so restricting enrollment to high-baseline patients could deliver most of the benefit at a fraction of the SEK cost. A flat QTE argues for universal rollout; a steep one argues for targeting.
+- **Risk and the tails.** Clinically, the extreme upper tail of HbA1c is where complications --- retinopathy, nephropathy, amputations --- concentrate. Shaving the 95th percentile is worth far more in averted SEK and suffering than shaving the median, even if both show the same mean change.
+- **Avoiding harm.** The winners-and-losers case is not academic: a "neutral on average" program that quietly *worsens* a subgroup needs to be caught. Only a distributional lens catches it.
+
+<details>
+<summary>Math Details: The QTE as a difference of quantile functions, and the rank-invariance identity</summary>
+<div class="details-content">
+
+### From CDF to quantile function
+
+Let $F_d(y) = \Pr(Y(d) \le y)$ be the CDF of the potential outcome under treatment status $d \in \{0,1\}$. The **quantile function** is its generalized inverse:
+
+$$
+Q_d(\tau) \;=\; F_d^{-1}(\tau) \;=\; \inf\{\,y : F_d(y) \ge \tau\,\}, \qquad \tau \in (0,1).
+$$
+
+**Read this as**: "$Q_d(\tau)$ is the smallest outcome value $y$ such that at least a fraction $\tau$ of the distribution lies at or below it." For a continuous, strictly increasing $F_d$ this is the ordinary inverse: $F_d(Q_d(\tau)) = \tau$.
+
+### Definition of the QTE
+
+$$
+\text{QTE}(\tau) \;=\; Q_1(\tau) - Q_0(\tau) \;=\; F_1^{-1}(\tau) - F_0^{-1}(\tau).
+$$
+
+Geometrically this is the **horizontal distance** between the two CDFs at height $\tau$: fix the vertical level $\tau$, read off where each CDF reaches it, and subtract.
+
+### The ATE is the average of the QTE
+
+Because the mean of any distribution equals the integral of its quantile function over $(0,1)$,
+
+$$
+E[Y(d)] \;=\; \int_0^1 Q_d(\tau)\, d\tau,
+$$
+
+it follows immediately that
+
+$$
+\text{ATE} \;=\; E[Y(1)] - E[Y(0)] \;=\; \int_0^1 \big(Q_1(\tau) - Q_0(\tau)\big)\, d\tau \;=\; \int_0^1 \text{QTE}(\tau)\, d\tau.
+$$
+
+**The ATE is the average of the QTE across ranks.** This is exactly why a QTE that is large and *positive* at some ranks and large and *negative* at others can integrate to zero: the positive and negative areas cancel. The mean is one functional of the QTE function, and a very lossy one.
+
+### The Gaussian special case (the lab)
+
+If $Y(0) \sim \mathcal{N}(\mu_0,\sigma_0^2)$ and $Y(1) \sim \mathcal{N}(\mu_1,\sigma_1^2)$, then $Q_d(\tau) = \mu_d + \sigma_d\,\Phi^{-1}(\tau)$ where $\Phi^{-1}$ is the standard normal quantile, so
+
+$$
+\text{QTE}(\tau) \;=\; (\mu_1 - \mu_0) \;+\; (\sigma_1 - \sigma_0)\,\Phi^{-1}(\tau).
+$$
+
+This is the formula the interactive draws. The **location** difference $\mu_1-\mu_0$ shifts the whole QTE curve up or down (it *is* the ATE); the **spread** difference $\sigma_1-\sigma_0$ *tilts* it through the center (at $\tau=0.5$, $\Phi^{-1}=0$, so the median gap equals $\mu_1-\mu_0$ regardless of spread). When $\mu_1=\mu_0$ but $\sigma_1>\sigma_0$, the QTE is a straight line through the origin-of-effect with slope $(\sigma_1-\sigma_0)$: positive on one side, negative on the other, integrating to the zero ATE. That is the zero-mean trap, in one equation.
+
+### Rank invariance makes the QTE individual
+
+Write each potential outcome as its quantile function evaluated at a latent rank. **Rank invariance** assumes a *single* rank $U_i$ governs both worlds:
+
+$$
+Y_i(0) = Q_0(U_i), \qquad Y_i(1) = Q_1(U_i), \qquad U_i \sim \text{Uniform}(0,1).
+$$
+
+Then for the individual with rank $U_i = \tau$,
+
+$$
+Y_i(1) - Y_i(0) \;=\; Q_1(\tau) - Q_0(\tau) \;=\; \text{QTE}(\tau).
+$$
+
+So under rank invariance the distributional QTE *equals* the individual treatment effect for the person at that rank. **Without it**, $Y_i(1) = Q_1(V_i)$ and $Y_i(0) = Q_0(U_i)$ with possibly $V_i \ne U_i$: the person can be reranked by treatment, and $Q_1(\tau) - Q_0(\tau)$ no longer corresponds to any single individual's effect. **Rank similarity** weakens this to $V_i \stackrel{d}{=} U_i$ conditional on covariates and instruments --- ranks may be shuffled but their *distribution* is preserved --- which is enough to identify QTEs in IV designs (Chernozhukov & Hansen, 2005) without the literal same-rank story.
+
+</div>
+</details>
+
+## Code: Estimating Quantile Treatment Effects
+
+Both panels simulate the zero-mean trap --- a program that helps the high tail and harms the low tail with a near-zero ATE --- then estimate the QTE across ranks and a bootstrap confidence band. The mean test will fail to reject "no effect"; the QTE will light up.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# install.packages(c("quantreg", "boot"))  # if needed
+library(quantreg)
+library(boot)
+
+set.seed(2024)
+n <- 1200
+
+# Standard care: HbA1c ~ N(58, 9). Program: SAME mean, but 0.4x the spread
+# (a mean-preserving compression), so it pulls the high tail DOWN (helps the
+# sickest) and the low tail UP (mildly harms the already-healthy).
+ctrl <- rnorm(n, mean = 58, sd = 9)
+mu0  <- 58
+prog <- mu0 + 0.4 * (rnorm(n, mean = 58, sd = 9) - mu0)   # mean-preserving compression
+
+df <- data.frame(
+  y = c(ctrl, prog),
+  d = c(rep(0L, n), rep(1L, n))
+)
+
+## ---- The mean is silent: a t-test finds nothing ----
+print(t.test(y ~ d, data = df))          # difference in means ≈ 0, p large
+
+## ---- The QTE across ranks: difference of empirical quantiles ----
+taus <- c(0.10, 0.25, 0.50, 0.75, 0.90)
+qte  <- sapply(taus, function(tau)
+  as.numeric(quantile(prog, tau)) - as.numeric(quantile(ctrl, tau)))
+
+## Equivalently via quantile regression of y on the treatment dummy:
+## the coefficient on d at each tau IS the QTE(tau).
+fit <- rq(y ~ d, tau = taus, data = df)
+qte_rq <- coef(fit)["d", ]               # one QTE per tau
+
+## ---- Bootstrap CI for the QTE at each tau (resample within groups) ----
+qte_boot <- function(data, idx) {
+  d <- data[idx, ]
+  sapply(taus, function(tau)
+    as.numeric(quantile(d$y[d$d == 1], tau)) -
+    as.numeric(quantile(d$y[d$d == 0], tau)))
+}
+bo <- boot(df, qte_boot, R = 999, strata = df$d)
+ci <- t(sapply(seq_along(taus), function(j)
+  boot.ci(bo, index = j, type = "perc")$percent[4:5]))
+
+out <- data.frame(tau = taus, QTE = round(qte, 2),
+                  lo = round(ci[, 1], 2), hi = round(ci[, 2], 2))
+print(out)
+# Expect: QTE strongly NEGATIVE at tau=0.90 (helps sickest),
+#         strongly POSITIVE at tau=0.10 (harms healthiest), ~0 at the median.
+```
+
+### Python
+
+```python
+import numpy as np
+import statsmodels.formula.api as smf
+from scipy import stats
+import pandas as pd
+
+rng = np.random.default_rng(2024)
+n = 1200
+
+# Standard care: HbA1c ~ N(58, 9). Program: SAME mean, 0.4x the spread
+# (a mean-preserving compression) — pulls the high tail DOWN (helps the
+# sickest) and the low tail UP (mildly harms the already-healthy).
+mu0 = 58.0
+ctrl = rng.normal(58, 9, n)
+prog = mu0 + 0.4 * (rng.normal(58, 9, n) - mu0)
+
+df = pd.DataFrame({
+    "y": np.concatenate([ctrl, prog]),
+    "d": np.concatenate([np.zeros(n, int), np.ones(n, int)]),
+})
+
+# ---- The mean is silent: a t-test finds nothing ----
+t, p = stats.ttest_ind(prog, ctrl)
+print(f"Difference in means = {prog.mean() - ctrl.mean():.2f},  t={t:.2f},  p={p:.3f}")
+
+# ---- QTE across ranks: difference of empirical quantiles ----
+taus = np.array([0.10, 0.25, 0.50, 0.75, 0.90])
+qte = np.quantile(prog, taus) - np.quantile(ctrl, taus)
+
+# Equivalently via quantile regression of y on the treatment dummy:
+# the coefficient on d at each tau IS the QTE(tau).
+qte_qr = np.array([
+    smf.quantreg("y ~ d", df).fit(q=tau).params["d"] for tau in taus
+])
+
+# ---- Manual bootstrap CI (resample within each group) ----
+B = 999
+boot = np.empty((B, len(taus)))
+for b in range(B):
+    cs = rng.choice(ctrl, size=n, replace=True)
+    ps = rng.choice(prog, size=n, replace=True)
+    boot[b] = np.quantile(ps, taus) - np.quantile(cs, taus)
+lo, hi = np.percentile(boot, [2.5, 97.5], axis=0)
+
+out = pd.DataFrame({"tau": taus, "QTE": qte.round(2),
+                    "lo": lo.round(2), "hi": hi.round(2)})
+print(out.to_string(index=False))
+# Expect: QTE strongly negative at tau=0.90 (helps sickest),
+#         strongly positive at tau=0.10 (harms healthiest), ~0 at the median.
+```
+
+:::
+
+In both languages the $t$-test on the mean reports an effect indistinguishable from zero, while the QTE table shows a large *negative* effect at $\tau = 0.90$ (the program helps the sickest) and a large *positive* effect at $\tau = 0.10$ (it mildly harms the healthiest), with the median near zero. Same data, two diametrically opposed verdicts --- the mean's and the distribution's. Both `rq` (R) and `QuantReg` (Python) recover the QTE as the slope coefficient on the treatment dummy in a quantile regression, which is the bridge to the [previous page](quantile-regression.qmd).
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+Under standard care, HbA1c is $Y(0) \sim \mathcal{N}(58, 9^2)$. A program leaves the mean unchanged but increases the standard deviation to $\sigma_1 = 13.5$ (a $1.5\times$ stretch around the same mean of 58).
+
+(a) Write $\text{QTE}(\tau)$ as a function of $\tau$. (b) Evaluate it at $\tau = 0.10$ and $\tau = 0.90$ using $\Phi^{-1}(0.90) \approx 1.2816$ and $\Phi^{-1}(0.10) \approx -1.2816$. (c) What is the ATE, and how do (a)-(b) demonstrate the zero-mean trap?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** With both normal, $\text{QTE}(\tau) = (\mu_1-\mu_0) + (\sigma_1-\sigma_0)\,\Phi^{-1}(\tau) = (58-58) + (13.5-9)\,\Phi^{-1}(\tau) = 4.5\,\Phi^{-1}(\tau)$.
+
+**(b)** At $\tau=0.90$: $\text{QTE} = 4.5 \times 1.2816 = +5.77$ mmol/mol. At $\tau=0.10$: $\text{QTE} = 4.5 \times (-1.2816) = -5.77$ mmol/mol.
+
+**(c)** The ATE is $\mu_1 - \mu_0 = 0$. Yet the QTE is $+5.77$ at the top and $-5.77$ at the bottom: the program *raises* the high tail of HbA1c (worsens the sickest) and *lowers* the low tail (over-controls the healthiest), by exactly offsetting amounts. The two effects integrate to the zero ATE --- $\int_0^1 4.5\,\Phi^{-1}(\tau)\,d\tau = 4.5 \cdot 0 = 0$ since $\Phi^{-1}$ is antisymmetric about $\tau=0.5$. The mean reports "no effect"; the distribution reports a substantial reshuffling. (Note this stretch is the *harmful* mirror of the beneficial one in the lab; the sign of the spread change decides who wins.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+An analyst reports: "QTE$(0.9) = -8$ mmol/mol, so the program improves the patient at the 90th percentile by 8 mmol/mol." State precisely what is wrong with this sentence, give the corrected distributional interpretation, and name the single assumption under which the analyst's individual-level reading *would* be valid.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**What's wrong:** The QTE compares the 90th percentile *of the treated distribution* to the 90th percentile *of the control distribution* --- two summaries of two different populations (or the same population in two different worlds). The patient sitting at the 90th percentile under the program need not be the same patient who would have been at the 90th percentile under standard care; treatment can rerank people. So "$-8$" is not any single individual's treatment effect.
+
+**Corrected (distributional) interpretation:** "The 90th percentile of HbA1c under the program is 8 mmol/mol lower than the 90th percentile under standard care." This is a comparison of two distributions' upper tails, identified without extra assumptions.
+
+**Assumption that licenses the individual reading:** *Rank invariance* (rank preservation) --- each individual holds the same rank $U_i$ in both the treated and control distributions, $Y_i(1)=Q_1(U_i)$ and $Y_i(0)=Q_0(U_i)$. Then the person at rank 0.9 is the same in both worlds and $\text{QTE}(0.9)=Y_i(1)-Y_i(0)$ for that person. (Rank *similarity* is a weaker version sufficient in IV settings.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A region measures HbA1c at five program centers and five comparison centers, before and after a reform. An analyst proposes computing, at each quantile $\tau$, the change in the treated group's $\tau$-quantile minus the change in the control group's $\tau$-quantile (quantile DiD). (a) What identifying assumption does this require? (b) Why is it more fragile than parallel trends in means? (c) What does changes-in-changes assume instead, and what robustness does that buy?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** *Parallel trends at each quantile*: absent the reform, the $\tau$-th quantile of the treated group would have changed over time by the same amount as the $\tau$-th quantile of the control group, for every $\tau$.
+
+**(b)** Quantile-by-quantile differences are *not invariant to monotone transformations* of the outcome. Parallel trends might hold for HbA1c in levels (mmol/mol) but fail for the same data in logs or percent, and there is usually no principled reason to prefer one scale. Means have the same scale-dependence, but assuming it *separately at every quantile* multiplies the number of ways the assumption can fail, and quantiles of skewed health outcomes rarely move in lockstep.
+
+**(c)** *Changes-in-changes* (Athey & Imbens, 2006) assumes a common, *monotone* outcome-production function mapping an unobserved type and time to outcomes, identical across the treated and control groups. It constructs a counterfactual *distribution* for the treated post-period by mapping treated pre-period ranks through the control group's observed time change. Crucially it is **invariant to monotone transformations of the outcome** (levels, logs, percent give the same answer), repairing the scale-fragility of quantile DiD, and it yields the entire counterfactual distribution rather than just a mean.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+Using the interactive, set **"Custom"**, location shift $= 0$, and drag the spread multiplier from $1.0$ up to $2.0$. (a) Describe what happens to the ATE tile and to the QTE curve. (b) Now set the spread multiplier below 1 (say $0.6$) with location shift still 0 --- what changes about *who* benefits? (c) A policymaker weights the upper HbA1c tail (the sickest) far more than the median. Which slider setting would they most prefer, and why?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** The ATE tile stays at (approximately) 0 the whole time --- stretching around the mean is mean-preserving. The QTE curve, flat at the start, *tilts* steeper and steeper, but it becomes increasingly *positive* (red, harming) at high $\tau$ and increasingly *negative* (green, helping) at low $\tau$, pivoting through the median at zero. A *stretch* (multiplier $>1$) pushes the high HbA1c tail even higher --- it *worsens* the sickest --- while pulling the low tail down. This is the **"Polarization"** preset: a zero mean that widens the gap.
+
+**(b)** With the multiplier below 1 the treated distribution is *narrower* than the control --- a *compression*. The tilt reverses: the high tail is pulled *down* (the sickest are helped, QTE $<0$ at high $\tau$) and the low tail is pulled *up* toward the center (the already-healthy move slightly worse, QTE $>0$ at low $\tau$). The program shrinks inequality in glycemic control. This is the **"Zero-mean trap"** preset: a zero mean that nonetheless helps the patients who need it most.
+
+**(c)** They would prefer the **compression** setting (spread multiplier $< 1$, the Zero-mean trap), because it produces a strongly negative QTE at high $\tau$ --- it lowers the upper HbA1c tail where complications and SEK costs concentrate --- *even though* the ATE is still about zero. A policymaker maximizing the mean would be indifferent between this and doing nothing; a policymaker who weights the sick tail would (correctly) see large value. The mismatch is exactly why distributional, not mean, evaluation is needed.
+
+</div>
+</details>
+:::
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A zero average treatment effect can hide large, sign-varying effects: winners and losers whose contributions cancel in the mean.
+- The quantile treatment effect $\text{QTE}(\tau)=Q_1(\tau)-Q_0(\tau)$ is the horizontal gap between the treated and control CDFs at rank $\tau$; the ATE is its average, $\int_0^1 \text{QTE}(\tau)\,d\tau$.
+- A flat QTE is a pure location shift (mean tells all); a sloping QTE means the treatment changes spread/inequality; a QTE that crosses zero is the winners-and-losers case.
+- QTE is an effect on the *distribution*, not on a fixed individual's rank --- it equals an individual's own effect only under *rank invariance* (relaxed to rank similarity in IV designs).
+- For distributional effects over time, quantile DiD assumes parallel trends at every quantile (fragile, scale-dependent), while changes-in-changes assumes a common monotone production model and is invariant to monotone outcome transformations.
+- Policymakers care about equity, targeting, tail risk, and avoiding subgroup harm --- all distributional questions the mean cannot answer.
+:::
+
+## What Comes Next
+
+The QTE compares two whole outcome distributions and tells us *that* they differ across ranks --- but not *why*. When a gap in outcomes opens up between two groups (program vs. comparison, men vs. women, region vs. region), we usually want to split it into a part explained by differences in observable *characteristics* and a part left to differences in *returns* to those characteristics. The next page, [Decompositions: Oaxaca-Blinder and Beyond](decompositions.qmd), develops exactly that machinery --- first for means (the classic Oaxaca-Blinder decomposition) and then, building directly on the quantile tools from this page, for entire distributions, so we can ask not just *how big* a distributional gap is but *what accounts for it* at every quantile.

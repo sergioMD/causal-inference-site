@@ -1,0 +1,1928 @@
+---
+title: "Hypothesis Testing"
+subtitle: "Null hypotheses, p-values, and the logic of statistical tests"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Frame a null and alternative hypothesis and explain the proof-by-contradiction logic of a statistical test
+- Compute a t-statistic and translate it into a p-value, and interpret that p-value as $P(\text{data} \mid H_0)$ rather than $P(H_0 \mid \text{data})$
+- Distinguish Type I from Type II error, and explain how $\alpha$, effect size, and sample size jointly determine power
+- Diagnose common p-value misinterpretations, including why "$p = 0.05$" is not a 5% false-discovery rate once the base rate of real effects is low
+- Distinguish statistical from practical significance and recognize the multiple-testing problem in large Swedish registry studies
+:::
+
+## A New Blood Pressure Drug on Trial
+
+In 2019, a Swedish *region* launched a randomized trial across 14 *vårdcentraler* (primary care centers) in Västra Götaland. The question was whether a new antihypertensive drug reduced systolic blood pressure more effectively than the existing standard treatment. Two hundred patients with diagnosed hypertension were randomly assigned: 100 received the new drug, 100 received the standard. After six months, the researchers measured each patient's systolic blood pressure and computed the difference in group means.
+
+The new-drug group had an average systolic blood pressure 4.2 mmHg lower than the standard-treatment group. Is that a real effect, or could random chance explain the difference? After all, even if the two drugs were identical, the 100 patients who happened to be assigned to the new drug might have had slightly lower blood pressure simply because of who ended up in which group.
+
+This is the question that hypothesis testing was built to answer. It does not tell us whether the drug *works* --- that is a clinical judgment that requires weighing effect sizes, side effects, and costs. What it tells us is whether the observed data are *surprising enough* to cast doubt on the assumption that nothing happened at all.
+
+
+## The Logic: Proof by Contradiction
+
+Hypothesis testing follows the logic of *reductio ad absurdum* --- proof by contradiction. The procedure is:
+
+1. **Assume** that the treatment has no effect (the "null hypothesis").
+2. **Compute** how likely it would be to see data as extreme as what we observed, given that assumption.
+3. **If the data are very unlikely under the assumption**, conclude that the assumption is probably wrong.
+
+This is the same logic you use in everyday reasoning. If a friend claims they flipped a fair coin and got heads 20 times in a row, you do not conclude "what an unlikely event!" You conclude "that coin is probably not fair." The hypothesis test formalizes this intuition.
+
+The diagram below traces those three steps end to end --- assume the null, measure how surprising the data are under it, then branch on whether that surprise crosses the threshold $\alpha$.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static proof-by-contradiction flowchart (pure d3, returns an SVG node).
+// Boxes are laid out on a normalized [0,1] grid; the two terminal boxes are
+// tinted with the page palette (red = reject, slate = fail to reject). The
+// "small p?" decision is a rotated square (diamond). Purely a figure.
+htx_drawFlow = function ({ width = 560, height = 250 } = {}) {
+  const pad = 12;
+  const W = width, H = height;
+  const sx = v => pad + v * (W - 2 * pad);
+  const sy = v => pad + v * (H - 2 * pad);
+
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const defs = svg.append("defs");
+  defs.append("marker")
+    .attr("id", "htx-flow-arrow").attr("viewBox", "0 -5 10 10")
+    .attr("refX", 9).attr("refY", 0)
+    .attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#79766e");
+
+  // box: {x,y normalized center, w,h px, lines:[...], fill, stroke, textColor}
+  const boxes = [
+    { id: "assume", x: 0.16, y: 0.16, w: 150, h: 52,
+      lines: ["1 · Assume H₀", "(no effect)"], fill: "#f6f5f1", stroke: "#1c1c1a", tc: "#1c1c1a" },
+    { id: "compute", x: 0.16, y: 0.55, w: 162, h: 60,
+      lines: ["2 · Compute p =", "P(data | H₀)"], fill: "#f6f5f1", stroke: "#1c1c1a", tc: "#1c1c1a" },
+    { id: "decide", x: 0.52, y: 0.55, w: 120, h: 120, diamond: true,
+      lines: ["3 · p < α ?"], fill: "#fff", stroke: "#9c7a33", tc: "#9c7a33" },
+    { id: "reject", x: 0.86, y: 0.22, w: 168, h: 56,
+      lines: ["Reject H₀", "data contradict it"], fill: "rgba(153,0,0,0.06)", stroke: "#990000", tc: "#990000" },
+    { id: "fail", x: 0.86, y: 0.85, w: 168, h: 56,
+      lines: ["Fail to reject H₀", "no contradiction yet"], fill: "rgba(61,90,108,0.06)", stroke: "#3d5a6c", tc: "#3d5a6c" }
+  ];
+  const byId = new Map(boxes.map(b => [b.id, b]));
+  const cx = b => sx(b.x), cy = b => sy(b.y);
+
+  // ── edges ──
+  const drawEdge = (a, b, label, lx, ly) => {
+    const x1 = cx(a), y1 = cy(a), x2 = cx(b), y2 = cy(b);
+    svg.append("line")
+      .attr("x1", x1).attr("y1", y1 + (b.y > a.y ? a.h / 2 : -a.h / 2) * (Math.abs(b.y - a.y) > Math.abs(b.x - a.x) ? 1 : 0))
+      .attr("x2", x2).attr("y2", y2)
+      .attr("stroke", "#79766e").attr("stroke-width", 2)
+      .attr("marker-end", "url(#htx-flow-arrow)");
+    if (label) {
+      svg.append("text")
+        .attr("x", lx).attr("y", ly).attr("text-anchor", "middle")
+        .attr("font-size", 11).attr("font-weight", 700).attr("fill", "#9c7a33")
+        .attr("stroke", "white").attr("stroke-width", 3).attr("paint-order", "stroke")
+        .text(label);
+    }
+  };
+  drawEdge(byId.get("assume"), byId.get("compute"));
+  drawEdge(byId.get("compute"), byId.get("decide"));
+  drawEdge(byId.get("decide"), byId.get("reject"), "yes", sx(0.70), sy(0.30));
+  drawEdge(byId.get("decide"), byId.get("fail"), "no", sx(0.70), sy(0.78));
+
+  // ── boxes on top ──
+  for (const b of boxes) {
+    const g = svg.append("g");
+    if (b.diamond) {
+      const hw = b.w / 2, hh = b.h / 2;
+      g.append("polygon")
+        .attr("points", `${cx(b)},${cy(b) - hh} ${cx(b) + hw},${cy(b)} ${cx(b)},${cy(b) + hh} ${cx(b) - hw},${cy(b)}`)
+        .attr("fill", b.fill).attr("stroke", b.stroke).attr("stroke-width", 2.5);
+    } else {
+      g.append("rect")
+        .attr("x", cx(b) - b.w / 2).attr("y", cy(b) - b.h / 2)
+        .attr("width", b.w).attr("height", b.h)
+        .attr("rx", 7).attr("ry", 7)
+        .attr("fill", b.fill).attr("stroke", b.stroke).attr("stroke-width", 2);
+    }
+    const n = b.lines.length;
+    b.lines.forEach((ln, i) => {
+      g.append("text")
+        .attr("x", cx(b)).attr("y", cy(b) + (i - (n - 1) / 2) * 15)
+        .attr("text-anchor", "middle").attr("dominant-baseline", "central")
+        .attr("font-size", i === 0 ? 12.5 : 11)
+        .attr("font-weight", i === 0 ? 700 : 500)
+        .attr("fill", b.tc).text(ln);
+    });
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+htx_drawFlow({ width: Math.min(560, width), height: 250 })
+```
+
+::: {.aside}
+The spine of every test: assume $H_0$, ask how surprising the data are under it (the p-value), and reject only when that surprise clears the threshold $\alpha$. "Fail to reject" is not "accept" --- it simply means the data did not contradict $H_0$ strongly enough.
+:::
+
+::: {.glass-card .glass-card--definition}
+**The Null and Alternative Hypotheses**
+
+The **null hypothesis** $H_0$ is the default assumption of no effect. In a clinical trial comparing a new drug to standard care:
+
+$$
+H_0: \mu_{\text{new}} - \mu_{\text{standard}} = 0
+$$
+
+**How to read this**: "H-naught states that the population mean blood pressure under the new drug equals the population mean under the standard drug --- that is, the true treatment effect is zero."
+
+The **alternative hypothesis** $H_1$ (or $H_a$) is the claim we are testing for. In a two-sided test:
+
+$$
+H_1: \mu_{\text{new}} - \mu_{\text{standard}} \neq 0
+$$
+
+**How to read this**: "H-one states that the treatment effect is *not* zero --- the new drug changes blood pressure in some direction."
+
+In a one-sided test, we might instead write $H_1: \mu_{\text{new}} - \mu_{\text{standard}} < 0$ (the new drug *lowers* blood pressure), reflecting a directional prediction. We return to one-sided vs. two-sided tests below.
+:::
+
+A critical point: the null hypothesis is *never proven true*. We either reject it (the data are inconsistent with it) or fail to reject it (the data are not inconsistent enough). Failing to reject is not the same as confirming --- it may simply mean we did not have enough data.
+
+
+## The Test Statistic
+
+To evaluate how surprising the data are under $H_0$, we need a single number that summarizes the evidence. This is the **test statistic**.
+
+For comparing two group means, the standard choice is the **t-statistic**:
+
+$$
+t = \frac{\bar{Y}_1 - \bar{Y}_0}{\text{SE}(\bar{Y}_1 - \bar{Y}_0)}
+$$
+
+::: {.glass-card .glass-card--definition}
+**How to read the t-statistic**
+
+$$
+t = \frac{\text{estimated effect} - \text{null value}}{\text{standard error of the estimate}}
+$$
+
+The numerator is what we observed minus what we expected under $H_0$ (which is zero). The denominator is the standard error --- a measure of how much the estimate would vary across repeated experiments due to random sampling alone.
+
+**In words**: the $t$-statistic counts the number of standard errors between our estimate and the null value. A $t$ of 2.0 means the estimate is 2 standard errors away from zero. A $t$ of 0.5 means the estimate is well within the range of normal sampling variation under $H_0$.
+
+For two independent groups with sample sizes $n_1$ and $n_0$ and sample standard deviations $s_1$ and $s_0$:
+
+$$
+\text{SE} = \sqrt{\frac{s_1^2}{n_1} + \frac{s_0^2}{n_0}}
+$$
+
+**How to read this**: "The standard error equals the square root of the sum of each group's variance divided by its sample size." Larger samples and less variable outcomes both produce smaller standard errors, making it easier to detect real effects.
+:::
+
+
+## The P-Value
+
+The $t$-statistic tells us how far our estimate is from the null. The **p-value** translates that distance into a probability.
+
+::: {.glass-card .glass-card--definition}
+**The p-value** is the probability of observing a test statistic at least as extreme as the one we calculated, assuming that $H_0$ is true.
+
+$$
+p = P(|T| \geq |t_{\text{obs}}| \mid H_0 \text{ is true})
+$$
+
+**How to read this**: "The p-value equals the probability that the absolute value of $T$ is greater than or equal to the absolute value of our observed $t$, given that the null hypothesis is true."
+
+- A **small** p-value (e.g., $p = 0.002$) means: "If the null were true, it would be very unlikely to see data this extreme. The data are hard to reconcile with no effect."
+- A **large** p-value (e.g., $p = 0.43$) means: "If the null were true, data like ours would be quite common. We have no strong reason to doubt the null."
+:::
+
+### The Decision Rule
+
+The conventional decision rule is:
+
+- If $p < \alpha$, **reject** $H_0$.
+- If $p \geq \alpha$, **fail to reject** $H_0$.
+
+The threshold $\alpha$ is called the **significance level** and is conventionally set to 0.05. This means we are willing to accept a 5% chance of incorrectly rejecting a true null hypothesis.
+
+::: {.glass-card .glass-card--warning}
+**The 0.05 threshold is a convention, not a law of nature.** There is nothing sacred about $p = 0.05$. A result with $p = 0.049$ is not fundamentally different from one with $p = 0.051$. Treating the threshold as a bright line --- publishing the first and filing the second in a drawer --- has contributed to widespread distortions in the scientific literature.
+
+Ronald Fisher, who popularized the p-value, never intended it as a rigid decision boundary. He wrote of it as a measure of evidence, to be interpreted in context alongside effect sizes, prior knowledge, and study design. The mechanical "$p < 0.05$ therefore significant" ritual is a later invention that Fisher himself would likely have rejected.
+
+In Swedish medical research, *Socialstyrelsen* (the National Board of Health and Welfare) and *SBU* (the Swedish Agency for Health Technology Assessment) increasingly emphasize confidence intervals and effect sizes alongside p-values when evaluating clinical evidence.
+:::
+
+
+## Two Types of Errors
+
+Every decision made under uncertainty carries the risk of being wrong. There are exactly two ways a hypothesis test can err:
+
+::: {.glass-card .glass-card--definition}
+**Type I Error (False Positive, $\alpha$)**
+
+Rejecting $H_0$ when it is actually true. You conclude the drug works when it does not.
+
+$$
+\alpha = P(\text{reject } H_0 \mid H_0 \text{ is true})
+$$
+
+**How to read this**: "Alpha equals the probability of rejecting the null hypothesis, given that the null is true." By setting $\alpha = 0.05$, we guarantee that if the drug truly has no effect, we will incorrectly declare it effective no more than 5% of the time.
+
+**Type II Error (False Negative, $\beta$)**
+
+Failing to reject $H_0$ when it is actually false. You conclude "insufficient evidence" when the drug really does work.
+
+$$
+\beta = P(\text{fail to reject } H_0 \mid H_0 \text{ is false})
+$$
+
+**How to read this**: "Beta equals the probability of failing to reject the null, given that the null is false --- that is, given that the drug has a real effect."
+:::
+
+|  | $H_0$ is true (no effect) | $H_0$ is false (real effect) |
+|:---|:---:|:---:|
+| **Reject $H_0$** | Type I error ($\alpha$) | Correct decision |
+| **Fail to reject $H_0$** | Correct decision | Type II error ($\beta$) |
+
+There is an inherent trade-off: making $\alpha$ smaller (fewer false positives) makes $\beta$ larger (more false negatives), holding everything else constant. Reducing both simultaneously requires collecting more data.
+
+The same four outcomes, drawn in color, pre-teach the visual language used by every interactive on this page: **green = correct decision, red = error**. The two diagonal cells are the ways to be right; the two off-diagonal cells are the two ways to be wrong.
+
+```{ojs}
+//| echo: false
+
+// Colored 2x2 truth-vs-decision matrix. Static figure; greens = correct,
+// reds = the two error types. Built with d3.create so the cell tints and
+// in-cell labels match the palette used by the downstream waffle.
+htx_errorMatrix = {
+  const W = Math.min(560, width), H = 280;
+  const svg = d3.create("svg")
+    .attr("width", W).attr("height", H)
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const labW = 118, topH = 56, gap = 8;
+  const gx = labW, gy = topH;
+  const gw = W - labW - 6, gh = H - topH - 6;
+  const cw = (gw - gap) / 2, ch = (gh - gap) / 2;
+
+  // column headers (truth)
+  svg.append("text").attr("x", gx + cw / 2).attr("y", 16)
+    .attr("text-anchor", "middle").attr("font-size", 10).attr("font-weight", 700)
+    .attr("fill", "#79766e").attr("letter-spacing", "0.04em").text("TRUTH");
+  const colHead = (i, t) => svg.append("text")
+    .attr("x", gx + i * (cw + gap) + cw / 2).attr("y", 38)
+    .attr("text-anchor", "middle").attr("font-size", 12).attr("font-weight", 700)
+    .attr("fill", "#1c1c1a").text(t);
+  colHead(0, "H₀ true (no effect)");
+  colHead(1, "H₀ false (real effect)");
+
+  // row headers (decision), rotated
+  svg.append("text")
+    .attr("transform", `translate(14, ${gy + gh / 2}) rotate(-90)`)
+    .attr("text-anchor", "middle").attr("font-size", 10).attr("font-weight", 700)
+    .attr("fill", "#79766e").attr("letter-spacing", "0.04em").text("DECISION");
+  const rowHead = (j, t) => svg.append("text")
+    .attr("x", labW - 10).attr("y", gy + j * (ch + gap) + ch / 2)
+    .attr("text-anchor", "end").attr("dominant-baseline", "central")
+    .attr("font-size", 12).attr("font-weight", 700).attr("fill", "#1c1c1a").text(t);
+  rowHead(0, "Reject H₀");
+  rowHead(1, "Fail to reject");
+
+  // cells: [col, row, fill, stroke, title, sub]
+  const cells = [
+    [0, 0, "rgba(179,0,11,0.14)", "#b3000b", "Type I error (α)", "false positive"],
+    [1, 0, "rgba(46,111,64,0.16)", "#2e6f40", "Correct", "true positive (power)"],
+    [0, 1, "rgba(46,111,64,0.16)", "#2e6f40", "Correct", "true negative"],
+    [1, 1, "rgba(156,122,51,0.16)", "#9c7a33", "Type II error (β)", "false negative"]
+  ];
+  for (const [c, r, fill, stroke, title, sub] of cells) {
+    const x = gx + c * (cw + gap), y = gy + r * (ch + gap);
+    const g = svg.append("g");
+    g.append("rect").attr("x", x).attr("y", y).attr("width", cw).attr("height", ch)
+      .attr("rx", 6).attr("fill", fill).attr("stroke", stroke).attr("stroke-width", 1.5);
+    g.append("text").attr("x", x + cw / 2).attr("y", y + ch / 2 - 8)
+      .attr("text-anchor", "middle").attr("font-size", 13).attr("font-weight", 700)
+      .attr("fill", stroke).text(title);
+    g.append("text").attr("x", x + cw / 2).attr("y", y + ch / 2 + 12)
+      .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", "#79766e").text(sub);
+  }
+  return svg.node();
+}
+```
+
+::: {.aside}
+The two **green** diagonal cells are correct decisions; the **red** (Type I, $\alpha$) and **ochre** (Type II, $\beta$) off-diagonal cells are the two ways to err. Hold this color code in mind --- the False-Discovery waffle later in the page colors its 1,000 hypotheses by exactly these four categories.
+:::
+
+
+## Statistical Power
+
+::: {.glass-card .glass-card--definition}
+**Power** is the probability of correctly rejecting $H_0$ when it is false:
+
+$$
+\text{Power} = 1 - \beta = P(\text{reject } H_0 \mid H_0 \text{ is false})
+$$
+
+**How to read this**: "Power equals one minus beta --- the probability of detecting a real effect when one exists."
+
+Power depends on three quantities:
+
+1. **The true effect size** ($\delta$): larger effects are easier to detect.
+2. **The sample size** ($n$): more data reduces sampling variability.
+3. **The significance level** ($\alpha$): a more lenient threshold makes rejection easier.
+
+A common target is power $= 0.80$, meaning you have an 80% chance of detecting the effect if it exists. Swedish ethics boards (*Etikprövningsmyndigheten*) typically require a power analysis before approving a clinical trial --- running an underpowered study wastes patients' time and resources by being unlikely to yield a definitive answer.
+:::
+
+The prose above describes power in words; the interactive below lets you *see* it. It draws the two sampling distributions that the whole logic rests on --- the null and the alternative --- and shades $\alpha$, $\beta$, and power directly on the curves. Drag the sliders and watch power grow as the effect or the sample size increases.
+
+::: {.interactive-container}
+
+#### Two-Distribution Power Explorer
+
+::: {.start-here}
+**Start here:** Drag **True effect δ** to the right and watch the green (power) area grow as the alternative curve clears the dashed critical lines. This uses the large-sample normal (z) approximation with σ fixed at 15 mmHg.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof htx_delta = Inputs.range([0, 8], {
+  value: 4.2,
+  step: 0.1,
+  label: "True effect δ (mmHg)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof htx_n = Inputs.range([10, 400], {
+  value: 100,
+  step: 10,
+  label: "Sample size per group (n)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof htx_alpha = Inputs.select([0.10, 0.05, 0.01], {
+  value: 0.05,
+  label: "Significance level α",
+  format: a => a.toFixed(2)
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Self-contained standard-normal helpers (prefixed to avoid any collision).
+// htx_phi: standard normal PDF. htx_Phi: standard normal CDF (Abramowitz &
+// Stegun 26.2.17). htx_qnorm: inverse CDF via the Acklam approximation.
+htx_phi = z => Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI)
+
+htx_Phi = function (z) {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+  const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.sqrt(2);
+  const t = 1 / (1 + p * x);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return 0.5 * (1 + sign * y);
+}
+
+htx_qnorm = function (pp) {
+  // Peter Acklam's inverse normal CDF approximation.
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+             1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+             6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+             -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+             3.754408661907416e+00];
+  const plow = 0.02425, phigh = 1 - plow;
+  let q, r;
+  if (pp < plow) {
+    q = Math.sqrt(-2 * Math.log(pp));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  } else if (pp <= phigh) {
+    q = pp - 0.5; r = q * q;
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+           (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - pp));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+            ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Sampling distribution of the estimated effect (difference in means).
+// Outcome SD is fixed at sigma = 15 mmHg (the value used in the page's code
+// tabs). SE of the difference = sigma * sqrt(2/n). Under H0 the estimate is
+// centered at 0; under H1 it is centered at the true effect delta. We use a
+// two-sided z-test at level htx_alpha. Everything below is derived from these.
+htx_model = {
+  const sigma = 15;
+  const se = sigma * Math.sqrt(2 / htx_n);
+  const zCrit = htx_qnorm(1 - htx_alpha / 2);   // critical value (in z units)
+  const crit = zCrit * se;                        // critical value (in mmHg)
+  // Power for a two-sided test = P(reject | H1)
+  const lambda = htx_delta / se;                  // noncentrality in z units
+  const power = (1 - htx_Phi(zCrit - lambda)) + htx_Phi(-zCrit - lambda);
+  const beta = 1 - power;
+  return ({ sigma, se, zCrit, crit, lambda, power, beta, alpha: htx_alpha });
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Sample the two bell curves across a shared x-domain (the estimated effect,
+// in mmHg). One row per (x, curve) so Plot.areaY can shade each distribution.
+htx_curveData = {
+  const se = htx_model.se;
+  const lo = Math.min(-4 * se, -1);
+  const hi = Math.max(htx_delta + 4 * se, 4 * se + 1);
+  const xs = d3.range(lo, hi, (hi - lo) / 400);
+  const rows = [];
+  for (const x of xs) {
+    rows.push({ x, density: htx_phi((x - 0) / se) / se, curve: "Null (no effect)" });
+    rows.push({ x, density: htx_phi((x - htx_delta) / se) / se, curve: "Alternative (true effect)" });
+  }
+  return rows;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// The two-distribution power plot. Slate = null, Uppsala red = alternative.
+// Green shading on the alternative beyond +crit = power. Red shading on the
+// alternative below +crit = beta. Slate-shaded tails beyond +/-crit on the
+// null = alpha (the right tail; the test is two-sided so the left tail also
+// counts, but the right tail carries essentially all of it once delta > 0).
+{
+  const m = htx_model;
+  const crit = m.crit;
+  const nullRows = htx_curveData.filter(d => d.curve === "Null (no effect)");
+  const altRows  = htx_curveData.filter(d => d.curve === "Alternative (true effect)");
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 320,
+    marginTop: 28,
+    marginLeft: 60,
+    marginRight: 64,
+    marginBottom: 48,
+    style: {
+      fontFamily: "Inter, sans-serif",
+      fontSize: "12px",
+      color: "#79766e",
+      background: "transparent"
+    },
+    x: { label: "Estimated effect (difference in means, mmHg) →", grid: false },
+    y: { label: "Density", ticks: 3, grid: false },
+    marks: [
+      // alpha: right-tail of the NULL beyond the positive critical value
+      Plot.areaY(nullRows.filter(d => d.x >= crit), {
+        x: "x", y: "density", fill: "#3d5a6c", fillOpacity: 0.30
+      }),
+      // alpha: left tail of the NULL (two-sided)
+      Plot.areaY(nullRows.filter(d => d.x <= -crit), {
+        x: "x", y: "density", fill: "#3d5a6c", fillOpacity: 0.30
+      }),
+      // beta: portion of the ALTERNATIVE that falls in the non-rejection zone
+      Plot.areaY(altRows.filter(d => d.x <= crit), {
+        x: "x", y: "density", fill: "#b3000b", fillOpacity: 0.20
+      }),
+      // power: portion of the ALTERNATIVE beyond the positive critical value
+      Plot.areaY(altRows.filter(d => d.x >= crit), {
+        x: "x", y: "density", fill: "#2e6f40", fillOpacity: 0.32
+      }),
+      // the two curves on top
+      Plot.line(nullRows, { x: "x", y: "density", stroke: "#3d5a6c", strokeWidth: 2.5 }),
+      Plot.line(altRows,  { x: "x", y: "density", stroke: "#990000", strokeWidth: 2.5 }),
+      // critical-value lines
+      Plot.ruleX([crit, -crit], { stroke: "#1c1c1a", strokeWidth: 1.5, strokeDasharray: "5,3" }),
+      Plot.ruleY([0], { stroke: "#1c1c1a" }),
+      // centers
+      Plot.ruleX([0], { stroke: "#3d5a6c", strokeWidth: 1, strokeOpacity: 0.4 }),
+      Plot.ruleX([htx_delta], { stroke: "#990000", strokeWidth: 1, strokeOpacity: 0.4 }),
+      // curve labels anchored to the top frame so they never collide near center
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top-left", dx: 8, dy: 4, text: () => "H₀ (null)",
+        fill: "#3d5a6c", fontWeight: "bold", fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top-right", dx: -8, dy: 4, text: () => "H₁ (true effect)",
+        fill: "#990000", fontWeight: "bold", fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // on-chart shaded-region key, anchored to fixed frame positions
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top-left", dx: 8, dy: 24, text: () => "α  ·  β  ·  power",
+        fontSize: 10, textAnchor: "start",
+        fill: "#79766e", stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // critical-value label: anchored below the axis at the bottom frame
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "bottom", dy: 34, text: () => "dashed lines = ± critical value",
+        fill: "#1c1c1a", fontSize: 10,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Live alpha / beta / power readout
+{
+  const m = htx_model;
+  const card = (name, value, color, bg, border) => html`<div style="
+      flex: 1 1 8.5rem; min-width: 8.5rem; min-height: 4.5rem; text-align: center;
+      padding: 0.6rem 0.5rem; border-radius: 0.5rem;
+      background: ${bg}; border: 1px solid ${border};">
+    <div style="font-family: Inter, sans-serif; font-size: 0.68rem;
+        font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+        color: #79766e;">${name}</div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.35rem;
+        font-weight: 700; color: ${color};">${value}</div>
+  </div>`;
+  return html`<div style="display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+      gap: 0.5rem; margin-top: 0.75rem;">
+    ${card("α (Type I)", m.alpha.toFixed(2), "#3d5a6c", "rgba(61,90,108,0.06)", "rgba(61,90,108,0.18)")}
+    ${card("β (Type II)", m.beta.toFixed(3), "#b3000b", "rgba(179,0,11,0.06)", "rgba(179,0,11,0.18)")}
+    ${card("Power (1−β)", m.power.toFixed(3), "#2e6f40", "rgba(46,111,64,0.08)", "rgba(46,111,64,0.22)")}
+    ${card("Separation λ = δ/SE", m.lambda.toFixed(2), "#9c7a33", "rgba(156,122,51,0.07)", "rgba(156,122,51,0.2)")}
+    ${card("Std. error", m.se.toFixed(2), "#1c1c1a", "rgba(0,0,0,0.02)", "rgba(0,0,0,0.08)")}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Power Explorer
+
+This is the single most important picture in hypothesis testing. Walk through it slowly:
+
+**Step 1: Find the two curves.** The slate curve is the sampling distribution of the estimated effect *if the null is true* --- it is centered at zero. The red curve is the sampling distribution *if the true effect is* $\delta$ --- it is centered at $\delta$. Both have the same width, set by the standard error $\sigma\sqrt{2/n}$.
+
+**Step 2: Find the decision boundary.** The dashed vertical lines mark the critical values $\pm$ (critical value). An estimate landing *outside* these lines makes us reject $H_0$; an estimate *inside* makes us fail to reject.
+
+**Step 3: Read the shaded areas.** The slate tails beyond the critical lines are $\alpha$ --- the chance of rejecting when $H_0$ is actually true (a false positive). The red region is $\beta$ --- the part of the *alternative* curve that falls in the "fail to reject" zone, i.e. a real effect we miss. The green region is **power** --- the part of the alternative curve that correctly lands in the rejection zone.
+
+**Step 4: Watch power rise.** Increase the true effect $\delta$: the red curve slides right, more of it clears the critical line, and the green area (power) grows. Watch the **separation** $\lambda = \delta/\text{SE}$ readout climb --- this single number, the distance between the curves in standard-error units, is what drives power. Now reset $\delta$ and increase $n$ instead: both curves get *narrower* (the standard error shrinks), they separate more cleanly, $\lambda$ rises, and again power climbs. This is exactly the relationship the formula $n \approx 2\sigma^2(z_{\alpha/2}+z_\beta)^2/\delta^2$ encodes (where $z_\beta$ is the critical value for the desired power).
+
+**Step 5: Feel the trade-off.** Switch $\alpha$ from 0.05 to 0.01. The critical lines move outward, the slate tails shrink (fewer false positives) --- but the green region also shrinks (lower power). Tightening $\alpha$ to avoid Type I errors costs you Type II errors, unless you buy back power with a larger $n$.
+
+
+## See It: The P-Value Simulator
+
+The interactive below lets you experience the full logic of hypothesis testing through simulation. You control the true treatment effect and sample size, then run experiments to see how p-values behave.
+
+::: {.interactive-container}
+
+#### P-Value Distribution Under the Null and Alternative
+
+::: {.start-here}
+**Start here:** Leave the true effect at 0, then click **Run 1000 trials** and watch the p-value histogram come out flat (uniform under $H_0$). Then raise the true effect and run again to see p-values pile up near zero.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof trueEffect = Inputs.range([0, 5], {
+  value: 0,
+  step: 0.1,
+  label: "True treatment effect δ"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof sampleN = Inputs.range([10, 500], {
+  value: 50,
+  step: 10,
+  label: "Sample size per group (n)"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof runOne = Inputs.button("Run trial", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+viewof runThousand = Inputs.button("Run 1000 trials", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+viewof resetTrials = Inputs.button("Reset", { value: 0, reduce: v => v + 1 })
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="font-family: Inter, sans-serif; font-size: 0.78rem;
+    color: #79766e; margin: 0.1rem 0 0.4rem;">
+  Note: changing the true effect or sample size resets the accumulated trials, so
+  the histogram never mixes p-values drawn from different settings.
+</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// RNG utilities
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function randn(rng) {
+  let u1 = rng();
+  let u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// t-distribution CDF approximation (two-tailed p-value)
+function tTestPValue(tStat, df) {
+  // Use the regularized incomplete beta function approximation
+  const x = df / (df + tStat * tStat);
+  const a = df / 2;
+  const b = 0.5;
+  // Approximate via normal for large df
+  if (df > 100) {
+    const z = Math.abs(tStat);
+    const p = 2 * (1 - normalCDF(z));
+    return Math.max(p, 1e-15);
+  }
+  // For smaller df, use a series approximation
+  const p = incompleteBeta(x, a, b);
+  return Math.max(p, 1e-15);
+}
+
+function normalCDF(z) {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+  const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = z < 0 ? -1 : 1;
+  z = Math.abs(z) / Math.sqrt(2);
+  const t = 1.0 / (1.0 + p * z);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-z * z);
+  return 0.5 * (1.0 + sign * y);
+}
+
+function incompleteBeta(x, a, b) {
+  // Continued fraction for regularized incomplete beta
+  if (x === 0 || x === 1) return x;
+  const lnBeta = lgamma(a) + lgamma(b) - lgamma(a + b);
+  const front = Math.exp(Math.log(x) * a + Math.log(1 - x) * b - lnBeta) / a;
+  // Lentz's algorithm
+  let f = 1, c = 1, d = 0;
+  for (let i = 0; i <= 200; i++) {
+    let m = Math.floor(i / 2);
+    let numerator;
+    if (i === 0) {
+      numerator = 1;
+    } else if (i % 2 === 0) {
+      numerator = (m * (b - m) * x) / ((a + 2 * m - 1) * (a + 2 * m));
+    } else {
+      numerator = -((a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1));
+    }
+    d = 1 + numerator * d;
+    if (Math.abs(d) < 1e-30) d = 1e-30;
+    d = 1 / d;
+    c = 1 + numerator / c;
+    if (Math.abs(c) < 1e-30) c = 1e-30;
+    f *= c * d;
+    if (Math.abs(c * d - 1) < 1e-10) break;
+  }
+  return front * (f - 1);
+}
+
+function lgamma(x) {
+  const cof = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+    -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+  let y = x, tmp = x + 5.5;
+  tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for (let j = 0; j < 6; j++) ser += cof[j] / ++y;
+  return -tmp + Math.log(2.5066282746310005 * ser / x);
+}
+
+// Simulate a single trial
+function simulateTrial(delta, n, seed) {
+  const rng = mulberry32(seed);
+  let sumT = 0, sumC = 0, sumT2 = 0, sumC2 = 0;
+  for (let i = 0; i < n; i++) {
+    const yc = randn(rng) * 10;  // control: N(0, 10)
+    const yt = randn(rng) * 10 + delta;  // treatment: N(delta, 10)
+    sumC += yc; sumC2 += yc * yc;
+    sumT += yt; sumT2 += yt * yt;
+  }
+  const meanT = sumT / n, meanC = sumC / n;
+  const varT = (sumT2 - n * meanT * meanT) / (n - 1);
+  const varC = (sumC2 - n * meanC * meanC) / (n - 1);
+  const se = Math.sqrt(varT / n + varC / n);
+  const tStat = (meanT - meanC) / se;
+  const df = n + n - 2;
+  const pVal = tTestPValue(tStat, df);
+  return { meanT, meanC, diff: meanT - meanC, se, tStat, pVal, reject: pVal < 0.05 };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Track the latest single trial
+singleResult = {
+  const trigger = runOne;
+  if (trigger === 0) return null;
+  const seed = Math.floor(Math.random() * 2147483647);
+  return simulateTrial(trueEffect, sampleN, seed);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Published accumulator that the histogram + summary cells read. It is WRITTEN
+// here and in the reactive cells below, but never READ in the same cell that
+// writes it (reading + writing one mutable in a single cell is a circular
+// definition in the OJS runtime). The retained state lives in `htxStore`.
+mutable allPValues = []
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Stable, non-reactive store created once. Because it depends on nothing, the
+// OJS runtime keeps the same object across reactive re-runs, so accumulated
+// p-values and the per-button guard counters persist between draws without
+// reading back `mutable allPValues`. `lastOne` / `lastThousand` track the last
+// button count we acted on, so a parameter change cannot replay a stale batch.
+htxStore = ({ pvals: [], lastOne: 0, lastThousand: 0 })
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Reset whenever the Reset button is clicked OR the data-generating process
+// changes (trueEffect or sampleN). Referencing trueEffect and sampleN makes
+// this cell re-run on any parameter change, so the histogram never mixes
+// p-values drawn from different DGPs. We clear the store's samples and publish
+// a fresh empty array (write-only; we never read `mutable allPValues` here).
+// The guard counters are intentionally NOT reset: the button counts are
+// unchanged across a reset/param change, so leaving lastOne/lastThousand alone
+// is exactly what stops a phantom re-append right after the array is cleared.
+{
+  resetTrials;       // re-run on Reset button
+  trueEffect;        // re-run when the true effect changes
+  sampleN;           // re-run when the sample size changes
+  htxStore.pvals = [];
+  mutable allPValues = [];
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Accumulate from a single trial. Read + mutate the plain `htxStore` (NOT
+// `mutable allPValues`), then publish a fresh copy. We only append when the
+// "Run trial" button count actually advances -- not when singleResult recomputes
+// because trueEffect/sampleN changed (which would otherwise inject a phantom
+// p-value right after the reset above clears the array).
+{
+  const trigger = runOne;
+  if (trigger > 0 && trigger !== htxStore.lastOne && singleResult !== null) {
+    htxStore.lastOne = trigger;
+    htxStore.pvals = [...htxStore.pvals, singleResult.pVal];
+    mutable allPValues = [...htxStore.pvals];
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Accumulate from 1000 trials. Same store-then-publish pattern: read + mutate
+// the plain `htxStore`, then publish a fresh copy to `mutable allPValues`
+// (never reading it back). The lastThousand guard ensures this only fires when
+// the "Run 1000 trials" button count advances -- NOT when the cell re-runs
+// because trueEffect/sampleN changed (it must reference those to simulate).
+// Without the guard, dragging a slider after one batch would silently append
+// another 1000 p-values.
+{
+  const trigger = runThousand;
+  // Read params so the simulation uses current values, but only append on a
+  // genuine button advance (guarded by htxStore.lastThousand).
+  const delta = trueEffect, nPer = sampleN;
+  if (trigger > 0 && trigger !== htxStore.lastThousand) {
+    htxStore.lastThousand = trigger;
+    const newPvals = [];
+    for (let i = 0; i < 1000; i++) {
+      const seed = Math.floor(Math.random() * 2147483647);
+      const result = simulateTrial(delta, nPer, seed);
+      newPvals.push(result.pVal);
+    }
+    htxStore.pvals = [...htxStore.pvals, ...newPvals];
+    mutable allPValues = [...htxStore.pvals];
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Single trial display
+singleResult !== null ? html`
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-bottom: 0.75rem; font-family: Inter, sans-serif; font-size: 0.82rem;">
+  <div style="padding: 0.5rem 0.75rem; min-height: 3.6rem; border-radius: 0.5rem; background: rgba(153, 0, 0, 0.06); border: 1px solid rgba(153, 0, 0, 0.15);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Mean (treated)</div>
+    <div style="font-size: 1.1rem; font-weight: 700; color: #990000;">${singleResult.meanT.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; min-height: 3.6rem; border-radius: 0.5rem; background: rgba(61, 90, 108, 0.06); border: 1px solid rgba(61, 90, 108, 0.18);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Mean (control)</div>
+    <div style="font-size: 1.1rem; font-weight: 700; color: #3d5a6c;">${singleResult.meanC.toFixed(2)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; min-height: 3.6rem; border-radius: 0.5rem; background: rgba(0,0,0,0.02); border: 1px solid rgba(0,0,0,0.08);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">t-statistic</div>
+    <div style="font-size: 1.1rem; font-weight: 700; color: #1c1c1a;">${singleResult.tStat.toFixed(3)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; min-height: 3.6rem; border-radius: 0.5rem; background: ${singleResult.pVal < 0.05 ? 'rgba(46, 111, 64, 0.07)' : 'rgba(0,0,0,0.02)'}; border: 1px solid ${singleResult.pVal < 0.05 ? 'rgba(46, 111, 64, 0.2)' : 'rgba(0,0,0,0.08)'};">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">p-value</div>
+    <div style="font-size: 1.1rem; font-weight: 700; color: ${singleResult.pVal < 0.05 ? '#2e6f40' : '#79766e'};">${singleResult.pVal < 0.001 ? '< 0.001' : singleResult.pVal.toFixed(4)}</div>
+  </div>
+  <div style="padding: 0.5rem 0.75rem; min-height: 3.6rem; border-radius: 0.5rem; background: ${singleResult.reject ? 'rgba(46, 111, 64, 0.08)' : 'rgba(179, 0, 11, 0.06)'}; border: 1px solid ${singleResult.reject ? 'rgba(46, 111, 64, 0.22)' : 'rgba(179, 0, 11, 0.18)'};">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Decision</div>
+    <div style="font-size: 1.1rem; font-weight: 700; color: ${singleResult.reject ? '#2e6f40' : '#b3000b'};">${singleResult.reject ? 'Reject H₀' : 'Fail to reject'}</div>
+  </div>
+</div>
+` : html`<div style="text-align: center; color: #79766e; padding: 0.75rem 0; font-family: Inter, sans-serif; font-size: 0.9rem;">Click "Run trial" to simulate a single experiment, or "Run 1000 trials" to see the p-value distribution.</div>`
+```
+
+```{ojs}
+//| echo: false
+
+// P-value histogram
+{
+  const pvals = allPValues;
+  const nTrials = pvals.length;
+  const nReject = pvals.filter(p => p < 0.05).length;
+  const rejectionRate = nTrials > 0 ? (nReject / nTrials * 100).toFixed(1) : "---";
+  // Expected per-bin count if p-values were exactly uniform (20 bins of width 0.05).
+  const expected = nTrials / 20;
+
+  return nTrials > 0 ? Plot.plot({
+    width: Math.min(640, width),
+    height: 260,
+    marginTop: 24,
+    marginLeft: 60,
+    marginRight: 64,
+    style: {
+      fontFamily: "Inter, sans-serif",
+      fontSize: "12px",
+      color: "#79766e",
+      background: "transparent"
+    },
+    x: {
+      label: "p-value",
+      domain: [0, 1],
+      grid: true
+    },
+    y: {
+      label: "Count",
+      grid: true
+    },
+    marks: [
+      Plot.rectY(pvals.map(p => ({ p })),
+        Plot.binX(
+          { y: "count" },
+          {
+            x: "p",
+            thresholds: d3.range(0, 1.05, 0.05),
+            fill: d => "#3d5a6c",
+            fillOpacity: 0.5
+          }
+        )
+      ),
+      // Shade the rejection region
+      Plot.rectY(pvals.filter(p => p < 0.05).map(p => ({ p })),
+        Plot.binX(
+          { y: "count" },
+          {
+            x: "p",
+            thresholds: d3.range(0, 0.06, 0.05),
+            fill: "#990000",
+            fillOpacity: 0.6
+          }
+        )
+      ),
+      // Expected flat height if p-values were uniform under H0
+      Plot.ruleY([expected], {
+        stroke: "#9c7a33",
+        strokeWidth: 1.5,
+        strokeDasharray: "4,3"
+      }),
+      Plot.text([{ y: expected }], {
+        frameAnchor: "top-right", dx: -6, dy: 6,
+        text: () => "expected if uniform",
+        fill: "#9c7a33", fontSize: 10, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.ruleX([0.05], {
+        stroke: "#990000",
+        strokeWidth: 2,
+        strokeDasharray: "6,3"
+      }),
+      Plot.ruleY([0], { stroke: "#1c1c1a" })
+    ]
+  }) : html``;
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Summary stats below chart
+{
+  const nTrials = allPValues.length;
+  const nReject = allPValues.filter(p => p < 0.05).length;
+  return nTrials > 0 ? html`
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-top: 0.25rem; font-family: Inter, sans-serif; font-size: 0.82rem;">
+    <div style="padding: 0.5rem 0.75rem; min-height: 3.4rem; border-radius: 0.5rem; background: rgba(0,0,0,0.02); border: 1px solid rgba(0,0,0,0.08);">
+      <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Total trials</div>
+      <div style="font-size: 1.2rem; font-weight: 700; color: #1c1c1a;">${nTrials}</div>
+    </div>
+    <div style="padding: 0.5rem 0.75rem; min-height: 3.4rem; border-radius: 0.5rem; background: rgba(153, 0, 0, 0.06); border: 1px solid rgba(153, 0, 0, 0.15);">
+      <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">Rejected H₀</div>
+      <div style="font-size: 1.2rem; font-weight: 700; color: #990000;">${nReject} (${(nReject / nTrials * 100).toFixed(1)}%)</div>
+    </div>
+    <div style="padding: 0.5rem 0.75rem; min-height: 3.4rem; border-radius: 0.5rem; background: rgba(61, 90, 108, 0.06); border: 1px solid rgba(61, 90, 108, 0.18);">
+      <div style="font-weight: 600; color: #79766e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em;">True effect δ</div>
+      <div style="font-size: 1.2rem; font-weight: 700; color: #3d5a6c;">${trueEffect.toFixed(1)}</div>
+    </div>
+  </div>
+  ` : html``;
+}
+```
+
+:::
+
+### How to Use the Simulator
+
+**Experiment 1: The null is true.** Set the true effect to 0 and the sample size to 50. Click "Run 1000 trials." The histogram of p-values should look approximately *uniform* --- flat across all values from 0 to 1. This is a fundamental property: when $H_0$ is true, p-values are uniformly distributed on $[0, 1]$. About 5% of the p-values fall below 0.05 (shown in red), confirming that the false positive rate equals $\alpha$.
+
+**Experiment 2: A real effect.** Reset, then set the true effect to 2.0 with $n = 50$. Run 1000 trials. Now the p-values cluster near zero --- most experiments correctly detect the effect. The rejection rate (shown below the histogram) gives you the empirical **power** for this effect size and sample size.
+
+**Experiment 3: Power increases with $n$.** Keep the true effect at 2.0 but increase $n$ from 50 to 200. Reset and run 1000 trials again. The rejection rate jumps substantially. Larger samples mean smaller standard errors, which means larger $t$-statistics, which means smaller p-values.
+
+**Experiment 4: Power increases with effect size.** Set $n = 50$ and increase the true effect from 1.0 to 3.0 to 5.0, running 1000 trials each time (resetting between). Watch the rejection rate climb from modest to near-certain.
+
+
+## What P-Values Are NOT
+
+The p-value is one of the most misunderstood quantities in all of science. Here are the most common misinterpretations.
+
+::: {.glass-card .glass-card--warning}
+**Common misinterpretations of the p-value:**
+
+1. **"The p-value is the probability that the null hypothesis is true."** No. The p-value is $P(\text{data} \mid H_0)$, not $P(H_0 \mid \text{data})$. These are very different things. To get the latter, you would need Bayes' theorem and a prior probability for $H_0$ --- something the frequentist framework does not provide.
+
+2. **"The p-value is the probability the result is due to chance."** No. The p-value is the probability of seeing data this extreme *if* the null were true. It does not tell you the probability that chance *caused* the result.
+
+3. **"A small p-value means the effect is large."** No. With a large enough sample, even a tiny, clinically irrelevant effect will produce a very small p-value. The p-value measures *statistical* significance (is the evidence against $H_0$ strong?), not *practical* significance (is the effect big enough to matter?).
+
+4. **"A large p-value means there is no effect."** No. A large p-value means the data are consistent with $H_0$, but they may also be consistent with a range of nonzero effects. The study may simply have been underpowered. Absence of evidence is not evidence of absence.
+
+5. **"$p = 0.05$ means there is a 5% chance the result is a false positive."** No. The false positive rate is 5% *across many experiments where the null is true*. For any single experiment, the probability the result is a false positive depends on the prior probability that $H_0$ is true, which is unknown.
+:::
+
+The fifth misconception is the most consequential, and the most surprising. The explorer below makes it tangible: it imagines 1000 hypotheses being tested at once, sorts them into true and false positives and negatives, and computes the **false discovery proportion** --- of all the "significant" findings, what fraction are actually false alarms. Watch what happens to that number when real effects are rare.
+
+::: {.interactive-container}
+
+#### False-Discovery / PPV Explorer
+
+::: {.start-here}
+**Start here:** Keep power at 0.80 and α at 0.05, then slide the **base rate** down toward 0.10. Watch the false-discovery proportion climb past a third even though each test still has only a 5% false-positive rate.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof htx_baseRate = Inputs.range([0.01, 0.99], {
+  value: 0.10,
+  step: 0.01,
+  label: "Prior P(H₁ true): base rate of real effects"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof htx_ppvAlpha = Inputs.select([0.10, 0.05, 0.01], {
+  value: 0.05,
+  label: "Significance level α",
+  format: a => a.toFixed(2)
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof htx_ppvPower = Inputs.range([0.1, 1.0], {
+  value: 0.8,
+  step: 0.05,
+  label: "Power (1 − β)"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Confusion-matrix counts over a hypothetical batch of 1000 tested hypotheses.
+// Of these, baseRate are truly H1 (real effect) and the rest are truly H0.
+// Among the true-H1 hypotheses, a fraction = power are detected (TP); the rest
+// are missed (FN). Among the true-H0 hypotheses, a fraction = alpha are falsely
+// flagged (FP); the rest are correct negatives (TN).
+htx_ppv = {
+  const total = 1000;
+  const nReal = total * htx_baseRate;          // truly H1
+  const nNull = total - nReal;                  // truly H0
+  const TP = nReal * htx_ppvPower;
+  const FN = nReal - TP;
+  const FP = nNull * htx_ppvAlpha;
+  const TN = nNull - FP;
+  const sig = TP + FP;                           // all "significant" results
+  const fdp = sig > 0 ? FP / sig : 0;            // false discovery proportion
+  const ppv = sig > 0 ? TP / sig : 0;            // positive predictive value
+  return ({ total, TP, FN, FP, TN, sig, fdp, ppv });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Waffle of 1000 hypotheses: 40 columns x 25 rows. Cells are sorted
+// TP (green), FP (red), FN (faded green), TN (faded slate) so each category
+// forms a contiguous block whose AREA is its count.
+{
+  const p = htx_ppv;
+  const cols = 40, rows = 25, cells = cols * rows;
+  const counts = [
+    { key: "True Positive",  n: Math.round(p.TP), fill: "#2e6f40", op: 0.85 },
+    { key: "False Positive", n: Math.round(p.FP), fill: "#b3000b", op: 0.9 },
+    { key: "False Negative", n: Math.round(p.FN), fill: "#2e6f40", op: 0.28 },
+    { key: "True Negative",  n: Math.round(p.TN), fill: "#3d5a6c", op: 0.18 }
+  ];
+  const data = [];
+  let i = 0;
+  for (const c of counts) {
+    for (let k = 0; k < c.n && i < cells; k++, i++) {
+      data.push({ i, col: i % cols, row: Math.floor(i / cols), ...c });
+    }
+  }
+  // fill any rounding remainder with the last category
+  while (i < cells) { data.push({ i, col: i % cols, row: Math.floor(i / cols), ...counts[3] }); i++; }
+
+  const w = Math.min(680, width);
+  return Plot.plot({
+    width: w,
+    height: 25 * (w / 40) * 0.62,
+    marginLeft: 4, marginRight: 4, marginTop: 4, marginBottom: 4,
+    style: { fontFamily: "Inter, sans-serif", background: "transparent" },
+    x: { axis: null, domain: d3.range(cols) },
+    y: { axis: null, domain: d3.range(rows) },
+    color: { legend: false },
+    marks: [
+      Plot.cell(data, {
+        x: "col", y: "row", fill: "fill", fillOpacity: "op",
+        inset: 1, rx: 2,
+        title: d => `${d.key}`
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// Headline: the false discovery proportion, plus a legend and the four counts.
+{
+  const p = htx_ppv;
+  const swatch = (color, op, label, count) => html`<span style="
+      display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 1rem;
+      font-family: Inter, sans-serif; font-size: 0.78rem; color: #1c1c1a;">
+    <span style="width: 0.85rem; height: 0.85rem; border-radius: 3px;
+        background: ${color}; opacity: ${op}; display: inline-block;"></span>
+    ${label} <strong>${Math.round(count)}</strong></span>`;
+
+  return html`<div>
+    <div style="display: flex; flex-wrap: wrap; align-items: center; margin: 0.6rem 0 0.9rem;">
+      ${swatch("#2e6f40", 0.85, "True positives (real effects found)", p.TP)}
+      ${swatch("#b3000b", 0.9, "False positives (false alarms)", p.FP)}
+      ${swatch("#2e6f40", 0.28, "False negatives (missed effects)", p.FN)}
+      ${swatch("#3d5a6c", 0.18, "True negatives (correct nulls)", p.TN)}
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      <div style="flex: 2 1 14rem; text-align: center; padding: 0.75rem 0.5rem;
+          border-radius: 0.5rem; background: rgba(179,0,11,0.06);
+          border: 1px solid rgba(179,0,11,0.2);">
+        <div style="font-family: Inter, sans-serif; font-size: 0.7rem;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #79766e;">
+          False discovery proportion = FP / (FP + TP)</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.6rem;
+            font-weight: 700; color: #b3000b;">${(p.fdp * 100).toFixed(1)}%</div>
+        <div style="font-family: Inter, sans-serif; font-size: 0.72rem; color: #79766e;">
+          of the ${Math.round(p.sig)} "significant" results are false alarms</div>
+      </div>
+      <div style="flex: 1 1 9rem; text-align: center; padding: 0.75rem 0.5rem;
+          border-radius: 0.5rem; background: rgba(46,111,64,0.08);
+          border: 1px solid rgba(46,111,64,0.2);">
+        <div style="font-family: Inter, sans-serif; font-size: 0.7rem;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #79766e;">
+          PPV = TP / (FP + TP)</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.6rem;
+            font-weight: 700; color: #2e6f40;">${(p.ppv * 100).toFixed(1)}%</div>
+        <div style="font-family: Inter, sans-serif; font-size: 0.72rem; color: #79766e;">
+          chance a significant result is real</div>
+      </div>
+    </div>
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the False-Discovery Explorer
+
+**Step 1: One thousand hypotheses.** Imagine a research field running 1000 tests --- 1000 candidate drugs, biomarkers, or quality interventions. Each cell in the grid is one hypothesis. The **base rate** slider sets what fraction of them describe a *real* effect (truly $H_1$); the rest are dead ends (truly $H_0$).
+
+**Step 2: Sort the outcomes.** Green cells are real effects we correctly detect (**true positives**); faded green are real effects we miss (**false negatives**, governed by $1-$ power). Red cells are nulls we wrongly flag as significant (**false positives**, governed by $\alpha$); faded slate are nulls we correctly leave alone (**true negatives**).
+
+**Step 3: Read the headline.** The **false discovery proportion** is the red count divided by *all* significant results (red + bright green). It answers the question a reader of a published "significant" study actually cares about: given that this result cleared $p < \alpha$, how likely is it to be a false alarm? Its complement is the **positive predictive value (PPV)** --- the chance the finding is real.
+
+**Step 4: Make rare effects rare.** Set power to 0.80 and $\alpha$ to 0.05 --- a perfectly conventional, "well-designed" study. Now slide the base rate down to 0.10. The false discovery proportion jumps to roughly **36%**: more than a third of significant findings are false, even though every individual test has only a 5% false-positive rate. Push the base rate to 0.02 (effects are genuinely rare, as in exploratory screening) and *most* significant results become false.
+
+**Step 5: This is misconception #5 made real.** This is precisely why "$p = 0.05$ means a 5% chance of a false positive" is wrong. The 5% is $\alpha$ --- a property of the *test under the null*. The fraction of your *significant findings* that are false (the false discovery proportion) depends on the base rate, which no single p-value can tell you. Underpowered studies in low-base-rate fields are a recipe for a literature full of false positives --- a key driver of the replication crisis, and a caution for the broad Swedish *kvalitetsregister* studies that screen many outcomes at once.
+
+
+## One-Sided vs. Two-Sided Tests
+
+A **two-sided** (or two-tailed) test checks whether the effect differs from zero in *either* direction:
+
+$$
+H_0: \delta = 0 \quad \text{vs.} \quad H_1: \delta \neq 0
+$$
+
+The p-value is computed in both tails of the distribution: $p = P(|T| \geq |t_{\text{obs}}|)$.
+
+A **one-sided** (or one-tailed) test checks for an effect in a *specific* direction:
+
+$$
+H_0: \delta \geq 0 \quad \text{vs.} \quad H_1: \delta < 0
+$$
+
+Here the p-value uses only one tail: $p = P(T \leq t_{\text{obs}})$.
+
+**When to use each**: Two-sided tests are the default in most research because they guard against effects in unexpected directions. A one-sided test is appropriate only when there is a strong theoretical reason to predict the direction *before* seeing the data --- for example, a pharmacological mechanism that can only lower blood pressure, never raise it. Using a one-sided test after observing the direction of the effect is a form of cheating that doubles the false positive rate.
+
+In Swedish clinical research submitted to *Läkemedelsverket* (the Medical Products Agency), two-sided tests at $\alpha = 0.05$ are the regulatory default for efficacy endpoints.
+
+The static pair below shows the same observed statistic under both rules. The two-sided test shades *both* tails beyond $\pm|t|$; the one-sided test shades only one. For the same data, the one-sided p-value is exactly *half* the two-sided p-value --- which is precisely why switching to one-sided *after* seeing the direction quietly doubles your false-positive rate.
+
+```{ojs}
+//| echo: false
+
+// Static side-by-side: two-sided (both tails) vs one-sided (one tail) for the
+// SAME observed statistic, captioned with the exact p-value halving. Reuses the
+// page's htx_phi / htx_Phi normal helpers. Purely a figure (fixed t = 1.8).
+{
+  const tFix = 1.8;
+  const curve = d3.range(-4.2, 4.2, 0.02).map(x => ({ x, density: htx_phi(x) }));
+  const pTwo = 2 * (1 - htx_Phi(tFix));
+  const pOne = 1 - htx_Phi(tFix);
+
+  const panel = (title, shaded, pTxt, sub) => Plot.plot({
+    width: Math.min(330, (width - 24) / 2),
+    height: 220,
+    marginTop: 30, marginBottom: 40, marginLeft: 36, marginRight: 14,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "11px", color: "#79766e", background: "transparent" },
+    x: { label: "t (under H₀) →", domain: [-4.2, 4.2], grid: false },
+    y: { label: null, ticks: 0, grid: false },
+    marks: [
+      Plot.areaY(shaded, { x: "x", y: "density", fill: "#990000", fillOpacity: 0.30 }),
+      Plot.line(curve, { x: "x", y: "density", stroke: "#1c1c1a", strokeWidth: 2 }),
+      Plot.ruleY([0], { stroke: "#1c1c1a" }),
+      Plot.ruleX([tFix], { stroke: "#3d5a6c", strokeWidth: 1.5, strokeDasharray: "4,3" }),
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top", dy: 2, text: () => title,
+        fill: "#1c1c1a", fontWeight: "bold", fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top", dy: 18, text: () => pTxt,
+        fill: "#990000", fontWeight: "bold", fontSize: 12,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "bottom", dy: 30, text: () => sub,
+        fill: "#79766e", fontSize: 10,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+
+  const twoShade = curve.filter(d => d.x >= tFix || d.x <= -tFix);
+  const oneShade = curve.filter(d => d.x >= tFix);
+
+  return html`<div style="display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:center;">
+    ${panel("Two-sided", twoShade, `p = ${pTwo.toFixed(3)}`, "both tails beyond ±|t|")}
+    ${panel("One-sided (right)", oneShade, `p = ${pOne.toFixed(3)}`, "one tail = exactly half")}
+  </div>`;
+}
+```
+
+::: {.aside}
+Same observed statistic ($t = 1.8$), two decision rules. The one-sided p-value (0.036) is exactly half the two-sided p-value (0.072): at $\alpha = 0.05$ the same data are "significant" one-sided but not two-sided. The interactive viewer below lets you slide $t$ and toggle between the two yourself.
+:::
+
+The viewer below turns the abstract phrase "area in the tail(s)" into a picture. Slide an observed test statistic, toggle one-sided versus two-sided, and watch the shaded tail area --- the p-value --- shrink as the statistic moves further from zero.
+
+::: {.interactive-container}
+
+#### Tail-Area p-Value Viewer
+
+::: {.start-here}
+**Start here:** Drag the **observed statistic** $t$ outward from 0 and watch the shaded tail (the p-value) shrink. Toggle one-sided vs two-sided to see the p-value roughly halve.
+:::
+
+```{ojs}
+//| echo: false
+
+viewof htx_tobs = Inputs.range([-4, 4], {
+  value: 2.0,
+  step: 0.05,
+  label: "Observed test statistic t"
+})
+```
+
+```{ojs}
+//| echo: false
+
+viewof htx_sided = Inputs.radio(["Two-sided", "One-sided (left)", "One-sided (right)"], {
+  value: "Two-sided",
+  label: "Test type"
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// The null distribution is the standard normal (large-sample z). The p-value is
+// the area in the relevant tail(s). Two-sided: 2·P(Z ≥ |t|). One-sided right:
+// P(Z ≥ t). One-sided left: P(Z ≤ t). htx_Phi is defined above (power explorer).
+htx_pval = {
+  const t = htx_tobs;
+  let p;
+  if (htx_sided === "Two-sided") {
+    p = 2 * (1 - htx_Phi(Math.abs(t)));
+  } else if (htx_sided === "One-sided (right)") {
+    p = 1 - htx_Phi(t);
+  } else {
+    p = htx_Phi(t);
+  }
+  return Math.min(Math.max(p, 0), 1);
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+htx_normCurve = d3.range(-4.2, 4.2, 0.02).map(x => ({ x, density: htx_phi(x) }))
+```
+
+```{ojs}
+//| echo: false
+
+// Shade the tail region(s) corresponding to the chosen test, under the null
+// (standard normal) curve, and mark the observed statistic.
+{
+  const t = htx_tobs;
+  const curve = htx_normCurve;
+  let shaded;
+  if (htx_sided === "Two-sided") {
+    const a = Math.abs(t);
+    shaded = curve.filter(d => d.x >= a || d.x <= -a);
+  } else if (htx_sided === "One-sided (right)") {
+    shaded = curve.filter(d => d.x >= t);
+  } else {
+    shaded = curve.filter(d => d.x <= t);
+  }
+
+  return Plot.plot({
+    width: Math.min(680, width),
+    height: 300,
+    marginTop: 28,
+    marginLeft: 60,
+    marginRight: 64,
+    marginBottom: 40,
+    style: {
+      fontFamily: "Inter, sans-serif",
+      fontSize: "12px",
+      color: "#79766e",
+      background: "transparent"
+    },
+    x: { label: "Test statistic (standard normal under H₀) →", domain: [-4.2, 4.2], grid: false },
+    y: { label: "Density", ticks: 3 },
+    marks: [
+      Plot.areaY(shaded, { x: "x", y: "density", fill: "#990000", fillOpacity: 0.30 }),
+      Plot.line(curve, { x: "x", y: "density", stroke: "#1c1c1a", strokeWidth: 2.5 }),
+      Plot.ruleY([0], { stroke: "#1c1c1a" }),
+      // observed statistic line(s)
+      Plot.ruleX([t], { stroke: "#3d5a6c", strokeWidth: 2 }),
+      htx_sided === "Two-sided"
+        ? Plot.ruleX([-Math.abs(t), Math.abs(t)], { stroke: "#3d5a6c", strokeWidth: 1, strokeDasharray: "4,3", strokeOpacity: 0.6 })
+        : null,
+      // observed-t label anchored to the top frame so it never clips at the edges
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top", dy: 4, text: () => `observed t = ${t.toFixed(2)}`,
+        fill: "#3d5a6c", fontWeight: "bold", fontSize: 11,
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      // shaded-region key anchored to the top-right frame
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top-right", dx: -6, dy: 4, text: () => "shaded = p-value",
+        fill: "#990000", fontSize: 10, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+
+// p-value readout and decision at alpha = 0.05.
+{
+  const p = htx_pval;
+  const t = htx_tobs;
+  const sig = p < 0.05;
+  const pTxt = p < 0.001 ? "< 0.001" : p.toFixed(4);
+  // "Wrong tail": observed statistic sits opposite to the chosen one-sided alternative,
+  // so the tail area (and p-value) is large no matter how big |t| is.
+  const wrongTail =
+    (htx_sided === "One-sided (right)" && t < 0) ||
+    (htx_sided === "One-sided (left)" && t > 0);
+  const hint = wrongTail ? html`<div style="font-family: Inter, sans-serif; font-size: 0.78rem;
+      color: #9c7a33; margin-top: 0.4rem;">
+    The observed statistic is in the opposite tail from this one-sided alternative, so the
+    p-value stays near 1 (you can never reject in this direction).</div>` : html``;
+  return html`<div>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem;">
+    <div style="flex: 1 1 9rem; text-align: center; padding: 0.7rem 0.5rem; border-radius: 0.5rem;
+        background: rgba(153,0,0,0.06); border: 1px solid rgba(153,0,0,0.2);">
+      <div style="font-family: Inter, sans-serif; font-size: 0.7rem; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.04em; color: #79766e;">p-value (shaded area)</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 700; color: #990000;">${pTxt}</div>
+    </div>
+    <div style="flex: 1 1 9rem; text-align: center; padding: 0.7rem 0.5rem; border-radius: 0.5rem;
+        background: ${sig ? 'rgba(46,111,64,0.08)' : 'rgba(0,0,0,0.02)'};
+        border: 1px solid ${sig ? 'rgba(46,111,64,0.2)' : 'rgba(0,0,0,0.08)'};">
+      <div style="font-family: Inter, sans-serif; font-size: 0.7rem; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.04em; color: #79766e;">Decision at α = 0.05</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 700;
+          color: ${sig ? '#2e6f40' : '#79766e'};">${sig ? 'Reject H₀' : 'Fail to reject'}</div>
+    </div>
+    </div>
+    ${hint}
+  </div>`;
+}
+```
+
+:::
+
+### How to Read the Tail-Area Viewer
+
+**Step 1: The curve is the null.** The black bell curve is the distribution of the test statistic *assuming $H_0$ is true* (a standard normal, the large-sample case). The slate vertical line is the value you actually observed.
+
+**Step 2: The shaded area is the p-value.** The red region is the probability, under $H_0$, of a statistic *at least as extreme* as the one observed. Read the number off the panel below: that shaded area *is* the p-value. (If you pick a one-sided test but the observed statistic lies in the *opposite* tail, the p-value stays near 1 and a note appears below the panel --- you can never reject in that direction.)
+
+**Step 3: Toggle the test type.** With **Two-sided** selected, both tails beyond $\pm|t|$ are shaded --- "as extreme" means far from zero in *either* direction. Switch to **One-sided (right)** and only the right tail counts; the p-value roughly halves. This is the visual proof of why a one-sided test is more lenient --- and why switching to it *after* seeing the data is cheating: you would be quietly doubling your false-positive rate.
+
+**Step 4: Move toward and away from zero.** Drag $t$ from 2.0 out to 3.0: the statistic moves into the thin part of the curve, the shaded tail shrinks, and the p-value plummets. Drag it back toward 0 and the tail swells until the result is no longer significant. This is the same logic the [P-Value Simulator](#see-it-the-p-value-simulator) shows from the sampling side --- here you see it one statistic at a time.
+
+
+## Statistical Significance vs. Practical Significance
+
+::: {.glass-card .glass-card--insight}
+**Statistical significance is not the same as practical significance.** A study using data from Sweden's *Patientregistret* (the National Patient Register), which covers the entire population, might find that a treatment lowers systolic blood pressure by 0.3 mmHg with $p < 0.001$. The effect is statistically significant --- the data are very unlikely under $H_0$ --- but clinically meaningless. A 0.3 mmHg reduction would not change any patient's health outcome.
+
+Conversely, a small pilot study at a single vårdcentral might find a 12 mmHg reduction with $p = 0.09$. This effect is clinically important but statistically non-significant because the sample was too small to rule out chance. The correct response is not "the drug does not work" but "we need a larger trial."
+
+Always report and interpret effect sizes alongside p-values. Ask: "Is this effect large enough to matter in clinical practice?" before asking "Is this effect statistically significant?"
+:::
+
+This distinction is especially important in Swedish registry research. Because *kvalitetsregister* like the Swedish Hip Arthroplasty Register (*Svenska Höftprotesregistret*) or the National Diabetes Register (*Nationella Diabetesregistret*) cover hundreds of thousands of patients, virtually any nonzero effect --- no matter how trivial --- will be statistically significant. The p-value becomes uninformative when $n$ is very large. Effect sizes and confidence intervals carry the interpretive weight.
+
+The plot below makes this concrete. The *true* effect is held fixed at a clinically trivial 0.3 mmHg, yet as the sample size climbs into registry territory the (typical) p-value slides below 0.05 and then below 0.001 --- "significant" by convention, meaningless in the clinic.
+
+```{ojs}
+//| echo: false
+
+// p-value vs sample size at a FIXED, trivial true effect (0.3 mmHg, sigma=15).
+// We plot the p-value you'd get from the EXPECTED (mean) t-statistic at each n:
+// t = delta / (sigma*sqrt(2/n)), p = 2(1 - Phi(|t|)). Static figure; reuses the
+// page's htx_Phi. The point: p shrinks with n even when the effect never changes.
+{
+  const sigma = 15, delta = 0.3;
+  // sample a log-spaced grid of n to keep the curve smooth without huge arrays
+  const grid = d3.range(0, 1.0001, 0.01).map(t => Math.round(20 * Math.pow(200000 / 20, t)));
+  const rows = grid.map(n => {
+    const se = sigma * Math.sqrt(2 / n);
+    const tStat = delta / se;
+    const p = 2 * (1 - htx_Phi(tStat));
+    return { n, p: Math.max(p, 1e-6) };
+  });
+  // n at which the expected p crosses 0.05
+  const cross05 = rows.find(r => r.p < 0.05);
+
+  return Plot.plot({
+    width: Math.min(620, width),
+    height: 300,
+    marginLeft: 64, marginBottom: 48, marginRight: 70, marginTop: 24,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "12px", color: "#79766e", background: "transparent" },
+    x: { type: "log", label: "Sample size per group (n, log scale) →", grid: true },
+    y: { type: "log", label: "↑ Typical p-value (log scale)", domain: [1e-6, 1], grid: true },
+    marks: [
+      Plot.areaY(rows.filter(r => r.p < 0.05), { x: "n", y: "p", fill: "#990000", fillOpacity: 0.08 }),
+      Plot.line(rows, { x: "n", y: "p", stroke: "#990000", strokeWidth: 2.5 }),
+      Plot.ruleY([0.05], { stroke: "#9c7a33", strokeWidth: 1.5, strokeDasharray: "5,3" }),
+      Plot.ruleY([0.001], { stroke: "#3d5a6c", strokeWidth: 1.5, strokeDasharray: "5,3" }),
+      cross05 ? Plot.ruleX([cross05.n], { stroke: "#1c1c1a", strokeWidth: 1, strokeOpacity: 0.4, strokeDasharray: "3,3" }) : null,
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top-right", dx: -6, dy: 2, text: () => "α = 0.05",
+        fill: "#9c7a33", fontSize: 10, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "top-right", dx: -6, dy: 16, text: () => "p = 0.001",
+        fill: "#3d5a6c", fontSize: 10, textAnchor: "end",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ x: 0 }], {
+        frameAnchor: "bottom-left", dx: 6, dy: -6,
+        text: () => "true effect fixed at 0.3 mmHg (trivial)",
+        fill: "#79766e", fontSize: 10, textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+The true effect never changes --- it stays a clinically irrelevant 0.3 mmHg. Only $n$ grows. The p-value falls through $\alpha = 0.05$ and keeps going, so in a full-population register almost everything is "significant." This is why effect size, not the p-value, must drive interpretation when $n$ is large.
+:::
+
+
+## The Multiple Testing Problem
+
+When you test many hypotheses simultaneously, the probability of at least one false positive increases rapidly.
+
+Recall from the [Randomization](../01-fundamental-problem/randomization.qmd) page: a researcher randomizes 100 patients and tests 20 baseline covariates for balance at $\alpha = 0.05$. Under a correct randomization, the probability of at least one spurious "significant" imbalance is:
+
+$$
+P(\text{at least one false positive}) = 1 - (1 - \alpha)^k = 1 - 0.95^{20} \approx 0.64
+$$
+
+**How to read this**: "The probability of at least one false positive equals one minus the probability that *all* $k$ tests correctly fail to reject, which is $(1 - \alpha)^k$."
+
+With 20 tests, you have a 64% chance of finding at least one "significant" result even when nothing is going on. This is the **multiple testing problem** (also called the multiple comparisons problem).
+
+The curve below shows that 64% as one point on a fast-rising line: the family-wise error rate $1-(1-\alpha)^k$ climbs toward certainty as the number of tests $k$ grows. The flat green line shows what a Bonferroni correction buys --- by shrinking each test's threshold to $\alpha/k$, it holds the family-wise error back near $\alpha$ no matter how many tests you run.
+
+```{ojs}
+//| echo: false
+
+// Family-wise error rate vs number of tests k. Red = uncorrected 1-(1-alpha)^k;
+// green = Bonferroni (each test at alpha/k) so FWER = 1-(1-alpha/k)^k ≈ alpha.
+// Static figure at alpha = 0.05, with the k=20 -> 0.64 point marked.
+{
+  const alpha = 0.05;
+  const ks = d3.range(1, 101);
+  const uncorr = ks.map(k => ({ k, fwer: 1 - Math.pow(1 - alpha, k), kind: "Uncorrected" }));
+  const bonf = ks.map(k => ({ k, fwer: 1 - Math.pow(1 - alpha / k, k), kind: "Bonferroni (α/k each)" }));
+  const mark20 = 1 - Math.pow(1 - alpha, 20);
+
+  return Plot.plot({
+    width: Math.min(620, width),
+    height: 300,
+    marginLeft: 64, marginBottom: 48, marginRight: 70, marginTop: 24,
+    style: { fontFamily: "Inter, sans-serif", fontSize: "12px", color: "#79766e", background: "transparent" },
+    x: { label: "Number of tests k →", grid: true },
+    y: { label: "↑ P(at least one false positive)", domain: [0, 1], grid: true },
+    marks: [
+      Plot.line(uncorr, { x: "k", y: "fwer", stroke: "#990000", strokeWidth: 2.5 }),
+      Plot.line(bonf, { x: "k", y: "fwer", stroke: "#2e6f40", strokeWidth: 2.5 }),
+      Plot.ruleY([alpha], { stroke: "#9c7a33", strokeWidth: 1, strokeDasharray: "4,3", strokeOpacity: 0.7 }),
+      Plot.dot([{ k: 20, fwer: mark20 }], { x: "k", y: "fwer", r: 4.5, fill: "#990000" }),
+      Plot.ruleX([20], { stroke: "#1c1c1a", strokeWidth: 1, strokeOpacity: 0.3, strokeDasharray: "3,3" }),
+      Plot.text([{ k: 20, fwer: mark20 }], {
+        x: "k", y: "fwer", dx: 8, dy: -8,
+        text: () => `k = 20 → ${(mark20 * 100).toFixed(0)}%`,
+        fill: "#990000", fontSize: 11, fontWeight: "bold", textAnchor: "start",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ k: 70, fwer: 1 - Math.pow(1 - alpha, 70) }], {
+        x: "k", y: "fwer", dy: -8, text: () => "Uncorrected  1−(1−α)ᵏ",
+        fill: "#990000", fontSize: 10, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      }),
+      Plot.text([{ k: 70, fwer: alpha }], {
+        x: "k", y: "fwer", dy: -8, text: () => "Bonferroni ≈ α",
+        fill: "#2e6f40", fontSize: 10, textAnchor: "middle",
+        stroke: "white", strokeWidth: 3, paintOrder: "stroke"
+      })
+    ]
+  });
+}
+```
+
+::: {.aside}
+Each extra test is another chance for a false alarm, so the uncorrected family-wise error (red) races toward 1; at $k = 20$ it is the 64% quoted above. Bonferroni (green) tightens each test to $\alpha/k$, pinning the overall error rate near $\alpha$ --- at the cost of power on each individual test.
+:::
+
+Common corrections include:
+
+- **Bonferroni correction**: Divide $\alpha$ by the number of tests. With 20 tests, each uses $\alpha = 0.05/20 = 0.0025$. This is conservative --- it controls the **family-wise error rate** (the probability of *any* false positive) but can be overly strict.
+- **Benjamini-Hochberg procedure**: Controls the **false discovery rate** (the expected proportion of false positives among all rejected hypotheses), which is often a more relevant quantity.
+
+In Swedish registry studies that examine many outcomes or subgroups, reporting unadjusted p-values without acknowledging the multiple testing problem is a common methodological weakness.
+
+
+<details>
+<summary>Math Details: The Distribution of the P-Value Under the Null</summary>
+<div class="details-content">
+
+### Why P-Values Are Uniform Under $H_0$
+
+A remarkable fact: if $H_0$ is true, the p-value follows a uniform distribution on $[0, 1]$. This is not an approximation --- it is exact.
+
+**Proof sketch.** Let $T$ be a continuous test statistic with CDF $F_0$ under $H_0$. For a one-sided test, the p-value is $p = 1 - F_0(T)$. Since $F_0(T)$ is a probability integral transform, it follows that $F_0(T) \sim \text{Uniform}(0,1)$ when $T \sim F_0$. Therefore $p = 1 - F_0(T) \sim \text{Uniform}(0,1)$.
+
+**Implication for the significance level.** If $p \sim \text{Uniform}(0, 1)$, then:
+
+$$
+P(p < \alpha) = \alpha
+$$
+
+This is why setting $\alpha = 0.05$ guarantees a 5% false positive rate. The fraction of p-values falling below any threshold $\alpha$ is exactly $\alpha$, by definition.
+
+### Power as a Function of Effect Size and Sample Size
+
+Under $H_1$ with true effect $\delta$ and known variance $\sigma^2$, the $z$-statistic follows:
+
+$$
+Z = \frac{\bar{Y}_1 - \bar{Y}_0}{\sigma\sqrt{2/n}} \sim N\!\left(\frac{\delta}{\sigma\sqrt{2/n}}, 1\right) = N\!\left(\frac{\delta\sqrt{n}}{\sigma\sqrt{2}}, 1\right)
+$$
+
+The **noncentrality parameter** $\lambda = \frac{\delta\sqrt{n}}{\sigma\sqrt{2}}$ governs power. We reject $H_0$ when $|Z| > z_{\alpha/2}$, so:
+
+$$
+\text{Power} = P(|Z| > z_{\alpha/2} \mid H_1) = 1 - \Phi\!\left(z_{\alpha/2} - \lambda\right) + \Phi\!\left(-z_{\alpha/2} - \lambda\right)
+$$
+
+**How to read this**: Power increases with $\lambda$, which in turn increases with the effect size $\delta$ and the sample size $n$, and decreases with the outcome variability $\sigma$.
+
+For a standard power calculation targeting power $= 1 - \beta$ at significance level $\alpha$ for a two-sided test, the required sample size per group is approximately:
+
+$$
+n \approx \frac{2\sigma^2(z_{\alpha/2} + z_\beta)^2}{\delta^2}
+$$
+
+**How to read this**: "The required sample size per group is approximately two times the variance times the square of the sum of the critical values for the desired $\alpha$ and $\beta$, divided by the squared effect size."
+
+For $\alpha = 0.05$ and power $= 0.80$: $z_{0.025} \approx 1.96$ and $z_{0.20} \approx 0.84$, giving $(z_{\alpha/2} + z_\beta)^2 \approx (1.96 + 0.84)^2 = 7.84$.
+
+</div>
+</details>
+
+
+## Code Implementations
+
+::: {.panel-tabset}
+
+### R
+
+```r
+library(tidyverse)
+
+# Simulate a blood pressure drug trial
+# New drug vs. standard treatment
+set.seed(2024)
+n <- 100  # per group
+
+# True effect: new drug lowers systolic BP by 4.2 mmHg
+control <- rnorm(n, mean = 138, sd = 15)   # standard treatment
+treatment <- rnorm(n, mean = 133.8, sd = 15) # new drug (138 - 4.2)
+
+# Two-sample t-test (two-sided)
+result <- t.test(treatment, control)
+
+cat("=== Two-Sample t-Test: Blood Pressure Trial ===\n")
+cat("Mean (treatment):", round(mean(treatment), 2), "mmHg\n")
+cat("Mean (control):  ", round(mean(control), 2), "mmHg\n")
+cat("Difference:      ", round(mean(treatment) - mean(control), 2), "mmHg\n")
+cat("t-statistic:     ", round(result$statistic, 3), "\n")
+cat("p-value:         ", format.pval(result$p.value, digits = 4), "\n")
+cat("95% CI:          [", round(result$conf.int[1], 2), ",",
+                           round(result$conf.int[2], 2), "]\n\n")
+
+# Decision
+if (result$p.value < 0.05) {
+  cat("Decision: Reject H0 at alpha = 0.05.\n")
+  cat("The data provide evidence of a difference in blood pressure.\n")
+} else {
+  cat("Decision: Fail to reject H0 at alpha = 0.05.\n")
+  cat("The data do not provide sufficient evidence of a difference.\n")
+}
+
+# --- Power analysis ---
+# How large a sample do we need to detect a 4 mmHg effect
+# with 80% power at alpha = 0.05?
+power_result <- power.t.test(
+  delta = 4,        # minimum clinically relevant difference
+  sd = 15,          # assumed SD
+  sig.level = 0.05,
+  power = 0.80,
+  type = "two.sample"
+)
+cat("\n=== Power Analysis ===\n")
+cat("To detect a 4 mmHg difference (SD = 15):\n")
+cat("Required n per group:", ceiling(power_result$n), "\n")
+```
+
+### Python
+
+```python
+import numpy as np
+from scipy import stats
+
+# Simulate a blood pressure drug trial
+np.random.seed(2024)
+n = 100  # per group
+
+# True effect: new drug lowers systolic BP by 4.2 mmHg
+control = np.random.normal(loc=138, scale=15, size=n)
+treatment = np.random.normal(loc=133.8, scale=15, size=n)
+
+# Two-sample t-test (two-sided)
+t_stat, p_value = stats.ttest_ind(treatment, control)
+diff = treatment.mean() - control.mean()
+se = np.sqrt(treatment.var(ddof=1)/n + control.var(ddof=1)/n)
+
+print("=== Two-Sample t-Test: Blood Pressure Trial ===")
+print(f"Mean (treatment): {treatment.mean():.2f} mmHg")
+print(f"Mean (control):   {control.mean():.2f} mmHg")
+print(f"Difference:       {diff:.2f} mmHg")
+print(f"t-statistic:      {t_stat:.3f}")
+print(f"p-value:          {p_value:.4f}")
+print(f"95% CI:           [{diff - 1.96*se:.2f}, {diff + 1.96*se:.2f}]")
+print()
+
+# Decision
+if p_value < 0.05:
+    print("Decision: Reject H0 at alpha = 0.05.")
+    print("The data provide evidence of a difference in blood pressure.")
+else:
+    print("Decision: Fail to reject H0 at alpha = 0.05.")
+    print("The data do not provide sufficient evidence of a difference.")
+
+# --- Power analysis ---
+# Required sample size for 80% power to detect a 4 mmHg effect
+from scipy.stats import norm
+
+def required_n(delta, sigma, alpha=0.05, power=0.80):
+    """Sample size per group for a two-sample t-test."""
+    z_alpha = norm.ppf(1 - alpha / 2)
+    z_beta = norm.ppf(power)
+    n = 2 * (sigma ** 2) * (z_alpha + z_beta) ** 2 / delta ** 2
+    return int(np.ceil(n))
+
+n_needed = required_n(delta=4, sigma=15)
+print(f"\n=== Power Analysis ===")
+print(f"To detect a 4 mmHg difference (SD = 15):")
+print(f"Required n per group: {n_needed}")
+```
+
+:::
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A clinical trial at a Swedish vårdcentral randomizes 60 hypertensive patients (30 per arm) to a new antihypertensive drug vs. placebo. After 12 weeks, the mean systolic blood pressure reduction is 5.8 mmHg in the drug group and 2.1 mmHg in the placebo group. The pooled standard deviation is 12 mmHg.
+
+(a) State the null and alternative hypotheses.
+(b) Compute the standard error of the difference in means.
+(c) Compute the t-statistic.
+(d) The critical value for a two-sided test at $\alpha = 0.05$ with 58 degrees of freedom is approximately 2.00. Would you reject $H_0$?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $H_0: \mu_{\text{drug}} - \mu_{\text{placebo}} = 0$ (no difference in blood pressure reduction). $H_1: \mu_{\text{drug}} - \mu_{\text{placebo}} \neq 0$ (some difference exists).
+
+**(b)** With equal group sizes ($n_1 = n_0 = 30$) and pooled SD $= 12$:
+
+$$
+\text{SE} = \sqrt{\frac{s^2}{n_1} + \frac{s^2}{n_0}} = \sqrt{\frac{12^2}{30} + \frac{12^2}{30}} = \sqrt{\frac{144}{30} + \frac{144}{30}} = \sqrt{9.6} \approx 3.10
+$$
+
+**(c)** The observed difference is $5.8 - 2.1 = 3.7$ mmHg.
+
+$$
+t = \frac{3.7 - 0}{3.10} \approx 1.19
+$$
+
+**(d)** Since $|t| = 1.19 < 2.00$, we **fail to reject** $H_0$. The data do not provide sufficient evidence at the 5% level to conclude that the drug reduces blood pressure more than placebo.
+
+**Interpretation**: This does *not* mean the drug has no effect. The observed difference of 3.7 mmHg might be clinically meaningful, but with only 30 patients per arm and SD $= 12$, the study is underpowered to detect effects of this magnitude. A power calculation would show that detecting a 3.7 mmHg effect with 80% power requires approximately $n \approx 2 \times 12^2 \times 7.84 / 3.7^2 \approx 165$ patients per group --- far more than the 30 enrolled.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the interactive simulator above, set the true effect to 0 and $n = 50$. Run 1000 trials and record the rejection rate. Now repeat with $n = 500$. Does the false positive rate change? Explain why or why not.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The rejection rate should be approximately **5% in both cases** (within simulation variability, you will see something between 3% and 7%).
+
+This is a fundamental property: when $H_0$ is true, the false positive rate equals $\alpha$ **regardless of sample size**. Increasing $n$ does not inflate the Type I error rate.
+
+**Why?** Under $H_0$, the p-value is uniformly distributed on $[0, 1]$, so $P(p < 0.05) = 0.05$ exactly, no matter how large $n$ is. A larger sample makes the $t$-statistic more precise, but if the true effect is exactly zero, the $t$-statistic is centered at zero and the p-value is uniform. Sample size affects **power** (the ability to detect real effects) but not the false positive rate (which is controlled by $\alpha$).
+
+This is precisely what the $\alpha$ level guarantees: the error rate under the null is bounded at $\alpha$ by construction.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+A researcher analyzes data from the Swedish National Diabetes Register (*Nationella Diabetesregistret*), which includes over 400,000 patients. She compares HbA1c levels between patients using two different insulin brands and finds a difference of 0.02 percentage points with $p < 0.001$. She concludes the brands differ in efficacy.
+
+Critique this conclusion. What additional information would you want before interpreting this result?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The researcher is confusing **statistical significance** with **practical significance**. With 400,000 patients, the standard error is extremely small, so even trivially small differences produce tiny p-values. A 0.02 percentage point difference in HbA1c is clinically irrelevant --- it is far below the measurement error of the assay itself (typically around 0.2--0.3 percentage points), and orders of magnitude smaller than any threshold that would change clinical management.
+
+**Additional information needed:**
+
+1. **Effect size and confidence interval.** The 95% CI might be something like $[0.01, 0.03]$, which confirms the entire plausible range is clinically meaningless.
+
+2. **Minimum clinically important difference (MCID).** For HbA1c, a difference of at least 0.3--0.5 percentage points is typically considered clinically relevant. The observed 0.02 is nowhere near this threshold.
+
+3. **Confounders.** This is observational data --- patients on different insulin brands may differ systematically in ways that affect HbA1c. Without causal identification (randomization or credible quasi-experimental design), even a larger effect could not be attributed to the insulin brand itself.
+
+4. **Multiple comparisons.** If the researcher tested many insulin brands or many outcomes, the p-value should be adjusted.
+
+**Key lesson:** In large registry studies, the p-value is almost always small. The relevant question shifts from "is the effect nonzero?" (it almost certainly is, with enough data) to "is the effect large enough to matter?" This requires clinical judgment, not a significance threshold.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+A Swedish regional health authority (*region*) tests a quality improvement initiative across 15 vårdcentraler. For each center, they measure 8 different quality indicators (waiting times, patient satisfaction, readmission rates, etc.) before and after the initiative, and test whether each indicator improved. They find that 2 out of 8 indicators show $p < 0.05$.
+
+(a) If the initiative had no effect on any indicator, how many significant results would you expect by chance?
+(b) What is the probability of observing at least 2 significant results under the null?
+(c) Apply the Bonferroni correction. Do either of the results survive?
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Under the null (no effect on any indicator), the expected number of significant results at $\alpha = 0.05$ is:
+
+$$
+E[\text{significant results}] = k \times \alpha = 8 \times 0.05 = 0.4
+$$
+
+So we would expect about 0.4 false positives --- less than one, but not zero.
+
+**(b)** The number of significant results under the null follows a Binomial$(8, 0.05)$ distribution:
+
+$$
+P(X \geq 2) = 1 - P(X = 0) - P(X = 1)
+$$
+
+$$
+P(X = 0) = 0.95^8 = 0.6634
+$$
+
+$$
+P(X = 1) = \binom{8}{1} \times 0.05 \times 0.95^7 = 8 \times 0.05 \times 0.6983 = 0.2793
+$$
+
+$$
+P(X \geq 2) = 1 - 0.6634 - 0.2793 = 0.0573
+$$
+
+There is about a 5.7% chance of observing 2 or more significant results purely by chance --- not overwhelmingly unlikely.
+
+**(c)** The Bonferroni-corrected significance level is $\alpha^* = 0.05 / 8 = 0.00625$. Unless one or both of the significant p-values is below 0.00625, neither result survives the correction. If, for instance, the two p-values were 0.012 and 0.038, both would fail the corrected threshold.
+
+**Conclusion:** Two significant results out of eight tests, without adjustment, provides only weak evidence that the initiative had any real effect. The region should be cautious about concluding success based on unadjusted p-values from multiple tests.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- A hypothesis test assumes the null, then asks how surprising the data would be under it; the p-value is that surprise, and a small p-value casts doubt on $H_0$ rather than proving $H_1$.
+- The 0.05 threshold is a convention, not a law of nature; $p = 0.049$ and $p = 0.051$ carry essentially the same evidence.
+- Lowering $\alpha$ trades fewer false positives for more false negatives; only more data buys down both, raising power $1 - \beta$.
+- "$p < 0.05$ means a 5% chance the finding is false" is wrong --- the false discovery proportion depends on the base rate of real effects, which no single p-value reveals.
+- With huge registry samples almost any nonzero effect is statistically significant, so effect sizes, confidence intervals, and multiple-testing corrections must carry the interpretive weight.
+:::
+
+## What Comes Next
+
+We have seen that the hypothesis test produces a binary verdict: reject or fail to reject. But a binary answer throws away information. *How far* from the null is the estimate? What range of effect sizes is consistent with the data? The next page develops **confidence intervals**, which provide exactly this richer picture --- and which have a deep connection to the hypothesis tests we just studied.

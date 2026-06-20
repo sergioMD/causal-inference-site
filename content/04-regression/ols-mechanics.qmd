@@ -1,0 +1,975 @@
+---
+title: "OLS Mechanics"
+subtitle: "What OLS does geometrically and algebraically"
+---
+
+::: {.learning-objectives}
+**In this section, you will learn to**
+
+- Derive the OLS slope and intercept by minimizing the sum of squared residuals, and read them as $\widehat{\text{Cov}}(x,y)/\widehat{\text{Var}}(x)$ and $\bar{y} - \hat\beta_1\bar{x}$
+- Interpret OLS geometrically as the orthogonal projection of $y$ onto the column space of the regressors, with residuals orthogonal to every regressor ($\mathbf{X}'\mathbf{e} = \mathbf{0}$)
+- Generalize the bivariate formulas to the matrix form $\hat{\boldsymbol\beta} = (\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}$ and explain when it fails (perfect multicollinearity)
+- Establish the mechanical identities that follow from including an intercept: residuals sum to zero, the line passes through $(\bar{x},\bar{y})$, and the total variation (SST) decomposes into explained (SSE) plus residual (SSR)
+- Compute and interpret $R^2$ as explained variance, distinguishing tight fit from causal meaning
+:::
+
+## A Line Through the Vårdcentraler
+
+In the previous chapter we read a regression table without asking where its numbers came from. Now we open the machine. *Ordinary Least Squares* (OLS) is the workhorse estimator of empirical economics and health-policy research, and almost every causal design in the rest of this book --- matching, difference-in-differences, instrumental variables, regression discontinuity --- is, at bottom, a clever application of OLS. Before we can break it or trust it, we need to know exactly what it does.
+
+Consider a concrete Swedish question. Across the *vårdcentraler* (primary care centers) of a single *region*, staffing varies. Some centers have many *distriktssköterskor* (district nurses) relative to their listed patient population; others run lean. A natural conjecture is that better nurse staffing supports the structured follow-up that chronic-disease patients need, so centers with more nurses should have a larger share of their Type 2 diabetes patients reaching the HbA1c target ($\leq$ 52 mmol/mol).
+
+We have data on 12 vårdcentraler. For each center, $x$ is the number of district nurses per 1000 listed patients, and $y$ is the percentage of registered diabetes patients reaching the HbA1c target. The points form a cloud that drifts upward and to the right. OLS asks a precise question of that cloud: **of all the straight lines we could draw through it, which one fits best?** The whole subject is the meaning of the word "best."
+
+
+## The Objective: Minimize the Sum of Squared Residuals
+
+A candidate line is described by two numbers: an intercept $\beta_0$ (where the line crosses the $y$-axis) and a slope $\beta_1$ (how much $y$ rises per unit of $x$). For any choice of these two numbers, the line predicts, for center $i$,
+
+$$
+\hat{y}_i = \beta_0 + \beta_1 x_i
+$$
+
+**Read this as**: "the fitted value for center $i$ equals the intercept plus the slope times that center's nurse density." The gap between what we actually observed and what the line predicts is the **residual**:
+
+$$
+e_i = y_i - \hat{y}_i = y_i - \beta_0 - \beta_1 x_i
+$$
+
+**Read this as**: "the residual for center $i$ is its observed target-attainment minus the line's prediction for it." A center sitting *above* the line has a positive residual (it outperforms what its staffing predicts); one *below* the line has a negative residual.
+
+We need a single number that summarizes how badly a line misses, across all 12 centers. We cannot simply add the residuals --- positive and negative misses would cancel, and a wildly wrong line could score zero. Instead we *square* each residual (killing the sign and penalizing big misses disproportionately) and add them up.
+
+Why squaring is not gentle on big misses is worth seeing literally. The figure below draws each residual as an actual **square** whose side is the miss and whose *area* is the penalty $e_i^2$. Doubling a miss does not double its cost --- it quadruples it. So one residual of size 4 (area 16) costs as much as *four* residuals of size 2 (total area $4\times 4 = 16$), and a single residual of size 6 (area 36) dwarfs them all. That convex penalty is exactly why OLS works hard to avoid any one large miss.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static figure: residuals drawn as literal squares (area = e_i^2). Pure d3.
+p2_drawSquares = function ({ width = 520, height = 200 } = {}) {
+  const ink = "#1c1c1a", red = "#990000", muted = "#79766e", panel = "#eef0ee";
+  const svg = d3.create("svg")
+    .attr("width", width).attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%").style("height", "auto");
+
+  const baseY = 168;            // the fitted-line baseline
+  svg.append("line").attr("x1", 20).attr("y1", baseY).attr("x2", width - 20).attr("y2", baseY)
+    .attr("stroke", red).attr("stroke-width", 2.5);
+  svg.append("text").attr("x", width - 22).attr("y", baseY + 18)
+    .attr("text-anchor", "end").attr("font-size", 11).attr("font-style", "italic")
+    .attr("fill", red).text("fitted line");
+
+  // Each item: a miss of given size, anchored at x. side = miss * scale.
+  const scale = 11;
+  const items = [
+    { x: 70,  miss: 2, lab: "e = 2 → area 4" },
+    { x: 200, miss: 2, lab: "e = 2 → area 4" },
+    { x: 360, miss: 4, lab: "e = 4 → area 16" }
+  ];
+  for (const it of items) {
+    const side = it.miss * scale;
+    // residual segment (point above the line down to the line)
+    svg.append("circle").attr("cx", it.x).attr("cy", baseY - side).attr("r", 3.5).attr("fill", ink);
+    svg.append("line").attr("x1", it.x).attr("y1", baseY - side).attr("x2", it.x).attr("y2", baseY)
+      .attr("stroke", ink).attr("stroke-width", 1.5).attr("stroke-dasharray", "3,3");
+    // the squared-area square, sitting on the line
+    svg.append("rect")
+      .attr("x", it.x).attr("y", baseY - side)
+      .attr("width", side).attr("height", side)
+      .attr("fill", red).attr("fill-opacity", 0.16)
+      .attr("stroke", red).attr("stroke-width", 1.5);
+    svg.append("text").attr("x", it.x).attr("y", baseY - side - 8)
+      .attr("font-size", 11).attr("font-weight", 600).attr("fill", muted).text(it.lab);
+  }
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+p2_drawSquares({ width: Math.min(520, width), height: 200 })
+```
+
+::: {.aside}
+Each square's **side** is a residual and its **area** is that residual's contribution to SSR. The single miss of 4 (area 16) costs *twice* as much as the two misses of 2 combined (areas $4+4=8$) --- it would take *four* misses of 2 to equal it. Squaring makes large errors disproportionately expensive, so OLS bends the line to shorten the worst misses first.
+:::
+
+::: {.glass-card .glass-card--definition}
+The **Ordinary Least Squares** estimator chooses the intercept and slope to minimize the **Sum of Squared Residuals** (SSR), also called the residual sum of squares:
+
+$$
+\text{SSR}(\beta_0, \beta_1) = \sum_{i=1}^{n} e_i^2 = \sum_{i=1}^{n} \left( y_i - \beta_0 - \beta_1 x_i \right)^2
+$$
+
+**Read this as**: "the sum of squared residuals is a function of the two numbers we get to choose; for any candidate line, square every vertical miss and add them up." The OLS estimates $\hat\beta_0$ and $\hat\beta_1$ are the particular values that make this sum as small as it can possibly be:
+
+$$
+(\hat\beta_0, \hat\beta_1) = \arg\min_{\beta_0, \beta_1} \; \sum_{i=1}^{n} \left( y_i - \beta_0 - \beta_1 x_i \right)^2
+$$
+:::
+
+Two design choices are worth pausing on. First, we measure misses **vertically** (in the $y$ direction), not perpendicular to the line. This is because $y$ is the outcome we are trying to predict from $x$; we are not treating $x$ and $y$ symmetrically. Second, the *squaring* is what gives OLS its name and its clean algebra. Squaring makes SSR a smooth, bowl-shaped function of $\beta_0$ and $\beta_1$ with a single lowest point --- which means calculus can find the minimum exactly, with no searching required.
+
+
+## The Closed-Form Solution (Bivariate Case)
+
+Because SSR is a smooth convex function of two variables, its minimum is where both partial derivatives equal zero. Setting $\partial \text{SSR}/\partial\beta_0 = 0$ and $\partial \text{SSR}/\partial\beta_1 = 0$ gives the **first-order conditions**, also called the **normal equations**. Solving them (the full derivation is in the Math Details block below) yields a remarkably clean answer.
+
+::: {.glass-card .glass-card--definition}
+For a regression of $y$ on a single regressor $x$ with an intercept, the OLS estimates are:
+
+$$
+\hat\beta_1 = \frac{\widehat{\text{Cov}}(x, y)}{\widehat{\text{Var}}(x)} = \frac{\sum_{i=1}^{n} (x_i - \bar{x})(y_i - \bar{y})}{\sum_{i=1}^{n} (x_i - \bar{x})^2}, \qquad \hat\beta_0 = \bar{y} - \hat\beta_1 \bar{x}
+$$
+
+**Read the slope as**: "the OLS slope is the sample covariance of $x$ and $y$ divided by the sample variance of $x$." It is literally how much $x$ and $y$ move together, scaled by how much $x$ moves on its own.
+
+**Read the intercept as**: "the intercept is the mean of $y$ minus the slope times the mean of $x$." Equivalently, $\bar{y} = \hat\beta_0 + \hat\beta_1 \bar{x}$ --- the fitted line is forced to pass through the point of averages $(\bar{x}, \bar{y})$.
+:::
+
+Let us evaluate these on our 12 vårdcentraler. The mean nurse density is $\bar{x} = 3.22$ nurses per 1000 patients and the mean target-attainment is $\bar{y} = 58.67\%$. Plugging the sums into the formulas gives
+
+$$
+\hat\beta_1 = \frac{65.92}{8.90} = 7.41, \qquad \hat\beta_0 = 58.67 - 7.41 \times 3.22 = 34.83.
+$$
+
+**The estimated line is $\hat{y} = 34.83 + 7.41\,x$.** In words: a vårdcentral with no district nurses at all would be predicted to get about 35% of its diabetes patients to target (an extrapolation far outside the data --- treat it with suspicion), and each *additional* district nurse per 1000 listed patients is associated with about a 7.4 percentage-point higher share reaching target. (A *percentage point* is an absolute change in the share: going from 58% to 65% is +7 percentage points, not +7%.) The slope is the number a policy analyst cares about; the intercept mostly serves to anchor the line.
+
+The table below traces those two intermediate sums --- the only arithmetic the slope formula needs --- so the jump from data to $\hat\beta_1 = 7.41$ is not a black box. Each row is one vårdcentral; the last two columns are the cross-deviation $(x_i-\bar{x})(y_i-\bar{y})$ that builds $\widehat{\text{Cov}}$ and the squared deviation $(x_i-\bar{x})^2$ that builds $\widehat{\text{Var}}$.
+
+```{ojs}
+//| echo: false
+
+p2_calcTable = {
+  const xbar = olsm_fit.xbar, ybar = olsm_fit.ybar;
+  const rows = olsm_data.map(d => {
+    const dx = d.x - xbar, dy = d.y - ybar;
+    return { id: d.id, x: d.x, y: d.y, dx, dy, cross: dx * dy, dx2: dx * dx };
+  });
+  const fmt = (v, p = 2) => (v >= 0 ? "" : "−") + Math.abs(v).toFixed(p);
+  const cell = (v, w = "400", c = "#1c1c1a") =>
+    `<td style="padding:0.28rem 0.6rem; text-align:right; font-variant-numeric:tabular-nums; font-weight:${w}; color:${c};">${v}</td>`;
+  const body = rows.map(r => `<tr style="border-top:1px solid #e6e3db;">
+      <td style="padding:0.28rem 0.6rem; text-align:left; color:#79766e;">${r.id}</td>
+      ${cell(r.x.toFixed(1))}${cell(r.y.toFixed(1))}
+      ${cell(fmt(r.dx))}${cell(fmt(r.dy))}
+      ${cell(fmt(r.cross), "600", "#3d5a6c")}${cell(r.dx2.toFixed(2), "600", "#9c7a33")}
+    </tr>`).join("");
+  return html`<div style="overflow-x:auto;">
+  <table style="border-collapse:collapse; font-family:'Inter',sans-serif; font-size:0.82rem; width:100%; min-width:30rem; border-top:2px solid #1c1c1a; border-bottom:2px solid #1c1c1a;">
+    <thead><tr style="border-bottom:1px solid #cfccc2;">
+      <th style="padding:0.4rem 0.6rem; text-align:left; color:#1c1c1a;">VC</th>
+      <th style="padding:0.4rem 0.6rem; text-align:right; color:#1c1c1a;">x</th>
+      <th style="padding:0.4rem 0.6rem; text-align:right; color:#1c1c1a;">y</th>
+      <th style="padding:0.4rem 0.6rem; text-align:right; color:#1c1c1a;">x−x̄</th>
+      <th style="padding:0.4rem 0.6rem; text-align:right; color:#1c1c1a;">y−ȳ</th>
+      <th style="padding:0.4rem 0.6rem; text-align:right; color:#3d5a6c;">(x−x̄)(y−ȳ)</th>
+      <th style="padding:0.4rem 0.6rem; text-align:right; color:#9c7a33;">(x−x̄)²</th>
+    </tr></thead>
+    <tbody>${body}</tbody>
+    <tfoot><tr style="border-top:2px solid #1c1c1a;">
+      <td colspan="5" style="padding:0.4rem 0.6rem; text-align:right; font-weight:700; color:#1c1c1a;">Σ &nbsp;→</td>
+      <td style="padding:0.4rem 0.6rem; text-align:right; font-weight:800; color:#3d5a6c; font-variant-numeric:tabular-nums;">${d3.sum(rows, r => r.cross).toFixed(2)}</td>
+      <td style="padding:0.4rem 0.6rem; text-align:right; font-weight:800; color:#9c7a33; font-variant-numeric:tabular-nums;">${d3.sum(rows, r => r.dx2).toFixed(2)}</td>
+    </tr></tfoot>
+  </table>
+  <div style="font-family:'Inter',sans-serif; font-size:0.82rem; color:#44443f; margin-top:0.6rem; line-height:1.5;">
+    Slope <strong>β̂₁ = Sxy / Sxx = ${d3.sum(rows, r => r.cross).toFixed(2)} / ${d3.sum(rows, r => r.dx2).toFixed(2)} = <span style="color:#990000;">${olsm_fit.b1.toFixed(2)}</span></strong>.
+    Intercept <strong>β̂₀ = ȳ − β̂₁·x̄ = ${ybar.toFixed(2)} − ${olsm_fit.b1.toFixed(2)}×${xbar.toFixed(2)} = <span style="color:#990000;">${olsm_fit.b0.toFixed(2)}</span></strong>.
+  </div>
+</div>`;
+}
+```
+
+::: {.aside}
+The blue column sums to $S_{xy}=65.92$ (numerator of the slope, a scaled covariance); the ochre column sums to $S_{xx}=8.90$ (denominator, a scaled variance). Their ratio *is* the slope. This is the same deviation-table arithmetic Exercise 1 asks you to do by hand.
+:::
+
+::: {.glass-card .glass-card--warning}
+The slope is a *descriptive* summary of the cloud, not yet a *causal* effect. Centers with more nurses may also have more *läkare* (physicians), serve healthier or more affluent catchment populations, or run better diabetes-coordination programs. OLS faithfully reports the conditional association; whether that 7.4-point slope reflects the effect of staffing or of confounders is the subject of the rest of this chapter. Mechanics first, causality later.
+:::
+
+
+## The Matrix Form
+
+With more than one regressor, the scalar formulas become unwieldy, but the underlying idea is unchanged. We stack the data into matrices. Let $\mathbf{y}$ be the $n \times 1$ vector of outcomes, and let $\mathbf{X}$ be the $n \times k$ **design matrix** whose first column is all ones (for the intercept) and whose remaining columns hold the regressors. Then the entire OLS solution collapses to one expression:
+
+$$
+\hat{\boldsymbol{\beta}} = (\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}
+$$
+
+**Read this piece by piece:**
+
+- $\mathbf{X}'\mathbf{y}$ is a $k \times 1$ vector. Each entry is the dot product of one regressor column with the outcome --- a (scaled) sample covariance between that regressor and $y$.
+- $\mathbf{X}'\mathbf{X}$ is a $k \times k$ matrix collecting the cross-products of the regressors with each other --- a (scaled) sample variance-covariance matrix of the $x$'s.
+- $(\mathbf{X}'\mathbf{X})^{-1}$ is its inverse, the multivariate analogue of "divide by the variance of $x$."
+
+Put together, $\hat{\boldsymbol{\beta}} = (\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}$ is exactly "covariance of regressors with $y$, divided by the variance of the regressors" --- the matrix generalization of $\hat\beta_1 = \widehat{\text{Cov}}(x,y)/\widehat{\text{Var}}(x)$. In the bivariate case, working this expression out by hand reproduces our two scalar formulas precisely. The inverse $(\mathbf{X}'\mathbf{X})^{-1}$ exists only when no regressor is an exact linear combination of the others; when one is, $\mathbf{X}'\mathbf{X}$ is *singular* (non-invertible --- the matrix analogue of dividing by zero, so no inverse exists) and OLS has no unique answer. That is the algebraic face of **perfect multicollinearity**.
+
+
+## The Geometry: Projection onto the Column Space
+
+There is a second way to see OLS that many find more illuminating than the calculus. Forget the scatter plot for a moment and think of each *variable* as a single point in a high-dimensional space.
+
+The outcome vector $\mathbf{y} = (y_1, \dots, y_n)$ is one point in $\mathbb{R}^n$ --- here, $\mathbb{R}^{12}$, one dimension per vårdcentral. The columns of $\mathbf{X}$ (the constant column and the nurse-density column) are also vectors in $\mathbb{R}^{12}$. All the lines we could fit --- every possible $\beta_0 \mathbf{1} + \beta_1 \mathbf{x}$ --- trace out a flat 2-dimensional plane sitting inside that 12-dimensional space. This plane is the **column space** of $\mathbf{X}$: the set of all vectors we can build as linear combinations of the regressors.
+
+The fitted-value vector $\hat{\mathbf{y}}$ must live in that plane (it is, by construction, a combination of the regressors). The residual vector $\mathbf{e} = \mathbf{y} - \hat{\mathbf{y}}$ is the part of $\mathbf{y}$ that the plane cannot reach.
+
+::: {.glass-card .glass-card--insight}
+Minimizing $\sum e_i^2 = \|\mathbf{y} - \hat{\mathbf{y}}\|^2$ is exactly finding the point $\hat{\mathbf{y}}$ in the plane that is **closest** to $\mathbf{y}$ in ordinary (Euclidean) distance. The closest point in a plane to an external point is its **orthogonal projection** --- the spot you reach by dropping a perpendicular from $\mathbf{y}$ onto the plane.
+
+So OLS *is* projection. The fitted values are the shadow that $\mathbf{y}$ casts onto the column space of $\mathbf{X}$, and the residual is the perpendicular dropped from $\mathbf{y}$ to that shadow.
+:::
+
+The picture below makes the metaphor literal. The shaded slab is the **column space** of $\mathbf{X}$ --- the flat plane of every line we could fit, spanned by the constant vector $\mathbf{1}$ and the regressor $\mathbf{x}$. The outcome $\mathbf{y}$ floats *above* the plane (it is not a combination of the regressors). OLS drops a perpendicular from $\mathbf{y}$ straight down to its closest point in the plane, the fitted vector $\hat{\mathbf{y}}$; the dropped segment is the residual $\mathbf{e}$, and the little square at its foot is the right angle that the orthogonality condition $\mathbf{X}'\mathbf{e}=\mathbf{0}$ guarantees.
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Static projection figure. Pure function of d3 only; builds an SVG with
+// d3.create and returns the node. Shows y above the column-space plane, the
+// projection y-hat in the plane, the perpendicular residual e, and a
+// right-angle marker. Coordinates are hand-placed in a faux-3D sketch.
+p2_drawProjection = function ({ width = 560, height = 320 } = {}) {
+  const ink = "#1c1c1a", green = "#2e6f40", red = "#990000",
+        slate = "#3d5a6c", muted = "#79766e", panel = "#eef0ee";
+
+  const svg = d3.create("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .attr("font-family", "'Inter', sans-serif")
+    .style("max-width", "100%")
+    .style("height", "auto");
+
+  const defs = svg.append("defs");
+  const mk = (id, col) => defs.append("marker")
+    .attr("id", id).attr("viewBox", "0 -5 10 10")
+    .attr("refX", 9).attr("refY", 0)
+    .attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", col);
+  mk("p2-arr-ink", ink); mk("p2-arr-green", green); mk("p2-arr-red", red);
+
+  // The column-space plane as a parallelogram (faux 3D).
+  const plane = [[90, 250], [360, 250], [470, 170], [200, 170]];
+  svg.append("polygon")
+    .attr("points", plane.map(p => p.join(",")).join(" "))
+    .attr("fill", panel).attr("stroke", muted).attr("stroke-width", 1.5)
+    .attr("fill-opacity", 0.7);
+  svg.append("text").attr("x", 430).attr("y", 244)
+    .attr("text-anchor", "end").attr("font-size", 12).attr("font-style", "italic")
+    .attr("fill", muted).text("column space of X  (every β₀·1 + β₁·x)");
+
+  // Origin and the two spanning regressor vectors that define the plane.
+  const O = [200, 230];
+  const oneEnd = [320, 232];   // the constant vector 1
+  const xEnd  = [250, 188];    // the regressor vector x
+  const drawVec = (a, b, col, marker) => svg.append("line")
+    .attr("x1", a[0]).attr("y1", a[1]).attr("x2", b[0]).attr("y2", b[1])
+    .attr("stroke", col).attr("stroke-width", 2)
+    .attr("marker-end", `url(#${marker})`);
+  drawVec(O, oneEnd, muted, "p2-arr-ink");
+  drawVec(O, xEnd, muted, "p2-arr-ink");
+  svg.append("text").attr("x", 326).attr("y", 236).attr("font-size", 12)
+    .attr("fill", muted).attr("font-weight", 600).text("1");
+  svg.append("text").attr("x", 244).attr("y", 182).attr("font-size", 12)
+    .attr("fill", muted).attr("font-weight", 600).text("x");
+
+  // y (above the plane) and its projection y-hat (in the plane).
+  const yhat = [300, 210];     // foot of the perpendicular, inside the plane
+  const y    = [300, 90];      // y floats above
+  // y-hat vector from origin (in plane)
+  drawVec(O, yhat, green, "p2-arr-green");
+  // y vector from origin
+  drawVec(O, y, ink, "p2-arr-ink");
+  // residual e = perpendicular from y down to y-hat
+  svg.append("line")
+    .attr("x1", y[0]).attr("y1", y[1]).attr("x2", yhat[0]).attr("y2", yhat[1])
+    .attr("stroke", red).attr("stroke-width", 2.5)
+    .attr("stroke-dasharray", "6,4")
+    .attr("marker-end", "url(#p2-arr-red)");
+
+  // Right-angle marker at the foot (between residual and the plane).
+  const sq = 13;
+  svg.append("path")
+    .attr("d", `M ${yhat[0] - sq} ${yhat[1]} L ${yhat[0] - sq} ${yhat[1] - sq} L ${yhat[0]} ${yhat[1] - sq}`)
+    .attr("fill", "none").attr("stroke", ink).attr("stroke-width", 1.5);
+
+  // Node dots + labels.
+  const dot = (p, col) => svg.append("circle")
+    .attr("cx", p[0]).attr("cy", p[1]).attr("r", 4).attr("fill", col);
+  dot(O, ink); dot(y, ink); dot(yhat, green);
+  svg.append("text").attr("x", y[0] + 10).attr("y", y[1] + 4)
+    .attr("font-size", 14).attr("font-weight", 700).attr("fill", ink).text("y");
+  svg.append("text").attr("x", y[0] + 22).attr("y", y[1] + 4)
+    .attr("font-size", 11).attr("fill", muted).text("(observed outcome)");
+  svg.append("text").attr("x", yhat[0] + 10).attr("y", yhat[1] + 16)
+    .attr("font-size", 14).attr("font-weight", 700).attr("fill", green).text("ŷ");
+  svg.append("text").attr("x", yhat[0] + 26).attr("y", yhat[1] + 16)
+    .attr("font-size", 11).attr("fill", muted).text("(fitted = closest point)");
+  // residual label, mid-segment
+  svg.append("text")
+    .attr("x", (y[0] + yhat[0]) / 2 + 10).attr("y", (y[1] + yhat[1]) / 2)
+    .attr("font-size", 14).attr("font-weight", 700).attr("fill", red).text("e");
+  svg.append("text")
+    .attr("x", (y[0] + yhat[0]) / 2 + 24).attr("y", (y[1] + yhat[1]) / 2)
+    .attr("font-size", 11).attr("fill", muted).text("(residual ⟂ plane)");
+  svg.append("text").attr("x", O[0] - 14).attr("y", O[1] + 6)
+    .attr("font-size", 11).attr("fill", muted).text("0");
+
+  return svg.node();
+}
+```
+
+```{ojs}
+//| echo: false
+p2_drawProjection({ width: Math.min(560, width), height: 320 })
+```
+
+::: {.aside}
+The flat slab is the column space of $\mathbf{X}$ (all fittable lines). The outcome $\mathbf{y}$ sits above it; its **orthogonal projection** onto the slab is $\hat{\mathbf{y}}$ (green), and the perpendicular dropped from $\mathbf{y}$ is the residual $\mathbf{e}$ (red dashed). The small square is the right angle that $\mathbf{X}'\mathbf{e}=\mathbf{0}$ enforces --- the residual is at $90°$ to *everything* in the plane.
+:::
+
+The "perpendicular" is not a metaphor. Because $\hat{\mathbf{y}}$ is the closest point, the residual vector $\mathbf{e}$ must be at a right angle to the entire plane --- and therefore orthogonal to *every* column of $\mathbf{X}$. Written compactly:
+
+$$
+\mathbf{X}'\mathbf{e} = \mathbf{0}
+$$
+
+**Read this as**: "every regressor is orthogonal to the residuals." This single equation *is* the normal equations in disguise (substitute $\mathbf{e} = \mathbf{y} - \mathbf{X}\hat{\boldsymbol\beta}$ and rearrange to recover $\hat{\boldsymbol\beta} = (\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}$). It says the residuals contain *no linear information* about any included regressor: whatever the regressors could explain about $y$, the fit has already used up. We will lean on this orthogonality property again and again --- it is the engine behind the Frisch-Waugh-Lovell theorem on the next page.
+
+
+## What Falls Out for Free
+
+A handful of properties drop out of the normal equations automatically, with no extra assumptions. They are mechanical consequences of how OLS is *defined*, so they hold in every fitted regression that includes an intercept --- good fit or bad, true model or false.
+
+::: {.glass-card .glass-card--definition}
+**Three mechanical identities (when the model includes an intercept):**
+
+**1. The residuals sum to zero.** The orthogonality condition for the constant column ($\mathbf{1}'\mathbf{e} = 0$) says $\sum_i e_i = 0$. The positive and negative misses exactly balance.
+
+**2. The line passes through the point of averages.** Dividing $\sum_i e_i = 0$ by $n$ gives $\bar{y} = \hat\beta_0 + \hat\beta_1\bar{x}$. The fitted line always pivots through $(\bar{x}, \bar{y})$.
+
+**3. The residuals are uncorrelated with each regressor and with the fitted values.** From $\mathbf{X}'\mathbf{e} = \mathbf{0}$, the sample covariance between any $x_j$ and the residuals is zero, and so is the covariance between $\hat{\mathbf{y}}$ and $\mathbf{e}$.
+:::
+
+The third identity is what licenses the **decomposition of variance**. Because $\mathbf{y} = \hat{\mathbf{y}} + \mathbf{e}$ with $\hat{\mathbf{y}}$ and $\mathbf{e}$ orthogonal, the Pythagorean theorem in $\mathbb{R}^n$ gives a clean split of the total variation in $y$:
+
+$$
+\underbrace{\sum_i (y_i - \bar{y})^2}_{\text{SST (total)}} = \underbrace{\sum_i (\hat{y}_i - \bar{y})^2}_{\text{SSE (explained)}} + \underbrace{\sum_i e_i^2}_{\text{SSR (residual)}}
+$$
+
+**Read this as**: "the total squared variation in target-attainment splits exactly into a part the regression line explains plus a part it leaves unexplained." This identity defines the most reported number in all of applied work.
+
+::: {.glass-card .glass-card--warning}
+**A naming clash to be aware of.** Texts disagree on the three-letter labels. We use **SSR** for the *residual* (unexplained) term $\sum_i e_i^2$ and **SSE** for the *explained* term $\sum_i (\hat{y}_i - \bar{y})^2$. Many other books reverse them --- writing SSE for the *error* (residual) term and SSR for the *regression* (explained) term, the exact opposite of our choice. The letters are a convention; only the decomposition $\text{SST} = \text{explained} + \text{residual}$ is universal. When you cross-check another source, match it on the *meaning* (explained vs. residual), not the acronym.
+:::
+
+::: {.glass-card .glass-card--definition}
+The **coefficient of determination** $R^2$ is the share of the variance of $y$ that the regression explains:
+
+$$
+R^2 = \frac{\text{SSE}}{\text{SST}} = 1 - \frac{\text{SSR}}{\text{SST}}
+$$
+
+**Read this as**: "$R^2$ is the explained sum of squares as a fraction of the total --- equivalently, one minus the share left in the residuals." It ranges from 0 (the line explains nothing beyond the mean $\bar{y}$) to 1 (the line passes through every point and SSR $= 0$).
+:::
+
+For our 12 vårdcentraler, $\text{SST} = 515.67$, $\text{SSR} = 27.28$, so
+
+$$
+R^2 = 1 - \frac{27.28}{515.67} = 0.947.
+$$
+
+Nurse density alone "explains" about 95% of the cross-center variation in diabetes target-attainment in this small sample. In the bivariate case there is a tidy shortcut: $R^2$ equals the squared sample correlation between $x$ and $y$. Here $\text{corr}(x,y) = 0.973$, and indeed $0.973^2 = 0.947$. A high $R^2$ means the line tracks the cloud tightly; it says **nothing** about whether the relationship is causal, and a low $R^2$ does not invalidate a coefficient you care about.
+
+
+## See It: Drag the Line, Watch the SSR
+
+The interactive below puts you in the optimizer's seat. The 12 vårdcentraler are fixed grey dots. You control the slope and intercept of a candidate line (drawn in red) with the sliders, and the page draws the residual for every center as a vertical slate segment. The live readout reports the SSR for *your* line. Your job: hunt for the line that makes SSR as small as possible --- and discover that you cannot beat the OLS answer.
+
+::: {.interactive-container}
+
+#### The Least-Squares Objective in Action
+
+::: {.callout-note appearance="minimal"}
+**Start here:** Drag the **Slope** and **Intercept** sliders to shrink "Your SSR" until it turns green --- that is the best you can do, because you cannot beat OLS. A full step-by-step tour follows the chart.
+:::
+
+```{ojs}
+//| echo: false
+viewof olsm_slope = Inputs.range([3, 11], {
+  value: 5.5,
+  step: 0.01,
+  label: "Slope β₁ (% pts per nurse/1000)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof olsm_intercept = Inputs.range([20, 50], {
+  value: 44,
+  step: 0.01,
+  label: "Intercept β₀ (% at target)"
+})
+```
+
+```{ojs}
+//| echo: false
+viewof olsm_showResid = Inputs.toggle({
+  label: "Show residual segments",
+  value: true
+})
+```
+
+```{ojs}
+//| echo: false
+viewof olsm_showOLS = Inputs.toggle({
+  label: "Show OLS-optimal line (dashed)",
+  value: false
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="font-size: 0.8rem; color: #79766e; margin: -0.25rem 0 0.25rem;">Keep this off and try to match the optimum by hand; flip it on to check yourself.</div>`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Fixed data: 12 vårdcentraler.
+// x = district nurses (distriktssköterskor) per 1000 listed patients
+// y = % of registered Type 2 diabetes patients reaching HbA1c target (<= 52 mmol/mol)
+olsm_data = [
+  { id: 1,  x: 1.8, y: 48.0 },
+  { id: 2,  x: 2.1, y: 51.5 },
+  { id: 3,  x: 2.4, y: 50.0 },
+  { id: 4,  x: 2.6, y: 56.0 },
+  { id: 5,  x: 2.9, y: 55.5 },
+  { id: 6,  x: 3.1, y: 59.0 },
+  { id: 7,  x: 3.3, y: 58.0 },
+  { id: 8,  x: 3.6, y: 63.5 },
+  { id: 9,  x: 3.8, y: 61.0 },
+  { id: 10, x: 4.0, y: 66.0 },
+  { id: 11, x: 4.3, y: 65.5 },
+  { id: 12, x: 4.7, y: 70.0 }
+]
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Closed-form OLS solution, computed from the data (not hard-coded).
+olsm_fit = {
+  const n = olsm_data.length;
+  const xbar = d3.mean(olsm_data, d => d.x);
+  const ybar = d3.mean(olsm_data, d => d.y);
+  const Sxx = d3.sum(olsm_data, d => (d.x - xbar) ** 2);
+  const Sxy = d3.sum(olsm_data, d => (d.x - xbar) * (d.y - ybar));
+  const Syy = d3.sum(olsm_data, d => (d.y - ybar) ** 2);
+  const b1 = Sxy / Sxx;
+  const b0 = ybar - b1 * xbar;
+  const ssrOLS = d3.sum(olsm_data, d => (d.y - (b0 + b1 * d.x)) ** 2);
+  return { n, xbar, ybar, Sxx, Sxy, Syy, b1, b0, ssrOLS, sst: Syy };
+}
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Residuals for the USER's current line.
+olsm_userResiduals = olsm_data.map(d => {
+  const fit = olsm_intercept + olsm_slope * d.x;
+  return { ...d, fit, resid: d.y - fit };
+})
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// SSR for the USER's current line.
+olsm_ssrUser = d3.sum(olsm_userResiduals, d => d.resid ** 2)
+```
+
+```{ojs}
+//| echo: false
+
+Plot.plot({
+  width: Math.min(680, width),
+  height: 420,
+  marginLeft: 64,
+  marginRight: 16,
+  marginTop: 24,
+  marginBottom: 48,
+  grid: true,
+  style: { fontFamily: "Inter, sans-serif", fontSize: "12px", background: "transparent", color: "#1c1c1a" },
+  x: {
+    label: "District nurses per 1000 listed patients →",
+    domain: [1.4, 5.0]
+  },
+  y: {
+    label: "↑ % reaching HbA1c target",
+    domain: [40, 75]
+  },
+  marks: [
+    Plot.frame({ stroke: "#e6e3db" }),
+
+    // Residual segments (user's line) — slate "miss" bars
+    olsm_showResid ? Plot.ruleX(olsm_userResiduals, {
+      x: "x",
+      y1: "y",
+      y2: "fit",
+      stroke: "#3d5a6c",
+      strokeWidth: 2,
+      strokeOpacity: 0.6
+    }) : null,
+
+    // OLS-optimal line (dashed) for comparison — neutral ink
+    olsm_showOLS ? Plot.line(
+      [{ x: 1.4 }, { x: 5.0 }].map(d => ({ x: d.x, y: olsm_fit.b0 + olsm_fit.b1 * d.x })),
+      { x: "x", y: "y", stroke: "#1c1c1a", strokeWidth: 2, strokeDasharray: "6,4" }
+    ) : null,
+
+    // User's candidate line — focal Uppsala red
+    Plot.line(
+      [{ x: 1.4 }, { x: 5.0 }].map(d => ({ x: d.x, y: olsm_intercept + olsm_slope * d.x })),
+      { x: "x", y: "y", stroke: "#990000", strokeWidth: 3 }
+    ),
+
+    // In-frame label for the candidate line
+    Plot.text([{}], {
+      frameAnchor: "top-right",
+      dx: -6, dy: 6,
+      text: ["Your line"],
+      fill: "#990000",
+      fontWeight: 600,
+      stroke: "white",
+      strokeWidth: 3,
+      paintOrder: "stroke"
+    }),
+
+    // Point of averages (the OLS pivot)
+    Plot.dot([{ x: olsm_fit.xbar, y: olsm_fit.ybar }], {
+      x: "x", y: "y", r: 7, fill: "none", stroke: "#1c1c1a", strokeWidth: 2,
+      symbol: "plus"
+    }),
+
+    // Data points
+    Plot.dot(olsm_data, {
+      x: "x", y: "y", r: 5, fill: "#79766e", stroke: "white", strokeWidth: 1,
+      title: d => `Vårdcentral ${d.id}\nnurses/1000: ${d.x}\n% at target: ${d.y}\nresidual: ${(d.y - (olsm_intercept + olsm_slope * d.x)).toFixed(1)}`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-top: 0.4rem; font-family: Inter, sans-serif; font-size: 0.8rem; color: #44443f;">
+  <span><span style="display:inline-block; width:18px; height:3px; background:#990000; vertical-align:middle; margin-right:6px;"></span>Your candidate line</span>
+  <span><span style="display:inline-block; width:18px; height:3px; background:#3d5a6c; vertical-align:middle; margin-right:6px;"></span>Residual (vertical miss)</span>
+  <span><span style="display:inline-block; width:18px; height:0; border-top:3px dashed #1c1c1a; vertical-align:middle; margin-right:6px;"></span>OLS-optimal line</span>
+  <span><span style="display:inline-block; color:#1c1c1a; font-weight:700; margin-right:4px;">+</span>Point of averages (x̄, ȳ)</span>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+
+html`
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.5rem; margin-top: 0.5rem; font-family: Inter, sans-serif; font-size: 0.82rem;">
+  <div style="min-width: 0; overflow-wrap: break-word; min-height: 3.6rem; padding: 0.55rem 0.75rem; border-radius: 0.5rem; background: rgba(153,0,0,0.05); border: 1px solid rgba(153,0,0,0.15);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em;">Your SSR</div>
+    <div style="font-size: 1.25rem; font-weight: 700; color: ${Math.abs(olsm_ssrUser - olsm_fit.ssrOLS) < 0.5 ? '#2e6f40' : '#990000'};">${olsm_ssrUser.toFixed(2)}</div>
+  </div>
+  <div style="min-width: 0; overflow-wrap: break-word; min-height: 3.6rem; padding: 0.55rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em;">Min SSR (OLS)</div>
+    <div style="font-size: 1.25rem; font-weight: 700; color: #1c1c1a;">${olsm_fit.ssrOLS.toFixed(2)}</div>
+  </div>
+  <div style="min-width: 0; overflow-wrap: break-word; min-height: 3.6rem; padding: 0.55rem 0.75rem; border-radius: 0.5rem; background: rgba(61,90,108,0.06); border: 1px solid rgba(61,90,108,0.18);">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em;">Excess</div>
+    <div style="font-size: 1.25rem; font-weight: 700; color: #3d5a6c;">+${(olsm_ssrUser - olsm_fit.ssrOLS).toFixed(2)}</div>
+  </div>
+  <div style="min-width: 0; overflow-wrap: break-word; min-height: 3.6rem; padding: 0.55rem 0.75rem; border-radius: 0.5rem; background: #f6f5f1; border: 1px solid #e6e3db;">
+    <div style="font-weight: 600; color: #79766e; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em;">Σ residuals</div>
+    <div style="font-size: 1.25rem; font-weight: 700; color: #1c1c1a;">${d3.sum(olsm_userResiduals, d => d.resid).toFixed(2)}</div>
+  </div>
+</div>
+<div style="margin-top: 0.5rem; font-family: Inter, sans-serif; font-size: 0.85rem; font-weight: 600; color: ${Math.abs(olsm_ssrUser - olsm_fit.ssrOLS) < 0.5 ? '#2e6f40' : '#79766e'};">
+  ${Math.abs(olsm_ssrUser - olsm_fit.ssrOLS) < 0.5 ? "Within 0.5 of the optimum — you found it. You cannot do better than OLS." : "Keep shrinking “Excess” toward zero; the readout turns green within 0.5 of the optimum."}
+</div>
+<div style="margin-top: 0.6rem; font-family: Inter, sans-serif; font-size: 0.85rem; color: #79766e;">
+  OLS solution: β̂₀ = ${olsm_fit.b0.toFixed(2)}, β̂₁ = ${olsm_fit.b1.toFixed(2)}. The black <strong style="color:#1c1c1a;">+</strong> marks the point of averages (x̄ = ${olsm_fit.xbar.toFixed(2)}, ȳ = ${olsm_fit.ybar.toFixed(2)}), through which the optimal line must pass.
+</div>
+`
+```
+
+```{ojs}
+//| echo: false
+//| output: false
+
+// Live variance decomposition for the USER's current line. Reads existing
+// reactive values only (no new controls, no change to the widget's DGP).
+// Note: SST = SSE + SSR holds exactly only at the OLS line; for an arbitrary
+// user line the "explained" piece is Var(fitted) and the two need not add to
+// SST, so we report R² in the honest 1 − SSR/SST form and clamp display to ≥0.
+olsm_decomp = {
+  const sst = olsm_fit.sst;
+  const ssrU = olsm_ssrUser;
+  const r2 = 1 - ssrU / sst;                 // can go negative for a bad line
+  const explainedShare = Math.max(0, Math.min(1, r2));
+  return { sst, ssrU, r2, explainedShare, residShare: 1 - explainedShare };
+}
+```
+
+```{ojs}
+//| echo: false
+
+html`<div style="margin-top: 0.85rem; font-family: Inter, sans-serif;">
+  <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:0.3rem;">
+    <span style="font-size:0.62rem; text-transform:uppercase; letter-spacing:0.03em; color:#79766e; font-weight:600;">Variance explained by your line (R²)</span>
+    <span style="font-size:1.1rem; font-weight:800; color:${olsm_decomp.r2 >= 0 ? '#2e6f40' : '#990000'};">${olsm_decomp.r2.toFixed(3)}</span>
+  </div>
+  <div style="display:flex; height:1.4rem; border-radius:0.3rem; overflow:hidden; border:1px solid #e6e3db;" title="SST = explained (SSE) + residual (SSR)">
+    <div style="width:${(olsm_decomp.explainedShare * 100).toFixed(1)}%; background:#2e6f40; min-width:1px;"></div>
+    <div style="width:${(olsm_decomp.residShare * 100).toFixed(1)}%; background:#990000; opacity:0.78;"></div>
+  </div>
+  <div style="display:flex; gap:1.1rem; margin-top:0.3rem; font-size:0.72rem; color:#44443f;">
+    <span><span style="display:inline-block;width:0.7rem;height:0.7rem;background:#2e6f40;border-radius:2px;vertical-align:middle;margin-right:0.3rem;"></span>Explained (SSE)</span>
+    <span><span style="display:inline-block;width:0.7rem;height:0.7rem;background:#990000;opacity:0.78;border-radius:2px;vertical-align:middle;margin-right:0.3rem;"></span>Residual (SSR)</span>
+    <span style="color:#79766e;">SST = ${olsm_decomp.sst.toFixed(0)} (fixed)</span>
+  </div>
+  <div style="margin-top:0.4rem; font-size:0.8rem; color:#79766e;">
+    The total bar (SST) is fixed by the data; as you shrink SSR, the green explained share grows and R² climbs toward its maximum of ${(1 - olsm_fit.ssrOLS / olsm_fit.sst).toFixed(3)} at the OLS line. R² rises because the fit got tighter — it says nothing about causation.
+  </div>
+</div>`
+```
+
+:::
+
+### How to Read the Least-Squares Explorer
+
+Work through these steps to feel the objective function from the inside.
+
+**Step 1: See the misses.** With "Show residual segments" *on*, every grey dot is connected to the red candidate line by a slate vertical bar. That bar's length is the residual $e_i$ for that center. SSR is the sum of the *squared* lengths of all 12 bars --- so a single long bar hurts a lot more than two medium ones.
+
+**Step 2: Hunt for the bottom of the bowl.** Drag the **Slope** and **Intercept** sliders and watch the "Your SSR" readout. Notice it behaves like the bottom of a valley: move in any direction away from the best line and SSR rises; there is exactly one lowest point. This is the smooth, convex surface that the calculus exploits --- no local traps, one global minimum.
+
+**Step 3: Try to beat OLS.** Keep nudging the sliders to drive "Excess over minimum" toward zero. When you get the readout to turn green, the segments are as short (in squared total) as they can be. Now flip on **Show OLS-optimal line**: the dashed black line you have been chasing snaps into view, and your red line should lie right on top of it. You have rediscovered $\hat\beta_0 = 34.83$, $\hat\beta_1 = 7.41$ by hand.
+
+**Step 4: Watch the mechanical identities.** Look at the "Sum of residuals" box. When your line is far from optimal it is large and nonzero. Crucially, *setting the slope alone to its OLS value does not zero it* --- only when the **intercept** is also at its OLS value do the positive and negative misses balance out. Set the line to the OLS values (slope 7.41, intercept 34.83) and the sum of residuals collapses essentially to zero. (It reads 0.01 rather than 0.00 only because we rounded the displayed coefficients to two decimals; the exact OLS values give precisely zero.) That is identity #1 in action: with an intercept, OLS residuals must sum to zero. Also notice the black **+** marker (the point of averages): the optimal line always slices straight through it, no matter how you arrived there --- that is identity #2.
+
+**Step 5: A counter-intuitive check.** Set the slope much too steep (say 11) and try to compensate with a low intercept. You can make the line pass beautifully through the rightmost points, but the squared misses on the left explode. OLS refuses to sacrifice the many for the few --- squaring makes it democratic about errors, which is exactly why a single outlier can still drag the whole line toward itself.
+
+
+## Code: Reproducing the Coefficients Three Ways
+
+The interactive computed the fit in the browser. Here we confirm the same numbers in R and Python, and --- crucially --- show that the one-line `lm()`/`OLS` call and the raw matrix algebra $(\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}$ return *identical* coefficients. They must: the convenience function is just the matrix formula with error-checking.
+
+::: {.panel-tabset}
+
+### R
+
+```r
+# 12 vårdcentraler: nurse staffing vs. diabetes target attainment
+df <- data.frame(
+  nurses_per1000 = c(1.8, 2.1, 2.4, 2.6, 2.9, 3.1, 3.3, 3.6, 3.8, 4.0, 4.3, 4.7),
+  pct_at_target  = c(48.0, 51.5, 50.0, 56.0, 55.5, 59.0, 58.0, 63.5, 61.0, 66.0, 65.5, 70.0)
+)
+
+# --- 1. The built-in estimator ---
+fit <- lm(pct_at_target ~ nurses_per1000, data = df)
+coef(fit)
+#> (Intercept) nurses_per1000
+#>    34.83389        7.40914
+summary(fit)$r.squared
+#> [1] 0.9470907
+
+# --- 2. The scalar closed form: Cov(x,y) / Var(x) ---
+x <- df$nurses_per1000
+y <- df$pct_at_target
+b1 <- cov(x, y) / var(x)          # var/cov both divide by (n-1); the ratio cancels it
+b0 <- mean(y) - b1 * mean(x)
+c(intercept = b0, slope = b1)
+#> intercept     slope
+#>  34.83389   7.40914
+
+# --- 3. The matrix form: beta_hat = (X'X)^{-1} X'y ---
+X <- cbind(1, x)                  # first column = intercept
+beta_hat <- solve(t(X) %*% X) %*% t(X) %*% y
+beta_hat
+#>        [,1]
+#>    34.83389   <- intercept
+#> x   7.40914   <- slope
+
+# Mechanical identities (with an intercept):
+e <- residuals(fit)
+sum(e)                            #> ~ 0  (residuals sum to zero)
+t(X) %*% e                        #> ~ c(0, 0)  (X'e = 0: orthogonality)
+all.equal(predict(fit)[1], mean(y) + coef(fit)[2] * (x[1] - mean(x)))
+```
+
+### Python
+
+```python
+import numpy as np
+import statsmodels.api as sm
+
+# 12 vårdcentraler: nurse staffing vs. diabetes target attainment
+x = np.array([1.8, 2.1, 2.4, 2.6, 2.9, 3.1, 3.3, 3.6, 3.8, 4.0, 4.3, 4.7])
+y = np.array([48.0, 51.5, 50.0, 56.0, 55.5, 59.0, 58.0, 63.5, 61.0, 66.0, 65.5, 70.0])
+
+# --- 1. The built-in estimator ---
+X = sm.add_constant(x)            # adds the intercept column of ones
+fit = sm.OLS(y, X).fit()
+print(fit.params)                 # [34.83389  7.40914]
+print(f"R^2 = {fit.rsquared:.4f}")  # R^2 = 0.9471
+
+# --- 2. The scalar closed form: Cov(x,y) / Var(x) ---
+b1 = np.cov(x, y, ddof=1)[0, 1] / np.var(x, ddof=1)
+b0 = y.mean() - b1 * x.mean()
+print(f"intercept = {b0:.5f}, slope = {b1:.5f}")  # 34.83389, 7.40914
+
+# --- 3. The matrix form: beta_hat = (X'X)^{-1} X'y ---
+beta_hat = np.linalg.inv(X.T @ X) @ X.T @ y
+print(beta_hat)                   # [34.83389  7.40914]
+
+# Mechanical identities (with an intercept):
+e = y - X @ beta_hat
+print(f"sum of residuals = {e.sum():.2e}")   # ~ 0
+print(f"X'e = {X.T @ e}")                     # ~ [0, 0]: orthogonality
+```
+
+:::
+
+Both languages return $\hat\beta_0 = 34.834$, $\hat\beta_1 = 7.409$, and $R^2 = 0.947$ --- identical to the browser computation and to our hand calculation. The matrix line `solve(t(X) %*% X) %*% t(X) %*% y` and `np.linalg.inv(X.T @ X) @ X.T @ y` *are* OLS; `lm()` and `sm.OLS` simply wrap them with diagnostics and standard errors.
+
+
+<details>
+<summary>Math Details: Deriving the Normal Equations from the First-Order Conditions</summary>
+<div class="details-content">
+
+### Setting up the minimization
+
+We minimize the sum of squared residuals over the two parameters:
+
+$$
+\text{SSR}(\beta_0, \beta_1) = \sum_{i=1}^{n} \left( y_i - \beta_0 - \beta_1 x_i \right)^2
+$$
+
+Because SSR is a sum of squares, it is a convex (bowl-shaped) function of $(\beta_0, \beta_1)$, so its unique minimum occurs where both partial derivatives vanish.
+
+### First-order condition for the intercept
+
+Differentiate with respect to $\beta_0$, using the chain rule (the inner derivative of the bracket with respect to $\beta_0$ is $-1$):
+
+$$
+\frac{\partial \text{SSR}}{\partial \beta_0} = \sum_{i=1}^{n} 2\left( y_i - \beta_0 - \beta_1 x_i \right)(-1) = -2 \sum_{i=1}^{n} e_i = 0.
+$$
+
+Dropping the constant $-2$, the first normal equation is
+
+$$
+\sum_{i=1}^{n} \left( y_i - \hat\beta_0 - \hat\beta_1 x_i \right) = 0 \quad\Longleftrightarrow\quad \sum_{i=1}^n e_i = 0.
+$$
+
+This *is* the statement that residuals sum to zero. Dividing by $n$ gives $\bar{y} - \hat\beta_0 - \hat\beta_1\bar{x} = 0$, hence
+
+$$
+\boxed{\;\hat\beta_0 = \bar{y} - \hat\beta_1\bar{x}\;}
+$$
+
+### First-order condition for the slope
+
+Now differentiate with respect to $\beta_1$ (the inner derivative of the bracket with respect to $\beta_1$ is $-x_i$):
+
+$$
+\frac{\partial \text{SSR}}{\partial \beta_1} = \sum_{i=1}^{n} 2\left( y_i - \beta_0 - \beta_1 x_i \right)(-x_i) = -2 \sum_{i=1}^{n} x_i e_i = 0.
+$$
+
+The second normal equation is therefore $\sum_i x_i e_i = 0$ --- the regressor is orthogonal to the residuals. Together with $\sum_i e_i = 0$, this is precisely $\mathbf{X}'\mathbf{e} = \mathbf{0}$.
+
+### Solving for the slope
+
+Substitute $\hat\beta_0 = \bar{y} - \hat\beta_1\bar{x}$ into the slope equation:
+
+$$
+\sum_{i=1}^{n} x_i\left( y_i - (\bar{y} - \hat\beta_1\bar{x}) - \hat\beta_1 x_i \right) = 0.
+$$
+
+Grouping the $\hat\beta_1$ terms:
+
+$$
+\sum_{i=1}^{n} x_i (y_i - \bar{y}) = \hat\beta_1 \sum_{i=1}^{n} x_i (x_i - \bar{x}).
+$$
+
+Using the algebraic identities $\sum_i x_i(y_i - \bar{y}) = \sum_i (x_i - \bar{x})(y_i - \bar{y})$ and $\sum_i x_i(x_i - \bar{x}) = \sum_i (x_i - \bar{x})^2$ (both follow because $\sum_i \bar{x}(y_i - \bar{y}) = 0$ and $\sum_i \bar{x}(x_i - \bar{x}) = 0$), we arrive at
+
+$$
+\boxed{\;\hat\beta_1 = \frac{\sum_{i=1}^{n} (x_i - \bar{x})(y_i - \bar{y})}{\sum_{i=1}^{n} (x_i - \bar{x})^2} = \frac{\widehat{\text{Cov}}(x,y)}{\widehat{\text{Var}}(x)}\;}
+$$
+
+### The matrix derivation in one stroke
+
+The same result, derived for $k$ regressors at once. Write $\text{SSR} = (\mathbf{y} - \mathbf{X}\boldsymbol\beta)'(\mathbf{y} - \mathbf{X}\boldsymbol\beta)$. The gradient with respect to the vector $\boldsymbol\beta$ is
+
+$$
+\frac{\partial \text{SSR}}{\partial \boldsymbol\beta} = -2\mathbf{X}'(\mathbf{y} - \mathbf{X}\boldsymbol\beta) = \mathbf{0} \;\Longrightarrow\; \mathbf{X}'\mathbf{X}\hat{\boldsymbol\beta} = \mathbf{X}'\mathbf{y}.
+$$
+
+This is the **matrix normal equation**. Provided $\mathbf{X}'\mathbf{X}$ is invertible (no perfect multicollinearity), left-multiply by $(\mathbf{X}'\mathbf{X})^{-1}$:
+
+$$
+\hat{\boldsymbol\beta} = (\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}.
+$$
+
+The second-order condition is satisfied automatically: the Hessian $2\mathbf{X}'\mathbf{X}$ is positive semi-definite, confirming we have found a minimum, not a maximum or saddle.
+
+</div>
+</details>
+
+
+## Exercises {.exercises}
+
+::: {.exercise}
+[Exercise 1]{.exercise-label}
+
+A small *region* reports data on five rural vårdcentraler. For each, $x$ is the number of *läkare* (physicians) per 1000 listed patients and $y$ is the median waiting time (in days) for a non-acute appointment:
+
+| Center | $x$ (läkare/1000) | $y$ (waiting days) |
+|:------:|:----------------:|:------------------:|
+| A | 2  | 30 |
+| B | 4  | 26 |
+| C | 6  | 24 |
+| D | 8  | 18 |
+| E | 10 | 12 |
+
+(a) Compute $\bar{x}$, $\bar{y}$, $\widehat{\text{Cov}}(x,y)$ (using sums of cross-deviations), and $\widehat{\text{Var}}(x)$. (b) Find the OLS slope and intercept. (c) Verify the line passes through $(\bar{x}, \bar{y})$. (d) Interpret the slope in plain Swedish-primary-care language.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** $\bar{x} = (2+4+6+8+10)/5 = 6$ and $\bar{y} = (30+26+24+18+12)/5 = 22$.
+
+Deviations from the mean: $x_i - \bar{x} = (-4, -2, 0, 2, 4)$ and $y_i - \bar{y} = (8, 4, 2, -4, -10)$.
+
+Cross-products $(x_i-\bar{x})(y_i-\bar{y})$: $(-4)(8) + (-2)(4) + (0)(2) + (2)(-4) + (4)(-10) = -32 - 8 + 0 - 8 - 40 = -88$. So $\sum (x_i-\bar{x})(y_i-\bar{y}) = -88$.
+
+Squared $x$-deviations: $16 + 4 + 0 + 4 + 16 = 40$. So $\sum (x_i - \bar{x})^2 = 40$.
+
+**(b)** Slope $\hat\beta_1 = -88 / 40 = -2.2$. Intercept $\hat\beta_0 = \bar{y} - \hat\beta_1\bar{x} = 22 - (-2.2)(6) = 22 + 13.2 = 35.2$. The fitted line is $\hat{y} = 35.2 - 2.2\,x$.
+
+**(c)** At $x = \bar{x} = 6$: $\hat{y} = 35.2 - 2.2(6) = 35.2 - 13.2 = 22 = \bar{y}$. $\checkmark$ The line passes through the point of averages.
+
+**(d)** Each additional physician per 1000 listed patients is associated with a reduction in median waiting time of about 2.2 days. (As always, this is the descriptive slope; rural centers that attract more physicians may differ in other ways too.)
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 2]{.exercise-label}
+
+Using the five-center dataset from Exercise 1 with the fitted line $\hat{y} = 35.2 - 2.2x$:
+
+(a) Compute the five fitted values and residuals. (b) Confirm that the residuals sum to zero. (c) Compute SSR and SST, and report $R^2$. (d) Explain in one sentence what the $R^2$ tells you and one thing it does *not* tell you.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** Fitted values $\hat{y}_i = 35.2 - 2.2 x_i$:
+
+| Center | $x$ | $\hat{y}$ | $y$ | $e = y - \hat{y}$ |
+|:------:|:---:|:--------:|:---:|:----------------:|
+| A | 2  | 30.8 | 30 | $-0.8$ |
+| B | 4  | 26.4 | 26 | $-0.4$ |
+| C | 6  | 22.0 | 24 | $+2.0$ |
+| D | 8  | 17.6 | 18 | $+0.4$ |
+| E | 10 | 13.2 | 12 | $-1.2$ |
+
+**(b)** Sum of residuals: $-0.8 - 0.4 + 2.0 + 0.4 - 1.2 = 0$. $\checkmark$ (This is guaranteed because the model includes an intercept.)
+
+**(c)** $\text{SSR} = (-0.8)^2 + (-0.4)^2 + 2.0^2 + 0.4^2 + (-1.2)^2 = 0.64 + 0.16 + 4.00 + 0.16 + 1.44 = 6.40$.
+
+$\text{SST} = \sum (y_i - \bar{y})^2 = 8^2 + 4^2 + 2^2 + (-4)^2 + (-10)^2 = 64 + 16 + 4 + 16 + 100 = 200$.
+
+$R^2 = 1 - \text{SSR}/\text{SST} = 1 - 6.40/200 = 1 - 0.032 = 0.968$.
+
+**(d)** The $R^2 = 0.968$ tells you that physician density accounts for about 97% of the cross-center variation in waiting times *in this sample* (the line tracks the points tightly). It does **not** tell you that more physicians *cause* shorter waits --- confounders or reverse causality could drive the association.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 3]{.exercise-label}
+
+Suppose you regress $y$ on $x$ with an intercept and obtain residuals $\mathbf{e}$. A colleague claims: "If I add a constant 10 to every $y_i$, the slope will change but the residuals will stay the same." Is the colleague right? Derive what happens to $\hat\beta_1$, $\hat\beta_0$, the fitted values, and the residuals when every outcome is shifted by a constant $c$ (i.e., $y_i \to y_i + c$).
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+The colleague is **half right**: the residuals are unchanged, but the slope is *also* unchanged --- only the intercept shifts.
+
+**Slope.** $\hat\beta_1 = \dfrac{\sum (x_i - \bar{x})(y_i - \bar{y})}{\sum (x_i - \bar{x})^2}$. Replacing $y_i$ with $y_i + c$ changes the mean to $\bar{y} + c$, so the deviation $(y_i + c) - (\bar{y} + c) = y_i - \bar{y}$ is **identical**. The numerator and denominator are untouched, so $\hat\beta_1$ is unchanged.
+
+**Intercept.** $\hat\beta_0^{\text{new}} = (\bar{y} + c) - \hat\beta_1\bar{x} = (\bar{y} - \hat\beta_1\bar{x}) + c = \hat\beta_0 + c$. The intercept rises by exactly $c$.
+
+**Fitted values.** $\hat{y}_i^{\text{new}} = \hat\beta_0^{\text{new}} + \hat\beta_1 x_i = (\hat\beta_0 + c) + \hat\beta_1 x_i = \hat{y}_i + c$. Every fitted value shifts up by $c$.
+
+**Residuals.** $e_i^{\text{new}} = (y_i + c) - \hat{y}_i^{\text{new}} = (y_i + c) - (\hat{y}_i + c) = y_i - \hat{y}_i = e_i$. **The residuals are exactly unchanged.** $\checkmark$
+
+**Intuition.** Adding a constant to $y$ slides the entire cloud vertically. OLS responds by sliding the line up by the same amount (intercept absorbs it), keeping the tilt and every vertical miss identical. The colleague was wrong only about the slope changing.
+
+</div>
+</details>
+:::
+
+::: {.exercise}
+[Exercise 4]{.exercise-label}
+
+In the interactive Least-Squares Explorer above, set the slope to its OLS value (7.41) but deliberately set the intercept *too high* (say 40 instead of 34.83).
+
+(a) Will the residuals still sum to zero? (b) Will SSR be at its minimum? (c) Use the geometry of projection to explain why fixing the slope correctly is not enough to minimize SSR.
+
+<details>
+<summary>Show answer</summary>
+<div class="details-content">
+
+**(a)** No. The sum of residuals will be **negative**, not zero. With the intercept set 5.17 units too high (40 vs. 34.83), every fitted value is 5.17 too high, so every residual is reduced by 5.17. Summed over 12 centers: $\sum e_i = 0 - 12 \times 5.17 \approx -62$. The "residuals sum to zero" identity holds *only* at the OLS intercept; you have manually overridden it.
+
+**(b)** No. SSR will be strictly larger than the minimum of 27.28. Holding the slope at 7.41 but raising the intercept shifts the whole line up off the cloud, lengthening the (squared) vertical misses on net.
+
+**(c)** Geometrically, minimizing SSR means projecting $\mathbf{y}$ onto the **2-dimensional** column space spanned by *both* the constant vector $\mathbf{1}$ and the regressor vector $\mathbf{x}$. The orthogonality condition $\mathbf{X}'\mathbf{e} = \mathbf{0}$ has *two* components: $\mathbf{1}'\mathbf{e} = 0$ (residuals orthogonal to the constant $\Rightarrow$ they sum to zero) **and** $\mathbf{x}'\mathbf{e} = 0$ (residuals orthogonal to the regressor). Setting the slope right satisfies only the second condition. Until the intercept is *also* chosen so that residuals are orthogonal to $\mathbf{1}$, the residual vector is not perpendicular to the full plane --- so $\hat{\mathbf{y}}$ is not the closest point, and SSR is not minimized. Both parameters must move together to complete the projection.
+
+</div>
+</details>
+:::
+
+
+::: {.key-takeaways}
+**Key takeaways**
+
+- OLS is defined by one objective: choose the intercept and slope that minimize the sum of squared residuals; squaring makes the surface a smooth convex bowl with a single global minimum.
+- The bivariate slope is $\widehat{\text{Cov}}(x,y)/\widehat{\text{Var}}(x)$ and the line always passes through the point of averages $(\bar{x},\bar{y})$; the matrix form $(\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}$ is the same idea for many regressors.
+- Geometrically, OLS projects $y$ onto the column space of $\mathbf{X}$; the residual is the perpendicular dropped onto that space, so $\mathbf{X}'\mathbf{e} = \mathbf{0}$ — residuals carry no linear information about any regressor.
+- With an intercept, three identities hold automatically: residuals sum to zero, the line pivots through $(\bar{x},\bar{y})$, and total variation splits as SST = SSE + SSR.
+- A high $R^2$ means the line tracks the cloud tightly, not that the relationship is causal; the slope is a descriptive conditional association until confounding is addressed.
+:::
+
+## What Comes Next
+
+We now know precisely what OLS does: it projects the outcome onto the space spanned by the regressors, producing residuals orthogonal to every one of them. That orthogonality is more than a curiosity --- it is the key that unlocks how *multiple* regression actually works. The next page, **[Frisch-Waugh-Lovell](frisch-waugh-lovell.qmd)**, uses exactly this projection logic to reveal that a multivariate slope is nothing but a simple regression run on *residualized* variables (a variable is "residualized" on the others by regressing it on them and keeping only the leftover residual --- the part the others cannot explain): regression "partials out" the other covariates by first regressing them away. Understanding FWL is the conceptual bridge from mechanics to the causal control strategies that dominate the rest of the book.
