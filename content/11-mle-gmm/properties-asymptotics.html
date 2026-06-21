@@ -1,0 +1,2329 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.27">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Properties and Asymptotics of MLE – Causal Inference – See It, Break It, Prove It</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../content/11-mle-gmm/method-of-moments-gmm.html" rel="next">
+<link href="../../content/11-mle-gmm/likelihood.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-8b4baf804e461d9b72633f0de59a0cac.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-8177dda9a46fdb7befe495ea115a53e7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script type="module" src="../../site_libs/quarto-ojs/quarto-ojs-runtime.js"></script>
+<link href="../../site_libs/quarto-ojs/quarto-ojs.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Causal Inference – See It, Break It, Prove It</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../../content/index.html" aria-current="page"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/00-intro/index.html"> 
+<span class="menu-text">Start Learning</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/glossary.html"> 
+<span class="menu-text">Glossary</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/your-username/causal-inference-site"> <i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/index.html">Maximum Likelihood &amp; GMM</a></li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/properties-asymptotics.html">Properties and Asymptotics of MLE</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Home</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Causal Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">0. Introduction</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/00-intro/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">1. Fundamental Problem</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Fundamental Problem of Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/potential-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Potential Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/selection-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/randomization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">2. DAGs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Directed Acyclic Graphs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">DAG Basics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/d-separation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">d-Separation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/good-bad-controls.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Good and Bad Controls</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">3. Statistical Foundations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Statistical Foundations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/distributions-spread.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributions and Spread</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/hypothesis-testing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hypothesis Testing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/confidence-intervals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Confidence Intervals</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/reading-output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading Regression Output</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">4. Regression</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/ols-mechanics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLS Mechanics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/frisch-waugh-lovell.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Frisch-Waugh-Lovell</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/omitted-variable-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Omitted Variable Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/interactions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interactions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/functional-form.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Functional Form</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">5. Panel Data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/panel-structure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Structure</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/fixed-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/practical-issues.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Issues</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">6. Diff-in-Differences</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/classic-2x2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic 2x2 Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/regression-did.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression DiD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/parallel-trends.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel Trends</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/staggered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Staggered Adoption</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/modern-estimators.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Estimators</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">7. Instrumental Variables</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/endogeneity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Endogeneity Problem</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/two-stage-least-squares.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Two-Stage Least Squares</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/relevance-exclusion.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Relevance and Exclusion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/weak-instruments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weak Instruments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/late.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LATE and Compliers</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">8. Regression Discontinuity</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/sharp-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sharp Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/estimation-bandwidth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Estimation and Bandwidth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/fuzzy-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fuzzy Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/validity-tests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Validity and Falsification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/interpretation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpretation and External Validity</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true">
+ <span class="menu-text">9. Matching &amp; Propensity Scores</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching &amp; Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/selection-on-observables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection on Observables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/matching-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/propensity-scores.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/weighting-ipw.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weighting and Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/overlap-diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overlap and Balance Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true">
+ <span class="menu-text">10. Synthetic Control</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Synthetic Control Method</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference for Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and Practical Issues</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/case-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: A Swedish Regional Reform</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true">
+ <span class="menu-text">Part II · The Econometrician’s Toolkit</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="true">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood: The Likelihood Principle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/properties-asymptotics.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Properties and Asymptotics of MLE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/method-of-moments-gmm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Method of Moments and GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Classical Trinity: LR, Wald, and LM Tests</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/the-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Bootstrap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/randomization-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/cluster-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustered and Wild Bootstrap</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-16" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/ovb-sensitivity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity to Omitted Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/rosenbaum-bounds.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rosenbaum Bounds</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/partial-identification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Identification and Bounds</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-17" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/binary-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary Outcomes: LPM, Logit, and Probit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/marginal-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/multinomial-ordered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multinomial and Ordered Choice</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false">
+ <span class="menu-text">Count Data</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-18" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Count Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/poisson-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Poisson Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/overdispersion-negbin.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overdispersion and the Negative Binomial</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/zero-inflation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Excess Zeros: Hurdle and Zero-Inflated Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-19" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/censoring-truncation-tobit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation, and the Tobit Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/heckman-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sample Selection: The Heckman Model</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-20" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/survival-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival Analysis: Hazards and the Kaplan-Meier Curve</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/cox-proportional-hazards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Cox Proportional Hazards Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/parametric-competing-risks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parametric Duration and Competing Risks</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false">
+ <span class="menu-text">Random Effects</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-21" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/random-effects-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Random Effects Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/fe-vs-re.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed versus Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/correlated-re-mundlak.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Correlated Random Effects: The Mundlak Device</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-22" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/partial-pooling-shrinkage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Pooling and Shrinkage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/random-intercepts-slopes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Intercepts and Random Slopes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/variance-components-icc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Variance Components and the ICC</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/growth-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Growth Curve Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-23" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/quantile-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/distributional-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributional Treatment Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/decompositions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decompositions: Oaxaca-Blinder and Beyond</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false">
+ <span class="menu-text">Time Series Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-24" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Time Series Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/stationarity-arima.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stationarity and ARIMA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/unit-roots-cointegration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unit Roots and Cointegration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/var-impulse-response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VAR and Impulse Responses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/volatility-garch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Volatility: ARCH and GARCH</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-25" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-density.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel Density Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-local-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel and Local Polynomial Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/series-splines.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Series and Spline Methods</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-26" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/regularization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularization: Ridge, LASSO, and Elastic Net</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/trees-forests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trees, Forests, and Boosting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/double-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Double and Debiased Machine Learning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/causal-forests-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Heterogeneous Effects and Policy Learning</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-27" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayes-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Inference: Priors and Posteriors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/mcmc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCMC: Sampling the Posterior</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayesian-regression-hierarchical.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Regression and Hierarchical Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-28" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/glossary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glossary</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#why-the-likelihood-is-only-half-the-story" id="toc-why-the-likelihood-is-only-half-the-story" class="nav-link active" data-scroll-target="#why-the-likelihood-is-only-half-the-story">Why the Likelihood Is Only Half the Story</a></li>
+  <li><a href="#the-score-and-the-information" id="toc-the-score-and-the-information" class="nav-link" data-scroll-target="#the-score-and-the-information">The Score and the Information</a></li>
+  <li><a href="#see-it-the-sampling-distribution-concentrates-and-goes-normal" id="toc-see-it-the-sampling-distribution-concentrates-and-goes-normal" class="nav-link" data-scroll-target="#see-it-the-sampling-distribution-concentrates-and-goes-normal">See It: The Sampling Distribution Concentrates and Goes Normal</a>
+  <ul class="collapse">
+  <li><a href="#how-to-read-the-monte-carlo" id="toc-how-to-read-the-monte-carlo" class="nav-link" data-scroll-target="#how-to-read-the-monte-carlo">How to Read the Monte Carlo</a></li>
+  </ul></li>
+  <li><a href="#efficiency-and-the-cramérrao-bound" id="toc-efficiency-and-the-cramérrao-bound" class="nav-link" data-scroll-target="#efficiency-and-the-cramérrao-bound">Efficiency and the Cramér–Rao Bound</a></li>
+  <li><a href="#invariance-re-parameterising-for-free" id="toc-invariance-re-parameterising-for-free" class="nav-link" data-scroll-target="#invariance-re-parameterising-for-free">Invariance: Re-Parameterising for Free</a></li>
+  <li><a href="#the-delta-method-standard-errors-for-ghattheta" id="toc-the-delta-method-standard-errors-for-ghattheta" class="nav-link" data-scroll-target="#the-delta-method-standard-errors-for-ghattheta">The Delta Method: Standard Errors for <span class="math inline">g(\hat\theta)</span></a></li>
+  <li><a href="#computing-information-based-and-delta-method-standard-errors" id="toc-computing-information-based-and-delta-method-standard-errors" class="nav-link" data-scroll-target="#computing-information-based-and-delta-method-standard-errors">Computing Information-Based and Delta-Method Standard Errors</a></li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  <li><a href="#what-comes-next" id="toc-what-comes-next" class="nav-link" data-scroll-target="#what-comes-next">What Comes Next</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/index.html">Maximum Likelihood &amp; GMM</a></li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/properties-asymptotics.html">Properties and Asymptotics of MLE</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Properties and Asymptotics of MLE</h1>
+<p class="subtitle lead">Consistency, asymptotic normality, and the information matrix</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="learning-objectives">
+<p><strong>In this section, you will learn to</strong></p>
+<ul>
+<li>State the three pillars of large-sample MLE theory — consistency, asymptotic normality, and efficiency — and explain what each one promises</li>
+<li>Compute the Fisher information <span class="math inline">I(\theta)</span> two equivalent ways (curvature of the log-likelihood and variance of the score) and use its inverse as the asymptotic variance</li>
+<li>Read standard errors off the observed information (the Hessian at the optimum) and watch them shrink like <span class="math inline">1/\sqrt{n}</span></li>
+<li>Apply the Cramér–Rao lower bound to argue that the MLE is asymptotically efficient, and use invariance to re-parameterise an estimate for free</li>
+<li>Propagate uncertainty through a smooth transformation <span class="math inline">g(\hat\theta)</span> with the delta method</li>
+</ul>
+</div>
+<section id="why-the-likelihood-is-only-half-the-story" class="level2">
+<h2 class="anchored" data-anchor-id="why-the-likelihood-is-only-half-the-story">Why the Likelihood Is Only Half the Story</h2>
+<p>The previous page, <a href="../../content/11-mle-gmm/likelihood.html">The Likelihood Principle</a>, showed you how to <em>find</em> a maximum-likelihood estimate: write down the log-likelihood for your data, then climb to its peak. For a Swedish <em>vårdcentral</em> (primary care center) modelling the count of fall-related emergency visits among its elderly patients with a Poisson model, the peak gives a single number <span class="math inline">\hat\lambda</span> — the estimated mean number of falls per patient-year.</p>
+<p>But a point estimate alone is almost useless for policy. If the regional health authority (<em>regionen</em>) is deciding whether a fall-prevention program is worth its SEK budget, it needs to know not just “the estimated fall rate is <span class="math inline">0.42</span> per patient-year” but “and we are confident it lies between <span class="math inline">0.38</span> and <span class="math inline">0.46</span>.” That second statement — the <strong>standard error</strong>, the <strong>confidence interval</strong>, the <em>uncertainty</em> — is what turns an estimate into evidence.</p>
+<p>Maximum likelihood comes with a remarkable promise: in large samples, the estimator behaves in an almost completely predictable way. It homes in on the truth (<strong>consistency</strong>), its sampling distribution becomes a tidy bell curve (<strong>asymptotic normality</strong>), and the <em>width</em> of that bell curve is determined by a single object, the <strong>Fisher information</strong>, which we can read straight off the curvature of the log-likelihood. This page makes those three promises precise and shows you how to extract a standard error from them.</p>
+<div class="glass-card glass-card--definition">
+<p>Let <span class="math inline">\theta_0</span> denote the <strong>true</strong> parameter value and <span class="math inline">\hat\theta_n</span> the maximum-likelihood estimator from a sample of size <span class="math inline">n</span>. The three large-sample properties we develop are:</p>
+<ul>
+<li><strong>Consistency:</strong> <span class="math inline">\hat\theta_n \xrightarrow{p} \theta_0</span> — read “<span class="math inline">\hat\theta_n</span> converges in probability to <span class="math inline">\theta_0</span>”: as the sample grows, the estimate piles up arbitrarily close to the truth.</li>
+<li><strong>Asymptotic normality:</strong> <span class="math inline">\sqrt{n}\,(\hat\theta_n - \theta_0) \xrightarrow{d} \mathcal{N}\!\big(0,\, I_1(\theta_0)^{-1}\big)</span> — read “<span class="math inline">\sqrt{n}</span> times the estimation error converges in distribution to a Normal with mean zero and variance <span class="math inline">I_1(\theta_0)^{-1}</span>.” Here <span class="math inline">I_1(\theta_0)</span> is the Fisher information <em>from a single observation</em>.</li>
+<li><strong>Efficiency:</strong> among all well-behaved estimators, none has a smaller asymptotic variance — the MLE attains the <strong>Cramér–Rao lower bound</strong>.</li>
+</ul>
+</div>
+<p>The whole argument rests on one quantity, so we build it carefully.</p>
+</section>
+<section id="the-score-and-the-information" class="level2">
+<h2 class="anchored" data-anchor-id="the-score-and-the-information">The Score and the Information</h2>
+<p>Write the log-likelihood of an i.i.d. sample <span class="math inline">y_1,\dots,y_n</span> as <span class="math inline">\ell_n(\theta) = \sum_{i=1}^n \log f(y_i \mid \theta)</span>. Two derivatives of this function do all the work.</p>
+<p>The first derivative is the <strong>score</strong>, the gradient of the log-likelihood:</p>
+<p><span class="math display">
+s_i(\theta) = \frac{\partial}{\partial\theta}\,\log f(y_i \mid \theta), \qquad
+S_n(\theta) = \sum_{i=1}^n s_i(\theta).
+</span></p>
+<p><strong>Read this as:</strong> “the score for observation <span class="math inline">i</span> is the slope of its log-density with respect to the parameter, and the total score is the sum over all observations.” The MLE <span class="math inline">\hat\theta_n</span> is exactly the value where the total score is zero — the top of the hill is flat.</p>
+<p>The score has a beautiful property: <em>at the true parameter, its expected value is zero</em>, <span class="math inline">E_{\theta_0}[s_i(\theta_0)] = 0</span>. On average, the data point you in no particular direction once you are already at the truth. Its <em>spread</em>, however, is informative — and that spread is the Fisher information.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>Fisher information</strong> from a single observation can be written two equivalent ways:</p>
+<p><span class="math display">
+I_1(\theta) \;=\; \underbrace{\operatorname{Var}_\theta\!\big[s_i(\theta)\big]}_{\text{variance of the score}}
+\;=\; \underbrace{-\,E_\theta\!\left[\frac{\partial^2}{\partial\theta^2}\log f(y_i\mid\theta)\right]}_{\text{expected negative curvature}}.
+</span></p>
+<p><strong>Read this as:</strong> “the information equals the variance of the score, <em>and also</em> equals the expected negative second derivative of the log-density.” The first form says information is how much the score <em>wiggles</em> across samples; the second says it is how <em>sharply curved</em> the log-likelihood is at its peak. The equality of these two expressions is the <strong>information matrix identity</strong>, derived in the Math Details.</p>
+</div>
+<p>Intuition for the curvature form: a log-likelihood that rises to a sharp, narrow peak pins the parameter down tightly — a small move away from <span class="math inline">\hat\theta</span> costs a lot of fit, so the data are <em>informative</em>. A flat, gently rounded peak leaves many parameter values nearly as plausible — the data are <em>uninformative</em>. Curvature <span class="math inline">=</span> information <span class="math inline">=</span> precision.</p>
+<p>For <span class="math inline">n</span> i.i.d. observations the information simply adds up: <span class="math inline">I_n(\theta) = n\, I_1(\theta)</span>. More data, more information, in direct proportion. This additivity is the engine behind the <span class="math inline">1/\sqrt{n}</span> shrinkage you will watch in the interactive.</p>
+<div class="glass-card glass-card--insight">
+<p><strong>The inverse information is the asymptotic variance.</strong> Combining the two displays above, in finite (but large) samples the MLE is approximately distributed as</p>
+<p><span class="math display">
+\hat\theta_n \;\approx\; \mathcal{N}\!\left(\theta_0,\; \frac{1}{n\,I_1(\theta_0)}\right)
+= \mathcal{N}\!\left(\theta_0,\; I_n(\theta_0)^{-1}\right).
+</span></p>
+<p>So the standard error is <span class="math inline">\operatorname{SE}(\hat\theta_n) = 1/\sqrt{n\,I_1(\theta_0)}</span>. It falls like <span class="math inline">1/\sqrt{n}</span>: to halve your standard error you need four times the data. Because <span class="math inline">I_1</span> is positive, more information always means a <em>smaller</em> standard error.</p>
+</div>
+<p>In practice we do not know <span class="math inline">\theta_0</span>, so we evaluate the curvature at the estimate using the <strong>observed information</strong> — minus the Hessian of the log-likelihood at <span class="math inline">\hat\theta_n</span>:</p>
+<p><span class="math display">
+\hat{I}_n = -\,\frac{\partial^2 \ell_n(\theta)}{\partial\theta^2}\bigg|_{\theta=\hat\theta_n},
+\qquad
+\widehat{\operatorname{SE}}(\hat\theta_n) = \sqrt{\hat{I}_n^{-1}}.
+</span></p>
+<p><strong>Read this as:</strong> “evaluate how sharply the log-likelihood curves down at its peak, take the reciprocal, and the square root is the standard error.” This is literally what every statistics package reports: <code>summary()</code> in R and <code>.summary()</code> in <code>statsmodels</code> invert the Hessian returned by the optimiser. The interactive below shows that this Hessian-based SE tracks the true sampling spread of <span class="math inline">\hat\theta</span> remarkably well, even at modest <span class="math inline">n</span>.</p>
+</section>
+<section id="see-it-the-sampling-distribution-concentrates-and-goes-normal" class="level2">
+<h2 class="anchored" data-anchor-id="see-it-the-sampling-distribution-concentrates-and-goes-normal">See It: The Sampling Distribution Concentrates and Goes Normal</h2>
+<p>Our running example is a <strong>Poisson model of fall-related emergency visits</strong>. Each elderly patient <span class="math inline">i</span> at a Swedish vårdcentral contributes a count <span class="math inline">y_i \sim \text{Poisson}(\lambda_0)</span> over one year, where <span class="math inline">\lambda_0</span> is the true mean annual fall rate. The MLE is just the sample mean, <span class="math inline">\hat\lambda = \bar{y}</span>, and for the Poisson the single-observation information is <span class="math inline">I_1(\lambda) = 1/\lambda</span> (derived below), so the theory predicts</p>
+<p><span class="math display">
+\hat\lambda \;\approx\; \mathcal{N}\!\left(\lambda_0,\; \frac{\lambda_0}{n}\right),
+\qquad
+\operatorname{SE}(\hat\lambda) = \sqrt{\lambda_0/n}.
+</span></p>
+<p>The interactive runs a <strong>Monte Carlo experiment</strong>: it draws many independent samples of size <span class="math inline">n</span>, computes <span class="math inline">\hat\lambda</span> for each, and histograms them. On top it overlays the theoretical Normal curve the asymptotics predict. Slide <span class="math inline">n</span> and watch two things happen at once: the histogram <em>narrows</em> (consistency) and its shape snaps to the bell curve (asymptotic normality). The dashed marker shows the observed-information standard error from a single representative sample — watch it shrink like <span class="math inline">1/\sqrt{n}</span>.</p>
+<section id="monte-carlo-the-sampling-distribution-of-the-poisson-mle" class="level4 interactive-container">
+<h4 class="anchored" data-anchor-id="monte-carlo-the-sampling-distribution-of-the-poisson-mle">Monte Carlo: the sampling distribution of the Poisson MLE</h4>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb1" data-startfrom="102" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 101;"><span id="cb1-102"><a href="#cb1-102" aria-hidden="true" tabindex="-1"></a>viewof mleprop_n <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">10</span><span class="op">,</span> <span class="dv">1000</span>]<span class="op">,</span> {</span>
+<span id="cb1-103"><a href="#cb1-103" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="dv">40</span><span class="op">,</span></span>
+<span id="cb1-104"><a href="#cb1-104" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="dv">10</span><span class="op">,</span></span>
+<span id="cb1-105"><a href="#cb1-105" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Sample size n (patients per study)"</span></span>
+<span id="cb1-106"><a href="#cb1-106" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb2" data-startfrom="112" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 111;"><span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>viewof mleprop_lambda0 <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="fl">0.5</span><span class="op">,</span> <span class="dv">5</span>]<span class="op">,</span> {</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="fl">2.0</span><span class="op">,</span></span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.1</span><span class="op">,</span></span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"True fall rate λ₀ (visits / patient-year)"</span></span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb3" data-startfrom="122" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 121;"><span id="cb3-122"><a href="#cb3-122" aria-hidden="true" tabindex="-1"></a>viewof mleprop_reps <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">200</span><span class="op">,</span> <span class="dv">4000</span>]<span class="op">,</span> {</span>
+<span id="cb3-123"><a href="#cb3-123" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="dv">1500</span><span class="op">,</span></span>
+<span id="cb3-124"><a href="#cb3-124" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="dv">100</span><span class="op">,</span></span>
+<span id="cb3-125"><a href="#cb3-125" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Number of Monte Carlo replications"</span></span>
+<span id="cb3-126"><a href="#cb3-126" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb4" data-startfrom="132" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 131;"><span id="cb4-132"><a href="#cb4-132" aria-hidden="true" tabindex="-1"></a>viewof mleprop_draw <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">button</span>(<span class="st">"Draw new Monte Carlo"</span><span class="op">,</span> { <span class="dt">value</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">reduce</span><span class="op">:</span> v <span class="kw">=&gt;</span> v <span class="op">+</span> <span class="dv">1</span> })</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb5" data-startfrom="139" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 138;"><span id="cb5-139"><a href="#cb5-139" aria-hidden="true" tabindex="-1"></a><span class="co">// Poisson sampler via the Knuth algorithm (browser-side randomness).</span></span>
+<span id="cb5-140"><a href="#cb5-140" aria-hidden="true" tabindex="-1"></a><span class="co">// Returns one Poisson(lambda) draw.</span></span>
+<span id="cb5-141"><a href="#cb5-141" aria-hidden="true" tabindex="-1"></a>mleprop_rpois <span class="op">=</span> <span class="kw">function</span> (lambda) {</span>
+<span id="cb5-142"><a href="#cb5-142" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> L <span class="op">=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">exp</span>(<span class="op">-</span>lambda)<span class="op">;</span></span>
+<span id="cb5-143"><a href="#cb5-143" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> p <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb5-144"><a href="#cb5-144" aria-hidden="true" tabindex="-1"></a>  <span class="cf">do</span> {</span>
+<span id="cb5-145"><a href="#cb5-145" aria-hidden="true" tabindex="-1"></a>    k<span class="op">++;</span></span>
+<span id="cb5-146"><a href="#cb5-146" aria-hidden="true" tabindex="-1"></a>    p <span class="op">*=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">random</span>()<span class="op">;</span></span>
+<span id="cb5-147"><a href="#cb5-147" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">while</span> (p <span class="op">&gt;</span> L)<span class="op">;</span></span>
+<span id="cb5-148"><a href="#cb5-148" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> k <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb5-149"><a href="#cb5-149" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-5" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb6" data-startfrom="156" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 155;"><span id="cb6-156"><a href="#cb6-156" aria-hidden="true" tabindex="-1"></a><span class="co">// The Monte Carlo experiment. Referencing mleprop_draw makes this cell</span></span>
+<span id="cb6-157"><a href="#cb6-157" aria-hidden="true" tabindex="-1"></a><span class="co">// recompute on every button click (fresh randomness) without any mutable.</span></span>
+<span id="cb6-158"><a href="#cb6-158" aria-hidden="true" tabindex="-1"></a>mleprop_mc <span class="op">=</span> {</span>
+<span id="cb6-159"><a href="#cb6-159" aria-hidden="true" tabindex="-1"></a>  mleprop_draw<span class="op">;</span>                       <span class="co">// dependency: resample on click</span></span>
+<span id="cb6-160"><a href="#cb6-160" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> n      <span class="op">=</span> mleprop_n<span class="op">;</span></span>
+<span id="cb6-161"><a href="#cb6-161" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> lam    <span class="op">=</span> mleprop_lambda0<span class="op">;</span></span>
+<span id="cb6-162"><a href="#cb6-162" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> reps   <span class="op">=</span> mleprop_reps<span class="op">;</span></span>
+<span id="cb6-163"><a href="#cb6-163" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-164"><a href="#cb6-164" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> estimates <span class="op">=</span> <span class="kw">new</span> <span class="bu">Float64Array</span>(reps)<span class="op">;</span></span>
+<span id="cb6-165"><a href="#cb6-165" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (<span class="kw">let</span> r <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> r <span class="op">&lt;</span> reps<span class="op">;</span> r<span class="op">++</span>) {</span>
+<span id="cb6-166"><a href="#cb6-166" aria-hidden="true" tabindex="-1"></a>    <span class="kw">let</span> sum <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb6-167"><a href="#cb6-167" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (<span class="kw">let</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> n<span class="op">;</span> i<span class="op">++</span>) sum <span class="op">+=</span> <span class="fu">mleprop_rpois</span>(lam)<span class="op">;</span></span>
+<span id="cb6-168"><a href="#cb6-168" aria-hidden="true" tabindex="-1"></a>    estimates[r] <span class="op">=</span> sum <span class="op">/</span> n<span class="op">;</span>           <span class="co">// MLE = sample mean</span></span>
+<span id="cb6-169"><a href="#cb6-169" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb6-170"><a href="#cb6-170" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> arr <span class="op">=</span> <span class="bu">Array</span><span class="op">.</span><span class="fu">from</span>(estimates)<span class="op">;</span></span>
+<span id="cb6-171"><a href="#cb6-171" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> mcMean <span class="op">=</span> d3<span class="op">.</span><span class="fu">mean</span>(arr)<span class="op">;</span></span>
+<span id="cb6-172"><a href="#cb6-172" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> mcSd   <span class="op">=</span> d3<span class="op">.</span><span class="fu">deviation</span>(arr)<span class="op">;</span></span>
+<span id="cb6-173"><a href="#cb6-173" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> { <span class="dt">estimates</span><span class="op">:</span> arr<span class="op">,</span> mcMean<span class="op">,</span> mcSd }<span class="op">;</span></span>
+<span id="cb6-174"><a href="#cb6-174" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-6" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb7" data-startfrom="181" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 180;"><span id="cb7-181"><a href="#cb7-181" aria-hidden="true" tabindex="-1"></a><span class="co">// Theoretical large-sample SE from the Fisher information: I1(lambda)=1/lambda,</span></span>
+<span id="cb7-182"><a href="#cb7-182" aria-hidden="true" tabindex="-1"></a><span class="co">// so Var(lambda_hat) = lambda0 / n  and  SE = sqrt(lambda0 / n).</span></span>
+<span id="cb7-183"><a href="#cb7-183" aria-hidden="true" tabindex="-1"></a>mleprop_theorySE <span class="op">=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">sqrt</span>(mleprop_lambda0 <span class="op">/</span> mleprop_n)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-7" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb8" data-startfrom="190" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 189;"><span id="cb8-190"><a href="#cb8-190" aria-hidden="true" tabindex="-1"></a><span class="co">// One "representative" sample, and the OBSERVED-information SE computed from it</span></span>
+<span id="cb8-191"><a href="#cb8-191" aria-hidden="true" tabindex="-1"></a><span class="co">// exactly as software would: for the Poisson, observed info = n / lambda_hat,</span></span>
+<span id="cb8-192"><a href="#cb8-192" aria-hidden="true" tabindex="-1"></a><span class="co">// so SE_obs = sqrt(lambda_hat / n).  Depends on mleprop_draw so it refreshes too.</span></span>
+<span id="cb8-193"><a href="#cb8-193" aria-hidden="true" tabindex="-1"></a>mleprop_oneSample <span class="op">=</span> {</span>
+<span id="cb8-194"><a href="#cb8-194" aria-hidden="true" tabindex="-1"></a>  mleprop_draw<span class="op">;</span></span>
+<span id="cb8-195"><a href="#cb8-195" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> n <span class="op">=</span> mleprop_n<span class="op">;</span></span>
+<span id="cb8-196"><a href="#cb8-196" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> sum <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb8-197"><a href="#cb8-197" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (<span class="kw">let</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> n<span class="op">;</span> i<span class="op">++</span>) sum <span class="op">+=</span> <span class="fu">mleprop_rpois</span>(mleprop_lambda0)<span class="op">;</span></span>
+<span id="cb8-198"><a href="#cb8-198" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> lamHat <span class="op">=</span> sum <span class="op">/</span> n<span class="op">;</span></span>
+<span id="cb8-199"><a href="#cb8-199" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> seObs  <span class="op">=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">sqrt</span>(lamHat <span class="op">/</span> n)<span class="op">;</span>     <span class="co">// sqrt( observed-info^{-1} )</span></span>
+<span id="cb8-200"><a href="#cb8-200" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> { lamHat<span class="op">,</span> seObs }<span class="op">;</span></span>
+<span id="cb8-201"><a href="#cb8-201" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-8" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb9" data-startfrom="207" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 206;"><span id="cb9-207"><a href="#cb9-207" aria-hidden="true" tabindex="-1"></a><span class="co">// Histogram of the MLEs with the theoretical Normal(lambda0, lambda0/n) overlaid.</span></span>
+<span id="cb9-208"><a href="#cb9-208" aria-hidden="true" tabindex="-1"></a>{</span>
+<span id="cb9-209"><a href="#cb9-209" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> lam <span class="op">=</span> mleprop_lambda0<span class="op">;</span></span>
+<span id="cb9-210"><a href="#cb9-210" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> se  <span class="op">=</span> mleprop_theorySE<span class="op">;</span></span>
+<span id="cb9-211"><a href="#cb9-211" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> ests <span class="op">=</span> mleprop_mc<span class="op">.</span><span class="at">estimates</span><span class="op">;</span></span>
+<span id="cb9-212"><a href="#cb9-212" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-213"><a href="#cb9-213" aria-hidden="true" tabindex="-1"></a>  <span class="co">// x-window: centre on lambda0, span +/- 4.5 theory SDs (clamped to &gt;=0).</span></span>
+<span id="cb9-214"><a href="#cb9-214" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> lo <span class="op">=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">max</span>(<span class="dv">0</span><span class="op">,</span> lam <span class="op">-</span> <span class="fl">4.5</span> <span class="op">*</span> se)<span class="op">;</span></span>
+<span id="cb9-215"><a href="#cb9-215" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> hi <span class="op">=</span> lam <span class="op">+</span> <span class="fl">4.5</span> <span class="op">*</span> se<span class="op">;</span></span>
+<span id="cb9-216"><a href="#cb9-216" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-217"><a href="#cb9-217" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Theoretical Normal density curve.</span></span>
+<span id="cb9-218"><a href="#cb9-218" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> normPdf <span class="op">=</span> x <span class="kw">=&gt;</span></span>
+<span id="cb9-219"><a href="#cb9-219" aria-hidden="true" tabindex="-1"></a>    <span class="bu">Math</span><span class="op">.</span><span class="fu">exp</span>(<span class="op">-</span><span class="fl">0.5</span> <span class="op">*</span> ((x <span class="op">-</span> lam) <span class="op">/</span> se) <span class="op">**</span> <span class="dv">2</span>) <span class="op">/</span> (se <span class="op">*</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">sqrt</span>(<span class="dv">2</span> <span class="op">*</span> <span class="bu">Math</span><span class="op">.</span><span class="cn">PI</span>))<span class="op">;</span></span>
+<span id="cb9-220"><a href="#cb9-220" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> curve <span class="op">=</span> d3<span class="op">.</span><span class="fu">range</span>(lo<span class="op">,</span> hi<span class="op">,</span> (hi <span class="op">-</span> lo) <span class="op">/</span> <span class="dv">240</span>)<span class="op">.</span><span class="fu">map</span>(x <span class="kw">=&gt;</span> ({ x<span class="op">,</span> <span class="dt">d</span><span class="op">:</span> <span class="fu">normPdf</span>(x) }))<span class="op">;</span></span>
+<span id="cb9-221"><a href="#cb9-221" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-222"><a href="#cb9-222" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Bin the MLEs into a TRUE density (count / (N * binWidth)) so the bars share</span></span>
+<span id="cb9-223"><a href="#cb9-223" aria-hidden="true" tabindex="-1"></a>  <span class="co">// the same vertical scale as the Normal density curve overlaid on top.</span></span>
+<span id="cb9-224"><a href="#cb9-224" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> bins <span class="op">=</span> d3<span class="op">.</span><span class="fu">bin</span>()<span class="op">.</span><span class="fu">domain</span>([lo<span class="op">,</span> hi])<span class="op">.</span><span class="fu">thresholds</span>(<span class="dv">36</span>)(ests)<span class="op">;</span></span>
+<span id="cb9-225"><a href="#cb9-225" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> histo <span class="op">=</span> bins</span>
+<span id="cb9-226"><a href="#cb9-226" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">filter</span>(b <span class="kw">=&gt;</span> b<span class="op">.</span><span class="at">x1</span> <span class="op">&gt;</span> b<span class="op">.</span><span class="at">x0</span>)</span>
+<span id="cb9-227"><a href="#cb9-227" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">map</span>(b <span class="kw">=&gt;</span> ({</span>
+<span id="cb9-228"><a href="#cb9-228" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x0</span><span class="op">:</span> b<span class="op">.</span><span class="at">x0</span><span class="op">,</span></span>
+<span id="cb9-229"><a href="#cb9-229" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x1</span><span class="op">:</span> b<span class="op">.</span><span class="at">x1</span><span class="op">,</span></span>
+<span id="cb9-230"><a href="#cb9-230" aria-hidden="true" tabindex="-1"></a>      <span class="dt">density</span><span class="op">:</span> b<span class="op">.</span><span class="at">length</span> <span class="op">/</span> (ests<span class="op">.</span><span class="at">length</span> <span class="op">*</span> (b<span class="op">.</span><span class="at">x1</span> <span class="op">-</span> b<span class="op">.</span><span class="at">x0</span>))</span>
+<span id="cb9-231"><a href="#cb9-231" aria-hidden="true" tabindex="-1"></a>    }))<span class="op">;</span></span>
+<span id="cb9-232"><a href="#cb9-232" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-233"><a href="#cb9-233" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb9-234"><a href="#cb9-234" aria-hidden="true" tabindex="-1"></a>    <span class="dt">width</span><span class="op">:</span> <span class="dv">660</span><span class="op">,</span></span>
+<span id="cb9-235"><a href="#cb9-235" aria-hidden="true" tabindex="-1"></a>    <span class="dt">height</span><span class="op">:</span> <span class="dv">380</span><span class="op">,</span></span>
+<span id="cb9-236"><a href="#cb9-236" aria-hidden="true" tabindex="-1"></a>    <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">60</span><span class="op">,</span></span>
+<span id="cb9-237"><a href="#cb9-237" aria-hidden="true" tabindex="-1"></a>    <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">48</span><span class="op">,</span></span>
+<span id="cb9-238"><a href="#cb9-238" aria-hidden="true" tabindex="-1"></a>    <span class="dt">style</span><span class="op">:</span> {</span>
+<span id="cb9-239"><a href="#cb9-239" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"'Inter', system-ui, sans-serif"</span><span class="op">,</span></span>
+<span id="cb9-240"><a href="#cb9-240" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fontSize</span><span class="op">:</span> <span class="st">"12px"</span><span class="op">,</span></span>
+<span id="cb9-241"><a href="#cb9-241" aria-hidden="true" tabindex="-1"></a>      <span class="dt">background</span><span class="op">:</span> <span class="st">"transparent"</span><span class="op">,</span></span>
+<span id="cb9-242"><a href="#cb9-242" aria-hidden="true" tabindex="-1"></a>      <span class="dt">color</span><span class="op">:</span> <span class="st">"#555555"</span></span>
+<span id="cb9-243"><a href="#cb9-243" aria-hidden="true" tabindex="-1"></a>    }<span class="op">,</span></span>
+<span id="cb9-244"><a href="#cb9-244" aria-hidden="true" tabindex="-1"></a>    <span class="dt">x</span><span class="op">:</span> {</span>
+<span id="cb9-245"><a href="#cb9-245" aria-hidden="true" tabindex="-1"></a>      <span class="dt">label</span><span class="op">:</span> <span class="st">"Estimate  λ̂ = ȳ  (visits / patient-year)  →"</span><span class="op">,</span></span>
+<span id="cb9-246"><a href="#cb9-246" aria-hidden="true" tabindex="-1"></a>      <span class="dt">domain</span><span class="op">:</span> [lo<span class="op">,</span> hi]<span class="op">,</span></span>
+<span id="cb9-247"><a href="#cb9-247" aria-hidden="true" tabindex="-1"></a>      <span class="dt">grid</span><span class="op">:</span> <span class="kw">false</span></span>
+<span id="cb9-248"><a href="#cb9-248" aria-hidden="true" tabindex="-1"></a>    }<span class="op">,</span></span>
+<span id="cb9-249"><a href="#cb9-249" aria-hidden="true" tabindex="-1"></a>    <span class="dt">y</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"Density"</span><span class="op">,</span> <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span> }<span class="op">,</span></span>
+<span id="cb9-250"><a href="#cb9-250" aria-hidden="true" tabindex="-1"></a>    <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb9-251"><a href="#cb9-251" aria-hidden="true" tabindex="-1"></a>      <span class="co">// Monte Carlo histogram, drawn as a true density so it shares the y-axis</span></span>
+<span id="cb9-252"><a href="#cb9-252" aria-hidden="true" tabindex="-1"></a>      <span class="co">// with the asymptotic Normal curve.</span></span>
+<span id="cb9-253"><a href="#cb9-253" aria-hidden="true" tabindex="-1"></a>      Plot<span class="op">.</span><span class="fu">rectY</span>(histo<span class="op">,</span> {</span>
+<span id="cb9-254"><a href="#cb9-254" aria-hidden="true" tabindex="-1"></a>        <span class="dt">x1</span><span class="op">:</span> <span class="st">"x0"</span><span class="op">,</span> <span class="dt">x2</span><span class="op">:</span> <span class="st">"x1"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"density"</span><span class="op">,</span> <span class="dt">y2</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span></span>
+<span id="cb9-255"><a href="#cb9-255" aria-hidden="true" tabindex="-1"></a>        <span class="dt">fill</span><span class="op">:</span> <span class="st">"#3d5a6c"</span><span class="op">,</span> <span class="dt">fillOpacity</span><span class="op">:</span> <span class="fl">0.35</span><span class="op">,</span></span>
+<span id="cb9-256"><a href="#cb9-256" aria-hidden="true" tabindex="-1"></a>        <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#3d5a6c"</span><span class="op">,</span> <span class="dt">strokeOpacity</span><span class="op">:</span> <span class="fl">0.45</span></span>
+<span id="cb9-257"><a href="#cb9-257" aria-hidden="true" tabindex="-1"></a>      })<span class="op">,</span></span>
+<span id="cb9-258"><a href="#cb9-258" aria-hidden="true" tabindex="-1"></a>      <span class="co">// Theoretical asymptotic Normal.</span></span>
+<span id="cb9-259"><a href="#cb9-259" aria-hidden="true" tabindex="-1"></a>      Plot<span class="op">.</span><span class="fu">line</span>(curve<span class="op">,</span> {</span>
+<span id="cb9-260"><a href="#cb9-260" aria-hidden="true" tabindex="-1"></a>        <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"d"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">2.5</span></span>
+<span id="cb9-261"><a href="#cb9-261" aria-hidden="true" tabindex="-1"></a>      })<span class="op">,</span></span>
+<span id="cb9-262"><a href="#cb9-262" aria-hidden="true" tabindex="-1"></a>      <span class="co">// True value marker.</span></span>
+<span id="cb9-263"><a href="#cb9-263" aria-hidden="true" tabindex="-1"></a>      Plot<span class="op">.</span><span class="fu">ruleX</span>([lam]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#9c7a33"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">2</span><span class="op">,</span> <span class="dt">strokeDasharray</span><span class="op">:</span> <span class="st">"5,4"</span> })<span class="op">,</span></span>
+<span id="cb9-264"><a href="#cb9-264" aria-hidden="true" tabindex="-1"></a>      Plot<span class="op">.</span><span class="fu">text</span>([{ <span class="dt">x</span><span class="op">:</span> lam<span class="op">,</span> <span class="dt">d</span><span class="op">:</span> <span class="fu">normPdf</span>(lam) }]<span class="op">,</span> {</span>
+<span id="cb9-265"><a href="#cb9-265" aria-hidden="true" tabindex="-1"></a>        <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"d"</span><span class="op">,</span></span>
+<span id="cb9-266"><a href="#cb9-266" aria-hidden="true" tabindex="-1"></a>        <span class="dt">text</span><span class="op">:</span> [<span class="vs">`λ₀ = </span><span class="sc">${</span>lam<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">2</span>)<span class="sc">}</span><span class="vs">`</span>]<span class="op">,</span></span>
+<span id="cb9-267"><a href="#cb9-267" aria-hidden="true" tabindex="-1"></a>        <span class="dt">dy</span><span class="op">:</span> <span class="op">-</span><span class="dv">8</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"#9c7a33"</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="dv">700</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">12</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"middle"</span></span>
+<span id="cb9-268"><a href="#cb9-268" aria-hidden="true" tabindex="-1"></a>      })<span class="op">,</span></span>
+<span id="cb9-269"><a href="#cb9-269" aria-hidden="true" tabindex="-1"></a>      <span class="co">// Label for the asymptotic curve.</span></span>
+<span id="cb9-270"><a href="#cb9-270" aria-hidden="true" tabindex="-1"></a>      Plot<span class="op">.</span><span class="fu">text</span>([{ <span class="dt">x</span><span class="op">:</span> lam <span class="op">+</span> <span class="fl">2.2</span> <span class="op">*</span> se<span class="op">,</span> <span class="dt">d</span><span class="op">:</span> <span class="fu">normPdf</span>(lam <span class="op">+</span> <span class="fl">1.2</span> <span class="op">*</span> se) }]<span class="op">,</span> {</span>
+<span id="cb9-271"><a href="#cb9-271" aria-hidden="true" tabindex="-1"></a>        <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"d"</span><span class="op">,</span></span>
+<span id="cb9-272"><a href="#cb9-272" aria-hidden="true" tabindex="-1"></a>        <span class="dt">text</span><span class="op">:</span> [<span class="st">"asymptotic</span><span class="sc">\n</span><span class="st">Normal"</span>]<span class="op">,</span></span>
+<span id="cb9-273"><a href="#cb9-273" aria-hidden="true" tabindex="-1"></a>        <span class="dt">fill</span><span class="op">:</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="dv">600</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">11</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"start"</span><span class="op">,</span> <span class="dt">dx</span><span class="op">:</span> <span class="dv">4</span><span class="op">,</span></span>
+<span id="cb9-274"><a href="#cb9-274" aria-hidden="true" tabindex="-1"></a>        <span class="dt">lineHeight</span><span class="op">:</span> <span class="fl">1.1</span></span>
+<span id="cb9-275"><a href="#cb9-275" aria-hidden="true" tabindex="-1"></a>      })<span class="op">,</span></span>
+<span id="cb9-276"><a href="#cb9-276" aria-hidden="true" tabindex="-1"></a>      Plot<span class="op">.</span><span class="fu">ruleY</span>([<span class="dv">0</span>]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#1c1c1a"</span><span class="op">,</span> <span class="dt">strokeOpacity</span><span class="op">:</span> <span class="fl">0.5</span> })</span>
+<span id="cb9-277"><a href="#cb9-277" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb9-278"><a href="#cb9-278" aria-hidden="true" tabindex="-1"></a>  })<span class="op">;</span></span>
+<span id="cb9-279"><a href="#cb9-279" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-9" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb10" data-startfrom="285" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 284;"><span id="cb10-285"><a href="#cb10-285" aria-hidden="true" tabindex="-1"></a><span class="co">// Live numeric readout: theory SE vs Monte Carlo spread vs observed-info SE.</span></span>
+<span id="cb10-286"><a href="#cb10-286" aria-hidden="true" tabindex="-1"></a>{</span>
+<span id="cb10-287"><a href="#cb10-287" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> fmt <span class="op">=</span> v <span class="kw">=&gt;</span> v<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">4</span>)<span class="op">;</span></span>
+<span id="cb10-288"><a href="#cb10-288" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> tile <span class="op">=</span> (name<span class="op">,</span> value<span class="op">,</span> color<span class="op">,</span> sub) <span class="kw">=&gt;</span> <span class="fu">html</span><span class="vs">`&lt;div style="</span></span>
+<span id="cb10-289"><a href="#cb10-289" aria-hidden="true" tabindex="-1"></a><span class="vs">      flex: 1 1 0; min-width: 8rem; text-align: center;</span></span>
+<span id="cb10-290"><a href="#cb10-290" aria-hidden="true" tabindex="-1"></a><span class="vs">      padding: 0.6rem 0.5rem; border-radius: 0.4rem;</span></span>
+<span id="cb10-291"><a href="#cb10-291" aria-hidden="true" tabindex="-1"></a><span class="vs">      background: #f6f5f1; border: 1px solid #e6e3db;"&gt;</span></span>
+<span id="cb10-292"><a href="#cb10-292" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;</span></span>
+<span id="cb10-293"><a href="#cb10-293" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;</span></span>
+<span id="cb10-294"><a href="#cb10-294" aria-hidden="true" tabindex="-1"></a><span class="vs">        color:#79766e;"&gt;</span><span class="sc">${</span>name<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb10-295"><a href="#cb10-295" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;</span></span>
+<span id="cb10-296"><a href="#cb10-296" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; color:</span><span class="sc">${</span>color<span class="sc">}</span><span class="vs">; margin-top:0.15rem;"&gt;</span><span class="sc">${</span>value<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb10-297"><a href="#cb10-297" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;</span></span>
+<span id="cb10-298"><a href="#cb10-298" aria-hidden="true" tabindex="-1"></a><span class="vs">        color:#79766e; margin-top:0.1rem;"&gt;</span><span class="sc">${</span>sub<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb10-299"><a href="#cb10-299" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb10-300"><a href="#cb10-300" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">html</span><span class="vs">`&lt;div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;"&gt;</span></span>
+<span id="cb10-301"><a href="#cb10-301" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Theory SE"</span><span class="op">,</span> <span class="fu">fmt</span>(mleprop_theorySE)<span class="op">,</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="st">"√(λ₀ / n)"</span>)<span class="sc">}</span></span>
+<span id="cb10-302"><a href="#cb10-302" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Monte Carlo SD"</span><span class="op">,</span> <span class="fu">fmt</span>(mleprop_mc<span class="op">.</span><span class="at">mcSd</span>)<span class="op">,</span> <span class="st">"#3d5a6c"</span><span class="op">,</span> <span class="st">"spread of λ̂ across reps"</span>)<span class="sc">}</span></span>
+<span id="cb10-303"><a href="#cb10-303" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Observed-info SE"</span><span class="op">,</span> <span class="fu">fmt</span>(mleprop_oneSample<span class="op">.</span><span class="at">seObs</span>)<span class="op">,</span> <span class="st">"#2e6f40"</span><span class="op">,</span> <span class="st">"from one sample's Hessian"</span>)<span class="sc">}</span></span>
+<span id="cb10-304"><a href="#cb10-304" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"One λ̂"</span><span class="op">,</span> <span class="fu">fmt</span>(mleprop_oneSample<span class="op">.</span><span class="at">lamHat</span>)<span class="op">,</span> <span class="st">"#1c1c1a"</span><span class="op">,</span> <span class="st">"single representative estimate"</span>)<span class="sc">}</span></span>
+<span id="cb10-305"><a href="#cb10-305" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb10-306"><a href="#cb10-306" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-10" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+</section>
+<section id="how-to-read-the-monte-carlo" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-monte-carlo">How to Read the Monte Carlo</h3>
+<p>Work through these in order; each isolates one of the three asymptotic promises.</p>
+<p><strong>Step 1: Read the picture.</strong> The slate-blue bars are a histogram of <span class="math inline">\hat\lambda</span> across many simulated studies, each with <span class="math inline">n</span> patients. The Uppsala-red curve is the Normal distribution the asymptotic theory predicts, <span class="math inline">\mathcal{N}(\lambda_0,\, \lambda_0/n)</span>. The ochre dashed line marks the true rate <span class="math inline">\lambda_0</span>. Notice that the histogram is centred on <span class="math inline">\lambda_0</span> — this is consistency: the MLE is (essentially) unbiased and homes in on the truth.</p>
+<p><strong>Step 2: Watch it concentrate.</strong> Drag <strong>sample size n</strong> from 10 up toward 1000. The histogram squeezes inward around <span class="math inline">\lambda_0</span> — the estimates from different studies agree more and more closely. This is <span class="math inline">\hat\lambda \xrightarrow{p}\lambda_0</span> made visual: with enough data, sampling error nearly vanishes.</p>
+<p><strong>Step 3: Watch it become Normal.</strong> At small <span class="math inline">n</span> (say 10) with a low rate <span class="math inline">\lambda_0</span>, the histogram is visibly <em>skewed</em> — counts are discrete and bounded below by zero, so the sampling distribution is lumpy and right-leaning, and the red curve fits imperfectly. Increase <span class="math inline">n</span>: the lumps smooth out and the histogram snaps onto the red Normal. This is the Central Limit Theorem doing its work inside the MLE — asymptotic normality is an <em>approximation</em> that gets better with <span class="math inline">n</span>.</p>
+<p><strong>Step 4: Confirm the standard error.</strong> Compare the three SE tiles. <strong>Theory SE</strong> is <span class="math inline">\sqrt{\lambda_0/n}</span> from the Fisher information. <strong>Monte Carlo SD</strong> is the actual spread of <span class="math inline">\hat\lambda</span> across replications — the “truth” we are trying to predict. <strong>Observed-info SE</strong> is what a single study would report by inverting its own Hessian. All three should agree closely, and the agreement <em>improves</em> as <span class="math inline">n</span> grows. This is the punchline: the curvature of one log-likelihood predicts the spread you would see across infinitely many repeated studies.</p>
+<p><strong>Step 5: See the <span class="math inline">1/\sqrt{n}</span> law.</strong> Note the Theory SE at <span class="math inline">n=40</span>, then quadruple <span class="math inline">n</span> to <span class="math inline">160</span>. The SE roughly <em>halves</em>, not quarters. Diminishing returns to data are baked into maximum likelihood: precision grows only with the square root of sample size. Click <strong>Draw new Monte Carlo</strong> a few times to confirm the pattern is not a fluke of one random draw.</p>
+</section>
+</section>
+<section id="efficiency-and-the-cramérrao-bound" class="level2">
+<h2 class="anchored" data-anchor-id="efficiency-and-the-cramérrao-bound">Efficiency and the Cramér–Rao Bound</h2>
+<p>Consistency and normality tell us the MLE lands on the truth with a Normal wobble. Efficiency tells us <em>no estimator wobbles less</em>.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>Cramér–Rao lower bound</strong> states that for any unbiased estimator <span class="math inline">\tilde\theta</span> of a scalar <span class="math inline">\theta</span>,</p>
+<p><span class="math display">
+\operatorname{Var}(\tilde\theta) \;\ge\; \frac{1}{n\,I_1(\theta)} \;=\; I_n(\theta)^{-1}.
+</span></p>
+<p><strong>Read this as:</strong> “the variance of any unbiased estimator is at least the inverse of the total Fisher information.” The inverse information is a <em>floor</em> below which no unbiased estimator can go. The MLE attains this floor asymptotically, so we call it <strong>asymptotically efficient</strong>: among all consistent, asymptotically-normal estimators, it has the smallest possible asymptotic variance.</p>
+</div>
+<p>This is why maximum likelihood is the default in so much of econometrics: when the model is correctly specified, you cannot beat it in large samples. For the fall-count example, the sample mean <span class="math inline">\bar y</span> is the MLE and its variance <span class="math inline">\lambda_0/n</span> exactly equals <span class="math inline">I_n(\lambda_0)^{-1}</span> — the Poisson sample mean is fully efficient, and no cleverer unbiased estimator of the fall rate exists.</p>
+<div class="glass-card glass-card--assumption">
+<p>The asymptotic guarantees are not free. They require <strong>regularity conditions</strong>: the true parameter lies in the <em>interior</em> of the parameter space (not on a boundary), the log-density is smooth enough to differentiate twice, the support of <span class="math inline">f(y\mid\theta)</span> does not depend on <span class="math inline">\theta</span>, and — crucially — the <strong>model is correctly specified</strong>. If <span class="math inline">f</span> is the wrong family, the MLE still converges, but to the parameter that minimises the Kullback–Leibler divergence from the truth, and the tidy variance formula <span class="math inline">I_n^{-1}</span> no longer holds (you then need the “sandwich” robust variance). Treat <span class="math inline">I_n^{-1}</span> as a best case that assumes you got the model right.</p>
+</div>
+</section>
+<section id="invariance-re-parameterising-for-free" class="level2">
+<h2 class="anchored" data-anchor-id="invariance-re-parameterising-for-free">Invariance: Re-Parameterising for Free</h2>
+<p>A small but enormously convenient property: the MLE is <strong>invariant</strong> under transformation. If <span class="math inline">\hat\theta</span> is the MLE of <span class="math inline">\theta</span> and <span class="math inline">g</span> is any function, then the MLE of <span class="math inline">g(\theta)</span> is simply <span class="math inline">g(\hat\theta)</span>.</p>
+<p>For the fall-count study, suppose the region cares not about the rate <span class="math inline">\lambda</span> but about the <strong>probability a patient has zero falls in a year</strong>, <span class="math inline">\pi_0 = P(Y=0) = e^{-\lambda}</span>. By invariance, the MLE of that probability is just <span class="math inline">\hat\pi_0 = e^{-\hat\lambda}</span> — no re-optimisation needed. You maximise once, in whatever parameterisation is convenient, and read off any smooth function of the result.</p>
+<p>But invariance only hands you the <em>point</em> estimate. The <em>standard error</em> of <span class="math inline">\hat\pi_0</span> is a different question, because squeezing <span class="math inline">\hat\lambda</span> through the nonlinear map <span class="math inline">e^{-\lambda}</span> stretches its uncertainty too. That is exactly what the delta method is for.</p>
+</section>
+<section id="the-delta-method-standard-errors-for-ghattheta" class="level2">
+<h2 class="anchored" data-anchor-id="the-delta-method-standard-errors-for-ghattheta">The Delta Method: Standard Errors for <span class="math inline">g(\hat\theta)</span></h2>
+<p>We have a standard error for <span class="math inline">\hat\theta</span>. We want one for <span class="math inline">g(\hat\theta)</span>. The delta method linearises <span class="math inline">g</span> around <span class="math inline">\theta_0</span> with a first-order Taylor expansion and propagates the variance through the slope.</p>
+<div class="glass-card glass-card--definition">
+<p><strong>The delta method.</strong> If <span class="math inline">\sqrt{n}(\hat\theta - \theta_0) \xrightarrow{d} \mathcal{N}(0, \sigma^2)</span> and <span class="math inline">g</span> is differentiable at <span class="math inline">\theta_0</span> with <span class="math inline">g'(\theta_0)\neq 0</span>, then</p>
+<p><span class="math display">
+\sqrt{n}\,\big(g(\hat\theta) - g(\theta_0)\big)
+\;\xrightarrow{d}\;
+\mathcal{N}\!\big(0,\; g'(\theta_0)^2\,\sigma^2\big).
+</span></p>
+<p>In standard-error terms, <span class="math inline">\widehat{\operatorname{SE}}\big(g(\hat\theta)\big) = \big|g'(\hat\theta)\big| \cdot \widehat{\operatorname{SE}}(\hat\theta)</span>.</p>
+</div>
+<p><strong>Read this as:</strong> “the standard error of the transformed estimate is the absolute slope of <span class="math inline">g</span> at the estimate, times the standard error of the original estimate.” Geometrically, <span class="math inline">g'</span> is the local magnification factor: where <span class="math inline">g</span> is steep, a small wobble in <span class="math inline">\hat\theta</span> becomes a large wobble in <span class="math inline">g(\hat\theta)</span>; where <span class="math inline">g</span> is flat, uncertainty is compressed.</p>
+<p>Apply it to the zero-fall probability <span class="math inline">\pi_0 = e^{-\lambda}</span>, so <span class="math inline">g(\lambda) = e^{-\lambda}</span> and <span class="math inline">g'(\lambda) = -e^{-\lambda}</span>. With <span class="math inline">\hat\lambda = 2.0</span> from <span class="math inline">n=40</span> patients, the SE of <span class="math inline">\hat\lambda</span> is <span class="math inline">\sqrt{\hat\lambda/n} = \sqrt{2.0/40} = \sqrt{0.05} = 0.2236</span>. Then</p>
+<p><span class="math display">
+\hat\pi_0 = e^{-2.0} = 0.1353,
+\qquad
+\widehat{\operatorname{SE}}(\hat\pi_0) = \big|-e^{-2.0}\big|\cdot 0.2236 = 0.1353 \times 0.2236 = 0.0303.
+</span></p>
+<p>So roughly <span class="math inline">13.5\%</span> of patients have a fall-free year, with a standard error of about <span class="math inline">3.0</span> percentage points — an approximate 95% interval of <span class="math inline">[0.076,\,0.195]</span>. We obtained a calibrated uncertainty for a <em>nonlinear</em> function of the parameter without ever fitting a second model.</p>
+<div class="glass-card glass-card--warning">
+<p><strong>The delta method has blind spots.</strong> Two failure modes recur in applied work and the formula gives no warning when they bite:</p>
+<ul>
+<li><strong>Vanishing slope.</strong> When <span class="math inline">g'(\theta_0)=0</span> the first-order term collapses and the <em>leading</em> approximation is degenerate — you must go to a second-order (quadratic) expansion, and the limiting law is no longer Normal. Estimating the variance of a quantity <em>near its own optimum</em>, where the derivative is zero, is the classic trap.</li>
+<li><strong>Bounded transforms near a boundary.</strong> Probabilities live in <span class="math inline">[0,1]</span>, but a symmetric delta-method interval can spill past <span class="math inline">0</span> or <span class="math inline">1</span> — as it nearly does for our <span class="math inline">\hat\pi_0</span> at small <span class="math inline">n</span>. When the transform is bounded or strongly curved, prefer building the interval on a scale where the Normal approximation is better (e.g.&nbsp;the log-odds in Exercise 3) and then transforming the <em>endpoints</em> back. The delta method is a <em>local linearisation</em>; trust it only where <span class="math inline">g</span> is close to linear over the plausible range of <span class="math inline">\hat\theta</span>.</li>
+</ul>
+</div>
+<details>
+<summary>
+Math Details: the information identity and the delta method
+</summary>
+<div class="details-content">
+<section id="why-the-score-has-mean-zero" class="level3">
+<h3 class="anchored" data-anchor-id="why-the-score-has-mean-zero">Why the score has mean zero</h3>
+<p>Start from the fact that any density integrates to one: <span class="math inline">\int f(y\mid\theta)\,dy = 1</span> for every <span class="math inline">\theta</span>. Differentiate both sides with respect to <span class="math inline">\theta</span> and pass the derivative inside the integral (a regularity condition):</p>
+<p><span class="math display">
+0 = \frac{\partial}{\partial\theta}\int f\,dy
+= \int \frac{\partial f}{\partial\theta}\,dy
+= \int \frac{\partial \log f}{\partial\theta}\, f\,dy
+= E_\theta\!\left[\frac{\partial \log f}{\partial\theta}\right]
+= E_\theta[s(\theta)].
+</span></p>
+<p>The trick in the middle is <span class="math inline">\partial f/\partial\theta = f \cdot \partial(\log f)/\partial\theta</span>. So the score has expectation zero at the true parameter.</p>
+</section>
+<section id="the-information-matrix-identity" class="level3">
+<h3 class="anchored" data-anchor-id="the-information-matrix-identity">The information matrix identity</h3>
+<p>Differentiate the identity <span class="math inline">\int s(\theta)\, f\,dy = 0</span> once more with respect to <span class="math inline">\theta</span>:</p>
+<p><span class="math display">
+0 = \frac{\partial}{\partial\theta}\int s\, f\,dy
+= \int \frac{\partial s}{\partial\theta}\, f\,dy + \int s\,\frac{\partial f}{\partial\theta}\,dy
+= E_\theta\!\left[\frac{\partial s}{\partial\theta}\right] + \int s\cdot s\, f\,dy,
+</span></p>
+<p>again using <span class="math inline">\partial f/\partial\theta = f\, s</span>. The second term is <span class="math inline">E_\theta[s^2]</span>. Since <span class="math inline">\partial s/\partial\theta = \partial^2 \log f/\partial\theta^2</span> and <span class="math inline">E_\theta[s]=0</span> means <span class="math inline">E_\theta[s^2]=\operatorname{Var}_\theta(s)</span>, we rearrange to</p>
+<p><span class="math display">
+\operatorname{Var}_\theta(s) = E_\theta[s^2] = -\,E_\theta\!\left[\frac{\partial^2 \log f}{\partial\theta^2}\right].
+</span></p>
+<p>That is the <strong>information identity</strong>: variance of the score equals expected negative curvature. Both equal <span class="math inline">I_1(\theta)</span>.</p>
+</section>
+<section id="asymptotic-normality-in-one-line-of-intuition" class="level3">
+<h3 class="anchored" data-anchor-id="asymptotic-normality-in-one-line-of-intuition">Asymptotic normality in one line of intuition</h3>
+<p>A first-order Taylor expansion of the total score <span class="math inline">S_n</span> around <span class="math inline">\theta_0</span>, evaluated at the root <span class="math inline">\hat\theta</span> where <span class="math inline">S_n(\hat\theta)=0</span>, gives <span class="math inline">0 \approx S_n(\theta_0) + S_n'(\theta_0)(\hat\theta-\theta_0)</span>, so</p>
+<p><span class="math display">
+\sqrt{n}(\hat\theta - \theta_0)
+\approx \frac{\tfrac{1}{\sqrt n}S_n(\theta_0)}{-\tfrac{1}{n}S_n'(\theta_0)}.
+</span></p>
+<p>The numerator is <span class="math inline">\sqrt n</span> times a sample average of mean-zero scores, which the CLT sends to <span class="math inline">\mathcal{N}(0, I_1)</span>. The denominator is a sample average of <span class="math inline">-\partial s/\partial\theta</span>, which the law of large numbers sends to <span class="math inline">I_1</span>. Slutsky’s theorem combines them into <span class="math inline">\mathcal{N}(0, I_1 / I_1^2) = \mathcal{N}(0, I_1^{-1})</span>. That is the asymptotic-normality result.</p>
+</section>
+<section id="the-fisher-information-for-the-poisson" class="level3">
+<h3 class="anchored" data-anchor-id="the-fisher-information-for-the-poisson">The Fisher information for the Poisson</h3>
+<p>With <span class="math inline">f(y\mid\lambda) = e^{-\lambda}\lambda^y / y!</span>, the log-density is <span class="math inline">\log f = -\lambda + y\log\lambda - \log(y!)</span>. The score is <span class="math inline">s = -1 + y/\lambda</span> and the second derivative is <span class="math inline">\partial^2 \log f/\partial\lambda^2 = -y/\lambda^2</span>. Taking the negative expectation, and using <span class="math inline">E[Y]=\lambda</span>,</p>
+<p><span class="math display">
+I_1(\lambda) = -E\!\left[-\frac{Y}{\lambda^2}\right] = \frac{\lambda}{\lambda^2} = \frac{1}{\lambda}.
+</span></p>
+<p>Hence <span class="math inline">\operatorname{Var}(\hat\lambda) = 1/(n\,I_1) = \lambda/n</span> — exactly the variance the Poisson sample mean already has, confirming efficiency.</p>
+</section>
+<section id="the-delta-method-derivation" class="level3">
+<h3 class="anchored" data-anchor-id="the-delta-method-derivation">The delta method derivation</h3>
+<p>Expand <span class="math inline">g</span> to first order around <span class="math inline">\theta_0</span>: <span class="math inline">g(\hat\theta) \approx g(\theta_0) + g'(\theta_0)(\hat\theta - \theta_0)</span>. Subtract <span class="math inline">g(\theta_0)</span> and scale by <span class="math inline">\sqrt n</span>:</p>
+<p><span class="math display">
+\sqrt n\big(g(\hat\theta)-g(\theta_0)\big) \approx g'(\theta_0)\cdot \sqrt n(\hat\theta-\theta_0).
+</span></p>
+<p>The right side is a constant <span class="math inline">g'(\theta_0)</span> times a quantity converging to <span class="math inline">\mathcal{N}(0,\sigma^2)</span>. Multiplying a Normal by a constant <span class="math inline">c</span> multiplies its variance by <span class="math inline">c^2</span>, giving <span class="math inline">\mathcal{N}\big(0,\, g'(\theta_0)^2\sigma^2\big)</span>. The remainder term is <span class="math inline">O_p(1/\sqrt n)</span> and vanishes asymptotically.</p>
+</section>
+</div>
+</details>
+</section>
+<section id="computing-information-based-and-delta-method-standard-errors" class="level2">
+<h2 class="anchored" data-anchor-id="computing-information-based-and-delta-method-standard-errors">Computing Information-Based and Delta-Method Standard Errors</h2>
+<p>Both panels fit the Poisson fall-count model by maximum likelihood, extract the standard error by inverting the observed information (the Hessian the optimiser returns), and then propagate that uncertainty through <span class="math inline">g(\lambda)=e^{-\lambda}</span> with the delta method. The numbers match the worked example above.</p>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">R</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">Python</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(bbmle)   <span class="co"># mle2: maximum likelihood with a numeric Hessian</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2024</span>)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Simulated fall-related ER visits for n elderly patients at a vårdcentral.</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>n     <span class="ot">&lt;-</span> <span class="dv">40</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>lam0  <span class="ot">&lt;-</span> <span class="fl">2.0</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>y     <span class="ot">&lt;-</span> <span class="fu">rpois</span>(n, <span class="at">lambda =</span> lam0)</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Negative log-likelihood for a Poisson rate.</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>nll <span class="ot">&lt;-</span> <span class="cf">function</span>(lambda) <span class="sc">-</span><span class="fu">sum</span>(<span class="fu">dpois</span>(y, lambda, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">mle2</span>(nll, <span class="at">start =</span> <span class="fu">list</span>(<span class="at">lambda =</span> <span class="dv">1</span>), <span class="at">method =</span> <span class="st">"BFGS"</span>)</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>lam_hat <span class="ot">&lt;-</span> <span class="fu">coef</span>(fit)[<span class="st">"lambda"</span>]</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Observed-information SE: bbmle inverts the numeric Hessian for us.</span></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>se_lam  <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">diag</span>(<span class="fu">vcov</span>(fit)))[<span class="st">"lambda"</span>]</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"lambda_hat = %.4f</span><span class="sc">\n</span><span class="st">"</span>, lam_hat))</span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"SE(lambda) = %.4f   (theory sqrt(lam_hat/n) = %.4f)</span><span class="sc">\n</span><span class="st">"</span>,</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>            se_lam, <span class="fu">sqrt</span>(lam_hat <span class="sc">/</span> n)))</span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a><span class="co"># Invariance: MLE of pi0 = P(Y = 0) = exp(-lambda) is exp(-lambda_hat).</span></span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>pi0_hat <span class="ot">&lt;-</span> <span class="fu">exp</span>(<span class="sc">-</span>lam_hat)</span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Delta method: g(lambda) = exp(-lambda), g'(lambda) = -exp(-lambda).</span></span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a>gprime  <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>lam_hat)</span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a>se_pi0  <span class="ot">&lt;-</span> <span class="fu">abs</span>(gprime) <span class="sc">*</span> se_lam</span>
+<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-29"><a href="#cb11-29" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">pi0_hat    = %.4f  (P of a fall-free year)</span><span class="sc">\n</span><span class="st">"</span>, pi0_hat))</span>
+<span id="cb11-30"><a href="#cb11-30" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"SE(pi0)    = %.4f   via delta method</span><span class="sc">\n</span><span class="st">"</span>, se_pi0))</span>
+<span id="cb11-31"><a href="#cb11-31" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"95%% CI    = [%.4f, %.4f]</span><span class="sc">\n</span><span class="st">"</span>,</span>
+<span id="cb11-32"><a href="#cb11-32" aria-hidden="true" tabindex="-1"></a>            pi0_hat <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> se_pi0, pi0_hat <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> se_pi0))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> scipy <span class="im">import</span> optimize, stats</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">2024</span>)</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Simulated fall-related ER visits for n elderly patients at a vårdcentral.</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>n, lam0 <span class="op">=</span> <span class="dv">40</span>, <span class="fl">2.0</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> rng.poisson(lam0, size<span class="op">=</span>n)</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Negative log-likelihood for a Poisson rate.</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> nll(theta):</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    lam <span class="op">=</span> theta[<span class="dv">0</span>]</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> lam <span class="op">&lt;=</span> <span class="dv">0</span>:</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> np.inf</span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">-</span>np.<span class="bu">sum</span>(stats.poisson.logpmf(y, lam))</span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Optimise, then read the inverse-Hessian from the BFGS result.</span></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>res <span class="op">=</span> optimize.minimize(nll, x0<span class="op">=</span>[<span class="fl">1.0</span>], method<span class="op">=</span><span class="st">"BFGS"</span>)</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>lam_hat <span class="op">=</span> res.x[<span class="dv">0</span>]</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a><span class="co"># res.hess_inv approximates the inverse observed information -&gt; variance.</span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>se_lam <span class="op">=</span> np.sqrt(res.hess_inv[<span class="dv">0</span>, <span class="dv">0</span>])</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"lambda_hat = </span><span class="sc">{</span>lam_hat<span class="sc">:.4f}</span><span class="ss">"</span>)</span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"SE(lambda) = </span><span class="sc">{</span>se_lam<span class="sc">:.4f}</span><span class="ss">   (theory sqrt(lam_hat/n) = "</span></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>      <span class="ss">f"</span><span class="sc">{</span>np<span class="sc">.</span>sqrt(lam_hat <span class="op">/</span> n)<span class="sc">:.4f}</span><span class="ss">)"</span>)</span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a><span class="co"># Invariance: MLE of pi0 = P(Y = 0) = exp(-lambda) is exp(-lambda_hat).</span></span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>pi0_hat <span class="op">=</span> np.exp(<span class="op">-</span>lam_hat)</span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a><span class="co"># Delta method: g(lambda) = exp(-lambda), g'(lambda) = -exp(-lambda).</span></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a>gprime <span class="op">=</span> <span class="op">-</span>np.exp(<span class="op">-</span>lam_hat)</span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>se_pi0 <span class="op">=</span> <span class="bu">abs</span>(gprime) <span class="op">*</span> se_lam</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="ch">\n</span><span class="ss">pi0_hat    = </span><span class="sc">{</span>pi0_hat<span class="sc">:.4f}</span><span class="ss">  (P of a fall-free year)"</span>)</span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"SE(pi0)    = </span><span class="sc">{</span>se_pi0<span class="sc">:.4f}</span><span class="ss">   via delta method"</span>)</span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"95% CI     = [</span><span class="sc">{</span>pi0_hat <span class="op">-</span> <span class="fl">1.96</span> <span class="op">*</span> se_pi0<span class="sc">:.4f}</span><span class="ss">, "</span></span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a>      <span class="ss">f"</span><span class="sc">{</span>pi0_hat <span class="op">+</span> <span class="fl">1.96</span> <span class="op">*</span> se_pi0<span class="sc">:.4f}</span><span class="ss">]"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+<p>Both routes report a <span class="math inline">\hat\lambda</span> near <span class="math inline">2</span> with an SE near <span class="math inline">\sqrt{\hat\lambda/n}\approx 0.22</span>, and a zero-fall probability near <span class="math inline">0.135</span> with a delta-method SE near <span class="math inline">0.030</span> — exactly the hand computation. The lesson: the optimiser’s Hessian <em>is</em> the observed information, and a single derivative turns that into a standard error for any smooth quantity you care about.</p>
+</section>
+<section id="exercises" class="level2 exercises">
+<h2 class="exercises anchored" data-anchor-id="exercises">Exercises</h2>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 1</span></p>
+<p>A vårdcentral models the time (in days) between consecutive fall-related ER visits as <span class="math inline">Y \sim \text{Exponential}(\theta)</span> with density <span class="math inline">f(y\mid\theta) = \theta e^{-\theta y}</span> for <span class="math inline">y&gt;0</span>, where <span class="math inline">\theta</span> is the rate. (a) Find the score and show <span class="math inline">E_\theta[s]=0</span>. (b) Derive the Fisher information <span class="math inline">I_1(\theta)</span>. (c) Write the large-sample standard error of <span class="math inline">\hat\theta</span> for a sample of size <span class="math inline">n</span>.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> <span class="math inline">\log f = \log\theta - \theta y</span>, so the score is <span class="math inline">s(\theta) = \partial\log f/\partial\theta = 1/\theta - y</span>. For the Exponential, <span class="math inline">E_\theta[Y] = 1/\theta</span>, hence <span class="math inline">E_\theta[s] = 1/\theta - 1/\theta = 0</span>. <span class="math inline">\checkmark</span></p>
+<p><strong>(b)</strong> The second derivative is <span class="math inline">\partial^2\log f/\partial\theta^2 = -1/\theta^2</span>, a constant. Therefore</p>
+<p><span class="math display">
+I_1(\theta) = -E_\theta\!\left[-\tfrac{1}{\theta^2}\right] = \frac{1}{\theta^2}.
+</span></p>
+<p>(Check via the variance form: <span class="math inline">\operatorname{Var}(s)=\operatorname{Var}(1/\theta - Y)=\operatorname{Var}(Y)=1/\theta^2</span>. <span class="math inline">\checkmark</span>)</p>
+<p><strong>(c)</strong> <span class="math inline">\operatorname{Var}(\hat\theta) = 1/(n\,I_1) = \theta^2/n</span>, so</p>
+<p><span class="math display">
+\operatorname{SE}(\hat\theta) = \sqrt{\theta^2/n} = \frac{\theta}{\sqrt n}.
+</span></p>
+<p>In practice replace <span class="math inline">\theta</span> by <span class="math inline">\hat\theta = 1/\bar y</span>, giving <span class="math inline">\widehat{\operatorname{SE}}(\hat\theta) = \hat\theta/\sqrt n</span>.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 2</span></p>
+<p>Continuing Exercise 1, the region reports the <em>mean</em> time between falls, <span class="math inline">\mu = 1/\theta</span>, rather than the rate. (a) Use invariance to state <span class="math inline">\hat\mu</span>. (b) Use the delta method to find <span class="math inline">\operatorname{SE}(\hat\mu)</span> in terms of <span class="math inline">\theta</span> and <span class="math inline">n</span>. (c) With <span class="math inline">n=50</span> and <span class="math inline">\hat\theta = 0.05</span> per day, give <span class="math inline">\hat\mu</span> and its standard error.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> By invariance, <span class="math inline">\hat\mu = 1/\hat\theta</span>.</p>
+<p><strong>(b)</strong> Here <span class="math inline">g(\theta) = 1/\theta</span> so <span class="math inline">g'(\theta) = -1/\theta^2</span>. From Exercise 1, <span class="math inline">\operatorname{SE}(\hat\theta) = \theta/\sqrt n</span>. The delta method gives</p>
+<p><span class="math display">
+\operatorname{SE}(\hat\mu) = |g'(\theta)|\cdot \operatorname{SE}(\hat\theta)
+= \frac{1}{\theta^2}\cdot\frac{\theta}{\sqrt n}
+= \frac{1}{\theta\sqrt n}.
+</span></p>
+<p>Equivalently, <span class="math inline">\operatorname{SE}(\hat\mu) = \mu/\sqrt n</span> since <span class="math inline">\mu = 1/\theta</span> — the same proportional structure as the rate.</p>
+<p><strong>(c)</strong> <span class="math inline">\hat\mu = 1/0.05 = 20</span> days. With <span class="math inline">\hat\theta = 0.05</span> and <span class="math inline">n=50</span>,</p>
+<p><span class="math display">
+\widehat{\operatorname{SE}}(\hat\mu) = \frac{1}{0.05\cdot\sqrt{50}} = \frac{1}{0.05\times 7.071} = \frac{1}{0.3536} = 2.83 \text{ days}.
+</span></p>
+<p>So the mean gap between falls is about <span class="math inline">20 \pm 2.8</span> days.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 3</span></p>
+<p>A study of HbA1c control records whether each of <span class="math inline">n=200</span> diabetes patients is “at target” (<span class="math inline">&lt;52</span> mmol/mol). Let <span class="math inline">Y\sim\text{Bernoulli}(p)</span> with <span class="math inline">\hat p = 0.65</span>. (a) Show that the Fisher information for a single Bernoulli is <span class="math inline">I_1(p)=1/[p(1-p)]</span>. (b) Compute <span class="math inline">\widehat{\operatorname{SE}}(\hat p)</span>. (c) The region instead wants the <strong>log-odds</strong> <span class="math inline">\eta = \log\frac{p}{1-p}</span>. Use the delta method to find <span class="math inline">\widehat{\operatorname{SE}}(\hat\eta)</span>.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> <span class="math inline">\log f = y\log p + (1-y)\log(1-p)</span>. The score is <span class="math inline">s = y/p - (1-y)/(1-p)</span> and the second derivative is <span class="math inline">\partial^2\log f/\partial p^2 = -y/p^2 - (1-y)/(1-p)^2</span>. Taking the negative expectation with <span class="math inline">E[Y]=p</span>:</p>
+<p><span class="math display">
+I_1(p) = \frac{p}{p^2} + \frac{1-p}{(1-p)^2} = \frac1p + \frac{1}{1-p} = \frac{1}{p(1-p)}.
+</span></p>
+<p><strong>(b)</strong> <span class="math inline">\operatorname{Var}(\hat p) = 1/(n\,I_1) = p(1-p)/n</span>, so</p>
+<p><span class="math display">
+\widehat{\operatorname{SE}}(\hat p) = \sqrt{\frac{0.65\times 0.35}{200}} = \sqrt{\frac{0.2275}{200}} = \sqrt{0.0011375} = 0.0337.
+</span></p>
+<p><strong>(c)</strong> With <span class="math inline">\eta = \log\frac{p}{1-p}</span>, the derivative is <span class="math inline">g'(p) = \frac{1}{p(1-p)}</span>. The delta method gives</p>
+<p><span class="math display">
+\widehat{\operatorname{SE}}(\hat\eta) = \frac{1}{p(1-p)}\cdot\widehat{\operatorname{SE}}(\hat p)
+= \frac{1}{0.2275}\times 0.033727 = 0.1482.
+</span></p>
+<p>(Keep the unrounded <span class="math inline">\widehat{\operatorname{SE}}(\hat p)=\sqrt{0.2275/200}=0.033727</span> here; plugging in the <span class="math inline">2</span>-significant-figure <span class="math inline">0.034</span> would inflate the answer.)</p>
+<p>A neat shortcut: <span class="math inline">\operatorname{SE}(\hat\eta) = \frac{1}{\sqrt{n\,p(1-p)}} = 1/\sqrt{200\times 0.2275} = 1/\sqrt{45.5} = 0.1482</span>. <span class="math inline">\checkmark</span></p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 4</span></p>
+<p>Using the Monte Carlo interactive, set <span class="math inline">\lambda_0 = 1.0</span> and start at <span class="math inline">n=10</span>. (a) Describe the shape of the histogram and how well the red Normal fits. (b) Increase <span class="math inline">n</span> to <span class="math inline">250</span> and describe what changed about <em>both</em> the centre and the shape. (c) Read the Theory SE at <span class="math inline">n=10</span> and at <span class="math inline">n=250</span>; verify the ratio matches what the <span class="math inline">1/\sqrt n</span> law predicts.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> At <span class="math inline">\lambda_0=1.0</span> and <span class="math inline">n=10</span>, the histogram is wide and visibly <strong>right-skewed</strong> — the discreteness of small Poisson counts and the floor at zero make the sampling distribution of <span class="math inline">\bar y</span> lumpy and asymmetric. The red asymptotic Normal is a rough approximation: it overshoots into negative-looking territory the data cannot reach and underweights the right tail. This is the regime where “asymptotic” normality has not kicked in yet.</p>
+<p><strong>(b)</strong> At <span class="math inline">n=250</span> the histogram <strong>narrows sharply</strong> (it now hugs <span class="math inline">\lambda_0=1</span> much more tightly — consistency) and becomes <strong>symmetric and smooth</strong>, matching the red bell curve almost perfectly (the CLT has taken over — asymptotic normality). Both promises are visible at once.</p>
+<p><strong>(c)</strong> Theory SE <span class="math inline">=\sqrt{\lambda_0/n}</span>. At <span class="math inline">n=10</span>: <span class="math inline">\sqrt{1/10}=\sqrt{0.1}=0.3162</span>. At <span class="math inline">n=250</span>: <span class="math inline">\sqrt{1/250}=\sqrt{0.004}=0.0632</span>. The ratio is <span class="math inline">0.3162/0.0632 = 5.0</span>. The <span class="math inline">1/\sqrt n</span> law predicts the ratio <span class="math inline">\sqrt{250/10}=\sqrt{25}=5</span>. <span class="math inline">\checkmark</span> Multiplying the sample by 25 cut the standard error by exactly 5.</p>
+</div>
+</details>
+</div>
+<div class="key-takeaways">
+<p><strong>Key takeaways</strong></p>
+<ul>
+<li>In large samples the MLE is consistent (<span class="math inline">\hat\theta_n\to\theta_0</span>), asymptotically Normal (<span class="math inline">\sqrt n(\hat\theta_n-\theta_0)\to\mathcal N(0, I_1^{-1})</span>), and efficient (it attains the Cramér–Rao floor).</li>
+<li>The Fisher information <span class="math inline">I_1(\theta)</span> is both the variance of the score and the expected negative curvature of the log-likelihood; these are equal by the information identity, and a sharper peak means more information and smaller standard errors.</li>
+<li>The inverse information is the asymptotic variance: <span class="math inline">\operatorname{SE}(\hat\theta)=1/\sqrt{n\,I_1}</span> shrinks like <span class="math inline">1/\sqrt n</span>, and software reports it by inverting the observed information (the Hessian at the optimum).</li>
+<li>Invariance gives the point estimate of any smooth function for free, <span class="math inline">\widehat{g(\theta)}=g(\hat\theta)</span>; the delta method gives its standard error, <span class="math inline">\operatorname{SE}(g(\hat\theta))=|g'(\hat\theta)|\cdot\operatorname{SE}(\hat\theta)</span>.</li>
+<li>All of this assumes correct specification and interior, smooth, support-stable parameters — violate those and the clean <span class="math inline">I_n^{-1}</span> variance must be replaced by a robust sandwich.</li>
+</ul>
+</div>
+</section>
+<section id="what-comes-next" class="level2">
+<h2 class="anchored" data-anchor-id="what-comes-next">What Comes Next</h2>
+<p>Maximum likelihood is powerful precisely because it squeezes every drop of information from a <em>fully specified</em> probability model — and that is also its Achilles’ heel: you must commit to a distribution for <span class="math inline">Y</span>. The next page, <a href="../../content/11-mle-gmm/method-of-moments-gmm.html">Method of Moments and GMM</a>, relaxes that commitment. Instead of a full likelihood, you supply only a handful of <strong>moment conditions</strong> — statements like “this residual is, on average, uncorrelated with that instrument” — and let the data pin down the parameters. We will see that MLE is a special case of the Generalized Method of Moments (its score equations <em>are</em> moment conditions), that GMM inherits its own asymptotic-normality and efficiency theory, and that the optimal GMM weighting matrix plays the role the Fisher information played here. The information-and-delta-method machinery you just built carries straight over.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<div id="reading-progress"></div>
+<script>
+(function () {
+  function update() {
+    var el = document.getElementById('reading-progress');
+    if (!el) return;
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    var pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+    el.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  if (document.readyState !== 'loading') update();
+  else document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
+<script type="ojs-module-contents">
+eyJjb250ZW50cyI6W3sibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ilxudmlld29mIG1sZXByb3BfbiA9IElucHV0cy5yYW5nZShbMTAsIDEwMDBdLCB7XG4gIHZhbHVlOiA0MCxcbiAgc3RlcDogMTAsXG4gIGxhYmVsOiBcIlNhbXBsZSBzaXplIG4gKHBhdGllbnRzIHBlciBzdHVkeSlcIlxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMiIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ilxudmlld29mIG1sZXByb3BfbGFtYmRhMCA9IElucHV0cy5yYW5nZShbMC41LCA1XSwge1xuICB2YWx1ZTogMi4wLFxuICBzdGVwOiAwLjEsXG4gIGxhYmVsOiBcIlRydWUgZmFsbCByYXRlIM674oKAICh2aXNpdHMgLyBwYXRpZW50LXllYXIpXCJcbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTMiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbnZpZXdvZiBtbGVwcm9wX3JlcHMgPSBJbnB1dHMucmFuZ2UoWzIwMCwgNDAwMF0sIHtcbiAgdmFsdWU6IDE1MDAsXG4gIHN0ZXA6IDEwMCxcbiAgbGFiZWw6IFwiTnVtYmVyIG9mIE1vbnRlIENhcmxvIHJlcGxpY2F0aW9uc1wiXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC00IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG52aWV3b2YgbWxlcHJvcF9kcmF3ID0gSW5wdXRzLmJ1dHRvbihcIkRyYXcgbmV3IE1vbnRlIENhcmxvXCIsIHsgdmFsdWU6IDAsIHJlZHVjZTogdiA9PiB2ICsgMSB9KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC01IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBQb2lzc29uIHNhbXBsZXIgdmlhIHRoZSBLbnV0aCBhbGdvcml0aG0gKGJyb3dzZXItc2lkZSByYW5kb21uZXNzKS5cbi8vIFJldHVybnMgb25lIFBvaXNzb24obGFtYmRhKSBkcmF3LlxubWxlcHJvcF9ycG9pcyA9IGZ1bmN0aW9uIChsYW1iZGEpIHtcbiAgY29uc3QgTCA9IE1hdGguZXhwKC1sYW1iZGEpO1xuICBsZXQgayA9IDAsIHAgPSAxO1xuICBkbyB7XG4gICAgaysrO1xuICAgIHAgKj0gTWF0aC5yYW5kb20oKTtcbiAgfSB3aGlsZSAocCA+IEwpO1xuICByZXR1cm4gayAtIDE7XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTYiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIFRoZSBNb250ZSBDYXJsbyBleHBlcmltZW50LiBSZWZlcmVuY2luZyBtbGVwcm9wX2RyYXcgbWFrZXMgdGhpcyBjZWxsXG4vLyByZWNvbXB1dGUgb24gZXZlcnkgYnV0dG9uIGNsaWNrIChmcmVzaCByYW5kb21uZXNzKSB3aXRob3V0IGFueSBtdXRhYmxlLlxubWxlcHJvcF9tYyA9IHtcbiAgbWxlcHJvcF9kcmF3OyAgICAgICAgICAgICAgICAgICAgICAgLy8gZGVwZW5kZW5jeTogcmVzYW1wbGUgb24gY2xpY2tcbiAgY29uc3QgbiAgICAgID0gbWxlcHJvcF9uO1xuICBjb25zdCBsYW0gICAgPSBtbGVwcm9wX2xhbWJkYTA7XG4gIGNvbnN0IHJlcHMgICA9IG1sZXByb3BfcmVwcztcblxuICBjb25zdCBlc3RpbWF0ZXMgPSBuZXcgRmxvYXQ2NEFycmF5KHJlcHMpO1xuICBmb3IgKGxldCByID0gMDsgciA8IHJlcHM7IHIrKykge1xuICAgIGxldCBzdW0gPSAwO1xuICAgIGZvciAobGV0IGkgPSAwOyBpIDwgbjsgaSsrKSBzdW0gKz0gbWxlcHJvcF9ycG9pcyhsYW0pO1xuICAgIGVzdGltYXRlc1tyXSA9IHN1bSAvIG47ICAgICAgICAgICAvLyBNTEUgPSBzYW1wbGUgbWVhblxuICB9XG4gIGNvbnN0IGFyciA9IEFycmF5LmZyb20oZXN0aW1hdGVzKTtcbiAgY29uc3QgbWNNZWFuID0gZDMubWVhbihhcnIpO1xuICBjb25zdCBtY1NkICAgPSBkMy5kZXZpYXRpb24oYXJyKTtcbiAgcmV0dXJuIHsgZXN0aW1hdGVzOiBhcnIsIG1jTWVhbiwgbWNTZCB9O1xufVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC03IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBUaGVvcmV0aWNhbCBsYXJnZS1zYW1wbGUgU0UgZnJvbSB0aGUgRmlzaGVyIGluZm9ybWF0aW9uOiBJMShsYW1iZGEpPTEvbGFtYmRhLFxuLy8gc28gVmFyKGxhbWJkYV9oYXQpID0gbGFtYmRhMCAvIG4gIGFuZCAgU0UgPSBzcXJ0KGxhbWJkYTAgLyBuKS5cbm1sZXByb3BfdGhlb3J5U0UgPSBNYXRoLnNxcnQobWxlcHJvcF9sYW1iZGEwIC8gbWxlcHJvcF9uKVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC04IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBPbmUgXCJyZXByZXNlbnRhdGl2ZVwiIHNhbXBsZSwgYW5kIHRoZSBPQlNFUlZFRC1pbmZvcm1hdGlvbiBTRSBjb21wdXRlZCBmcm9tIGl0XG4vLyBleGFjdGx5IGFzIHNvZnR3YXJlIHdvdWxkOiBmb3IgdGhlIFBvaXNzb24sIG9ic2VydmVkIGluZm8gPSBuIC8gbGFtYmRhX2hhdCxcbi8vIHNvIFNFX29icyA9IHNxcnQobGFtYmRhX2hhdCAvIG4pLiAgRGVwZW5kcyBvbiBtbGVwcm9wX2RyYXcgc28gaXQgcmVmcmVzaGVzIHRvby5cbm1sZXByb3Bfb25lU2FtcGxlID0ge1xuICBtbGVwcm9wX2RyYXc7XG4gIGNvbnN0IG4gPSBtbGVwcm9wX247XG4gIGxldCBzdW0gPSAwO1xuICBmb3IgKGxldCBpID0gMDsgaSA8IG47IGkrKykgc3VtICs9IG1sZXByb3BfcnBvaXMobWxlcHJvcF9sYW1iZGEwKTtcbiAgY29uc3QgbGFtSGF0ID0gc3VtIC8gbjtcbiAgY29uc3Qgc2VPYnMgID0gTWF0aC5zcXJ0KGxhbUhhdCAvIG4pOyAgICAgLy8gc3FydCggb2JzZXJ2ZWQtaW5mb157LTF9IClcbiAgcmV0dXJuIHsgbGFtSGF0LCBzZU9icyB9O1xufVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC05IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBIaXN0b2dyYW0gb2YgdGhlIE1MRXMgd2l0aCB0aGUgdGhlb3JldGljYWwgTm9ybWFsKGxhbWJkYTAsIGxhbWJkYTAvbikgb3ZlcmxhaWQuXG57XG4gIGNvbnN0IGxhbSA9IG1sZXByb3BfbGFtYmRhMDtcbiAgY29uc3Qgc2UgID0gbWxlcHJvcF90aGVvcnlTRTtcbiAgY29uc3QgZXN0cyA9IG1sZXByb3BfbWMuZXN0aW1hdGVzO1xuXG4gIC8vIHgtd2luZG93OiBjZW50cmUgb24gbGFtYmRhMCwgc3BhbiArLy0gNC41IHRoZW9yeSBTRHMgKGNsYW1wZWQgdG8gPj0wKS5cbiAgY29uc3QgbG8gPSBNYXRoLm1heCgwLCBsYW0gLSA0LjUgKiBzZSk7XG4gIGNvbnN0IGhpID0gbGFtICsgNC41ICogc2U7XG5cbiAgLy8gVGhlb3JldGljYWwgTm9ybWFsIGRlbnNpdHkgY3VydmUuXG4gIGNvbnN0IG5vcm1QZGYgPSB4ID0+XG4gICAgTWF0aC5leHAoLTAuNSAqICgoeCAtIGxhbSkgLyBzZSkgKiogMikgLyAoc2UgKiBNYXRoLnNxcnQoMiAqIE1hdGguUEkpKTtcbiAgY29uc3QgY3VydmUgPSBkMy5yYW5nZShsbywgaGksIChoaSAtIGxvKSAvIDI0MCkubWFwKHggPT4gKHsgeCwgZDogbm9ybVBkZih4KSB9KSk7XG5cbiAgLy8gQmluIHRoZSBNTEVzIGludG8gYSBUUlVFIGRlbnNpdHkgKGNvdW50IC8gKE4gKiBiaW5XaWR0aCkpIHNvIHRoZSBiYXJzIHNoYXJlXG4gIC8vIHRoZSBzYW1lIHZlcnRpY2FsIHNjYWxlIGFzIHRoZSBOb3JtYWwgZGVuc2l0eSBjdXJ2ZSBvdmVybGFpZCBvbiB0b3AuXG4gIGNvbnN0IGJpbnMgPSBkMy5iaW4oKS5kb21haW4oW2xvLCBoaV0pLnRocmVzaG9sZHMoMzYpKGVzdHMpO1xuICBjb25zdCBoaXN0byA9IGJpbnNcbiAgICAuZmlsdGVyKGIgPT4gYi54MSA+IGIueDApXG4gICAgLm1hcChiID0+ICh7XG4gICAgICB4MDogYi54MCxcbiAgICAgIHgxOiBiLngxLFxuICAgICAgZGVuc2l0eTogYi5sZW5ndGggLyAoZXN0cy5sZW5ndGggKiAoYi54MSAtIGIueDApKVxuICAgIH0pKTtcblxuICByZXR1cm4gUGxvdC5wbG90KHtcbiAgICB3aWR0aDogNjYwLFxuICAgIGhlaWdodDogMzgwLFxuICAgIG1hcmdpbkxlZnQ6IDYwLFxuICAgIG1hcmdpbkJvdHRvbTogNDgsXG4gICAgc3R5bGU6IHtcbiAgICAgIGZvbnRGYW1pbHk6IFwiJ0ludGVyJywgc3lzdGVtLXVpLCBzYW5zLXNlcmlmXCIsXG4gICAgICBmb250U2l6ZTogXCIxMnB4XCIsXG4gICAgICBiYWNrZ3JvdW5kOiBcInRyYW5zcGFyZW50XCIsXG4gICAgICBjb2xvcjogXCIjNTU1NTU1XCJcbiAgICB9LFxuICAgIHg6IHtcbiAgICAgIGxhYmVsOiBcIkVzdGltYXRlICDOu8yCID0gyLMgICh2aXNpdHMgLyBwYXRpZW50LXllYXIpICDihpJcIixcbiAgICAgIGRvbWFpbjogW2xvLCBoaV0sXG4gICAgICBncmlkOiBmYWxzZVxuICAgIH0sXG4gICAgeTogeyBsYWJlbDogXCJEZW5zaXR5XCIsIGdyaWQ6IHRydWUgfSxcbiAgICBtYXJrczogW1xuICAgICAgLy8gTW9udGUgQ2FybG8gaGlzdG9ncmFtLCBkcmF3biBhcyBhIHRydWUgZGVuc2l0eSBzbyBpdCBzaGFyZXMgdGhlIHktYXhpc1xuICAgICAgLy8gd2l0aCB0aGUgYXN5bXB0b3RpYyBOb3JtYWwgY3VydmUuXG4gICAgICBQbG90LnJlY3RZKGhpc3RvLCB7XG4gICAgICAgIHgxOiBcIngwXCIsIHgyOiBcIngxXCIsIHk6IFwiZGVuc2l0eVwiLCB5MjogMCxcbiAgICAgICAgZmlsbDogXCIjM2Q1YTZjXCIsIGZpbGxPcGFjaXR5OiAwLjM1LFxuICAgICAgICBzdHJva2U6IFwiIzNkNWE2Y1wiLCBzdHJva2VPcGFjaXR5OiAwLjQ1XG4gICAgICB9KSxcbiAgICAgIC8vIFRoZW9yZXRpY2FsIGFzeW1wdG90aWMgTm9ybWFsLlxuICAgICAgUGxvdC5saW5lKGN1cnZlLCB7XG4gICAgICAgIHg6IFwieFwiLCB5OiBcImRcIiwgc3Ryb2tlOiBcIiM5OTAwMDBcIiwgc3Ryb2tlV2lkdGg6IDIuNVxuICAgICAgfSksXG4gICAgICAvLyBUcnVlIHZhbHVlIG1hcmtlci5cbiAgICAgIFBsb3QucnVsZVgoW2xhbV0sIHsgc3Ryb2tlOiBcIiM5YzdhMzNcIiwgc3Ryb2tlV2lkdGg6IDIsIHN0cm9rZURhc2hhcnJheTogXCI1LDRcIiB9KSxcbiAgICAgIFBsb3QudGV4dChbeyB4OiBsYW0sIGQ6IG5vcm1QZGYobGFtKSB9XSwge1xuICAgICAgICB4OiBcInhcIiwgeTogXCJkXCIsXG4gICAgICAgIHRleHQ6IFtgzrvigoAgPSAke2xhbS50b0ZpeGVkKDIpfWBdLFxuICAgICAgICBkeTogLTgsIGZpbGw6IFwiIzljN2EzM1wiLCBmb250V2VpZ2h0OiA3MDAsIGZvbnRTaXplOiAxMiwgdGV4dEFuY2hvcjogXCJtaWRkbGVcIlxuICAgICAgfSksXG4gICAgICAvLyBMYWJlbCBmb3IgdGhlIGFzeW1wdG90aWMgY3VydmUuXG4gICAgICBQbG90LnRleHQoW3sgeDogbGFtICsgMi4yICogc2UsIGQ6IG5vcm1QZGYobGFtICsgMS4yICogc2UpIH1dLCB7XG4gICAgICAgIHg6IFwieFwiLCB5OiBcImRcIixcbiAgICAgICAgdGV4dDogW1wiYXN5bXB0b3RpY1xcbk5vcm1hbFwiXSxcbiAgICAgICAgZmlsbDogXCIjOTkwMDAwXCIsIGZvbnRXZWlnaHQ6IDYwMCwgZm9udFNpemU6IDExLCB0ZXh0QW5jaG9yOiBcInN0YXJ0XCIsIGR4OiA0LFxuICAgICAgICBsaW5lSGVpZ2h0OiAxLjFcbiAgICAgIH0pLFxuICAgICAgUGxvdC5ydWxlWShbMF0sIHsgc3Ryb2tlOiBcIiMxYzFjMWFcIiwgc3Ryb2tlT3BhY2l0eTogMC41IH0pXG4gICAgXVxuICB9KTtcbn1cbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTAiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIExpdmUgbnVtZXJpYyByZWFkb3V0OiB0aGVvcnkgU0UgdnMgTW9udGUgQ2FybG8gc3ByZWFkIHZzIG9ic2VydmVkLWluZm8gU0UuXG57XG4gIGNvbnN0IGZtdCA9IHYgPT4gdi50b0ZpeGVkKDQpO1xuICBjb25zdCB0aWxlID0gKG5hbWUsIHZhbHVlLCBjb2xvciwgc3ViKSA9PiBodG1sYDxkaXYgc3R5bGU9XCJcbiAgICAgIGZsZXg6IDEgMSAwOyBtaW4td2lkdGg6IDhyZW07IHRleHQtYWxpZ246IGNlbnRlcjtcbiAgICAgIHBhZGRpbmc6IDAuNnJlbSAwLjVyZW07IGJvcmRlci1yYWRpdXM6IDAuNHJlbTtcbiAgICAgIGJhY2tncm91bmQ6ICNmNmY1ZjE7IGJvcmRlcjogMXB4IHNvbGlkICNlNmUzZGI7XCI+XG4gICAgPGRpdiBzdHlsZT1cImZvbnQtZmFtaWx5OidJbnRlcicsc3lzdGVtLXVpLHNhbnMtc2VyaWY7IGZvbnQtc2l6ZTowLjY2cmVtO1xuICAgICAgICBmb250LXdlaWdodDo3MDA7IHRleHQtdHJhbnNmb3JtOnVwcGVyY2FzZTsgbGV0dGVyLXNwYWNpbmc6MC4wNWVtO1xuICAgICAgICBjb2xvcjojNzk3NjZlO1wiPiR7bmFtZX08L2Rpdj5cbiAgICA8ZGl2IHN0eWxlPVwiZm9udC1mYW1pbHk6J0pldEJyYWlucyBNb25vJyxtb25vc3BhY2U7IGZvbnQtc2l6ZToxLjE1cmVtO1xuICAgICAgICBmb250LXdlaWdodDo3MDA7IGNvbG9yOiR7Y29sb3J9OyBtYXJnaW4tdG9wOjAuMTVyZW07XCI+JHt2YWx1ZX08L2Rpdj5cbiAgICA8ZGl2IHN0eWxlPVwiZm9udC1mYW1pbHk6J0ludGVyJyxzeXN0ZW0tdWksc2Fucy1zZXJpZjsgZm9udC1zaXplOjAuNjRyZW07XG4gICAgICAgIGNvbG9yOiM3OTc2NmU7IG1hcmdpbi10b3A6MC4xcmVtO1wiPiR7c3VifTwvZGl2PlxuICA8L2Rpdj5gO1xuICByZXR1cm4gaHRtbGA8ZGl2IHN0eWxlPVwiZGlzcGxheTpmbGV4OyBmbGV4LXdyYXA6d3JhcDsgZ2FwOjAuNXJlbTsgbWFyZ2luLXRvcDowLjc1cmVtO1wiPlxuICAgICR7dGlsZShcIlRoZW9yeSBTRVwiLCBmbXQobWxlcHJvcF90aGVvcnlTRSksIFwiIzk5MDAwMFwiLCBcIuKImijOu+KCgCAvIG4pXCIpfVxuICAgICR7dGlsZShcIk1vbnRlIENhcmxvIFNEXCIsIGZtdChtbGVwcm9wX21jLm1jU2QpLCBcIiMzZDVhNmNcIiwgXCJzcHJlYWQgb2YgzrvMgiBhY3Jvc3MgcmVwc1wiKX1cbiAgICAke3RpbGUoXCJPYnNlcnZlZC1pbmZvIFNFXCIsIGZtdChtbGVwcm9wX29uZVNhbXBsZS5zZU9icyksIFwiIzJlNmY0MFwiLCBcImZyb20gb25lIHNhbXBsZSdzIEhlc3NpYW5cIil9XG4gICAgJHt0aWxlKFwiT25lIM67zIJcIiwgZm10KG1sZXByb3Bfb25lU2FtcGxlLmxhbUhhdCksIFwiIzFjMWMxYVwiLCBcInNpbmdsZSByZXByZXNlbnRhdGl2ZSBlc3RpbWF0ZVwiKX1cbiAgPC9kaXY+YDtcbn1cbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldFF1aWV0Iiwic291cmNlIjoic2hpbnlJbnB1dCgnbWxlcHJvcF9uJykifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ21sZXByb3BfbGFtYmRhMCcpIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0UXVpZXQiLCJzb3VyY2UiOiJzaGlueUlucHV0KCdtbGVwcm9wX3JlcHMnKSJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldFF1aWV0Iiwic291cmNlIjoic2hpbnlJbnB1dCgnbWxlcHJvcF9kcmF3JykifV19
+</script>
+<script type="module">
+if (window.location.protocol === "file:") { alert("The OJS runtime does not work with file:// URLs. Please use a web server to view this document."); }
+window._ojs.paths.runtimeToDoc = "../../content/11-mle-gmm";
+window._ojs.paths.runtimeToRoot = "../..";
+window._ojs.paths.docToRoot = "../..";
+window._ojs.selfContained = false;
+window._ojs.runtime.interpretFromScriptTags();
+</script>
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../content/11-mle-gmm/likelihood.html" class="pagination-link" aria-label="Maximum Likelihood: The Likelihood Principle">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Maximum Likelihood: The Likelihood Principle</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../content/11-mle-gmm/method-of-moments-gmm.html" class="pagination-link" aria-label="Method of Moments and GMM">
+        <span class="nav-page-text">Method of Moments and GMM</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

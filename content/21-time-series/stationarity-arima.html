@@ -1,0 +1,2369 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.27">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Stationarity and ARIMA – Causal Inference – See It, Break It, Prove It</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../content/21-time-series/unit-roots-cointegration.html" rel="next">
+<link href="../../content/21-time-series/index.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-8b4baf804e461d9b72633f0de59a0cac.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-8177dda9a46fdb7befe495ea115a53e7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script type="module" src="../../site_libs/quarto-ojs/quarto-ojs-runtime.js"></script>
+<link href="../../site_libs/quarto-ojs/quarto-ojs.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Causal Inference – See It, Break It, Prove It</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../../content/index.html" aria-current="page"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/00-intro/index.html"> 
+<span class="menu-text">Start Learning</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/glossary.html"> 
+<span class="menu-text">Glossary</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/your-username/causal-inference-site"> <i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/21-time-series/index.html">Time Series Econometrics</a></li><li class="breadcrumb-item"><a href="../../content/21-time-series/stationarity-arima.html">Stationarity and ARIMA</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Home</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Causal Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">0. Introduction</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/00-intro/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">1. Fundamental Problem</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Fundamental Problem of Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/potential-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Potential Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/selection-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/randomization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">2. DAGs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Directed Acyclic Graphs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">DAG Basics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/d-separation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">d-Separation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/good-bad-controls.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Good and Bad Controls</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">3. Statistical Foundations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Statistical Foundations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/distributions-spread.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributions and Spread</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/hypothesis-testing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hypothesis Testing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/confidence-intervals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Confidence Intervals</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/reading-output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading Regression Output</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">4. Regression</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/ols-mechanics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLS Mechanics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/frisch-waugh-lovell.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Frisch-Waugh-Lovell</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/omitted-variable-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Omitted Variable Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/interactions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interactions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/functional-form.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Functional Form</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">5. Panel Data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/panel-structure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Structure</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/fixed-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/practical-issues.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Issues</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">6. Diff-in-Differences</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/classic-2x2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic 2x2 Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/regression-did.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression DiD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/parallel-trends.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel Trends</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/staggered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Staggered Adoption</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/modern-estimators.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Estimators</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">7. Instrumental Variables</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/endogeneity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Endogeneity Problem</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/two-stage-least-squares.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Two-Stage Least Squares</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/relevance-exclusion.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Relevance and Exclusion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/weak-instruments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weak Instruments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/late.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LATE and Compliers</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">8. Regression Discontinuity</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/sharp-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sharp Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/estimation-bandwidth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Estimation and Bandwidth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/fuzzy-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fuzzy Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/validity-tests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Validity and Falsification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/interpretation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpretation and External Validity</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true">
+ <span class="menu-text">9. Matching &amp; Propensity Scores</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching &amp; Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/selection-on-observables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection on Observables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/matching-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/propensity-scores.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/weighting-ipw.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weighting and Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/overlap-diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overlap and Balance Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true">
+ <span class="menu-text">10. Synthetic Control</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Synthetic Control Method</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference for Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and Practical Issues</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/case-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: A Swedish Regional Reform</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true">
+ <span class="menu-text">Part II · The Econometrician’s Toolkit</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood: The Likelihood Principle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/properties-asymptotics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Properties and Asymptotics of MLE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/method-of-moments-gmm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Method of Moments and GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Classical Trinity: LR, Wald, and LM Tests</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/the-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Bootstrap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/randomization-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/cluster-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustered and Wild Bootstrap</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-16" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/ovb-sensitivity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity to Omitted Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/rosenbaum-bounds.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rosenbaum Bounds</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/partial-identification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Identification and Bounds</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-17" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/binary-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary Outcomes: LPM, Logit, and Probit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/marginal-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/multinomial-ordered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multinomial and Ordered Choice</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false">
+ <span class="menu-text">Count Data</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-18" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Count Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/poisson-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Poisson Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/overdispersion-negbin.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overdispersion and the Negative Binomial</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/zero-inflation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Excess Zeros: Hurdle and Zero-Inflated Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-19" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/censoring-truncation-tobit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation, and the Tobit Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/heckman-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sample Selection: The Heckman Model</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-20" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/survival-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival Analysis: Hazards and the Kaplan-Meier Curve</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/cox-proportional-hazards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Cox Proportional Hazards Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/parametric-competing-risks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parametric Duration and Competing Risks</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false">
+ <span class="menu-text">Random Effects</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-21" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/random-effects-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Random Effects Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/fe-vs-re.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed versus Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/correlated-re-mundlak.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Correlated Random Effects: The Mundlak Device</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-22" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/partial-pooling-shrinkage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Pooling and Shrinkage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/random-intercepts-slopes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Intercepts and Random Slopes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/variance-components-icc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Variance Components and the ICC</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/growth-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Growth Curve Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-23" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/quantile-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/distributional-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributional Treatment Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/decompositions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decompositions: Oaxaca-Blinder and Beyond</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="true">
+ <span class="menu-text">Time Series Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-24" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Time Series Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/stationarity-arima.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Stationarity and ARIMA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/unit-roots-cointegration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unit Roots and Cointegration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/var-impulse-response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VAR and Impulse Responses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/volatility-garch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Volatility: ARCH and GARCH</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-25" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-density.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel Density Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-local-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel and Local Polynomial Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/series-splines.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Series and Spline Methods</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-26" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/regularization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularization: Ridge, LASSO, and Elastic Net</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/trees-forests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trees, Forests, and Boosting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/double-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Double and Debiased Machine Learning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/causal-forests-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Heterogeneous Effects and Policy Learning</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-27" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayes-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Inference: Priors and Posteriors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/mcmc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCMC: Sampling the Posterior</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayesian-regression-hierarchical.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Regression and Hierarchical Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-28" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/glossary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glossary</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#the-question-behind-every-time-series" id="toc-the-question-behind-every-time-series" class="nav-link active" data-scroll-target="#the-question-behind-every-time-series">The Question Behind Every Time Series</a></li>
+  <li><a href="#what-makes-a-time-series-learnable" id="toc-what-makes-a-time-series-learnable" class="nav-link" data-scroll-target="#what-makes-a-time-series-learnable">What Makes a Time Series Learnable</a></li>
+  <li><a href="#memory-the-autocorrelation-function" id="toc-memory-the-autocorrelation-function" class="nav-link" data-scroll-target="#memory-the-autocorrelation-function">Memory: The Autocorrelation Function</a></li>
+  <li><a href="#the-building-blocks-ar-ma-arma" id="toc-the-building-blocks-ar-ma-arma" class="nav-link" data-scroll-target="#the-building-blocks-ar-ma-arma">The Building Blocks: AR, MA, ARMA</a>
+  <ul class="collapse">
+  <li><a href="#autoregression-arp" id="toc-autoregression-arp" class="nav-link" data-scroll-target="#autoregression-arp">Autoregression: AR(<span class="math inline">p</span>)</a></li>
+  <li><a href="#moving-average-maq" id="toc-moving-average-maq" class="nav-link" data-scroll-target="#moving-average-maq">Moving average: MA(<span class="math inline">q</span>)</a></li>
+  <li><a href="#putting-them-together-armapq" id="toc-putting-them-together-armapq" class="nav-link" data-scroll-target="#putting-them-together-armapq">Putting them together: ARMA(<span class="math inline">p,q</span>)</a></li>
+  </ul></li>
+  <li><a href="#from-arma-to-arima-differencing" id="toc-from-arma-to-arima-differencing" class="nav-link" data-scroll-target="#from-arma-to-arima-differencing">From ARMA to ARIMA: Differencing</a></li>
+  <li><a href="#see-it-ar1-persistence-and-its-acf" id="toc-see-it-ar1-persistence-and-its-acf" class="nav-link" data-scroll-target="#see-it-ar1-persistence-and-its-acf">See It: AR(1) Persistence and Its ACF</a>
+  <ul class="collapse">
+  <li><a href="#how-to-read-the-ar1-simulator" id="toc-how-to-read-the-ar1-simulator" class="nav-link" data-scroll-target="#how-to-read-the-ar1-simulator">How to Read the AR(1) Simulator</a></li>
+  </ul></li>
+  <li><a href="#forecasting-intuition" id="toc-forecasting-intuition" class="nav-link" data-scroll-target="#forecasting-intuition">Forecasting Intuition</a></li>
+  <li><a href="#fitting-an-arima-model" id="toc-fitting-an-arima-model" class="nav-link" data-scroll-target="#fitting-an-arima-model">Fitting an ARIMA Model</a></li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  <li><a href="#what-comes-next" id="toc-what-comes-next" class="nav-link" data-scroll-target="#what-comes-next">What Comes Next</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/21-time-series/index.html">Time Series Econometrics</a></li><li class="breadcrumb-item"><a href="../../content/21-time-series/stationarity-arima.html">Stationarity and ARIMA</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Stationarity and ARIMA</h1>
+<p class="subtitle lead">The building blocks of time-series modeling</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="learning-objectives">
+<p><strong>In this section, you will learn to</strong></p>
+<ul>
+<li>Define <em>(weak) stationarity</em> — constant mean, constant variance, and an autocovariance that depends only on the lag — and explain why it is the precondition for valid time-series inference</li>
+<li>Read the <em>autocorrelation function</em> (ACF) and <em>partial autocorrelation function</em> (PACF) as diagnostic fingerprints that distinguish AR, MA, and ARMA dynamics</li>
+<li>Write the AR(<span class="math inline">p</span>), MA(<span class="math inline">q</span>), and ARMA(<span class="math inline">p,q</span>) models, and state the stationarity condition <span class="math inline">|\phi| &lt; 1</span> for the AR(1)</li>
+<li>Use <em>differencing</em> to remove a trend, turning a non-stationary series into a stationary one and giving the ARIMA(<span class="math inline">p,d,q</span>) model, with a note on seasonality</li>
+<li>Fit an ARIMA model and produce a forecast in both R (<code>forecast</code>/<code>fable</code>) and Python (<code>statsmodels</code> SARIMAX)</li>
+</ul>
+</div>
+<section id="the-question-behind-every-time-series" class="level2">
+<h2 class="anchored" data-anchor-id="the-question-behind-every-time-series">The Question Behind Every Time Series</h2>
+<p>Region Uppsala publishes the number of <em>besök i primärvården</em> (primary-care visits) at its <em>vårdcentraler</em> every month. The <em>verksamhetschef</em> (operations manager) staring at the dashboard does not want a single average — she wants to know <strong>what next month will look like</strong>, and how confident she can be. January is always busy; July empties out as families leave for <em>semester</em>. Visits this month are tied to visits last month: a flu wave does not vanish in thirty days. The observations are not a cloud of independent draws — they are a <em>chain</em>, ordered in time, where each value leans on the ones before it.</p>
+<p>This ordering and this leaning are the whole subject. A cross-section asks “how do units differ from each other?” A time series asks “<strong>how does one unit evolve through time, and what does its past tell us about its future?</strong>” The dependence between today and yesterday — <em>serial dependence</em> — is exactly the structure we exploit to forecast, and exactly the structure that breaks the independence assumptions behind every standard error you have met so far.</p>
+<p>This page builds the machinery from the ground up. We first pin down the one property that makes a time series learnable — <em>stationarity</em> — then read its memory off the <em>autocorrelation function</em>, then assemble the AR, MA, and ARIMA models that turn that memory into forecasts. The <a href="../../content/21-time-series/unit-roots-cointegration.html">next page</a> confronts the case where stationarity <em>fails</em> outright: the random walk, unit roots, and the spurious regressions they cause.</p>
+</section>
+<section id="what-makes-a-time-series-learnable" class="level2">
+<h2 class="anchored" data-anchor-id="what-makes-a-time-series-learnable">What Makes a Time Series Learnable</h2>
+<p>A time series is a sequence <span class="math inline">\{y_t\}_{t=1}^{T}</span> indexed by time. We only ever observe <strong>one realization</strong> of it — one history of Uppsala’s primary-care visits, not a thousand parallel Uppsalas. To learn anything about the underlying process from that single path, the process must hold still long enough for its past to be informative about its future. That “holding still” is stationarity.</p>
+<div class="glass-card glass-card--definition">
+<p>A series <span class="math inline">\{y_t\}</span> is <strong>(weakly) stationary</strong> if its first two moments do not change over time:</p>
+<ol type="1">
+<li><strong>Constant mean</strong>: <span class="math inline">E[y_t] = \mu</span> for all <span class="math inline">t</span>.</li>
+<li><strong>Constant variance</strong>: <span class="math inline">\operatorname{Var}(y_t) = \gamma_0</span> for all <span class="math inline">t</span>.</li>
+<li><strong>Lag-only autocovariance</strong>: <span class="math inline">\operatorname{Cov}(y_t, y_{t-k}) = \gamma_k</span> depends only on the gap <span class="math inline">k</span>, never on the date <span class="math inline">t</span>.</li>
+</ol>
+<p><strong>Read condition 3 as</strong>: “the covariance between the series now and the series <span class="math inline">k</span> periods ago is the same number <span class="math inline">\gamma_k</span> whether ‘now’ is January 2019 or January 2024 — only the <em>distance</em> <span class="math inline">k</span> matters, not <em>where</em> you are in calendar time.”</p>
+</div>
+<p>Weak stationarity (also called <em>covariance stationarity</em>) is what we need in practice; it asks only that the mean, variance, and autocovariances be stable, not that the whole distribution be frozen. A series that drifts upward, or whose swings grow wider over the years, violates it. Most raw economic and health series — visit counts that grow with the population, prices that inflate, sick-leave (<em>sjukfrånvaro</em>) that trends with the labor market — are <em>not</em> stationary as recorded, which is precisely why differencing (below) earns its place.</p>
+<div class="glass-card glass-card--insight">
+<p><strong>Why stationarity is not optional.</strong> With one realization, our only hope of estimating <span class="math inline">\mu</span> is to average across time: <span class="math inline">\hat\mu = \frac1T\sum_t y_t</span>. That average estimates a single, well-defined <span class="math inline">\mu</span> <em>only if</em> <span class="math inline">E[y_t]</span> is the same at every <span class="math inline">t</span>. If the mean drifts, the time average chases a moving target and converges to nothing meaningful. Stationarity is what lets a single path stand in for the whole ensemble — it is the time-series analogue of “i.i.d. sampling” that makes averages, variances, and standard errors interpretable.</p>
+</div>
+</section>
+<section id="memory-the-autocorrelation-function" class="level2">
+<h2 class="anchored" data-anchor-id="memory-the-autocorrelation-function">Memory: The Autocorrelation Function</h2>
+<p>Serial dependence is measured by how strongly <span class="math inline">y_t</span> correlates with its own past. Scaling the autocovariance <span class="math inline">\gamma_k</span> by the variance <span class="math inline">\gamma_0</span> gives a unit-free correlation.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>autocorrelation function</strong> (ACF) at lag <span class="math inline">k</span> is the correlation between the series and its own <span class="math inline">k</span>-step-lagged self:</p>
+<p><span class="math display">
+\rho_k \;=\; \frac{\operatorname{Cov}(y_t,\,y_{t-k})}{\operatorname{Var}(y_t)} \;=\; \frac{\gamma_k}{\gamma_0}, \qquad \rho_0 = 1.
+</span></p>
+<p><strong>Read this as</strong>: “the lag-<span class="math inline">k</span> autocorrelation is the covariance between <span class="math inline">y_t</span> and <span class="math inline">y_{t-k}</span> divided by the variance — a number in <span class="math inline">[-1, 1]</span> telling you how much of today’s deviation from the mean is shared with the deviation <span class="math inline">k</span> months ago.” At lag 0 a series is perfectly correlated with itself, so <span class="math inline">\rho_0 = 1</span> always.</p>
+</div>
+<p>The <strong>partial</strong> autocorrelation function (PACF) at lag <span class="math inline">k</span> measures the correlation between <span class="math inline">y_t</span> and <span class="math inline">y_{t-k}</span> <em>after removing</em> the influence of the intervening lags <span class="math inline">y_{t-1}, \dots, y_{t-k+1}</span>. It is the “direct” link at lag <span class="math inline">k</span>, net of everything in between. The two functions together are the diagnostic fingerprint of a model:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 38%">
+<col style="width: 27%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Model</th>
+<th style="text-align: left;">ACF</th>
+<th style="text-align: left;">PACF</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong>AR(<span class="math inline">p</span>)</strong></td>
+<td style="text-align: left;">tails off (decays geometrically)</td>
+<td style="text-align: left;"><strong>cuts off after lag <span class="math inline">p</span></strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>MA(<span class="math inline">q</span>)</strong></td>
+<td style="text-align: left;"><strong>cuts off after lag <span class="math inline">q</span></strong></td>
+<td style="text-align: left;">tails off</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>ARMA(<span class="math inline">p,q</span>)</strong></td>
+<td style="text-align: left;">tails off</td>
+<td style="text-align: left;">tails off</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Read the table as</strong>: an AR process leaves a <em>sharp</em> PACF (it has exactly <span class="math inline">p</span> direct lags) and a <em>smoothly decaying</em> ACF; an MA process is the mirror image. This duality is the single most useful thing the ACF/PACF buys you — it turns “which model?” into “look at two pictures.”</p>
+</section>
+<section id="the-building-blocks-ar-ma-arma" class="level2">
+<h2 class="anchored" data-anchor-id="the-building-blocks-ar-ma-arma">The Building Blocks: AR, MA, ARMA</h2>
+<section id="autoregression-arp" class="level3">
+<h3 class="anchored" data-anchor-id="autoregression-arp">Autoregression: AR(<span class="math inline">p</span>)</h3>
+<p>An autoregressive model says the present is a linear function of its own recent past plus a fresh shock. The order-1 case, AR(1), is the workhorse:</p>
+<p><span class="math display">
+y_t = c + \phi\, y_{t-1} + \varepsilon_t, \qquad \varepsilon_t \sim \text{white noise}(0,\sigma^2).
+</span></p>
+<p><strong>Read this as</strong>: “this month’s visits equal a constant <span class="math inline">c</span>, plus a fraction <span class="math inline">\phi</span> of last month’s visits, plus an unpredictable shock <span class="math inline">\varepsilon_t</span>.” The coefficient <span class="math inline">\phi</span> is the <em>persistence</em>: a flu surge of size <span class="math inline">\varepsilon</span> this month carries <span class="math inline">\phi</span> of itself into next month, <span class="math inline">\phi^2</span> into the month after, and so on — an exponentially fading echo. The general AR(<span class="math inline">p</span>) just adds more lags: <span class="math inline">y_t = c + \phi_1 y_{t-1} + \dots + \phi_p y_{t-p} + \varepsilon_t</span>.</p>
+<div class="glass-card glass-card--assumption">
+<p><strong>The AR(1) stationarity condition.</strong> The AR(1) is (weakly) stationary if and only if</p>
+<p><span class="math display">
+|\phi| &lt; 1.
+</span></p>
+<p><strong>Read this as</strong>: “the persistence coefficient must be strictly inside the unit interval <span class="math inline">(-1, 1)</span>.” If <span class="math inline">|\phi| &lt; 1</span>, shocks decay and the series reverts to its mean <span class="math inline">\mu = c/(1-\phi)</span>. At <span class="math inline">\phi = 1</span> the process becomes a <strong>random walk</strong> — shocks never die, the variance grows without bound, and stationarity fails. That boundary case is the <em>unit root</em> of the next page. For higher-order AR(<span class="math inline">p</span>), the analogous condition is that all roots of the characteristic polynomial lie outside the unit circle.</p>
+</div>
+</section>
+<section id="moving-average-maq" class="level3">
+<h3 class="anchored" data-anchor-id="moving-average-maq">Moving average: MA(<span class="math inline">q</span>)</h3>
+<p>A moving-average model says the present is a weighted sum of the current and recent <em>shocks</em> — not of past <em>values</em>:</p>
+<p><span class="math display">
+y_t = \mu + \varepsilon_t + \theta_1 \varepsilon_{t-1} + \dots + \theta_q \varepsilon_{t-q}.
+</span></p>
+<p><strong>Read this as</strong>: “this month equals a baseline <span class="math inline">\mu</span> plus today’s shock plus echoes of the last <span class="math inline">q</span> shocks, weighted by <span class="math inline">\theta_1, \dots, \theta_q</span>.” An MA(<span class="math inline">q</span>) has memory of exactly <span class="math inline">q</span> periods: a shock affects the series for <span class="math inline">q</span> months and then is gone entirely. This is why its ACF <em>cuts off</em> after lag <span class="math inline">q</span> — there is simply no correlation beyond the window of remembered shocks.</p>
+</section>
+<section id="putting-them-together-armapq" class="level3">
+<h3 class="anchored" data-anchor-id="putting-them-together-armapq">Putting them together: ARMA(<span class="math inline">p,q</span>)</h3>
+<p>Real series often need both — some persistence in levels (AR) and some short-lived shock structure (MA). The combined model is</p>
+<p><span class="math display">
+y_t = c + \underbrace{\phi_1 y_{t-1} + \dots + \phi_p y_{t-p}}_{\text{AR}(p)\ \text{part}} + \varepsilon_t + \underbrace{\theta_1 \varepsilon_{t-1} + \dots + \theta_q \varepsilon_{t-q}}_{\text{MA}(q)\ \text{part}}.
+</span></p>
+<p>ARMA(<span class="math inline">p,q</span>) is the flexible engine of stationary time-series modeling: a small handful of parameters can reproduce a wide range of ACF/PACF shapes. But it assumes the series is <em>already</em> stationary. When it is not, we difference first.</p>
+</section>
+</section>
+<section id="from-arma-to-arima-differencing" class="level2">
+<h2 class="anchored" data-anchor-id="from-arma-to-arima-differencing">From ARMA to ARIMA: Differencing</h2>
+<p>Most raw series trend. Uppsala’s monthly visit count grows as the population grows; it is not mean-stationary. The fix is <strong>differencing</strong>: instead of modeling the level, model the <em>change</em>.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>first difference</strong> of a series is</p>
+<p><span class="math display">
+\Delta y_t = y_t - y_{t-1}.
+</span></p>
+<p>A series that becomes stationary after differencing <span class="math inline">d</span> times is <strong>integrated of order <span class="math inline">d</span></strong>, written <span class="math inline">I(d)</span>. Modeling an ARMA(<span class="math inline">p,q</span>) on the <span class="math inline">d</span>-times-differenced series gives the <strong>ARIMA(<span class="math inline">p,d,q</span>)</strong> model: <strong>A</strong>uto<strong>R</strong>egressive <strong>I</strong>ntegrated <strong>M</strong>oving <strong>A</strong>verage.</p>
+<p><strong>Read ARIMA(<span class="math inline">p,d,q</span>) as</strong>: “difference the series <span class="math inline">d</span> times to make it stationary, then fit <span class="math inline">p</span> autoregressive lags and <span class="math inline">q</span> moving-average lags to the result.” A linear trend is removed by <span class="math inline">d=1</span>; a quadratic trend by <span class="math inline">d=2</span>. Most economic and health series need <span class="math inline">d=0</span> or <span class="math inline">d=1</span>.</p>
+</div>
+<div class="glass-card glass-card--warning">
+<p><strong>Do not over-difference.</strong> Differencing a series that is <em>already</em> stationary injects an artificial <span class="math inline">-1</span> autocorrelation at lag 1 (an MA(1) unit root) and inflates the variance of your forecasts. Difference only as much as a unit-root test (next page) and the ACF tell you to. The mantra: difference to <em>remove a trend</em>, never reflexively. Equally, <em>under</em>-differencing leaves a trend in the residuals and the model’s standard errors are not trustworthy.</p>
+</div>
+<p><strong>Seasonality.</strong> Monthly health data carries a yearly rhythm: every January spikes, every July dips. A <em>seasonal</em> difference <span class="math inline">y_t - y_{t-12}</span> removes a fixed monthly pattern, and the <strong>SARIMA</strong>(<span class="math inline">p,d,q</span>)(<span class="math inline">P,D,Q</span>)<span class="math inline">_s</span> model adds seasonal AR/MA terms at the seasonal lag <span class="math inline">s</span> (here <span class="math inline">s = 12</span>). For Swedish monthly primary-care data, a seasonal component is almost always required — a non-seasonal ARIMA will leave a tell-tale spike at lag 12 in the residual ACF.</p>
+</section>
+<section id="see-it-ar1-persistence-and-its-acf" class="level2">
+<h2 class="anchored" data-anchor-id="see-it-ar1-persistence-and-its-acf">See It: AR(1) Persistence and Its ACF</h2>
+<p>The interactive below simulates an AR(1) series of monthly primary-care visits for a Swedish region. Drag the persistence coefficient <span class="math inline">\phi</span> from <span class="math inline">0</span> (pure white noise — no memory) toward <span class="math inline">1</span> (near-random-walk — shocks never fade) and watch two things move in lockstep: the <strong>series itself</strong> grows smoother and more wandering, and its <strong>theoretical ACF</strong> <span class="math inline">\rho_k = \phi^k</span> decays more slowly. Toggle the MA(1) term to see how a single <span class="math inline">\theta</span> injects one period of extra short-run memory on top of the AR persistence.</p>
+<section id="simulating-an-ar1-with-optional-ma-term-for-monthly-primary-care-visits" class="level4 interactive-container">
+<h4 class="anchored" data-anchor-id="simulating-an-ar1-with-optional-ma-term-for-monthly-primary-care-visits">Simulating an AR(1) (with optional MA term) for monthly primary-care visits</h4>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb1" data-startfrom="141" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 140;"><span id="cb1-141"><a href="#cb1-141" aria-hidden="true" tabindex="-1"></a>viewof tsarima_phi <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">0</span><span class="op">,</span> <span class="fl">0.98</span>]<span class="op">,</span> {</span>
+<span id="cb1-142"><a href="#cb1-142" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="fl">0.6</span><span class="op">,</span></span>
+<span id="cb1-143"><a href="#cb1-143" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.02</span><span class="op">,</span></span>
+<span id="cb1-144"><a href="#cb1-144" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Persistence φ  (0 = white noise, →1 = random walk)"</span></span>
+<span id="cb1-145"><a href="#cb1-145" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb2" data-startfrom="150" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 149;"><span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>viewof tsarima_useMA <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">toggle</span>({</span>
+<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Add an MA(1) term θ"</span><span class="op">,</span></span>
+<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="kw">false</span></span>
+<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb3" data-startfrom="158" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 157;"><span id="cb3-158"><a href="#cb3-158" aria-hidden="true" tabindex="-1"></a>viewof tsarima_theta <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="op">-</span><span class="fl">0.8</span><span class="op">,</span> <span class="fl">0.8</span>]<span class="op">,</span> {</span>
+<span id="cb3-159"><a href="#cb3-159" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="fl">0.4</span><span class="op">,</span></span>
+<span id="cb3-160"><a href="#cb3-160" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.05</span><span class="op">,</span></span>
+<span id="cb3-161"><a href="#cb3-161" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"MA(1) coefficient θ  (active only when toggled on)"</span></span>
+<span id="cb3-162"><a href="#cb3-162" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb4" data-startfrom="167" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 166;"><span id="cb4-167"><a href="#cb4-167" aria-hidden="true" tabindex="-1"></a><span class="co">// Re-draw button: increment a counter to resample a fresh shock sequence.</span></span>
+<span id="cb4-168"><a href="#cb4-168" aria-hidden="true" tabindex="-1"></a><span class="co">// (reduce-on-click pattern: never read+write a mutable in one cell.)</span></span>
+<span id="cb4-169"><a href="#cb4-169" aria-hidden="true" tabindex="-1"></a>viewof tsarima_draw <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">button</span>(<span class="st">"Draw a new random sample"</span><span class="op">,</span> {</span>
+<span id="cb4-170"><a href="#cb4-170" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span></span>
+<span id="cb4-171"><a href="#cb4-171" aria-hidden="true" tabindex="-1"></a>  <span class="dt">reduce</span><span class="op">:</span> v <span class="kw">=&gt;</span> v <span class="op">+</span> <span class="dv">1</span></span>
+<span id="cb4-172"><a href="#cb4-172" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb5" data-startfrom="178" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 177;"><span id="cb5-178"><a href="#cb5-178" aria-hidden="true" tabindex="-1"></a><span class="co">// Uppsala-academic palette tokens shared across this page's interactives.</span></span>
+<span id="cb5-179"><a href="#cb5-179" aria-hidden="true" tabindex="-1"></a>tsarima_pal <span class="op">=</span> ({</span>
+<span id="cb5-180"><a href="#cb5-180" aria-hidden="true" tabindex="-1"></a>  <span class="dt">focal</span><span class="op">:</span>  <span class="st">"#990000"</span><span class="op">,</span>   <span class="co">// focal series (Uppsala red)</span></span>
+<span id="cb5-181"><a href="#cb5-181" aria-hidden="true" tabindex="-1"></a>  <span class="dt">slate</span><span class="op">:</span>  <span class="st">"#3d5a6c"</span><span class="op">,</span>   <span class="co">// secondary / comparison</span></span>
+<span id="cb5-182"><a href="#cb5-182" aria-hidden="true" tabindex="-1"></a>  <span class="dt">good</span><span class="op">:</span>   <span class="st">"#2e6f40"</span><span class="op">,</span>   <span class="co">// on-target / good</span></span>
+<span id="cb5-183"><a href="#cb5-183" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ochre</span><span class="op">:</span>  <span class="st">"#9c7a33"</span><span class="op">,</span>   <span class="co">// highlight / true value</span></span>
+<span id="cb5-184"><a href="#cb5-184" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bad</span><span class="op">:</span>    <span class="st">"#b3000b"</span><span class="op">,</span>   <span class="co">// alarm</span></span>
+<span id="cb5-185"><a href="#cb5-185" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ink</span><span class="op">:</span>    <span class="st">"#1c1c1a"</span><span class="op">,</span>   <span class="co">// ink text &amp; reference lines</span></span>
+<span id="cb5-186"><a href="#cb5-186" aria-hidden="true" tabindex="-1"></a>  <span class="dt">axis</span><span class="op">:</span>   <span class="st">"#79766e"</span><span class="op">,</span>   <span class="co">// axis text</span></span>
+<span id="cb5-187"><a href="#cb5-187" aria-hidden="true" tabindex="-1"></a>  <span class="dt">hair</span><span class="op">:</span>   <span class="st">"#e6e3db"</span><span class="op">,</span>   <span class="co">// gridlines / hairlines</span></span>
+<span id="cb5-188"><a href="#cb5-188" aria-hidden="true" tabindex="-1"></a>  <span class="dt">muted</span><span class="op">:</span>  <span class="st">"#79766e"</span><span class="op">,</span>   <span class="co">// muted ink</span></span>
+<span id="cb5-189"><a href="#cb5-189" aria-hidden="true" tabindex="-1"></a>  <span class="dt">fill</span><span class="op">:</span>   <span class="st">"#f6f5f1"</span>    <span class="co">// subtle tile fill</span></span>
+<span id="cb5-190"><a href="#cb5-190" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-5" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb6" data-startfrom="196" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 195;"><span id="cb6-196"><a href="#cb6-196" aria-hidden="true" tabindex="-1"></a><span class="co">// Series length: 10 years of monthly observations.</span></span>
+<span id="cb6-197"><a href="#cb6-197" aria-hidden="true" tabindex="-1"></a>tsarima_T <span class="op">=</span> <span class="dv">120</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-6" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb7" data-startfrom="203" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 202;"><span id="cb7-203"><a href="#cb7-203" aria-hidden="true" tabindex="-1"></a><span class="co">// Regional baseline level: mean monthly visits per 1,000 residents — a</span></span>
+<span id="cb7-204"><a href="#cb7-204" aria-hidden="true" tabindex="-1"></a><span class="co">// realistic primary-care intensity for a Swedish region.</span></span>
+<span id="cb7-205"><a href="#cb7-205" aria-hidden="true" tabindex="-1"></a>tsarima_mu <span class="op">=</span> <span class="dv">95</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-7" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb8" data-startfrom="211" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 210;"><span id="cb8-211"><a href="#cb8-211" aria-hidden="true" tabindex="-1"></a><span class="co">// Shock standard deviation.</span></span>
+<span id="cb8-212"><a href="#cb8-212" aria-hidden="true" tabindex="-1"></a>tsarima_sigma <span class="op">=</span> <span class="dv">6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-8" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb9" data-startfrom="218" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 217;"><span id="cb9-218"><a href="#cb9-218" aria-hidden="true" tabindex="-1"></a><span class="co">// Generate the AR(1) [+ optional MA(1)] path. Reading tsarima_draw makes the</span></span>
+<span id="cb9-219"><a href="#cb9-219" aria-hidden="true" tabindex="-1"></a><span class="co">// cell re-run (a new random path) each time the button is clicked, WITHOUT</span></span>
+<span id="cb9-220"><a href="#cb9-220" aria-hidden="true" tabindex="-1"></a><span class="co">// reading-and-writing any mutable. Randomness via d3.randomNormal.</span></span>
+<span id="cb9-221"><a href="#cb9-221" aria-hidden="true" tabindex="-1"></a>tsarima_series <span class="op">=</span> {</span>
+<span id="cb9-222"><a href="#cb9-222" aria-hidden="true" tabindex="-1"></a>  tsarima_draw<span class="op">;</span>                          <span class="co">// reactive dependency: resample on click</span></span>
+<span id="cb9-223"><a href="#cb9-223" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> phi <span class="op">=</span> tsarima_phi<span class="op">;</span></span>
+<span id="cb9-224"><a href="#cb9-224" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> theta <span class="op">=</span> tsarima_useMA <span class="op">?</span> tsarima_theta <span class="op">:</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-225"><a href="#cb9-225" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> rnorm <span class="op">=</span> d3<span class="op">.</span><span class="fu">randomNormal</span>(<span class="dv">0</span><span class="op">,</span> tsarima_sigma)<span class="op">;</span></span>
+<span id="cb9-226"><a href="#cb9-226" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> eps <span class="op">=</span> d3<span class="op">.</span><span class="fu">range</span>(tsarima_T <span class="op">+</span> <span class="dv">1</span>)<span class="op">.</span><span class="fu">map</span>(() <span class="kw">=&gt;</span> <span class="fu">rnorm</span>())<span class="op">;</span>  <span class="co">// shocks (incl. e_{-1})</span></span>
+<span id="cb9-227"><a href="#cb9-227" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> out <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb9-228"><a href="#cb9-228" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> prev <span class="op">=</span> <span class="dv">0</span><span class="op">;</span>                          <span class="co">// deviation from the mean μ</span></span>
+<span id="cb9-229"><a href="#cb9-229" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (<span class="kw">let</span> t <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> t <span class="op">&lt;=</span> tsarima_T<span class="op">;</span> t<span class="op">++</span>) {</span>
+<span id="cb9-230"><a href="#cb9-230" aria-hidden="true" tabindex="-1"></a>    <span class="co">// y_t - μ = φ (y_{t-1} - μ) + ε_t + θ ε_{t-1}</span></span>
+<span id="cb9-231"><a href="#cb9-231" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> dev <span class="op">=</span> phi <span class="op">*</span> prev <span class="op">+</span> eps[t] <span class="op">+</span> theta <span class="op">*</span> eps[t <span class="op">-</span> <span class="dv">1</span>]<span class="op">;</span></span>
+<span id="cb9-232"><a href="#cb9-232" aria-hidden="true" tabindex="-1"></a>    out<span class="op">.</span><span class="fu">push</span>({ t<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> tsarima_mu <span class="op">+</span> dev })<span class="op">;</span></span>
+<span id="cb9-233"><a href="#cb9-233" aria-hidden="true" tabindex="-1"></a>    prev <span class="op">=</span> dev<span class="op">;</span></span>
+<span id="cb9-234"><a href="#cb9-234" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb9-235"><a href="#cb9-235" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> out<span class="op">;</span></span>
+<span id="cb9-236"><a href="#cb9-236" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-9" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb10" data-startfrom="242" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 241;"><span id="cb10-242"><a href="#cb10-242" aria-hidden="true" tabindex="-1"></a><span class="co">// Theoretical AR(1) ACF: ρ_k = φ^k. (With the MA term the true ACF differs</span></span>
+<span id="cb10-243"><a href="#cb10-243" aria-hidden="true" tabindex="-1"></a><span class="co">// slightly at low lags; we plot the pure-AR geometric decay as the reference</span></span>
+<span id="cb10-244"><a href="#cb10-244" aria-hidden="true" tabindex="-1"></a><span class="co">// envelope, which is the key intuition the slider is meant to convey.)</span></span>
+<span id="cb10-245"><a href="#cb10-245" aria-hidden="true" tabindex="-1"></a>tsarima_acf <span class="op">=</span> d3<span class="op">.</span><span class="fu">range</span>(<span class="dv">0</span><span class="op">,</span> <span class="dv">19</span>)<span class="op">.</span><span class="fu">map</span>(k <span class="kw">=&gt;</span> ({</span>
+<span id="cb10-246"><a href="#cb10-246" aria-hidden="true" tabindex="-1"></a>  k<span class="op">,</span></span>
+<span id="cb10-247"><a href="#cb10-247" aria-hidden="true" tabindex="-1"></a>  <span class="dt">rho</span><span class="op">:</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">pow</span>(tsarima_phi<span class="op">,</span> k)</span>
+<span id="cb10-248"><a href="#cb10-248" aria-hidden="true" tabindex="-1"></a>}))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-10" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb11" data-startfrom="253" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 252;"><span id="cb11-253"><a href="#cb11-253" aria-hidden="true" tabindex="-1"></a><span class="co">// Top panel: the simulated series through time.</span></span>
+<span id="cb11-254"><a href="#cb11-254" aria-hidden="true" tabindex="-1"></a>Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb11-255"><a href="#cb11-255" aria-hidden="true" tabindex="-1"></a>  <span class="dt">width</span><span class="op">:</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">min</span>(<span class="dv">680</span><span class="op">,</span> width)<span class="op">,</span></span>
+<span id="cb11-256"><a href="#cb11-256" aria-hidden="true" tabindex="-1"></a>  <span class="dt">height</span><span class="op">:</span> <span class="dv">250</span><span class="op">,</span></span>
+<span id="cb11-257"><a href="#cb11-257" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">62</span><span class="op">,</span></span>
+<span id="cb11-258"><a href="#cb11-258" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">45</span><span class="op">,</span></span>
+<span id="cb11-259"><a href="#cb11-259" aria-hidden="true" tabindex="-1"></a>  <span class="dt">style</span><span class="op">:</span> {</span>
+<span id="cb11-260"><a href="#cb11-260" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"'Inter', system-ui, sans-serif"</span><span class="op">,</span></span>
+<span id="cb11-261"><a href="#cb11-261" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fontSize</span><span class="op">:</span> <span class="st">"12px"</span><span class="op">,</span></span>
+<span id="cb11-262"><a href="#cb11-262" aria-hidden="true" tabindex="-1"></a>    <span class="dt">background</span><span class="op">:</span> <span class="st">"transparent"</span><span class="op">,</span></span>
+<span id="cb11-263"><a href="#cb11-263" aria-hidden="true" tabindex="-1"></a>    <span class="dt">color</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">axis</span></span>
+<span id="cb11-264"><a href="#cb11-264" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb11-265"><a href="#cb11-265" aria-hidden="true" tabindex="-1"></a>  <span class="dt">x</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"Month  t  →"</span><span class="op">,</span> <span class="dt">domain</span><span class="op">:</span> [<span class="dv">1</span><span class="op">,</span> tsarima_T]<span class="op">,</span> <span class="dt">grid</span><span class="op">:</span> <span class="kw">false</span> }<span class="op">,</span></span>
+<span id="cb11-266"><a href="#cb11-266" aria-hidden="true" tabindex="-1"></a>  <span class="dt">y</span><span class="op">:</span> {</span>
+<span id="cb11-267"><a href="#cb11-267" aria-hidden="true" tabindex="-1"></a>    <span class="dt">label</span><span class="op">:</span> <span class="st">"↑ Visits per 1,000 residents"</span><span class="op">,</span></span>
+<span id="cb11-268"><a href="#cb11-268" aria-hidden="true" tabindex="-1"></a>    <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb11-269"><a href="#cb11-269" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> [tsarima_mu <span class="op">-</span> <span class="dv">28</span><span class="op">,</span> tsarima_mu <span class="op">+</span> <span class="dv">28</span>]</span>
+<span id="cb11-270"><a href="#cb11-270" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb11-271"><a href="#cb11-271" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb11-272"><a href="#cb11-272" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">gridY</span>({ <span class="dt">stroke</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">hair</span> })<span class="op">,</span></span>
+<span id="cb11-273"><a href="#cb11-273" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Mean reference line (ochre = the level the series reverts to).</span></span>
+<span id="cb11-274"><a href="#cb11-274" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleY</span>([tsarima_mu]<span class="op">,</span> {</span>
+<span id="cb11-275"><a href="#cb11-275" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">ochre</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">1.5</span><span class="op">,</span> <span class="dt">strokeDasharray</span><span class="op">:</span> <span class="st">"5,4"</span></span>
+<span id="cb11-276"><a href="#cb11-276" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb11-277"><a href="#cb11-277" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">text</span>([{ <span class="dt">t</span><span class="op">:</span> tsarima_T<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> tsarima_mu }]<span class="op">,</span> {</span>
+<span id="cb11-278"><a href="#cb11-278" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"t"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">text</span><span class="op">:</span> () <span class="kw">=&gt;</span> <span class="st">"mean μ"</span><span class="op">,</span></span>
+<span id="cb11-279"><a href="#cb11-279" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fill</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">ochre</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">11</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="dv">600</span><span class="op">,</span></span>
+<span id="cb11-280"><a href="#cb11-280" aria-hidden="true" tabindex="-1"></a>      <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"end"</span><span class="op">,</span> <span class="dt">dy</span><span class="op">:</span> <span class="op">-</span><span class="dv">6</span><span class="op">,</span></span>
+<span id="cb11-281"><a href="#cb11-281" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">3</span><span class="op">,</span> <span class="dt">paintOrder</span><span class="op">:</span> <span class="st">"stroke"</span></span>
+<span id="cb11-282"><a href="#cb11-282" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb11-283"><a href="#cb11-283" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The simulated AR(1) series (focal — Uppsala red).</span></span>
+<span id="cb11-284"><a href="#cb11-284" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(tsarima_series<span class="op">,</span> {</span>
+<span id="cb11-285"><a href="#cb11-285" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"t"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">1.6</span></span>
+<span id="cb11-286"><a href="#cb11-286" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb11-287"><a href="#cb11-287" aria-hidden="true" tabindex="-1"></a>  ]</span>
+<span id="cb11-288"><a href="#cb11-288" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-11" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb12" data-startfrom="293" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 292;"><span id="cb12-293"><a href="#cb12-293" aria-hidden="true" tabindex="-1"></a><span class="co">// Bottom panel: the theoretical ACF, ρ_k = φ^k, as a stem (lollipop) plot.</span></span>
+<span id="cb12-294"><a href="#cb12-294" aria-hidden="true" tabindex="-1"></a>Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb12-295"><a href="#cb12-295" aria-hidden="true" tabindex="-1"></a>  <span class="dt">width</span><span class="op">:</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">min</span>(<span class="dv">680</span><span class="op">,</span> width)<span class="op">,</span></span>
+<span id="cb12-296"><a href="#cb12-296" aria-hidden="true" tabindex="-1"></a>  <span class="dt">height</span><span class="op">:</span> <span class="dv">230</span><span class="op">,</span></span>
+<span id="cb12-297"><a href="#cb12-297" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">62</span><span class="op">,</span></span>
+<span id="cb12-298"><a href="#cb12-298" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">45</span><span class="op">,</span></span>
+<span id="cb12-299"><a href="#cb12-299" aria-hidden="true" tabindex="-1"></a>  <span class="dt">style</span><span class="op">:</span> {</span>
+<span id="cb12-300"><a href="#cb12-300" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"'Inter', system-ui, sans-serif"</span><span class="op">,</span></span>
+<span id="cb12-301"><a href="#cb12-301" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fontSize</span><span class="op">:</span> <span class="st">"12px"</span><span class="op">,</span></span>
+<span id="cb12-302"><a href="#cb12-302" aria-hidden="true" tabindex="-1"></a>    <span class="dt">background</span><span class="op">:</span> <span class="st">"transparent"</span><span class="op">,</span></span>
+<span id="cb12-303"><a href="#cb12-303" aria-hidden="true" tabindex="-1"></a>    <span class="dt">color</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">axis</span></span>
+<span id="cb12-304"><a href="#cb12-304" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb12-305"><a href="#cb12-305" aria-hidden="true" tabindex="-1"></a>  <span class="dt">x</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"Lag  k  (months)  →"</span><span class="op">,</span> <span class="dt">domain</span><span class="op">:</span> [<span class="op">-</span><span class="fl">0.5</span><span class="op">,</span> <span class="fl">18.5</span>] }<span class="op">,</span></span>
+<span id="cb12-306"><a href="#cb12-306" aria-hidden="true" tabindex="-1"></a>  <span class="dt">y</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"↑ Autocorrelation  ρ(k)"</span><span class="op">,</span> <span class="dt">domain</span><span class="op">:</span> [<span class="op">-</span><span class="fl">0.25</span><span class="op">,</span> <span class="fl">1.05</span>]<span class="op">,</span> <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span> }<span class="op">,</span></span>
+<span id="cb12-307"><a href="#cb12-307" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb12-308"><a href="#cb12-308" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">gridY</span>({ <span class="dt">stroke</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">hair</span> })<span class="op">,</span></span>
+<span id="cb12-309"><a href="#cb12-309" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleY</span>([<span class="dv">0</span>]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">ink</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">1</span> })<span class="op">,</span></span>
+<span id="cb12-310"><a href="#cb12-310" aria-hidden="true" tabindex="-1"></a>    <span class="co">// ACF stems (slate) with dots at the tips (focal red).</span></span>
+<span id="cb12-311"><a href="#cb12-311" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleX</span>(tsarima_acf<span class="op">,</span> {</span>
+<span id="cb12-312"><a href="#cb12-312" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"k"</span><span class="op">,</span> <span class="dt">y1</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">y2</span><span class="op">:</span> <span class="st">"rho"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">slate</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">2</span></span>
+<span id="cb12-313"><a href="#cb12-313" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb12-314"><a href="#cb12-314" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>(tsarima_acf<span class="op">,</span> {</span>
+<span id="cb12-315"><a href="#cb12-315" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"k"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"rho"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="dv">4</span></span>
+<span id="cb12-316"><a href="#cb12-316" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb12-317"><a href="#cb12-317" aria-hidden="true" tabindex="-1"></a>  ]</span>
+<span id="cb12-318"><a href="#cb12-318" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-12" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb13" data-startfrom="323" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 322;"><span id="cb13-323"><a href="#cb13-323" aria-hidden="true" tabindex="-1"></a><span class="co">// Live readout tying the picture to the numbers. Built inside an ojs cell with</span></span>
+<span id="cb13-324"><a href="#cb13-324" aria-hidden="true" tabindex="-1"></a><span class="co">// html`` so the reactive values interpolate (markdown ${...} would render</span></span>
+<span id="cb13-325"><a href="#cb13-325" aria-hidden="true" tabindex="-1"></a><span class="co">// literally). Reports persistence, the implied lag-1 ACF, and a half-life.</span></span>
+<span id="cb13-326"><a href="#cb13-326" aria-hidden="true" tabindex="-1"></a>{</span>
+<span id="cb13-327"><a href="#cb13-327" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> phi <span class="op">=</span> tsarima_phi<span class="op">;</span></span>
+<span id="cb13-328"><a href="#cb13-328" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Half-life: number of months for a shock's echo to fall to half its size,</span></span>
+<span id="cb13-329"><a href="#cb13-329" aria-hidden="true" tabindex="-1"></a>  <span class="co">// φ^h = 0.5  ⇒  h = ln(0.5) / ln(φ). Undefined at φ = 0 (no persistence).</span></span>
+<span id="cb13-330"><a href="#cb13-330" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> halfLife <span class="op">=</span> phi <span class="op">&lt;=</span> <span class="dv">0</span> <span class="op">?</span> <span class="dv">0</span> <span class="op">:</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">log</span>(<span class="fl">0.5</span>) <span class="op">/</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">log</span>(phi)<span class="op">;</span></span>
+<span id="cb13-331"><a href="#cb13-331" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> hlText <span class="op">=</span> phi <span class="op">&lt;=</span> <span class="dv">0</span></span>
+<span id="cb13-332"><a href="#cb13-332" aria-hidden="true" tabindex="-1"></a>    <span class="op">?</span> <span class="st">"0 (no memory)"</span></span>
+<span id="cb13-333"><a href="#cb13-333" aria-hidden="true" tabindex="-1"></a>    <span class="op">:</span> (phi <span class="op">&gt;=</span> <span class="fl">0.98</span> <span class="op">?</span> <span class="st">"≈ ∞ (random walk)"</span> <span class="op">:</span> halfLife<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">1</span>) <span class="op">+</span> <span class="st">" months"</span>)<span class="op">;</span></span>
+<span id="cb13-334"><a href="#cb13-334" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> regime <span class="op">=</span> phi <span class="op">&lt;</span> <span class="fl">0.15</span> <span class="op">?</span> <span class="st">"≈ white noise"</span></span>
+<span id="cb13-335"><a href="#cb13-335" aria-hidden="true" tabindex="-1"></a>    <span class="op">:</span> phi <span class="op">&lt;</span> <span class="fl">0.55</span> <span class="op">?</span> <span class="st">"weak persistence"</span></span>
+<span id="cb13-336"><a href="#cb13-336" aria-hidden="true" tabindex="-1"></a>    <span class="op">:</span> phi <span class="op">&lt;</span> <span class="fl">0.85</span> <span class="op">?</span> <span class="st">"moderate persistence"</span></span>
+<span id="cb13-337"><a href="#cb13-337" aria-hidden="true" tabindex="-1"></a>    <span class="op">:</span> <span class="st">"near random walk"</span><span class="op">;</span></span>
+<span id="cb13-338"><a href="#cb13-338" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> regimeColor <span class="op">=</span> phi <span class="op">&lt;</span> <span class="fl">0.15</span> <span class="op">?</span> tsarima_pal<span class="op">.</span><span class="at">good</span></span>
+<span id="cb13-339"><a href="#cb13-339" aria-hidden="true" tabindex="-1"></a>    <span class="op">:</span> phi <span class="op">&lt;</span> <span class="fl">0.85</span> <span class="op">?</span> tsarima_pal<span class="op">.</span><span class="at">slate</span></span>
+<span id="cb13-340"><a href="#cb13-340" aria-hidden="true" tabindex="-1"></a>    <span class="op">:</span> tsarima_pal<span class="op">.</span><span class="at">bad</span><span class="op">;</span></span>
+<span id="cb13-341"><a href="#cb13-341" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> tile <span class="op">=</span> (label<span class="op">,</span> value<span class="op">,</span> color) <span class="kw">=&gt;</span> <span class="fu">html</span><span class="vs">`&lt;div style="</span></span>
+<span id="cb13-342"><a href="#cb13-342" aria-hidden="true" tabindex="-1"></a><span class="vs">      flex: 1 1 0; min-width: 7.5rem; text-align: center;</span></span>
+<span id="cb13-343"><a href="#cb13-343" aria-hidden="true" tabindex="-1"></a><span class="vs">      padding: 0.55rem 0.4rem; border-radius: 0.35rem;</span></span>
+<span id="cb13-344"><a href="#cb13-344" aria-hidden="true" tabindex="-1"></a><span class="vs">      background: </span><span class="sc">${</span>tsarima_pal<span class="op">.</span><span class="at">fill</span><span class="sc">}</span><span class="vs">; border: 1px solid </span><span class="sc">${</span>tsarima_pal<span class="op">.</span><span class="at">hair</span><span class="sc">}</span><span class="vs">;"&gt;</span></span>
+<span id="cb13-345"><a href="#cb13-345" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;</span></span>
+<span id="cb13-346"><a href="#cb13-346" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;</span></span>
+<span id="cb13-347"><a href="#cb13-347" aria-hidden="true" tabindex="-1"></a><span class="vs">        color:</span><span class="sc">${</span>tsarima_pal<span class="op">.</span><span class="at">muted</span><span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>label<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb13-348"><a href="#cb13-348" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'JetBrains Mono',monospace; font-size:1.1rem;</span></span>
+<span id="cb13-349"><a href="#cb13-349" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; color:</span><span class="sc">${</span>color<span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>value<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb13-350"><a href="#cb13-350" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb13-351"><a href="#cb13-351" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">html</span><span class="vs">`&lt;div style="display:flex; flex-wrap:wrap; gap:0.5rem;</span></span>
+<span id="cb13-352"><a href="#cb13-352" aria-hidden="true" tabindex="-1"></a><span class="vs">      margin-top:0.75rem;"&gt;</span></span>
+<span id="cb13-353"><a href="#cb13-353" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Persistence φ"</span><span class="op">,</span> phi<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">2</span>)<span class="op">,</span> tsarima_pal<span class="op">.</span><span class="at">focal</span>)<span class="sc">}</span></span>
+<span id="cb13-354"><a href="#cb13-354" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Lag-1 ACF  ρ₁ = φ"</span><span class="op">,</span> phi<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">2</span>)<span class="op">,</span> tsarima_pal<span class="op">.</span><span class="at">ink</span>)<span class="sc">}</span></span>
+<span id="cb13-355"><a href="#cb13-355" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Shock half-life"</span><span class="op">,</span> hlText<span class="op">,</span> tsarima_pal<span class="op">.</span><span class="at">ochre</span>)<span class="sc">}</span></span>
+<span id="cb13-356"><a href="#cb13-356" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Regime"</span><span class="op">,</span> regime<span class="op">,</span> regimeColor)<span class="sc">}</span></span>
+<span id="cb13-357"><a href="#cb13-357" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb13-358"><a href="#cb13-358" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-13" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+</section>
+<section id="how-to-read-the-ar1-simulator" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-ar1-simulator">How to Read the AR(1) Simulator</h3>
+<p>Work through these in order; each isolates one idea.</p>
+<p><strong>Step 1: Start at white noise.</strong> Drag <strong>persistence <span class="math inline">\phi</span></strong> all the way to <span class="math inline">0</span>. The top series jitters around its mean <span class="math inline">\mu</span> with no memory at all — each month is an independent draw. The ACF below is a single spike of height <span class="math inline">1</span> at lag <span class="math inline">0</span> and essentially zero everywhere else. This is the “no serial dependence” baseline: a time series with nothing to forecast beyond its mean.</p>
+<p><strong>Step 2: Add persistence.</strong> Raise <span class="math inline">\phi</span> to about <span class="math inline">0.6</span>. The series now <em>wanders</em> — runs of above-average months and runs of below-average months appear, because each value pulls the next toward itself. The ACF stems decay geometrically: <span class="math inline">\rho_1 = \phi</span>, <span class="math inline">\rho_2 = \phi^2</span>, and so on. Read the “Shock half-life” tile: at <span class="math inline">\phi = 0.6</span> a flu surge has faded to half its size in roughly <span class="math inline">1.4</span> months.</p>
+<p><strong>Step 3: Approach the random walk.</strong> Push <span class="math inline">\phi</span> toward <span class="math inline">0.98</span>. The series becomes a slow, smooth drift that can stay far from its mean for years; the ACF barely decays at all over 18 lags. The “Regime” tile turns red and the half-life explodes toward infinity — shocks essentially <em>never</em> die. This is the edge of stationarity: at <span class="math inline">\phi = 1</span> exactly, the process is a random walk and the mean-reverting pull vanishes entirely (the subject of the next page).</p>
+<p><strong>Step 4: Toggle the MA term.</strong> Turn on <strong>Add an MA(1) term <span class="math inline">\theta</span></strong> and set <span class="math inline">\theta</span> to <span class="math inline">+0.4</span>. The series gains one extra period of short-run smoothing layered on top of the AR persistence — consecutive months are stitched a little tighter because they share the previous shock. Set <span class="math inline">\theta</span> negative and consecutive months instead tend to <em>zig-zag</em>, partly cancelling. This is the MA part of ARMA: memory carried by <em>shocks</em>, not by <em>levels</em>.</p>
+<p><strong>Step 5: Resample.</strong> Click <strong>Draw a new random sample</strong> a few times at a fixed <span class="math inline">\phi</span>. The individual path changes every time — it is one realization of a random process — but its <em>character</em> (smoothness, wandering, the decay rate of the ACF) is governed entirely by <span class="math inline">\phi</span>, not by the particular shocks. That invariance across redraws is exactly what stationarity guarantees: the <em>structure</em> is stable even though the <em>path</em> is not.</p>
+</section>
+</section>
+<section id="forecasting-intuition" class="level2">
+<h2 class="anchored" data-anchor-id="forecasting-intuition">Forecasting Intuition</h2>
+<p>Once an ARIMA model is fitted, forecasting is mechanical: feed the model its own recent values (and shocks) and roll forward. For the AR(1), the <span class="math inline">h</span>-step-ahead forecast is</p>
+<p><span class="math display">
+\hat y_{T+h} = \mu + \phi^{h}\,(y_T - \mu).
+</span></p>
+<p><strong>Read this as</strong>: “the forecast <span class="math inline">h</span> months out equals the long-run mean <span class="math inline">\mu</span>, plus the current deviation <span class="math inline">y_T - \mu</span> shrunk by <span class="math inline">\phi^h</span>.” Because <span class="math inline">|\phi| &lt; 1</span>, the factor <span class="math inline">\phi^h \to 0</span> as the horizon <span class="math inline">h</span> grows: <strong>all forecasts decay back to the mean</strong>, fast if <span class="math inline">\phi</span> is small, slowly if <span class="math inline">\phi</span> is near <span class="math inline">1</span>. This is the single most important forecasting intuition for stationary series — the distant future is just the unconditional mean, and the forecast <em>interval</em> widens to the unconditional variance. A non-stationary (random-walk) series behaves entirely differently: its best forecast is the <em>last value</em> and the interval fans out without bound, which is exactly why distinguishing the two cases (next page) matters so much in practice.</p>
+<details>
+<summary>
+Math Details: AR(1) mean, variance, ACF, and the stationarity condition
+</summary>
+<div class="details-content">
+<p>Start from the AR(1) in deviation form. Write <span class="math inline">\tilde y_t = y_t - \mu</span> so the constant drops out:</p>
+<p><span class="math display">
+\tilde y_t = \phi\,\tilde y_{t-1} + \varepsilon_t, \qquad E[\varepsilon_t] = 0,\ \operatorname{Var}(\varepsilon_t)=\sigma^2,\ \varepsilon_t \perp \tilde y_{t-1}.
+</span></p>
+<section id="mean" class="level3">
+<h3 class="anchored" data-anchor-id="mean">Mean</h3>
+<p>Take expectations of the level equation <span class="math inline">y_t = c + \phi y_{t-1} + \varepsilon_t</span>. Under stationarity <span class="math inline">E[y_t] = E[y_{t-1}] = \mu</span>, so</p>
+<p><span class="math display">
+\mu = c + \phi\mu \;\Longrightarrow\; \mu = \frac{c}{1-\phi},
+</span></p>
+<p>which requires <span class="math inline">\phi \ne 1</span>. (At <span class="math inline">\phi = 1</span> the mean is undefined — a first signal of non-stationarity.)</p>
+</section>
+<section id="variance" class="level3">
+<h3 class="anchored" data-anchor-id="variance">Variance</h3>
+<p>Take the variance of <span class="math inline">\tilde y_t = \phi \tilde y_{t-1} + \varepsilon_t</span>. Because <span class="math inline">\varepsilon_t</span> is independent of <span class="math inline">\tilde y_{t-1}</span>, the cross term vanishes:</p>
+<p><span class="math display">
+\operatorname{Var}(\tilde y_t) = \phi^2 \operatorname{Var}(\tilde y_{t-1}) + \sigma^2.
+</span></p>
+<p>Under stationarity <span class="math inline">\operatorname{Var}(\tilde y_t) = \operatorname{Var}(\tilde y_{t-1}) = \gamma_0</span>, so</p>
+<p><span class="math display">
+\gamma_0 = \phi^2 \gamma_0 + \sigma^2 \;\Longrightarrow\; \gamma_0 = \frac{\sigma^2}{1 - \phi^2}.
+</span></p>
+<p>For this to be a <strong>finite, positive</strong> variance we need <span class="math inline">1 - \phi^2 &gt; 0</span>, i.e.&nbsp;<span class="math inline">|\phi| &lt; 1</span>. <strong>This is the stationarity condition.</strong> As <span class="math inline">\phi \to 1</span>, <span class="math inline">\gamma_0 \to \infty</span>: the variance blows up, the series can wander arbitrarily far from its mean, and weak stationarity fails.</p>
+</section>
+<section id="autocovariance-and-acf" class="level3">
+<h3 class="anchored" data-anchor-id="autocovariance-and-acf">Autocovariance and ACF</h3>
+<p>Multiply <span class="math inline">\tilde y_t = \phi \tilde y_{t-1} + \varepsilon_t</span> by <span class="math inline">\tilde y_{t-k}</span> (for <span class="math inline">k \ge 1</span>) and take expectations. Since <span class="math inline">\varepsilon_t</span> is uncorrelated with the past <span class="math inline">\tilde y_{t-k}</span>:</p>
+<p><span class="math display">
+\gamma_k = E[\tilde y_t \tilde y_{t-k}] = \phi\, E[\tilde y_{t-1}\tilde y_{t-k}] = \phi\,\gamma_{k-1}.
+</span></p>
+<p>This recursion <span class="math inline">\gamma_k = \phi\,\gamma_{k-1}</span> unwinds to <span class="math inline">\gamma_k = \phi^k \gamma_0</span>. Dividing by <span class="math inline">\gamma_0</span> gives the autocorrelation function:</p>
+<p><span class="math display">
+\boxed{\;\rho_k = \frac{\gamma_k}{\gamma_0} = \phi^{\,k}\;}, \qquad k = 0, 1, 2, \dots
+</span></p>
+<p>The ACF decays <strong>geometrically</strong> at rate <span class="math inline">\phi</span> — exactly the envelope drawn in the simulator. When <span class="math inline">0 &lt; \phi &lt; 1</span> it decays monotonically; when <span class="math inline">-1 &lt; \phi &lt; 0</span> it alternates sign while decaying in magnitude. The geometric decay (rather than a sharp cutoff) is the AR signature in the ACF; the PACF, by contrast, cuts off after lag 1 for an AR(1) because there is exactly one direct lag.</p>
+</section>
+</div>
+</details>
+</section>
+<section id="fitting-an-arima-model" class="level2">
+<h2 class="anchored" data-anchor-id="fitting-an-arima-model">Fitting an ARIMA Model</h2>
+<p>Below we simulate a seasonal monthly primary-care series, inspect its ACF/PACF, let an automatic routine pick the orders, and forecast 12 months ahead with a prediction interval. The R panel uses the <code>forecast</code>/<code>fable</code> ecosystem; the Python panel uses <code>statsmodels</code> SARIMAX.</p>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">R</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">Python</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages(c("fpp3", "forecast"))   # if needed</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(fpp3)        <span class="co"># tsibble + fable + feasts (tidy time series)</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(forecast)    <span class="co"># auto.arima + classic API</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="do">## ---- Simulate 10 years of monthly primary-care visits ----------------</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="do">## A trend (population growth) + a yearly seasonal pattern + AR(1) noise.</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2024</span>)</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>n  <span class="ot">&lt;-</span> <span class="dv">120</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span> <span class="dv">95</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>trend  <span class="ot">&lt;-</span> <span class="fl">0.15</span> <span class="sc">*</span> (<span class="dv">1</span><span class="sc">:</span>n)                                   <span class="co"># slow upward drift</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>season <span class="ot">&lt;-</span> <span class="dv">8</span> <span class="sc">*</span> <span class="fu">sin</span>(<span class="dv">2</span> <span class="sc">*</span> pi <span class="sc">*</span> (<span class="dv">1</span><span class="sc">:</span>n) <span class="sc">/</span> <span class="dv">12</span>)                   <span class="co"># yearly rhythm</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>ar_noise <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">arima.sim</span>(<span class="fu">list</span>(<span class="at">ar =</span> <span class="fl">0.6</span>), <span class="at">n =</span> n, <span class="at">sd =</span> <span class="dv">6</span>))</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>visits <span class="ot">&lt;-</span> mu <span class="sc">+</span> trend <span class="sc">+</span> season <span class="sc">+</span> ar_noise</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>clinic <span class="ot">&lt;-</span> <span class="fu">tsibble</span>(</span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">month  =</span> <span class="fu">yearmonth</span>(<span class="st">"2014 Jan"</span>) <span class="sc">+</span> <span class="dv">0</span><span class="sc">:</span>(n <span class="sc">-</span> <span class="dv">1</span>),</span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">visits =</span> visits,</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">index  =</span> month</span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a><span class="do">## ---- Diagnose: ACF and PACF of the (differenced) series --------------</span></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>clinic <span class="sc">|&gt;</span> <span class="fu">gg_tsdisplay</span>(<span class="fu">difference</span>(visits), <span class="at">plot_type =</span> <span class="st">"partial"</span>)</span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a><span class="do">## ---- Let fable choose orders by AICc (seasonal ARIMA) ----------------</span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> clinic <span class="sc">|&gt;</span></span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">model</span>(<span class="at">auto =</span> <span class="fu">ARIMA</span>(visits))          <span class="co"># searches p,d,q (+ seasonal P,D,Q)</span></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a><span class="fu">report</span>(fit)                            <span class="co"># e.g. ARIMA(1,1,0)(0,1,1)[12]</span></span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a><span class="do">## ---- Forecast 12 months ahead with an 80%/95% interval --------------</span></span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a>fc <span class="ot">&lt;-</span> fit <span class="sc">|&gt;</span> <span class="fu">forecast</span>(<span class="at">h =</span> <span class="dv">12</span>)</span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a>fc <span class="sc">|&gt;</span> <span class="fu">autoplot</span>(clinic) <span class="sc">+</span></span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"Monthly primary-care visits: 12-month forecast"</span>,</span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a>       <span class="at">y =</span> <span class="st">"Visits per 1,000 residents"</span>)</span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a><span class="do">## Classic forecast::auto.arima gives the same idea on a plain ts object:</span></span>
+<span id="cb14-37"><a href="#cb14-37" aria-hidden="true" tabindex="-1"></a>visits_ts <span class="ot">&lt;-</span> <span class="fu">ts</span>(visits, <span class="at">frequency =</span> <span class="dv">12</span>, <span class="at">start =</span> <span class="fu">c</span>(<span class="dv">2014</span>, <span class="dv">1</span>))</span>
+<span id="cb14-38"><a href="#cb14-38" aria-hidden="true" tabindex="-1"></a>fit2 <span class="ot">&lt;-</span> <span class="fu">auto.arima</span>(visits_ts)          <span class="co"># AICc-optimal (S)ARIMA</span></span>
+<span id="cb14-39"><a href="#cb14-39" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(fit2)</span>
+<span id="cb14-40"><a href="#cb14-40" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="fu">forecast</span>(fit2, <span class="at">h =</span> <span class="dv">12</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># pip install statsmodels pandas numpy matplotlib</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> statsmodels.tsa.statespace.sarimax <span class="im">import</span> SARIMAX</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> statsmodels.graphics.tsaplots <span class="im">import</span> plot_acf, plot_pacf</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- Simulate 10 years of monthly primary-care visits ----------------</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">2024</span>)</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>n, mu <span class="op">=</span> <span class="dv">120</span>, <span class="dv">95</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>t <span class="op">=</span> np.arange(n)</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>trend  <span class="op">=</span> <span class="fl">0.15</span> <span class="op">*</span> t                                  <span class="co"># slow upward drift</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>season <span class="op">=</span> <span class="dv">8</span> <span class="op">*</span> np.sin(<span class="dv">2</span> <span class="op">*</span> np.pi <span class="op">*</span> t <span class="op">/</span> <span class="dv">12</span>)            <span class="co"># yearly rhythm</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="co"># AR(1) noise with phi = 0.6</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>phi, sigma <span class="op">=</span> <span class="fl">0.6</span>, <span class="fl">6.0</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>eps <span class="op">=</span> rng.normal(<span class="dv">0</span>, sigma, n)</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>ar <span class="op">=</span> np.zeros(n)</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> k <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">1</span>, n):</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>    ar[k] <span class="op">=</span> phi <span class="op">*</span> ar[k <span class="op">-</span> <span class="dv">1</span>] <span class="op">+</span> eps[k]</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>visits <span class="op">=</span> mu <span class="op">+</span> trend <span class="op">+</span> season <span class="op">+</span> ar</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>idx <span class="op">=</span> pd.period_range(<span class="st">"2014-01"</span>, periods<span class="op">=</span>n, freq<span class="op">=</span><span class="st">"M"</span>)</span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> pd.Series(visits, index<span class="op">=</span>idx, name<span class="op">=</span><span class="st">"visits"</span>)</span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- Diagnose: ACF and PACF of the first difference -----------------</span></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>dy <span class="op">=</span> y.diff().dropna()</span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(<span class="dv">1</span>, <span class="dv">2</span>, figsize<span class="op">=</span>(<span class="dv">11</span>, <span class="dv">3</span>))</span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a>plot_acf(dy, lags<span class="op">=</span><span class="dv">24</span>, ax<span class="op">=</span>ax[<span class="dv">0</span>])<span class="op">;</span> ax[<span class="dv">0</span>].set_title(<span class="st">"ACF of Δ visits"</span>)</span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a>plot_pacf(dy, lags<span class="op">=</span><span class="dv">24</span>, ax<span class="op">=</span>ax[<span class="dv">1</span>])<span class="op">;</span> ax[<span class="dv">1</span>].set_title(<span class="st">"PACF of Δ visits"</span>)</span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- Fit a seasonal ARIMA(1,1,0)(0,1,1)[12] by ML -------------------</span></span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> SARIMAX(y, order<span class="op">=</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>), seasonal_order<span class="op">=</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">12</span>),</span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a>                enforce_stationarity<span class="op">=</span><span class="va">True</span>, enforce_invertibility<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb15-35"><a href="#cb15-35" aria-hidden="true" tabindex="-1"></a>res <span class="op">=</span> model.fit(disp<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb15-36"><a href="#cb15-36" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(res.summary())</span>
+<span id="cb15-37"><a href="#cb15-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-38"><a href="#cb15-38" aria-hidden="true" tabindex="-1"></a><span class="co"># ---- Forecast 12 months ahead with a 95% prediction interval --------</span></span>
+<span id="cb15-39"><a href="#cb15-39" aria-hidden="true" tabindex="-1"></a>fc <span class="op">=</span> res.get_forecast(steps<span class="op">=</span><span class="dv">12</span>)</span>
+<span id="cb15-40"><a href="#cb15-40" aria-hidden="true" tabindex="-1"></a>mean_fc <span class="op">=</span> fc.predicted_mean</span>
+<span id="cb15-41"><a href="#cb15-41" aria-hidden="true" tabindex="-1"></a>ci <span class="op">=</span> fc.conf_int(alpha<span class="op">=</span><span class="fl">0.05</span>)</span>
+<span id="cb15-42"><a href="#cb15-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-43"><a href="#cb15-43" aria-hidden="true" tabindex="-1"></a>ax <span class="op">=</span> y.plot(label<span class="op">=</span><span class="st">"observed"</span>, color<span class="op">=</span><span class="st">"#990000"</span>)</span>
+<span id="cb15-44"><a href="#cb15-44" aria-hidden="true" tabindex="-1"></a>mean_fc.plot(ax<span class="op">=</span>ax, label<span class="op">=</span><span class="st">"forecast"</span>, color<span class="op">=</span><span class="st">"#3d5a6c"</span>)</span>
+<span id="cb15-45"><a href="#cb15-45" aria-hidden="true" tabindex="-1"></a>ax.fill_between(ci.index, ci.iloc[:, <span class="dv">0</span>], ci.iloc[:, <span class="dv">1</span>],</span>
+<span id="cb15-46"><a href="#cb15-46" aria-hidden="true" tabindex="-1"></a>                color<span class="op">=</span><span class="st">"#3d5a6c"</span>, alpha<span class="op">=</span><span class="fl">0.15</span>, label<span class="op">=</span><span class="st">"95% PI"</span>)</span>
+<span id="cb15-47"><a href="#cb15-47" aria-hidden="true" tabindex="-1"></a>ax.legend()<span class="op">;</span> ax.set_ylabel(<span class="st">"Visits per 1,000 residents"</span>)</span>
+<span id="cb15-48"><a href="#cb15-48" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+<p>Both routines diagnose the series the same way — a trend that calls for one regular difference (<span class="math inline">d=1</span>) and a yearly spike that calls for one seasonal difference (<span class="math inline">D=1</span>) — and then fit AR/MA terms to the stationary remainder. The forecast decays the seasonal pattern forward while the prediction interval widens with the horizon, exactly as the AR(1) intuition predicts.</p>
+</section>
+<section id="exercises" class="level2 exercises">
+<h2 class="exercises anchored" data-anchor-id="exercises">Exercises</h2>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 1</span></p>
+<p>A regional series of monthly <em>sjukfrånvaro</em> (sick-leave) rates follows an AR(1): <span class="math inline">y_t = 4 + 0.8\, y_{t-1} + \varepsilon_t</span>, with <span class="math inline">\operatorname{Var}(\varepsilon_t) = \sigma^2 = 9</span>.</p>
+<ol type="a">
+<li>Is the series stationary? (b) Compute the long-run mean <span class="math inline">\mu</span>. (c) Compute the variance <span class="math inline">\gamma_0</span> and the lag-2 autocorrelation <span class="math inline">\rho_2</span>.</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> Stationary iff <span class="math inline">|\phi| &lt; 1</span>. Here <span class="math inline">\phi = 0.8</span>, so <span class="math inline">|0.8| &lt; 1</span> — <strong>yes, stationary</strong>.</p>
+<p><strong>(b)</strong> <span class="math inline">\mu = \dfrac{c}{1-\phi} = \dfrac{4}{1 - 0.8} = \dfrac{4}{0.2} = 20</span>.</p>
+<p><strong>(c)</strong> Variance: <span class="math inline">\gamma_0 = \dfrac{\sigma^2}{1-\phi^2} = \dfrac{9}{1 - 0.64} = \dfrac{9}{0.36} = 25</span>.</p>
+<p>Lag-2 ACF: <span class="math inline">\rho_2 = \phi^2 = 0.8^2 = 0.64</span>. (A shock retains 64% of its correlation two months out — high persistence, as expected from <span class="math inline">\phi = 0.8</span>.)</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 2</span></p>
+<p>You plot the ACF and PACF of a stationary (already-differenced) series of monthly waiting times. The ACF shows a single significant spike at lag 1 and is essentially zero thereafter; the PACF tails off geometrically. Which ARMA model does this fingerprint suggest, and why?</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p>This is the classic <strong>MA(1)</strong> signature. Recall the duality from the diagnostic table:</p>
+<ul>
+<li>an <strong>MA(<span class="math inline">q</span>)</strong> has an ACF that <em>cuts off</em> after lag <span class="math inline">q</span> and a PACF that <em>tails off</em>;</li>
+<li>an <strong>AR(<span class="math inline">p</span>)</strong> is the mirror image (PACF cuts off, ACF tails off).</li>
+</ul>
+<p>Here the ACF cuts off sharply after lag 1 while the PACF decays smoothly — so <span class="math inline">q = 1</span> and there is no AR part: <strong>MA(1)</strong>, i.e.&nbsp;<span class="math inline">y_t = \mu + \varepsilon_t + \theta_1 \varepsilon_{t-1}</span>. The single ACF spike says the series remembers exactly one period of shocks; the geometric PACF is what an MA process always produces when you try to express it through direct lags of the level.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 3</span></p>
+<p>A colleague fits an ARIMA(2,2,1) to a series of monthly primary-care visits that has only a mild <em>linear</em> upward trend and no curvature. The residual ACF shows a strong <em>negative</em> spike at lag 1. Diagnose the likely problem and propose a fix.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p>The series has a <em>linear</em> trend, which one regular difference (<span class="math inline">d=1</span>) removes. Choosing <span class="math inline">d=2</span> <strong>over-differences</strong> it: differencing an already-stationary (once-differenced) series injects an artificial MA(1) structure with a coefficient near <span class="math inline">-1</span>, which shows up as exactly the <strong>strong negative lag-1 autocorrelation</strong> in the residuals described here.</p>
+<p><strong>Fix:</strong> reduce the differencing order to <span class="math inline">d=1</span> (an ARIMA(<span class="math inline">p</span>,1,<span class="math inline">q</span>)). Confirm with a unit-root test (next page) and by checking that the once-differenced series is mean-stationary with no remaining trend. The guiding rule from the Caution card: difference only enough to remove the trend — never reflexively, and a negative lag-1 residual spike is the tell-tale sign you went one difference too far.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 4</span></p>
+<p>Using the AR(1) forecast formula <span class="math inline">\hat y_{T+h} = \mu + \phi^h(y_T - \mu)</span>, suppose a region’s primary-care visits have <span class="math inline">\mu = 90</span>, <span class="math inline">\phi = 0.5</span>, and the most recent observation is <span class="math inline">y_T = 110</span>. (a) Forecast 1, 2, and 4 months ahead. (b) What value do the forecasts approach as <span class="math inline">h \to \infty</span>, and why?</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p>The current deviation from the mean is <span class="math inline">y_T - \mu = 110 - 90 = 20</span>.</p>
+<p><strong>(a)</strong> Apply <span class="math inline">\hat y_{T+h} = 90 + 0.5^h \times 20</span>:</p>
+<ul>
+<li><span class="math inline">h=1</span>: <span class="math inline">90 + 0.5^1 \times 20 = 90 + 10 = \mathbf{100}</span>.</li>
+<li><span class="math inline">h=2</span>: <span class="math inline">90 + 0.5^2 \times 20 = 90 + 0.25 \times 20 = 90 + 5 = \mathbf{95}</span>.</li>
+<li><span class="math inline">h=4</span>: <span class="math inline">90 + 0.5^4 \times 20 = 90 + 0.0625 \times 20 = 90 + 1.25 = \mathbf{91.25}</span>.</li>
+</ul>
+<p><strong>(b)</strong> As <span class="math inline">h \to \infty</span>, <span class="math inline">\phi^h = 0.5^h \to 0</span>, so <span class="math inline">\hat y_{T+h} \to \mu = \mathbf{90}</span>. Because <span class="math inline">|\phi| &lt; 1</span>, the influence of the current value decays geometrically and every long-horizon forecast collapses to the unconditional mean. The series is mean-reverting: the further out you look, the less the present tells you, until the best guess is simply the long-run average.</p>
+</div>
+</details>
+</div>
+<div class="key-takeaways">
+<p><strong>Key takeaways</strong></p>
+<ul>
+<li>A time series is a single, time-ordered realization with <em>serial dependence</em>; learning from it requires <em>(weak) stationarity</em> — constant mean, constant variance, and a lag-only autocovariance.</li>
+<li>The ACF <span class="math inline">\rho_k = \gamma_k/\gamma_0</span> measures memory; the ACF/PACF pair is a diagnostic fingerprint — AR processes leave a cutoff PACF and a decaying ACF, MA processes the mirror image.</li>
+<li>AR(<span class="math inline">p</span>) models persistence in levels, MA(<span class="math inline">q</span>) models short-lived shock structure, and ARMA(<span class="math inline">p,q</span>) combines them; the AR(1) is stationary iff <span class="math inline">|\phi| &lt; 1</span>, with mean <span class="math inline">c/(1-\phi)</span>, variance <span class="math inline">\sigma^2/(1-\phi^2)</span>, and ACF <span class="math inline">\phi^k</span>.</li>
+<li>Differencing <span class="math inline">d</span> times removes a trend and turns ARMA into ARIMA(<span class="math inline">p,d,q</span>); seasonal differencing handles yearly rhythms (SARIMA). Over-differencing is a real hazard, flagged by a negative lag-1 residual spike.</li>
+<li>For a stationary series every forecast decays to the unconditional mean at rate <span class="math inline">\phi^h</span>, and the prediction interval widens toward the unconditional variance.</li>
+</ul>
+</div>
+</section>
+<section id="what-comes-next" class="level2">
+<h2 class="anchored" data-anchor-id="what-comes-next">What Comes Next</h2>
+<p>We now have the core toolkit for a <em>stationary</em> time series: diagnose its memory with the ACF/PACF, fit an ARIMA model, and roll it forward into a forecast that reverts to the mean. But everything here rested on the line <span class="math inline">|\phi| &lt; 1</span>. The next page, <a href="../../content/21-time-series/unit-roots-cointegration.html">Unit Roots and Cointegration</a>, steps onto the boundary <span class="math inline">\phi = 1</span> and beyond: it defines the <em>random walk</em> and the <em>unit root</em>, shows how to test for one (the Dickey–Fuller and ADF tests), exposes the <em>spurious regression</em> trap that makes two unrelated trending series look strongly related, and introduces <em>cointegration</em> — the powerful idea that two non-stationary series can share a common stochastic trend whose deviations are, themselves, stationary.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<div id="reading-progress"></div>
+<script>
+(function () {
+  function update() {
+    var el = document.getElementById('reading-progress');
+    if (!el) return;
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    var pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+    el.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  if (document.readyState !== 'loading') update();
+  else document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
+<script type="ojs-module-contents">
+eyJjb250ZW50cyI6W3sibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6InZpZXdvZiB0c2FyaW1hX3BoaSA9IElucHV0cy5yYW5nZShbMCwgMC45OF0sIHtcbiAgdmFsdWU6IDAuNixcbiAgc3RlcDogMC4wMixcbiAgbGFiZWw6IFwiUGVyc2lzdGVuY2Ugz4YgICgwID0gd2hpdGUgbm9pc2UsIOKGkjEgPSByYW5kb20gd2FsaylcIlxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMiIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6InZpZXdvZiB0c2FyaW1hX3VzZU1BID0gSW5wdXRzLnRvZ2dsZSh7XG4gIGxhYmVsOiBcIkFkZCBhbiBNQSgxKSB0ZXJtIM64XCIsXG4gIHZhbHVlOiBmYWxzZVxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMyIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6InZpZXdvZiB0c2FyaW1hX3RoZXRhID0gSW5wdXRzLnJhbmdlKFstMC44LCAwLjhdLCB7XG4gIHZhbHVlOiAwLjQsXG4gIHN0ZXA6IDAuMDUsXG4gIGxhYmVsOiBcIk1BKDEpIGNvZWZmaWNpZW50IM64ICAoYWN0aXZlIG9ubHkgd2hlbiB0b2dnbGVkIG9uKVwiXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC00IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gUmUtZHJhdyBidXR0b246IGluY3JlbWVudCBhIGNvdW50ZXIgdG8gcmVzYW1wbGUgYSBmcmVzaCBzaG9jayBzZXF1ZW5jZS5cbi8vIChyZWR1Y2Utb24tY2xpY2sgcGF0dGVybjogbmV2ZXIgcmVhZCt3cml0ZSBhIG11dGFibGUgaW4gb25lIGNlbGwuKVxudmlld29mIHRzYXJpbWFfZHJhdyA9IElucHV0cy5idXR0b24oXCJEcmF3IGEgbmV3IHJhbmRvbSBzYW1wbGVcIiwge1xuICB2YWx1ZTogMCxcbiAgcmVkdWNlOiB2ID0+IHYgKyAxXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC01IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gVXBwc2FsYS1hY2FkZW1pYyBwYWxldHRlIHRva2VucyBzaGFyZWQgYWNyb3NzIHRoaXMgcGFnZSdzIGludGVyYWN0aXZlcy5cbnRzYXJpbWFfcGFsID0gKHtcbiAgZm9jYWw6ICBcIiM5OTAwMDBcIiwgICAvLyBmb2NhbCBzZXJpZXMgKFVwcHNhbGEgcmVkKVxuICBzbGF0ZTogIFwiIzNkNWE2Y1wiLCAgIC8vIHNlY29uZGFyeSAvIGNvbXBhcmlzb25cbiAgZ29vZDogICBcIiMyZTZmNDBcIiwgICAvLyBvbi10YXJnZXQgLyBnb29kXG4gIG9jaHJlOiAgXCIjOWM3YTMzXCIsICAgLy8gaGlnaGxpZ2h0IC8gdHJ1ZSB2YWx1ZVxuICBiYWQ6ICAgIFwiI2IzMDAwYlwiLCAgIC8vIGFsYXJtXG4gIGluazogICAgXCIjMWMxYzFhXCIsICAgLy8gaW5rIHRleHQgJiByZWZlcmVuY2UgbGluZXNcbiAgYXhpczogICBcIiM3OTc2NmVcIiwgICAvLyBheGlzIHRleHRcbiAgaGFpcjogICBcIiNlNmUzZGJcIiwgICAvLyBncmlkbGluZXMgLyBoYWlybGluZXNcbiAgbXV0ZWQ6ICBcIiM3OTc2NmVcIiwgICAvLyBtdXRlZCBpbmtcbiAgZmlsbDogICBcIiNmNmY1ZjFcIiAgICAvLyBzdWJ0bGUgdGlsZSBmaWxsXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC02IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gU2VyaWVzIGxlbmd0aDogMTAgeWVhcnMgb2YgbW9udGhseSBvYnNlcnZhdGlvbnMuXG50c2FyaW1hX1QgPSAxMjBcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtNyIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ii8vIFJlZ2lvbmFsIGJhc2VsaW5lIGxldmVsOiBtZWFuIG1vbnRobHkgdmlzaXRzIHBlciAxLDAwMCByZXNpZGVudHMg4oCUIGFcbi8vIHJlYWxpc3RpYyBwcmltYXJ5LWNhcmUgaW50ZW5zaXR5IGZvciBhIFN3ZWRpc2ggcmVnaW9uLlxudHNhcmltYV9tdSA9IDk1XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTgiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiIvLyBTaG9jayBzdGFuZGFyZCBkZXZpYXRpb24uXG50c2FyaW1hX3NpZ21hID0gNlxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC05IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gR2VuZXJhdGUgdGhlIEFSKDEpIFsrIG9wdGlvbmFsIE1BKDEpXSBwYXRoLiBSZWFkaW5nIHRzYXJpbWFfZHJhdyBtYWtlcyB0aGVcbi8vIGNlbGwgcmUtcnVuIChhIG5ldyByYW5kb20gcGF0aCkgZWFjaCB0aW1lIHRoZSBidXR0b24gaXMgY2xpY2tlZCwgV0lUSE9VVFxuLy8gcmVhZGluZy1hbmQtd3JpdGluZyBhbnkgbXV0YWJsZS4gUmFuZG9tbmVzcyB2aWEgZDMucmFuZG9tTm9ybWFsLlxudHNhcmltYV9zZXJpZXMgPSB7XG4gIHRzYXJpbWFfZHJhdzsgICAgICAgICAgICAgICAgICAgICAgICAgIC8vIHJlYWN0aXZlIGRlcGVuZGVuY3k6IHJlc2FtcGxlIG9uIGNsaWNrXG4gIGNvbnN0IHBoaSA9IHRzYXJpbWFfcGhpO1xuICBjb25zdCB0aGV0YSA9IHRzYXJpbWFfdXNlTUEgPyB0c2FyaW1hX3RoZXRhIDogMDtcbiAgY29uc3Qgcm5vcm0gPSBkMy5yYW5kb21Ob3JtYWwoMCwgdHNhcmltYV9zaWdtYSk7XG4gIGNvbnN0IGVwcyA9IGQzLnJhbmdlKHRzYXJpbWFfVCArIDEpLm1hcCgoKSA9PiBybm9ybSgpKTsgIC8vIHNob2NrcyAoaW5jbC4gZV97LTF9KVxuICBjb25zdCBvdXQgPSBbXTtcbiAgbGV0IHByZXYgPSAwOyAgICAgICAgICAgICAgICAgICAgICAgICAgLy8gZGV2aWF0aW9uIGZyb20gdGhlIG1lYW4gzrxcbiAgZm9yIChsZXQgdCA9IDE7IHQgPD0gdHNhcmltYV9UOyB0KyspIHtcbiAgICAvLyB5X3QgLSDOvCA9IM+GICh5X3t0LTF9IC0gzrwpICsgzrVfdCArIM64IM61X3t0LTF9XG4gICAgY29uc3QgZGV2ID0gcGhpICogcHJldiArIGVwc1t0XSArIHRoZXRhICogZXBzW3QgLSAxXTtcbiAgICBvdXQucHVzaCh7IHQsIHk6IHRzYXJpbWFfbXUgKyBkZXYgfSk7XG4gICAgcHJldiA9IGRldjtcbiAgfVxuICByZXR1cm4gb3V0O1xufVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC0xMCIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ii8vIFRoZW9yZXRpY2FsIEFSKDEpIEFDRjogz4FfayA9IM+GXmsuIChXaXRoIHRoZSBNQSB0ZXJtIHRoZSB0cnVlIEFDRiBkaWZmZXJzXG4vLyBzbGlnaHRseSBhdCBsb3cgbGFnczsgd2UgcGxvdCB0aGUgcHVyZS1BUiBnZW9tZXRyaWMgZGVjYXkgYXMgdGhlIHJlZmVyZW5jZVxuLy8gZW52ZWxvcGUsIHdoaWNoIGlzIHRoZSBrZXkgaW50dWl0aW9uIHRoZSBzbGlkZXIgaXMgbWVhbnQgdG8gY29udmV5LilcbnRzYXJpbWFfYWNmID0gZDMucmFuZ2UoMCwgMTkpLm1hcChrID0+ICh7XG4gIGssXG4gIHJobzogTWF0aC5wb3codHNhcmltYV9waGksIGspXG59KSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTEiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiIvLyBUb3AgcGFuZWw6IHRoZSBzaW11bGF0ZWQgc2VyaWVzIHRocm91Z2ggdGltZS5cblBsb3QucGxvdCh7XG4gIHdpZHRoOiBNYXRoLm1pbig2ODAsIHdpZHRoKSxcbiAgaGVpZ2h0OiAyNTAsXG4gIG1hcmdpbkxlZnQ6IDYyLFxuICBtYXJnaW5Cb3R0b206IDQ1LFxuICBzdHlsZToge1xuICAgIGZvbnRGYW1pbHk6IFwiJ0ludGVyJywgc3lzdGVtLXVpLCBzYW5zLXNlcmlmXCIsXG4gICAgZm9udFNpemU6IFwiMTJweFwiLFxuICAgIGJhY2tncm91bmQ6IFwidHJhbnNwYXJlbnRcIixcbiAgICBjb2xvcjogdHNhcmltYV9wYWwuYXhpc1xuICB9LFxuICB4OiB7IGxhYmVsOiBcIk1vbnRoICB0ICDihpJcIiwgZG9tYWluOiBbMSwgdHNhcmltYV9UXSwgZ3JpZDogZmFsc2UgfSxcbiAgeToge1xuICAgIGxhYmVsOiBcIuKGkSBWaXNpdHMgcGVyIDEsMDAwIHJlc2lkZW50c1wiLFxuICAgIGdyaWQ6IHRydWUsXG4gICAgZG9tYWluOiBbdHNhcmltYV9tdSAtIDI4LCB0c2FyaW1hX211ICsgMjhdXG4gIH0sXG4gIG1hcmtzOiBbXG4gICAgUGxvdC5ncmlkWSh7IHN0cm9rZTogdHNhcmltYV9wYWwuaGFpciB9KSxcbiAgICAvLyBNZWFuIHJlZmVyZW5jZSBsaW5lIChvY2hyZSA9IHRoZSBsZXZlbCB0aGUgc2VyaWVzIHJldmVydHMgdG8pLlxuICAgIFBsb3QucnVsZVkoW3RzYXJpbWFfbXVdLCB7XG4gICAgICBzdHJva2U6IHRzYXJpbWFfcGFsLm9jaHJlLCBzdHJva2VXaWR0aDogMS41LCBzdHJva2VEYXNoYXJyYXk6IFwiNSw0XCJcbiAgICB9KSxcbiAgICBQbG90LnRleHQoW3sgdDogdHNhcmltYV9ULCB5OiB0c2FyaW1hX211IH1dLCB7XG4gICAgICB4OiBcInRcIiwgeTogXCJ5XCIsIHRleHQ6ICgpID0+IFwibWVhbiDOvFwiLFxuICAgICAgZmlsbDogdHNhcmltYV9wYWwub2NocmUsIGZvbnRTaXplOiAxMSwgZm9udFdlaWdodDogNjAwLFxuICAgICAgdGV4dEFuY2hvcjogXCJlbmRcIiwgZHk6IC02LFxuICAgICAgc3Ryb2tlOiBcIndoaXRlXCIsIHN0cm9rZVdpZHRoOiAzLCBwYWludE9yZGVyOiBcInN0cm9rZVwiXG4gICAgfSksXG4gICAgLy8gVGhlIHNpbXVsYXRlZCBBUigxKSBzZXJpZXMgKGZvY2FsIOKAlCBVcHBzYWxhIHJlZCkuXG4gICAgUGxvdC5saW5lKHRzYXJpbWFfc2VyaWVzLCB7XG4gICAgICB4OiBcInRcIiwgeTogXCJ5XCIsIHN0cm9rZTogdHNhcmltYV9wYWwuZm9jYWwsIHN0cm9rZVdpZHRoOiAxLjZcbiAgICB9KVxuICBdXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC0xMiIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ii8vIEJvdHRvbSBwYW5lbDogdGhlIHRoZW9yZXRpY2FsIEFDRiwgz4FfayA9IM+GXmssIGFzIGEgc3RlbSAobG9sbGlwb3ApIHBsb3QuXG5QbG90LnBsb3Qoe1xuICB3aWR0aDogTWF0aC5taW4oNjgwLCB3aWR0aCksXG4gIGhlaWdodDogMjMwLFxuICBtYXJnaW5MZWZ0OiA2MixcbiAgbWFyZ2luQm90dG9tOiA0NSxcbiAgc3R5bGU6IHtcbiAgICBmb250RmFtaWx5OiBcIidJbnRlcicsIHN5c3RlbS11aSwgc2Fucy1zZXJpZlwiLFxuICAgIGZvbnRTaXplOiBcIjEycHhcIixcbiAgICBiYWNrZ3JvdW5kOiBcInRyYW5zcGFyZW50XCIsXG4gICAgY29sb3I6IHRzYXJpbWFfcGFsLmF4aXNcbiAgfSxcbiAgeDogeyBsYWJlbDogXCJMYWcgIGsgIChtb250aHMpICDihpJcIiwgZG9tYWluOiBbLTAuNSwgMTguNV0gfSxcbiAgeTogeyBsYWJlbDogXCLihpEgQXV0b2NvcnJlbGF0aW9uICDPgShrKVwiLCBkb21haW46IFstMC4yNSwgMS4wNV0sIGdyaWQ6IHRydWUgfSxcbiAgbWFya3M6IFtcbiAgICBQbG90LmdyaWRZKHsgc3Ryb2tlOiB0c2FyaW1hX3BhbC5oYWlyIH0pLFxuICAgIFBsb3QucnVsZVkoWzBdLCB7IHN0cm9rZTogdHNhcmltYV9wYWwuaW5rLCBzdHJva2VXaWR0aDogMSB9KSxcbiAgICAvLyBBQ0Ygc3RlbXMgKHNsYXRlKSB3aXRoIGRvdHMgYXQgdGhlIHRpcHMgKGZvY2FsIHJlZCkuXG4gICAgUGxvdC5ydWxlWCh0c2FyaW1hX2FjZiwge1xuICAgICAgeDogXCJrXCIsIHkxOiAwLCB5MjogXCJyaG9cIiwgc3Ryb2tlOiB0c2FyaW1hX3BhbC5zbGF0ZSwgc3Ryb2tlV2lkdGg6IDJcbiAgICB9KSxcbiAgICBQbG90LmRvdCh0c2FyaW1hX2FjZiwge1xuICAgICAgeDogXCJrXCIsIHk6IFwicmhvXCIsIGZpbGw6IHRzYXJpbWFfcGFsLmZvY2FsLCByOiA0XG4gICAgfSlcbiAgXVxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTMiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiIvLyBMaXZlIHJlYWRvdXQgdHlpbmcgdGhlIHBpY3R1cmUgdG8gdGhlIG51bWJlcnMuIEJ1aWx0IGluc2lkZSBhbiBvanMgY2VsbCB3aXRoXG4vLyBodG1sYGAgc28gdGhlIHJlYWN0aXZlIHZhbHVlcyBpbnRlcnBvbGF0ZSAobWFya2Rvd24gJHsuLi59IHdvdWxkIHJlbmRlclxuLy8gbGl0ZXJhbGx5KS4gUmVwb3J0cyBwZXJzaXN0ZW5jZSwgdGhlIGltcGxpZWQgbGFnLTEgQUNGLCBhbmQgYSBoYWxmLWxpZmUuXG57XG4gIGNvbnN0IHBoaSA9IHRzYXJpbWFfcGhpO1xuICAvLyBIYWxmLWxpZmU6IG51bWJlciBvZiBtb250aHMgZm9yIGEgc2hvY2sncyBlY2hvIHRvIGZhbGwgdG8gaGFsZiBpdHMgc2l6ZSxcbiAgLy8gz4ZeaCA9IDAuNSAg4oeSICBoID0gbG4oMC41KSAvIGxuKM+GKS4gVW5kZWZpbmVkIGF0IM+GID0gMCAobm8gcGVyc2lzdGVuY2UpLlxuICBjb25zdCBoYWxmTGlmZSA9IHBoaSA8PSAwID8gMCA6IE1hdGgubG9nKDAuNSkgLyBNYXRoLmxvZyhwaGkpO1xuICBjb25zdCBobFRleHQgPSBwaGkgPD0gMFxuICAgID8gXCIwIChubyBtZW1vcnkpXCJcbiAgICA6IChwaGkgPj0gMC45OCA/IFwi4omIIOKIniAocmFuZG9tIHdhbGspXCIgOiBoYWxmTGlmZS50b0ZpeGVkKDEpICsgXCIgbW9udGhzXCIpO1xuICBjb25zdCByZWdpbWUgPSBwaGkgPCAwLjE1ID8gXCLiiYggd2hpdGUgbm9pc2VcIlxuICAgIDogcGhpIDwgMC41NSA/IFwid2VhayBwZXJzaXN0ZW5jZVwiXG4gICAgOiBwaGkgPCAwLjg1ID8gXCJtb2RlcmF0ZSBwZXJzaXN0ZW5jZVwiXG4gICAgOiBcIm5lYXIgcmFuZG9tIHdhbGtcIjtcbiAgY29uc3QgcmVnaW1lQ29sb3IgPSBwaGkgPCAwLjE1ID8gdHNhcmltYV9wYWwuZ29vZFxuICAgIDogcGhpIDwgMC44NSA/IHRzYXJpbWFfcGFsLnNsYXRlXG4gICAgOiB0c2FyaW1hX3BhbC5iYWQ7XG4gIGNvbnN0IHRpbGUgPSAobGFiZWwsIHZhbHVlLCBjb2xvcikgPT4gaHRtbGA8ZGl2IHN0eWxlPVwiXG4gICAgICBmbGV4OiAxIDEgMDsgbWluLXdpZHRoOiA3LjVyZW07IHRleHQtYWxpZ246IGNlbnRlcjtcbiAgICAgIHBhZGRpbmc6IDAuNTVyZW0gMC40cmVtOyBib3JkZXItcmFkaXVzOiAwLjM1cmVtO1xuICAgICAgYmFja2dyb3VuZDogJHt0c2FyaW1hX3BhbC5maWxsfTsgYm9yZGVyOiAxcHggc29saWQgJHt0c2FyaW1hX3BhbC5oYWlyfTtcIj5cbiAgICA8ZGl2IHN0eWxlPVwiZm9udC1mYW1pbHk6J0ludGVyJyxzeXN0ZW0tdWksc2Fucy1zZXJpZjsgZm9udC1zaXplOjAuNjZyZW07XG4gICAgICAgIGZvbnQtd2VpZ2h0OjcwMDsgdGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlOyBsZXR0ZXItc3BhY2luZzowLjA1ZW07XG4gICAgICAgIGNvbG9yOiR7dHNhcmltYV9wYWwubXV0ZWR9O1wiPiR7bGFiZWx9PC9kaXY+XG4gICAgPGRpdiBzdHlsZT1cImZvbnQtZmFtaWx5OidKZXRCcmFpbnMgTW9ubycsbW9ub3NwYWNlOyBmb250LXNpemU6MS4xcmVtO1xuICAgICAgICBmb250LXdlaWdodDo3MDA7IGNvbG9yOiR7Y29sb3J9O1wiPiR7dmFsdWV9PC9kaXY+XG4gIDwvZGl2PmA7XG4gIHJldHVybiBodG1sYDxkaXYgc3R5bGU9XCJkaXNwbGF5OmZsZXg7IGZsZXgtd3JhcDp3cmFwOyBnYXA6MC41cmVtO1xuICAgICAgbWFyZ2luLXRvcDowLjc1cmVtO1wiPlxuICAgICR7dGlsZShcIlBlcnNpc3RlbmNlIM+GXCIsIHBoaS50b0ZpeGVkKDIpLCB0c2FyaW1hX3BhbC5mb2NhbCl9XG4gICAgJHt0aWxlKFwiTGFnLTEgQUNGICDPgeKCgSA9IM+GXCIsIHBoaS50b0ZpeGVkKDIpLCB0c2FyaW1hX3BhbC5pbmspfVxuICAgICR7dGlsZShcIlNob2NrIGhhbGYtbGlmZVwiLCBobFRleHQsIHRzYXJpbWFfcGFsLm9jaHJlKX1cbiAgICAke3RpbGUoXCJSZWdpbWVcIiwgcmVnaW1lLCByZWdpbWVDb2xvcil9XG4gIDwvZGl2PmA7XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ3RzYXJpbWFfcGhpJykifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ3RzYXJpbWFfdXNlTUEnKSJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldFF1aWV0Iiwic291cmNlIjoic2hpbnlJbnB1dCgndHNhcmltYV90aGV0YScpIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0UXVpZXQiLCJzb3VyY2UiOiJzaGlueUlucHV0KCd0c2FyaW1hX2RyYXcnKSJ9XX0=
+</script>
+<script type="module">
+if (window.location.protocol === "file:") { alert("The OJS runtime does not work with file:// URLs. Please use a web server to view this document."); }
+window._ojs.paths.runtimeToDoc = "../../content/21-time-series";
+window._ojs.paths.runtimeToRoot = "../..";
+window._ojs.paths.docToRoot = "../..";
+window._ojs.selfContained = false;
+window._ojs.runtime.interpretFromScriptTags();
+</script>
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../content/21-time-series/index.html" class="pagination-link" aria-label="Time Series Econometrics">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Time Series Econometrics</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../content/21-time-series/unit-roots-cointegration.html" class="pagination-link" aria-label="Unit Roots and Cointegration">
+        <span class="nav-page-text">Unit Roots and Cointegration</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

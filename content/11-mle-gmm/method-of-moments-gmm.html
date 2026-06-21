@@ -1,0 +1,2335 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.27">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Method of Moments and GMM – Causal Inference – See It, Break It, Prove It</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../content/11-mle-gmm/likelihood-inference.html" rel="next">
+<link href="../../content/11-mle-gmm/properties-asymptotics.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-8b4baf804e461d9b72633f0de59a0cac.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-8177dda9a46fdb7befe495ea115a53e7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script type="module" src="../../site_libs/quarto-ojs/quarto-ojs-runtime.js"></script>
+<link href="../../site_libs/quarto-ojs/quarto-ojs.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Causal Inference – See It, Break It, Prove It</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../../content/index.html" aria-current="page"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/00-intro/index.html"> 
+<span class="menu-text">Start Learning</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/glossary.html"> 
+<span class="menu-text">Glossary</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/your-username/causal-inference-site"> <i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/index.html">Maximum Likelihood &amp; GMM</a></li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/method-of-moments-gmm.html">Method of Moments and GMM</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Home</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Causal Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">0. Introduction</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/00-intro/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">1. Fundamental Problem</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Fundamental Problem of Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/potential-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Potential Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/selection-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/randomization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">2. DAGs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Directed Acyclic Graphs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">DAG Basics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/d-separation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">d-Separation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/good-bad-controls.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Good and Bad Controls</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">3. Statistical Foundations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Statistical Foundations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/distributions-spread.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributions and Spread</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/hypothesis-testing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hypothesis Testing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/confidence-intervals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Confidence Intervals</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/reading-output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading Regression Output</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">4. Regression</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/ols-mechanics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLS Mechanics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/frisch-waugh-lovell.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Frisch-Waugh-Lovell</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/omitted-variable-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Omitted Variable Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/interactions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interactions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/functional-form.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Functional Form</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">5. Panel Data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/panel-structure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Structure</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/fixed-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/practical-issues.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Issues</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">6. Diff-in-Differences</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/classic-2x2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic 2x2 Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/regression-did.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression DiD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/parallel-trends.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel Trends</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/staggered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Staggered Adoption</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/modern-estimators.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Estimators</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">7. Instrumental Variables</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/endogeneity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Endogeneity Problem</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/two-stage-least-squares.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Two-Stage Least Squares</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/relevance-exclusion.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Relevance and Exclusion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/weak-instruments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weak Instruments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/late.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LATE and Compliers</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">8. Regression Discontinuity</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/sharp-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sharp Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/estimation-bandwidth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Estimation and Bandwidth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/fuzzy-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fuzzy Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/validity-tests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Validity and Falsification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/interpretation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpretation and External Validity</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true">
+ <span class="menu-text">9. Matching &amp; Propensity Scores</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching &amp; Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/selection-on-observables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection on Observables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/matching-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/propensity-scores.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/weighting-ipw.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weighting and Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/overlap-diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overlap and Balance Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true">
+ <span class="menu-text">10. Synthetic Control</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Synthetic Control Method</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference for Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and Practical Issues</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/case-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: A Swedish Regional Reform</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true">
+ <span class="menu-text">Part II · The Econometrician’s Toolkit</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="true">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood: The Likelihood Principle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/properties-asymptotics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Properties and Asymptotics of MLE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/method-of-moments-gmm.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Method of Moments and GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Classical Trinity: LR, Wald, and LM Tests</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/the-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Bootstrap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/randomization-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/cluster-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustered and Wild Bootstrap</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-16" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/ovb-sensitivity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity to Omitted Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/rosenbaum-bounds.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rosenbaum Bounds</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/partial-identification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Identification and Bounds</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-17" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/binary-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary Outcomes: LPM, Logit, and Probit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/marginal-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/multinomial-ordered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multinomial and Ordered Choice</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false">
+ <span class="menu-text">Count Data</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-18" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Count Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/poisson-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Poisson Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/overdispersion-negbin.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overdispersion and the Negative Binomial</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/zero-inflation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Excess Zeros: Hurdle and Zero-Inflated Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-19" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/censoring-truncation-tobit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation, and the Tobit Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/heckman-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sample Selection: The Heckman Model</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-20" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/survival-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival Analysis: Hazards and the Kaplan-Meier Curve</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/cox-proportional-hazards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Cox Proportional Hazards Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/parametric-competing-risks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parametric Duration and Competing Risks</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false">
+ <span class="menu-text">Random Effects</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-21" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/random-effects-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Random Effects Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/fe-vs-re.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed versus Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/correlated-re-mundlak.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Correlated Random Effects: The Mundlak Device</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-22" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/partial-pooling-shrinkage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Pooling and Shrinkage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/random-intercepts-slopes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Intercepts and Random Slopes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/variance-components-icc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Variance Components and the ICC</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/growth-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Growth Curve Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-23" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/quantile-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/distributional-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributional Treatment Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/decompositions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decompositions: Oaxaca-Blinder and Beyond</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false">
+ <span class="menu-text">Time Series Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-24" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Time Series Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/stationarity-arima.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stationarity and ARIMA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/unit-roots-cointegration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unit Roots and Cointegration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/var-impulse-response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VAR and Impulse Responses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/volatility-garch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Volatility: ARCH and GARCH</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-25" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-density.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel Density Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-local-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel and Local Polynomial Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/series-splines.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Series and Spline Methods</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-26" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/regularization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularization: Ridge, LASSO, and Elastic Net</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/trees-forests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trees, Forests, and Boosting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/double-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Double and Debiased Machine Learning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/causal-forests-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Heterogeneous Effects and Policy Learning</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-27" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayes-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Inference: Priors and Posteriors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/mcmc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCMC: Sampling the Posterior</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayesian-regression-hierarchical.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Regression and Hierarchical Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-28" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/glossary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glossary</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#when-the-model-speaks-in-averages" id="toc-when-the-model-speaks-in-averages" class="nav-link active" data-scroll-target="#when-the-model-speaks-in-averages">When the Model Speaks in Averages</a></li>
+  <li><a href="#classical-method-of-moments" id="toc-classical-method-of-moments" class="nav-link" data-scroll-target="#classical-method-of-moments">Classical Method of Moments</a></li>
+  <li><a href="#from-moments-to-moment-conditions" id="toc-from-moments-to-moment-conditions" class="nav-link" data-scroll-target="#from-moments-to-moment-conditions">From Moments to Moment Conditions</a></li>
+  <li><a href="#the-gmm-criterion" id="toc-the-gmm-criterion" class="nav-link" data-scroll-target="#the-gmm-criterion">The GMM Criterion</a></li>
+  <li><a href="#see-it-two-disagreeing-moments-one-parameter" id="toc-see-it-two-disagreeing-moments-one-parameter" class="nav-link" data-scroll-target="#see-it-two-disagreeing-moments-one-parameter">See It: Two Disagreeing Moments, One Parameter</a>
+  <ul class="collapse">
+  <li><a href="#how-to-read-the-two-panel-plot" id="toc-how-to-read-the-two-panel-plot" class="nav-link" data-scroll-target="#how-to-read-the-two-panel-plot">How to Read the Two-Panel Plot</a></li>
+  </ul></li>
+  <li><a href="#the-efficient-weighting-matrix" id="toc-the-efficient-weighting-matrix" class="nav-link" data-scroll-target="#the-efficient-weighting-matrix">The Efficient Weighting Matrix</a></li>
+  <li><a href="#ols-and-2sls-are-gmm" id="toc-ols-and-2sls-are-gmm" class="nav-link" data-scroll-target="#ols-and-2sls-are-gmm">OLS and 2SLS Are GMM</a></li>
+  <li><a href="#hansens-j-test-of-over-identifying-restrictions" id="toc-hansens-j-test-of-over-identifying-restrictions" class="nav-link" data-scroll-target="#hansens-j-test-of-over-identifying-restrictions">Hansen’s J-Test of Over-identifying Restrictions</a></li>
+  <li><a href="#computing-gmm" id="toc-computing-gmm" class="nav-link" data-scroll-target="#computing-gmm">Computing GMM</a></li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  <li><a href="#what-comes-next" id="toc-what-comes-next" class="nav-link" data-scroll-target="#what-comes-next">What Comes Next</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/index.html">Maximum Likelihood &amp; GMM</a></li><li class="breadcrumb-item"><a href="../../content/11-mle-gmm/method-of-moments-gmm.html">Method of Moments and GMM</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Method of Moments and GMM</h1>
+<p class="subtitle lead">Estimation from moment conditions</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="learning-objectives">
+<p><strong>In this section, you will learn to</strong></p>
+<ul>
+<li>Apply the classical method of moments by equating sample moments to their population counterparts and solving for the parameter</li>
+<li>Write a population moment condition <span class="math inline">E[g(w,\theta)] = 0</span> and recognise the sample moment vector <span class="math inline">\bar g_n(\theta)</span> whose root (or near-root) defines the GMM estimator</li>
+<li>Form the GMM criterion as a weighting-matrix quadratic form in the sample moments, and distinguish the just-identified case (which sets the moments to zero) from the over-identified case (which can only shrink them)</li>
+<li>Explain why the efficient weighting matrix is the inverse of the moment variance, and compute Hansen’s <span class="math inline">J</span>-statistic to test the over-identifying restrictions</li>
+<li>Recognise OLS and 2SLS/IV as special cases of GMM by reading off their moment conditions</li>
+</ul>
+</div>
+<section id="when-the-model-speaks-in-averages" class="level2">
+<h2 class="anchored" data-anchor-id="when-the-model-speaks-in-averages">When the Model Speaks in Averages</h2>
+<p>Sweden’s <em>vårdcentraler</em> (primary care centers), run by the country’s 21 <em>regioner</em> (regions), are awash in administrative data: every HbA1c reading, every blood-pressure measurement, every recorded waiting time for a <em>läkare</em> (physician) appointment. Often we do not have a fully specified probability model for these numbers — we are not willing to claim that HbA1c is exactly Gaussian, or that waiting times are exactly exponential. What we <em>are</em> willing to claim is something weaker and more robust: a handful of statements about <strong>averages</strong>.</p>
+<p>For example: “the <em>average</em> HbA1c reduction delivered by the <em>Diabetessamordning</em> (diabetes coordination program) is <span class="math inline">\mu</span>.” Or: “the instrument — distance to the nearest staffed vårdcentral — is <em>uncorrelated</em> with the unobserved health shock.” Each of these is a statement that some expectation equals a known value (often zero). The previous page, <a href="../../content/11-mle-gmm/properties-asymptotics.html">Properties and Asymptotics of MLE</a>, built estimators from a <em>full likelihood</em>. This page builds estimators from these much weaker <strong>moment conditions</strong> alone — which is exactly why the resulting machinery, the Generalized Method of Moments, has become the unifying language of modern econometrics. OLS, IV, 2SLS, and many panel estimators are all GMM in disguise.</p>
+<p>The logic is disarmingly simple, and it is two centuries old.</p>
+</section>
+<section id="classical-method-of-moments" class="level2">
+<h2 class="anchored" data-anchor-id="classical-method-of-moments">Classical Method of Moments</h2>
+<p>Karl Pearson’s <strong>method of moments</strong> (1894) rests on a single idea: a population moment is an expectation, an expectation is estimated by its sample average, so <em>set the sample average equal to the population formula and solve</em>.</p>
+<p>Suppose each patient’s annual HbA1c reading <span class="math inline">w_i</span> is drawn from some distribution with mean <span class="math inline">\mu</span> and variance <span class="math inline">\sigma^2</span>. The first two population moments are</p>
+<p><span class="math display">
+E[w] = \mu, \qquad E[w^2] = \mu^2 + \sigma^2.
+</span></p>
+<p><strong>Read the second one aloud</strong>: “the expected value of the squared reading equals the squared mean plus the variance” — this is just the rearrangement of <span class="math inline">\operatorname{Var}(w) = E[w^2] - (E[w])^2</span>. We have two unknowns (<span class="math inline">\mu</span>, <span class="math inline">\sigma^2</span>) and two moment equations. The method of moments replaces each population moment by the matching sample average,</p>
+<p><span class="math display">
+\frac{1}{n}\sum_{i=1}^n w_i = \hat\mu, \qquad \frac{1}{n}\sum_{i=1}^n w_i^2 = \hat\mu^2 + \hat\sigma^2,
+</span></p>
+<p>and solves. The first equation gives <span class="math inline">\hat\mu = \bar w</span>; substituting into the second gives <span class="math inline">\hat\sigma^2 = \tfrac1n\sum_i w_i^2 - \bar w^2</span>, the (biased) sample variance. No likelihood, no distributional assumption beyond “these two moments exist” — just an analogy between population and sample.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>classical method of moments</strong> estimator solves the system that equates the first <span class="math inline">k</span> sample moments to the first <span class="math inline">k</span> population moments, expressed as functions of the parameter vector <span class="math inline">\theta = (\theta_1, \dots, \theta_k)</span>:</p>
+<p><span class="math display">
+\frac{1}{n}\sum_{i=1}^n w_i^{\,j} \;=\; E_\theta\!\left[w^{\,j}\right], \qquad j = 1, 2, \dots, k.
+</span></p>
+<p>With <span class="math inline">k</span> equations and <span class="math inline">k</span> unknowns the system is <strong>just-identified</strong>: generically there is one solution, and it sets every sample-versus-population discrepancy to zero exactly.</p>
+</div>
+<p>This works whenever the number of moment equations equals the number of parameters. But the deep questions of econometrics — instruments, panel orthogonality conditions — routinely hand us <em>more</em> moment equations than parameters. We cannot set all of them to zero at once. We need a principled way to use them all anyway. That is GMM.</p>
+</section>
+<section id="from-moments-to-moment-conditions" class="level2">
+<h2 class="anchored" data-anchor-id="from-moments-to-moment-conditions">From Moments to Moment Conditions</h2>
+<p>Lars Peter Hansen’s 1982 paper (the work cited in his 2013 Nobel) generalised the method of moments to the case where the moments are arbitrary functions of the data and parameters, and where there may be more of them than parameters.</p>
+<p>Fix notation. Let <span class="math inline">w_i</span> collect all the data for observation <span class="math inline">i</span> (outcomes, regressors, instruments). Let <span class="math inline">\theta</span> be a <span class="math inline">p</span>-vector of parameters. A <strong>moment function</strong> is a vector-valued function <span class="math inline">g(w_i, \theta)</span> of length <span class="math inline">m</span>, chosen so that, <em>at the true parameter <span class="math inline">\theta_0</span></em>, its expectation is exactly zero:</p>
+<p><span class="math display">
+E\!\left[g(w_i, \theta_0)\right] = 0.
+</span></p>
+<div class="glass-card glass-card--definition">
+<p>The <span class="math inline">m</span> equations <span class="math inline">E[g(w_i,\theta_0)] = 0</span> are the <strong>population moment conditions</strong> (also called orthogonality conditions). They encode everything the model assumes. The <strong>sample moment vector</strong> is their empirical analogue,</p>
+<p><span class="math display">
+\bar g_n(\theta) \;=\; \frac{1}{n}\sum_{i=1}^n g(w_i, \theta),
+</span></p>
+<p>an <span class="math inline">m</span>-vector that, by the law of large numbers, converges to <span class="math inline">E[g(w_i,\theta)]</span> for every fixed <span class="math inline">\theta</span>. The GMM idea is to choose <span class="math inline">\hat\theta</span> so that <span class="math inline">\bar g_n(\hat\theta)</span> is <em>as close to the zero vector as possible</em>.</p>
+</div>
+<p>Three regimes follow immediately from comparing the count of moments <span class="math inline">m</span> to the count of parameters <span class="math inline">p</span>:</p>
+<ul>
+<li><strong>Under-identified (<span class="math inline">m &lt; p</span>):</strong> fewer equations than unknowns. The parameter is not pinned down — nothing can save you. Find more moments.</li>
+<li><strong>Just-identified (<span class="math inline">m = p</span>):</strong> exactly as many equations as unknowns. We can generally solve <span class="math inline">\bar g_n(\hat\theta) = 0</span> exactly. Classical method of moments lives here.</li>
+<li><strong>Over-identified (<span class="math inline">m &gt; p</span>):</strong> more equations than unknowns. We <em>cannot</em> zero out all <span class="math inline">m</span> sample moments with only <span class="math inline">p</span> free parameters. We must compromise — and how we compromise is the whole subject of GMM.</li>
+</ul>
+<p>A Swedish example makes the over-identified case vivid. Suppose we want one number: the average HbA1c benefit <span class="math inline">\theta</span> of a fall-prevention-style diabetes program. We have <strong>two</strong> noisy administrative readouts of that benefit — say, a register-based estimate from <em>Socialstyrelsen</em> and a survey-based estimate from the regions’ own audits. Each gives a moment condition “this readout, minus <span class="math inline">\theta</span>, has mean zero.” Two moments, one parameter: over-identified. We cannot make both residuals exactly zero with a single <span class="math inline">\theta</span>. GMM tells us how to weight the two disagreeing signals.</p>
+</section>
+<section id="the-gmm-criterion" class="level2">
+<h2 class="anchored" data-anchor-id="the-gmm-criterion">The GMM Criterion</h2>
+<p>Since we cannot set <span class="math inline">\bar g_n(\theta)</span> to zero in the over-identified case, we instead minimise a <em>scalar measure of its size</em>. The natural measure is a weighted quadratic form.</p>
+<div class="glass-card glass-card--definition">
+<p>Given an <span class="math inline">m \times m</span> symmetric positive-definite <strong>weighting matrix</strong> <span class="math inline">W</span>, the GMM estimator is</p>
+<p><span class="math display">
+\hat\theta_{\text{GMM}} \;=\; \arg\min_{\theta} \; Q_n(\theta), \qquad
+Q_n(\theta) \;=\; \bar g_n(\theta)^{\!\top}\, W \, \bar g_n(\theta).
+</span></p>
+<p><strong>Read the criterion aloud</strong>: “<span class="math inline">Q_n</span> of theta equals the sample moment vector transposed, times the weighting matrix, times the sample moment vector.” It is a generalised squared length of <span class="math inline">\bar g_n(\theta)</span>. When all moments are exactly zero, <span class="math inline">Q_n = 0</span>; the further any moment strays from zero, the larger <span class="math inline">Q_n</span>, with <span class="math inline">W</span> deciding how heavily each moment (and each pairing of moments) is penalised.</p>
+</div>
+<p>A few facts make this concrete:</p>
+<ol type="1">
+<li><p><strong>Just-identified case (<span class="math inline">m = p</span>).</strong> Here we can drive <span class="math inline">\bar g_n(\hat\theta)</span> to the zero vector, so <span class="math inline">Q_n(\hat\theta) = 0</span> regardless of <span class="math inline">W</span>. <strong>The weighting matrix is irrelevant</strong> when there is nothing to compromise. Method of moments and GMM coincide.</p></li>
+<li><p><strong>Over-identified case (<span class="math inline">m &gt; p</span>).</strong> Now <span class="math inline">\bar g_n(\hat\theta) \neq 0</span> in general — the best we can do is make the <em>weighted combination</em> small. Different <span class="math inline">W</span>’s give different estimates, because they trade off the moments differently. This is where choosing <span class="math inline">W</span> well matters, and the next section shows there is a single best choice.</p></li>
+<li><p><strong>Diagonal <span class="math inline">W</span> is just weighted least squares on the moments.</strong> If <span class="math inline">W = \operatorname{diag}(w_1, \dots, w_m)</span>, then <span class="math inline">Q_n = \sum_j w_j\, \bar g_{n,j}(\theta)^2</span>: each squared moment residual gets its own weight. Larger <span class="math inline">w_j</span> means “trust moment <span class="math inline">j</span> more — pull <span class="math inline">\theta</span> toward satisfying it.”</p></li>
+</ol>
+</section>
+<section id="see-it-two-disagreeing-moments-one-parameter" class="level2">
+<h2 class="anchored" data-anchor-id="see-it-two-disagreeing-moments-one-parameter">See It: Two Disagreeing Moments, One Parameter</h2>
+<p>The interactive below is the over-identified Swedish scenario in its barest form. One parameter <span class="math inline">\theta</span> (the program’s true average HbA1c reduction, in percentage points) must satisfy <strong>two</strong> noisy moment conditions:</p>
+<p><span class="math display">
+g_1(\theta) = \bar a - \theta, \qquad g_2(\theta) = \bar b - \theta,
+</span></p>
+<p>where <span class="math inline">\bar a</span> is the register-based readout and <span class="math inline">\bar b</span> is the survey-based readout. Each is a straight line in <span class="math inline">\theta</span>, crossing zero at its own target. No single <span class="math inline">\theta</span> can zero out both lines at once (unless <span class="math inline">\bar a = \bar b</span>). Drag <span class="math inline">\theta</span> and watch the weighted objective <span class="math inline">Q_n(\theta) = w_1 g_1(\theta)^2 + w_2 g_2(\theta)^2</span> trace out a parabola whose minimum is the GMM estimate. The weighting toggle lets you switch between <em>equal</em> weights and the <em>efficient</em> weights (more weight on the lower-variance, more-reliable register readout).</p>
+<section id="over-identified-gmm-weighting-two-moment-conditions" class="level4 interactive-container">
+<h4 class="anchored" data-anchor-id="over-identified-gmm-weighting-two-moment-conditions">Over-identified GMM: weighting two moment conditions</h4>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb1" data-startfrom="120" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 119;"><span id="cb1-120"><a href="#cb1-120" aria-hidden="true" tabindex="-1"></a>viewof mlegmm_theta <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="op">-</span><span class="fl">1.4</span><span class="op">,</span> <span class="fl">0.2</span>]<span class="op">,</span> {</span>
+<span id="cb1-121"><a href="#cb1-121" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="op">-</span><span class="fl">0.6</span><span class="op">,</span></span>
+<span id="cb1-122"><a href="#cb1-122" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.01</span><span class="op">,</span></span>
+<span id="cb1-123"><a href="#cb1-123" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"θ — assumed average HbA1c reduction (pp)"</span></span>
+<span id="cb1-124"><a href="#cb1-124" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb2" data-startfrom="130" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 129;"><span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>viewof mlegmm_weighting <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">radio</span>(</span>
+<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>  [<span class="st">"Equal weights"</span><span class="op">,</span> <span class="st">"Efficient weights (inverse variance)"</span>]<span class="op">,</span></span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>  { <span class="dt">label</span><span class="op">:</span> <span class="st">"Weighting matrix W"</span><span class="op">,</span> <span class="dt">value</span><span class="op">:</span> <span class="st">"Efficient weights (inverse variance)"</span> }</span>
+<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb3" data-startfrom="146" data-source-offset="-296"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 145;"><span id="cb3-146"><a href="#cb3-146" aria-hidden="true" tabindex="-1"></a>mlegmm_aBar <span class="op">=</span> <span class="op">-</span><span class="fl">0.72</span>        <span class="co">// register readout (pp). Lower = bigger benefit.</span></span>
+<span id="cb3-147"><a href="#cb3-147" aria-hidden="true" tabindex="-1"></a>mlegmm_bBar <span class="op">=</span> <span class="op">-</span><span class="fl">0.44</span>        <span class="co">// survey readout (pp).</span></span>
+<span id="cb3-148"><a href="#cb3-148" aria-hidden="true" tabindex="-1"></a>mlegmm_varA <span class="op">=</span> <span class="fl">0.020</span>        <span class="co">// variance of register moment (small = reliable)</span></span>
+<span id="cb3-149"><a href="#cb3-149" aria-hidden="true" tabindex="-1"></a>mlegmm_varB <span class="op">=</span> <span class="fl">0.075</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-3-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-3-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-3-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-3-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb4" data-startfrom="154" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 153;"><span id="cb4-154"><a href="#cb4-154" aria-hidden="true" tabindex="-1"></a><span class="co">// Efficient weights are inverse variances (diagonal optimal W here, because</span></span>
+<span id="cb4-155"><a href="#cb4-155" aria-hidden="true" tabindex="-1"></a><span class="co">// the two readouts are independent). Equal weights ignore precision.</span></span>
+<span id="cb4-156"><a href="#cb4-156" aria-hidden="true" tabindex="-1"></a>mlegmm_weights <span class="op">=</span> {</span>
+<span id="cb4-157"><a href="#cb4-157" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (mlegmm_weighting <span class="op">===</span> <span class="st">"Equal weights"</span>) <span class="cf">return</span> { <span class="dt">w1</span><span class="op">:</span> <span class="dv">1</span><span class="op">,</span> <span class="dt">w2</span><span class="op">:</span> <span class="dv">1</span> }<span class="op">;</span></span>
+<span id="cb4-158"><a href="#cb4-158" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> { <span class="dt">w1</span><span class="op">:</span> <span class="dv">1</span> <span class="op">/</span> mlegmm_varA<span class="op">,</span> <span class="dt">w2</span><span class="op">:</span> <span class="dv">1</span> <span class="op">/</span> mlegmm_varB }<span class="op">;</span></span>
+<span id="cb4-159"><a href="#cb4-159" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb5" data-startfrom="169" data-source-offset="-68"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 168;"><span id="cb5-169"><a href="#cb5-169" aria-hidden="true" tabindex="-1"></a>mlegmm_g1 <span class="op">=</span> mlegmm_aBar <span class="op">-</span> mlegmm_theta</span>
+<span id="cb5-170"><a href="#cb5-170" aria-hidden="true" tabindex="-1"></a>mlegmm_g2 <span class="op">=</span> mlegmm_bBar <span class="op">-</span> mlegmm_theta</span>
+<span id="cb5-171"><a href="#cb5-171" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-172"><a href="#cb5-172" aria-hidden="true" tabindex="-1"></a><span class="co">// GMM objective at the current θ.</span></span>
+<span id="cb5-173"><a href="#cb5-173" aria-hidden="true" tabindex="-1"></a>mlegmm_Q <span class="op">=</span> mlegmm_weights<span class="op">.</span><span class="at">w1</span> <span class="op">*</span> mlegmm_g1 <span class="op">**</span> <span class="dv">2</span> <span class="op">+</span> mlegmm_weights<span class="op">.</span><span class="at">w2</span> <span class="op">*</span> mlegmm_g2 <span class="op">**</span> <span class="dv">2</span></span>
+<span id="cb5-174"><a href="#cb5-174" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-175"><a href="#cb5-175" aria-hidden="true" tabindex="-1"></a><span class="co">// Closed-form minimiser of w1 (a-θ)^2 + w2 (b-θ)^2 is the weighted mean.</span></span>
+<span id="cb5-176"><a href="#cb5-176" aria-hidden="true" tabindex="-1"></a>mlegmm_thetaHat <span class="op">=</span> (mlegmm_weights<span class="op">.</span><span class="at">w1</span> <span class="op">*</span> mlegmm_aBar <span class="op">+</span> mlegmm_weights<span class="op">.</span><span class="at">w2</span> <span class="op">*</span> mlegmm_bBar)</span>
+<span id="cb5-177"><a href="#cb5-177" aria-hidden="true" tabindex="-1"></a>                <span class="op">/</span> (mlegmm_weights<span class="op">.</span><span class="at">w1</span> <span class="op">+</span> mlegmm_weights<span class="op">.</span><span class="at">w2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-5-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-5-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-5-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-5-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb6" data-startfrom="185" data-source-offset="-75"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 184;"><span id="cb6-185"><a href="#cb6-185" aria-hidden="true" tabindex="-1"></a>mlegmm_grid <span class="op">=</span> d3<span class="op">.</span><span class="fu">range</span>(<span class="op">-</span><span class="fl">1.4</span><span class="op">,</span> <span class="fl">0.2001</span><span class="op">,</span> <span class="fl">0.01</span>)</span>
+<span id="cb6-186"><a href="#cb6-186" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-187"><a href="#cb6-187" aria-hidden="true" tabindex="-1"></a>mlegmm_momentData <span class="op">=</span> mlegmm_grid<span class="op">.</span><span class="fu">flatMap</span>(t <span class="kw">=&gt;</span> [</span>
+<span id="cb6-188"><a href="#cb6-188" aria-hidden="true" tabindex="-1"></a>  { <span class="dt">theta</span><span class="op">:</span> t<span class="op">,</span> <span class="dt">value</span><span class="op">:</span> mlegmm_aBar <span class="op">-</span> t<span class="op">,</span> <span class="dt">moment</span><span class="op">:</span> <span class="st">"g₁: register"</span> }<span class="op">,</span></span>
+<span id="cb6-189"><a href="#cb6-189" aria-hidden="true" tabindex="-1"></a>  { <span class="dt">theta</span><span class="op">:</span> t<span class="op">,</span> <span class="dt">value</span><span class="op">:</span> mlegmm_bBar <span class="op">-</span> t<span class="op">,</span> <span class="dt">moment</span><span class="op">:</span> <span class="st">"g₂: survey"</span> }</span>
+<span id="cb6-190"><a href="#cb6-190" aria-hidden="true" tabindex="-1"></a>])</span>
+<span id="cb6-191"><a href="#cb6-191" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-192"><a href="#cb6-192" aria-hidden="true" tabindex="-1"></a>mlegmm_objData <span class="op">=</span> mlegmm_grid<span class="op">.</span><span class="fu">map</span>(t <span class="kw">=&gt;</span> ({</span>
+<span id="cb6-193"><a href="#cb6-193" aria-hidden="true" tabindex="-1"></a>  <span class="dt">theta</span><span class="op">:</span> t<span class="op">,</span></span>
+<span id="cb6-194"><a href="#cb6-194" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Q</span><span class="op">:</span> mlegmm_weights<span class="op">.</span><span class="at">w1</span> <span class="op">*</span> (mlegmm_aBar <span class="op">-</span> t) <span class="op">**</span> <span class="dv">2</span></span>
+<span id="cb6-195"><a href="#cb6-195" aria-hidden="true" tabindex="-1"></a>   <span class="op">+</span> mlegmm_weights<span class="op">.</span><span class="at">w2</span> <span class="op">*</span> (mlegmm_bBar <span class="op">-</span> t) <span class="op">**</span> <span class="dv">2</span></span>
+<span id="cb6-196"><a href="#cb6-196" aria-hidden="true" tabindex="-1"></a>}))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-6-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-6-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-6-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb7" data-startfrom="200" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 199;"><span id="cb7-200"><a href="#cb7-200" aria-hidden="true" tabindex="-1"></a><span class="co">// ── Top panel: the two moment conditions as lines in θ. ──</span></span>
+<span id="cb7-201"><a href="#cb7-201" aria-hidden="true" tabindex="-1"></a><span class="co">// Each crosses zero at its own target; the vertical bars at the current θ</span></span>
+<span id="cb7-202"><a href="#cb7-202" aria-hidden="true" tabindex="-1"></a><span class="co">// are the residuals g₁(θ) and g₂(θ) that GMM is trying to shrink.</span></span>
+<span id="cb7-203"><a href="#cb7-203" aria-hidden="true" tabindex="-1"></a>Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb7-204"><a href="#cb7-204" aria-hidden="true" tabindex="-1"></a>  <span class="dt">height</span><span class="op">:</span> <span class="dv">250</span><span class="op">,</span></span>
+<span id="cb7-205"><a href="#cb7-205" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">58</span><span class="op">,</span></span>
+<span id="cb7-206"><a href="#cb7-206" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">46</span><span class="op">,</span></span>
+<span id="cb7-207"><a href="#cb7-207" aria-hidden="true" tabindex="-1"></a>  <span class="dt">style</span><span class="op">:</span> { <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"'Inter', system-ui, sans-serif"</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="st">"12px"</span> }<span class="op">,</span></span>
+<span id="cb7-208"><a href="#cb7-208" aria-hidden="true" tabindex="-1"></a>  <span class="dt">x</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"θ — assumed average HbA1c reduction (pp)"</span><span class="op">,</span> <span class="dt">domain</span><span class="op">:</span> [<span class="op">-</span><span class="fl">1.4</span><span class="op">,</span> <span class="fl">0.2</span>]<span class="op">,</span> <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span> }<span class="op">,</span></span>
+<span id="cb7-209"><a href="#cb7-209" aria-hidden="true" tabindex="-1"></a>  <span class="dt">y</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"moment value g(θ)"</span><span class="op">,</span> <span class="dt">domain</span><span class="op">:</span> [<span class="op">-</span><span class="fl">1.1</span><span class="op">,</span> <span class="fl">1.1</span>]<span class="op">,</span> <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span> }<span class="op">,</span></span>
+<span id="cb7-210"><a href="#cb7-210" aria-hidden="true" tabindex="-1"></a>  <span class="dt">color</span><span class="op">:</span> {</span>
+<span id="cb7-211"><a href="#cb7-211" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> [<span class="st">"g₁: register"</span><span class="op">,</span> <span class="st">"g₂: survey"</span>]<span class="op">,</span></span>
+<span id="cb7-212"><a href="#cb7-212" aria-hidden="true" tabindex="-1"></a>    <span class="dt">range</span><span class="op">:</span> [<span class="st">"#990000"</span><span class="op">,</span> <span class="st">"#3d5a6c"</span>]<span class="op">,</span></span>
+<span id="cb7-213"><a href="#cb7-213" aria-hidden="true" tabindex="-1"></a>    <span class="dt">legend</span><span class="op">:</span> <span class="kw">true</span></span>
+<span id="cb7-214"><a href="#cb7-214" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb7-215"><a href="#cb7-215" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb7-216"><a href="#cb7-216" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleY</span>([<span class="dv">0</span>]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#1c1c1a"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">1</span> })<span class="op">,</span></span>
+<span id="cb7-217"><a href="#cb7-217" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(mlegmm_momentData<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"theta"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"value"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> <span class="st">"moment"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">2.5</span> })<span class="op">,</span></span>
+<span id="cb7-218"><a href="#cb7-218" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-219"><a href="#cb7-219" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Residual bars at the current θ.</span></span>
+<span id="cb7-220"><a href="#cb7-220" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleX</span>([mlegmm_theta]<span class="op">,</span> {</span>
+<span id="cb7-221"><a href="#cb7-221" aria-hidden="true" tabindex="-1"></a>      <span class="dt">y1</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">y2</span><span class="op">:</span> mlegmm_g1<span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">6</span><span class="op">,</span> <span class="dt">strokeOpacity</span><span class="op">:</span> <span class="fl">0.30</span></span>
+<span id="cb7-222"><a href="#cb7-222" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb7-223"><a href="#cb7-223" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleX</span>([mlegmm_theta <span class="op">+</span> <span class="fl">0.012</span>]<span class="op">,</span> {</span>
+<span id="cb7-224"><a href="#cb7-224" aria-hidden="true" tabindex="-1"></a>      <span class="dt">y1</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">y2</span><span class="op">:</span> mlegmm_g2<span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#3d5a6c"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">6</span><span class="op">,</span> <span class="dt">strokeOpacity</span><span class="op">:</span> <span class="fl">0.30</span></span>
+<span id="cb7-225"><a href="#cb7-225" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb7-226"><a href="#cb7-226" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-227"><a href="#cb7-227" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Current-θ marker.</span></span>
+<span id="cb7-228"><a href="#cb7-228" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleX</span>([mlegmm_theta]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#9c7a33"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">1.5</span><span class="op">,</span> <span class="dt">strokeDasharray</span><span class="op">:</span> <span class="st">"3,3"</span> })<span class="op">,</span></span>
+<span id="cb7-229"><a href="#cb7-229" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> mlegmm_theta<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> mlegmm_g1 }]<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="fl">4.5</span> })<span class="op">,</span></span>
+<span id="cb7-230"><a href="#cb7-230" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> mlegmm_theta<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> mlegmm_g2 }]<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"#3d5a6c"</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="fl">4.5</span> })<span class="op">,</span></span>
+<span id="cb7-231"><a href="#cb7-231" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-232"><a href="#cb7-232" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Where each moment is satisfied (crosses zero).</span></span>
+<span id="cb7-233"><a href="#cb7-233" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> mlegmm_aBar<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="dv">0</span> }]<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="dv">4</span> })<span class="op">,</span></span>
+<span id="cb7-234"><a href="#cb7-234" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> mlegmm_bBar<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="dv">0</span> }]<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#3d5a6c"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="dv">4</span> })</span>
+<span id="cb7-235"><a href="#cb7-235" aria-hidden="true" tabindex="-1"></a>  ]</span>
+<span id="cb7-236"><a href="#cb7-236" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-7" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb8" data-startfrom="242" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 241;"><span id="cb8-242"><a href="#cb8-242" aria-hidden="true" tabindex="-1"></a><span class="co">// ── Bottom panel: the GMM objective Q(θ), a parabola whose minimum is θ̂. ──</span></span>
+<span id="cb8-243"><a href="#cb8-243" aria-hidden="true" tabindex="-1"></a>Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb8-244"><a href="#cb8-244" aria-hidden="true" tabindex="-1"></a>  <span class="dt">height</span><span class="op">:</span> <span class="dv">250</span><span class="op">,</span></span>
+<span id="cb8-245"><a href="#cb8-245" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">58</span><span class="op">,</span></span>
+<span id="cb8-246"><a href="#cb8-246" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">46</span><span class="op">,</span></span>
+<span id="cb8-247"><a href="#cb8-247" aria-hidden="true" tabindex="-1"></a>  <span class="dt">style</span><span class="op">:</span> { <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"'Inter', system-ui, sans-serif"</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="st">"12px"</span> }<span class="op">,</span></span>
+<span id="cb8-248"><a href="#cb8-248" aria-hidden="true" tabindex="-1"></a>  <span class="dt">x</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"θ — assumed average HbA1c reduction (pp)"</span><span class="op">,</span> <span class="dt">domain</span><span class="op">:</span> [<span class="op">-</span><span class="fl">1.4</span><span class="op">,</span> <span class="fl">0.2</span>]<span class="op">,</span> <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span> }<span class="op">,</span></span>
+<span id="cb8-249"><a href="#cb8-249" aria-hidden="true" tabindex="-1"></a>  <span class="dt">y</span><span class="op">:</span> { <span class="dt">label</span><span class="op">:</span> <span class="st">"GMM objective  Q(θ)"</span><span class="op">,</span> <span class="dt">domain</span><span class="op">:</span> [<span class="dv">0</span><span class="op">,</span> d3<span class="op">.</span><span class="fu">max</span>(mlegmm_objData<span class="op">,</span> d <span class="kw">=&gt;</span> d<span class="op">.</span><span class="at">Q</span>) <span class="op">*</span> <span class="fl">1.08</span>]<span class="op">,</span> <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span> }<span class="op">,</span></span>
+<span id="cb8-250"><a href="#cb8-250" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb8-251"><a href="#cb8-251" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">areaY</span>(mlegmm_objData<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"theta"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"Q"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="dt">fillOpacity</span><span class="op">:</span> <span class="fl">0.06</span> })<span class="op">,</span></span>
+<span id="cb8-252"><a href="#cb8-252" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(mlegmm_objData<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"theta"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"Q"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">2.5</span> })<span class="op">,</span></span>
+<span id="cb8-253"><a href="#cb8-253" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-254"><a href="#cb8-254" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Current θ and its Q value.</span></span>
+<span id="cb8-255"><a href="#cb8-255" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleX</span>([mlegmm_theta]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#9c7a33"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">1.5</span><span class="op">,</span> <span class="dt">strokeDasharray</span><span class="op">:</span> <span class="st">"3,3"</span> })<span class="op">,</span></span>
+<span id="cb8-256"><a href="#cb8-256" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> mlegmm_theta<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> mlegmm_Q }]<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"#9c7a33"</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="dv">5</span> })<span class="op">,</span></span>
+<span id="cb8-257"><a href="#cb8-257" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-258"><a href="#cb8-258" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The efficient/equal minimiser θ̂.</span></span>
+<span id="cb8-259"><a href="#cb8-259" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleX</span>([mlegmm_thetaHat]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> <span class="st">"#2e6f40"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">2</span> })<span class="op">,</span></span>
+<span id="cb8-260"><a href="#cb8-260" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> mlegmm_thetaHat<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="dv">0</span> }]<span class="op">,</span> { <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"#2e6f40"</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="dv">5</span> })<span class="op">,</span></span>
+<span id="cb8-261"><a href="#cb8-261" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">text</span>([{ <span class="dt">x</span><span class="op">:</span> mlegmm_thetaHat<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="dv">0</span> }]<span class="op">,</span> {</span>
+<span id="cb8-262"><a href="#cb8-262" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span></span>
+<span id="cb8-263"><a href="#cb8-263" aria-hidden="true" tabindex="-1"></a>      <span class="dt">text</span><span class="op">:</span> [<span class="vs">`θ̂ = </span><span class="sc">${</span>mlegmm_thetaHat<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="sc">}</span><span class="vs">`</span>]<span class="op">,</span></span>
+<span id="cb8-264"><a href="#cb8-264" aria-hidden="true" tabindex="-1"></a>      <span class="dt">dy</span><span class="op">:</span> <span class="op">-</span><span class="dv">10</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"#2e6f40"</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="dv">700</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">12</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"middle"</span></span>
+<span id="cb8-265"><a href="#cb8-265" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb8-266"><a href="#cb8-266" aria-hidden="true" tabindex="-1"></a>  ]</span>
+<span id="cb8-267"><a href="#cb8-267" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-8" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb9" data-startfrom="273" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 272;"><span id="cb9-273"><a href="#cb9-273" aria-hidden="true" tabindex="-1"></a><span class="co">// Live readout panel: current residuals, weights, objective, and θ̂.</span></span>
+<span id="cb9-274"><a href="#cb9-274" aria-hidden="true" tabindex="-1"></a>{</span>
+<span id="cb9-275"><a href="#cb9-275" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> fmt <span class="op">=</span> v <span class="kw">=&gt;</span> <span class="vs">`</span><span class="sc">${</span>v <span class="op">&gt;=</span> <span class="dv">0</span> <span class="op">?</span> <span class="st">"+"</span> <span class="op">:</span> <span class="st">""</span><span class="sc">}${</span>v<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="sc">}</span><span class="vs">`</span><span class="op">;</span></span>
+<span id="cb9-276"><a href="#cb9-276" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> onTarget <span class="op">=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">abs</span>(mlegmm_theta <span class="op">-</span> mlegmm_thetaHat) <span class="op">&lt;</span> <span class="fl">0.006</span><span class="op">;</span></span>
+<span id="cb9-277"><a href="#cb9-277" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> tile <span class="op">=</span> (name<span class="op">,</span> value<span class="op">,</span> color<span class="op">,</span> bg) <span class="kw">=&gt;</span> <span class="fu">html</span><span class="vs">`&lt;div style="</span></span>
+<span id="cb9-278"><a href="#cb9-278" aria-hidden="true" tabindex="-1"></a><span class="vs">      flex: 1 1 0; min-width: 7rem; text-align: center;</span></span>
+<span id="cb9-279"><a href="#cb9-279" aria-hidden="true" tabindex="-1"></a><span class="vs">      padding: 0.5rem 0.4rem; border-radius: 0.4rem; background: </span><span class="sc">${</span>bg<span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb9-280"><a href="#cb9-280" aria-hidden="true" tabindex="-1"></a><span class="vs">      border: 1px solid #e6e3db;"&gt;</span></span>
+<span id="cb9-281"><a href="#cb9-281" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'Inter',system-ui,sans-serif; font-size:0.66rem;</span></span>
+<span id="cb9-282"><a href="#cb9-282" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;</span></span>
+<span id="cb9-283"><a href="#cb9-283" aria-hidden="true" tabindex="-1"></a><span class="vs">        color:#79766e;"&gt;</span><span class="sc">${</span>name<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb9-284"><a href="#cb9-284" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;</span></span>
+<span id="cb9-285"><a href="#cb9-285" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; color:</span><span class="sc">${</span>color<span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>value<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb9-286"><a href="#cb9-286" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb9-287"><a href="#cb9-287" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">html</span><span class="vs">`&lt;div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.75rem;"&gt;</span></span>
+<span id="cb9-288"><a href="#cb9-288" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"g₁ (register)"</span><span class="op">,</span> <span class="fu">fmt</span>(mlegmm_g1)<span class="op">,</span> <span class="st">"#990000"</span><span class="op">,</span> <span class="st">"rgba(153,0,0,0.04)"</span>)<span class="sc">}</span></span>
+<span id="cb9-289"><a href="#cb9-289" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"g₂ (survey)"</span><span class="op">,</span>   <span class="fu">fmt</span>(mlegmm_g2)<span class="op">,</span> <span class="st">"#3d5a6c"</span><span class="op">,</span> <span class="st">"#f6f5f1"</span>)<span class="sc">}</span></span>
+<span id="cb9-290"><a href="#cb9-290" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"Objective Q(θ)"</span><span class="op">,</span> mlegmm_Q<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="op">,</span> <span class="st">"#9c7a33"</span><span class="op">,</span> <span class="st">"#f6f5f1"</span>)<span class="sc">}</span></span>
+<span id="cb9-291"><a href="#cb9-291" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"θ̂ (minimiser)"</span><span class="op">,</span> mlegmm_thetaHat<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="op">,</span></span>
+<span id="cb9-292"><a href="#cb9-292" aria-hidden="true" tabindex="-1"></a>        onTarget <span class="op">?</span> <span class="st">"#2e6f40"</span> <span class="op">:</span> <span class="st">"#1c1c1a"</span><span class="op">,</span></span>
+<span id="cb9-293"><a href="#cb9-293" aria-hidden="true" tabindex="-1"></a>        onTarget <span class="op">?</span> <span class="st">"rgba(46,111,64,0.08)"</span> <span class="op">:</span> <span class="st">"#ffffff"</span>)<span class="sc">}</span></span>
+<span id="cb9-294"><a href="#cb9-294" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb9-295"><a href="#cb9-295" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-9" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+</section>
+<section id="how-to-read-the-two-panel-plot" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-two-panel-plot">How to Read the Two-Panel Plot</h3>
+<p>Work through these steps in order; each isolates one idea about GMM.</p>
+<p><strong>Step 1: Read the two moment lines (top panel).</strong> The red line is <span class="math inline">g_1(\theta) = \bar a - \theta</span>, the register-based moment; the slate line is <span class="math inline">g_2(\theta) = \bar b - \theta</span>, the survey-based moment. Each is a downward-sloping straight line that crosses zero (the hollow dot on the horizontal axis) at <em>its own</em> target — the register at <span class="math inline">\theta = -0.72</span>, the survey at <span class="math inline">\theta = -0.44</span>. Because the two targets differ, <strong>no vertical line can hit both zeros at once</strong>. That is exactly what “over-identified” means: two equations, one unknown, and they disagree.</p>
+<p><strong>Step 2: See the residuals you are trying to shrink.</strong> The ochre dashed line marks your current <span class="math inline">\theta</span>. The two faint vertical bars at that <span class="math inline">\theta</span> are the residuals <span class="math inline">g_1(\theta)</span> and <span class="math inline">g_2(\theta)</span> — how far each moment is from being satisfied. GMM cannot make both bars vanish; it can only make a <em>weighted combination of their squares</em> as small as possible.</p>
+<p><strong>Step 3: Watch the objective (bottom panel).</strong> The red curve is <span class="math inline">Q_n(\theta) = w_1 g_1(\theta)^2 + w_2 g_2(\theta)^2</span> — a parabola, because it is a sum of squared lines. The ochre dot rides the curve at your current <span class="math inline">\theta</span>. The green vertical line and the <span class="math inline">\hat\theta</span> label mark the <em>minimum</em>: the GMM estimate. Drag the <span class="math inline">\theta</span> slider until the ochre dot slides down into the green minimum — the readout’s <span class="math inline">\hat\theta</span> tile turns green when you are there.</p>
+<p><strong>Step 4: Toggle the weighting matrix.</strong> Flip the control back and forth between <strong>Equal weights</strong> and <strong>Efficient weights (inverse variance)</strong> (it starts on efficient). Going from equal to efficient, two things happen at once. First, the objective parabola changes shape. Second — the payoff — the green minimiser <span class="math inline">\hat\theta</span> <em>slides toward the register target</em> (<span class="math inline">-0.72</span>). Under equal weights, <span class="math inline">\hat\theta</span> is the plain average of the two readouts, <span class="math inline">(-0.72 - 0.44)/2 = -0.58</span>. Under efficient weights, the more precise register readout (variance <span class="math inline">0.020</span>) gets about <span class="math inline">0.075/0.020 \approx 3.75</span> times the weight of the noisy survey (variance <span class="math inline">0.075</span>), pulling <span class="math inline">\hat\theta</span> to about <span class="math inline">-0.66</span> (precisely <span class="math inline">-0.661</span>, as the readout tile shows). GMM listens harder to the moment it trusts more.</p>
+<p><strong>Step 5: Connect to the formula.</strong> With diagonal <span class="math inline">W</span>, the minimiser is the inverse-variance-weighted mean, <span class="math inline">\hat\theta = (w_1\bar a + w_2\bar b)/(w_1 + w_2)</span>. This is <em>precisely</em> the efficient way to combine two noisy unbiased estimates — the same logic behind meta-analysis and the Kalman filter. The next section shows why “inverse variance” is optimal in general.</p>
+</section>
+</section>
+<section id="the-efficient-weighting-matrix" class="level2">
+<h2 class="anchored" data-anchor-id="the-efficient-weighting-matrix">The Efficient Weighting Matrix</h2>
+<p>In the over-identified case the choice of <span class="math inline">W</span> changes the estimate <em>and</em> its precision. Hansen’s central result identifies the single best choice.</p>
+<div class="glass-card glass-card--insight">
+<p><strong>The efficient GMM weighting matrix is the inverse of the variance of the moments.</strong> Let</p>
+<p><span class="math display">
+S \;=\; \operatorname{Var}\!\big(g(w_i,\theta_0)\big) \;=\; E\!\big[g(w_i,\theta_0)\,g(w_i,\theta_0)^{\!\top}\big]
+</span></p>
+<p>be the <span class="math inline">m \times m</span> covariance matrix of the moment functions at the truth. Setting <span class="math inline">W = S^{-1}</span> minimises the asymptotic variance of <span class="math inline">\hat\theta_{\text{GMM}}</span> among all valid weighting matrices. Intuitively: <strong>down-weight noisy moments, up-weight precise ones, and account for the correlations between them.</strong> A moment with large variance carries little information and should not be allowed to drag the estimate around.</p>
+</div>
+<p>There is a chicken-and-egg problem: <span class="math inline">S</span> depends on <span class="math inline">\theta_0</span>, which we do not know. The standard fix is <strong>two-step (feasible) efficient GMM</strong>:</p>
+<ol type="1">
+<li><strong>Step 1.</strong> Estimate <span class="math inline">\hat\theta^{(1)}</span> with any sensible weighting matrix — usually <span class="math inline">W = I</span> (the identity), which just minimises the unweighted sum of squared moments. This <span class="math inline">\hat\theta^{(1)}</span> is consistent but not efficient.</li>
+<li><strong>Step 2.</strong> Use <span class="math inline">\hat\theta^{(1)}</span> to estimate <span class="math inline">\hat S = \tfrac1n \sum_i g(w_i, \hat\theta^{(1)}) g(w_i, \hat\theta^{(1)})^{\top}</span>, then re-minimise with <span class="math inline">W = \hat S^{-1}</span> to get the efficient <span class="math inline">\hat\theta^{(2)}</span>.</li>
+</ol>
+<p>Iterating to convergence gives <em>iterated</em> GMM; using a clever one-step adjustment gives <em>continuously updated</em> GMM (CUE). All three are asymptotically equivalent and efficient.</p>
+</section>
+<section id="ols-and-2sls-are-gmm" class="level2">
+<h2 class="anchored" data-anchor-id="ols-and-2sls-are-gmm">OLS and 2SLS Are GMM</h2>
+<p>The reason GMM is the lingua franca of econometrics is that the estimators you already know are special cases. Reading off their moment conditions is the quickest way to internalise the framework.</p>
+<div class="glass-card glass-card--definition">
+<p><strong>OLS as GMM.</strong> The linear model <span class="math inline">y_i = x_i^{\top}\beta + u_i</span> assumes the regressors are orthogonal to the error: <span class="math inline">E[x_i u_i] = 0</span>. Substituting <span class="math inline">u_i = y_i - x_i^{\top}\beta</span> gives the moment condition</p>
+<p><span class="math display">
+E\!\big[\,x_i\,(y_i - x_i^{\top}\beta)\,\big] = 0.
+</span></p>
+<p>There are <span class="math inline">p</span> moments (one per regressor) and <span class="math inline">p</span> parameters — <strong>just-identified</strong>. Setting the sample analogue <span class="math inline">\tfrac1n\sum_i x_i(y_i - x_i^{\top}\hat\beta) = 0</span> to zero and solving reproduces the normal equations and hence <span class="math inline">\hat\beta_{\text{OLS}} = (X^{\top}X)^{-1}X^{\top}y</span> exactly. The weighting matrix is irrelevant.</p>
+</div>
+<div class="glass-card glass-card--definition">
+<p><strong>IV / 2SLS as GMM.</strong> When a regressor is endogenous (<span class="math inline">E[x_i u_i] \neq 0</span>) but we have an <span class="math inline">m</span>-vector of instruments <span class="math inline">z_i</span> with <span class="math inline">E[z_i u_i] = 0</span>, the moment condition uses the instruments instead of the regressors:</p>
+<p><span class="math display">
+E\!\big[\,z_i\,(y_i - x_i^{\top}\beta)\,\big] = 0.
+</span></p>
+<ul>
+<li>If <span class="math inline">m = p</span> (as many instruments as endogenous-plus-exogenous regressors), the system is <strong>just-identified</strong>: GMM = simple IV, and <span class="math inline">W</span> does not matter.</li>
+<li>If <span class="math inline">m &gt; p</span> (more instruments than parameters), the system is <strong>over-identified</strong>: we cannot zero out all <span class="math inline">m</span> moments. Minimising <span class="math inline">Q_n(\beta) = \bar g_n(\beta)^{\top} W \bar g_n(\beta)</span> with <span class="math inline">W = (Z^{\top}Z)^{-1}</span> reproduces <strong>two-stage least squares</strong> exactly; using the efficient <span class="math inline">W = \hat S^{-1}</span> gives efficient GMM, which beats 2SLS when the errors are heteroskedastic.</li>
+</ul>
+</div>
+<p>This is the link back to the <a href="../../content/07-iv/two-stage-least-squares.html">Two-Stage Least Squares</a> page: 2SLS is GMM with a particular, <em>not generally efficient</em>, weighting matrix. The over-identified diabetes example above — two noisy readouts (register and survey) of one HbA1c-benefit parameter — is structurally identical to an over-identified IV problem with two instruments for a single endogenous coefficient: in both cases two moment conditions chase one parameter, and the efficient weighting matrix decides how to reconcile them.</p>
+</section>
+<section id="hansens-j-test-of-over-identifying-restrictions" class="level2">
+<h2 class="anchored" data-anchor-id="hansens-j-test-of-over-identifying-restrictions">Hansen’s J-Test of Over-identifying Restrictions</h2>
+<p>The over-identified case hands us a free diagnostic. If we have <span class="math inline">m &gt; p</span> moments and the model is correct, then <em>all</em> <span class="math inline">m</span> population moments are genuinely zero, and the efficient GMM estimate should make all <span class="math inline">m</span> sample moments <em>jointly</em> small. If instead the minimised objective is <em>large</em> — if even after the best compromise the moments stubbornly refuse to be near zero — that is evidence the model (or some instruments) is misspecified.</p>
+<div class="glass-card glass-card--insight">
+<p><strong>Hansen’s <span class="math inline">J</span>-statistic</strong> is the minimised efficient-GMM objective, scaled by the sample size:</p>
+<p><span class="math display">
+J \;=\; n \cdot \bar g_n(\hat\theta)^{\!\top}\, \hat S^{-1}\, \bar g_n(\hat\theta) \;=\; n \cdot Q_n(\hat\theta).
+</span></p>
+<p>Under the null that all moment conditions are valid, <span class="math inline">J \xrightarrow{d} \chi^2_{m-p}</span> — a chi-square distribution with <strong>degrees of freedom equal to the number of over-identifying restrictions</strong> (<span class="math inline">m - p</span>, the count of “extra” moments beyond what is needed to identify <span class="math inline">\theta</span>). A large <span class="math inline">J</span> (small <span class="math inline">p</span>-value) rejects the joint validity of the moment conditions.</p>
+</div>
+<p>Two cautions deserve emphasis:</p>
+<ul>
+<li><strong>A just-identified model has <span class="math inline">m - p = 0</span> degrees of freedom</strong>, <span class="math inline">J \equiv 0</span>, and nothing to test. The <span class="math inline">J</span>-test only exists when you have spare moments.</li>
+<li><strong>The <span class="math inline">J</span>-test is a <em>joint</em> test.</strong> A rejection tells you that <em>something</em> is wrong — one or more instruments may be invalid, or the functional form may be misspecified — but it does not tell you <em>which</em> moment is the culprit. A non-rejection is reassuring but not proof: low power, or two bad instruments whose biases cancel, can let a flawed model pass.</li>
+</ul>
+<p>In the Swedish over-identified scenario, a significant <span class="math inline">J</span> would say: “the register and survey readouts of the program’s HbA1c benefit disagree by more than their sampling noise can explain — they are not both measuring the same <span class="math inline">\theta</span>.” That is a substantive red flag, not a nuisance.</p>
+<details>
+<summary>
+Math Details: Efficient Weighting and the Asymptotic Distribution of the J-Statistic
+</summary>
+<div class="details-content">
+<section id="asymptotic-variance-of-the-gmm-estimator" class="level3">
+<h3 class="anchored" data-anchor-id="asymptotic-variance-of-the-gmm-estimator">Asymptotic variance of the GMM estimator</h3>
+<p>Let <span class="math inline">G = E\!\big[\partial g(w_i,\theta_0)/\partial\theta^{\top}\big]</span> be the <span class="math inline">m \times p</span> <strong>Jacobian</strong> (expected gradient) of the moment function, and <span class="math inline">S = \operatorname{Var}(g(w_i,\theta_0))</span> its <span class="math inline">m\times m</span> covariance. A first-order Taylor expansion of the first-order condition <span class="math inline">G^{\top} W \bar g_n(\hat\theta) = 0</span> around <span class="math inline">\theta_0</span> gives the sandwich form</p>
+<p><span class="math display">
+\sqrt{n}\,(\hat\theta_{\text{GMM}} - \theta_0) \xrightarrow{d} \mathcal N\!\big(0,\; V(W)\big),
+\qquad
+V(W) = (G^{\top} W G)^{-1}\, G^{\top} W S W G\, (G^{\top} W G)^{-1}.
+</span></p>
+</section>
+<section id="why-w-s-1-is-efficient" class="level3">
+<h3 class="anchored" data-anchor-id="why-w-s-1-is-efficient">Why <span class="math inline">W = S^{-1}</span> is efficient</h3>
+<p>Substituting <span class="math inline">W = S^{-1}</span> collapses the sandwich:</p>
+<p><span class="math display">
+V(S^{-1}) = (G^{\top} S^{-1} G)^{-1} G^{\top} S^{-1} S\, S^{-1} G (G^{\top} S^{-1} G)^{-1}
+          = (G^{\top} S^{-1} G)^{-1}.
+</span></p>
+<p>One can show <span class="math inline">V(W) - V(S^{-1})</span> is positive semi-definite for <strong>every</strong> valid <span class="math inline">W</span> (the argument is the matrix analogue of the Gauss–Markov theorem, or equivalently the Cauchy–Schwarz inequality applied to the moment space). So no weighting matrix delivers a smaller asymptotic variance than <span class="math inline">S^{-1}</span>. This is exactly why the interactive’s “efficient weights” tile uses inverse variances: with independent moments, <span class="math inline">S</span> is diagonal and <span class="math inline">S^{-1} = \operatorname{diag}(1/\operatorname{Var} g_1, \dots)</span>.</p>
+</section>
+<section id="the-j-statistics-chi-square-limit" class="level3">
+<h3 class="anchored" data-anchor-id="the-j-statistics-chi-square-limit">The <span class="math inline">J</span>-statistic’s chi-square limit</h3>
+<p>At the efficient estimate, define the standardised moment vector <span class="math inline">\sqrt{n}\,\hat S^{-1/2}\bar g_n(\hat\theta)</span>. Asymptotically <span class="math inline">\sqrt n\,\bar g_n(\theta_0) \xrightarrow{d} \mathcal N(0, S)</span>, so <span class="math inline">\sqrt n\,S^{-1/2}\bar g_n(\theta_0) \xrightarrow{d} \mathcal N(0, I_m)</span> — a vector of <span class="math inline">m</span> independent standard normals. Estimating the <span class="math inline">p</span> parameters projects this vector onto the <span class="math inline">(m-p)</span>-dimensional space orthogonal to the columns of <span class="math inline">S^{-1/2}G</span>. The squared length of a standard normal vector confined to a <span class="math inline">(m-p)</span>-dimensional subspace is <span class="math inline">\chi^2_{m-p}</span>. Hence</p>
+<p><span class="math display">
+J = n\,\bar g_n(\hat\theta)^{\top}\hat S^{-1}\bar g_n(\hat\theta) \xrightarrow{d} \chi^2_{m-p}.
+</span></p>
+<p>The loss of <span class="math inline">p</span> degrees of freedom is the price of using the data to estimate <span class="math inline">\theta</span> before testing the moments — the same bookkeeping as residual degrees of freedom in OLS.</p>
+</section>
+</div>
+</details>
+</section>
+<section id="computing-gmm" class="level2">
+<h2 class="anchored" data-anchor-id="computing-gmm">Computing GMM</h2>
+<p>Both implementations encode the over-identified diabetes scenario: one parameter <span class="math inline">\theta</span> (the average HbA1c reduction) and two noisy moment conditions, estimated by efficient two-step GMM. Each then runs the <span class="math inline">J</span>-test.</p>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">R</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">Python</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gmm)</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Two noisy readouts of the SAME program effect θ on HbA1c (pp). ---</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Register readout centred on -0.72, survey readout on -0.44 (they disagree).</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Register is more precise (sd 0.14) than the survey (sd 0.27).</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2019</span>)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">600</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>register <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="at">mean =</span> <span class="sc">-</span><span class="fl">0.72</span>, <span class="at">sd =</span> <span class="fl">0.14</span>)</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>survey   <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="at">mean =</span> <span class="sc">-</span><span class="fl">0.44</span>, <span class="at">sd =</span> <span class="fl">0.27</span>)</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>dat <span class="ot">&lt;-</span> <span class="fu">cbind</span>(register, survey)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Moment function: each readout minus the single parameter θ has mean zero.</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="co">#   g1 = register - θ ,  g2 = survey - θ   (2 moments, 1 parameter =&gt; over-id)</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, x) {</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cbind</span>(x[, <span class="st">"register"</span>] <span class="sc">-</span> theta,</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>        x[, <span class="st">"survey"</span>]   <span class="sc">-</span> theta)</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Two-step efficient GMM (identity W in step 1, S^{-1} in step 2).</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">gmm</span>(g, <span class="at">x =</span> dat, <span class="at">t0 =</span> <span class="fu">c</span>(<span class="at">theta =</span> <span class="sc">-</span><span class="fl">0.5</span>), <span class="at">wmatrix =</span> <span class="st">"optimal"</span>)</span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(fit)                 <span class="co"># efficient θ̂, SE, and the J-test</span></span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">θ̂ (efficient GMM):"</span>, <span class="fu">round</span>(<span class="fu">coef</span>(fit), <span class="dv">3</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Hansen's J-test of the over-identifying restriction (df = m - p = 1).</span></span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a>J <span class="ot">&lt;-</span> <span class="fu">specTest</span>(fit)</span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(J)</span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a><span class="co"># Sanity check: with diagonal optimal W the estimate is the inverse-variance</span></span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a><span class="co"># weighted mean of the two readouts.</span></span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>w1 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">var</span>(register); w2 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">var</span>(survey)</span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"Inverse-variance weighted mean:"</span>,</span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a>    <span class="fu">round</span>((w1 <span class="sc">*</span> <span class="fu">mean</span>(register) <span class="sc">+</span> w2 <span class="sc">*</span> <span class="fu">mean</span>(survey)) <span class="sc">/</span> (w1 <span class="sc">+</span> w2), <span class="dv">3</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> statsmodels.sandbox.regression.gmm <span class="im">import</span> GMM</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> scipy <span class="im">import</span> stats</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Two noisy readouts of the SAME program effect θ on HbA1c (pp). ---</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">2019</span>)</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>n <span class="op">=</span> <span class="dv">600</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>register <span class="op">=</span> rng.normal(<span class="op">-</span><span class="fl">0.72</span>, <span class="fl">0.14</span>, n)   <span class="co"># precise register readout</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>survey   <span class="op">=</span> rng.normal(<span class="op">-</span><span class="fl">0.44</span>, <span class="fl">0.27</span>, n)   <span class="co"># noisier survey readout</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>data <span class="op">=</span> np.column_stack([register, survey])</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> TwoMomentGMM(GMM):</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 2 moment conditions, 1 parameter =&gt; over-identified (1 restriction).</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> momcond(<span class="va">self</span>, params):</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>        theta <span class="op">=</span> params[<span class="dv">0</span>]</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>        g1 <span class="op">=</span> <span class="va">self</span>.exog[:, <span class="dv">0</span>] <span class="op">-</span> theta     <span class="co"># register - θ</span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>        g2 <span class="op">=</span> <span class="va">self</span>.exog[:, <span class="dv">1</span>] <span class="op">-</span> theta     <span class="co"># survey   - θ</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> np.column_stack([g1, g2])</span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> TwoMomentGMM(endog<span class="op">=</span>np.zeros(n), exog<span class="op">=</span>data, instrument<span class="op">=</span>data,</span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>                     k_moms<span class="op">=</span><span class="dv">2</span>, k_params<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>res <span class="op">=</span> model.fit(start_params<span class="op">=</span>[<span class="op">-</span><span class="fl">0.5</span>], maxiter<span class="op">=</span><span class="dv">2</span>, optim_method<span class="op">=</span><span class="st">'bfgs'</span>)  <span class="co"># 2-step efficient</span></span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(res.summary())</span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a>theta_hat <span class="op">=</span> res.params[<span class="dv">0</span>]</span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"</span><span class="ch">\n</span><span class="ss">θ̂ (efficient GMM): </span><span class="sc">{</span>theta_hat<span class="sc">:.3f}</span><span class="ss">"</span>)</span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a><span class="co"># Hansen's J-test: J = n * Q(θ̂) ~ chi2(m - p) = chi2(1).</span></span>
+<span id="cb11-29"><a href="#cb11-29" aria-hidden="true" tabindex="-1"></a>J <span class="op">=</span> res.jval                     <span class="co"># minimised efficient objective * n</span></span>
+<span id="cb11-30"><a href="#cb11-30" aria-hidden="true" tabindex="-1"></a>p_value <span class="op">=</span> stats.chi2.sf(J, df<span class="op">=</span><span class="dv">2</span> <span class="op">-</span> <span class="dv">1</span>)</span>
+<span id="cb11-31"><a href="#cb11-31" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Hansen J = </span><span class="sc">{</span>J<span class="sc">:.3f}</span><span class="ss">,  p-value = </span><span class="sc">{</span>p_value<span class="sc">:.3f}</span><span class="ss">  (df = 1)"</span>)</span>
+<span id="cb11-32"><a href="#cb11-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-33"><a href="#cb11-33" aria-hidden="true" tabindex="-1"></a><span class="co"># Sanity check: inverse-variance weighted mean of the two readouts.</span></span>
+<span id="cb11-34"><a href="#cb11-34" aria-hidden="true" tabindex="-1"></a>w1, w2 <span class="op">=</span> <span class="dv">1</span> <span class="op">/</span> register.var(ddof<span class="op">=</span><span class="dv">1</span>), <span class="dv">1</span> <span class="op">/</span> survey.var(ddof<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb11-35"><a href="#cb11-35" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Inverse-variance weighted mean:"</span>,</span>
+<span id="cb11-36"><a href="#cb11-36" aria-hidden="true" tabindex="-1"></a>      <span class="bu">round</span>((w1 <span class="op">*</span> register.mean() <span class="op">+</span> w2 <span class="op">*</span> survey.mean()) <span class="op">/</span> (w1 <span class="op">+</span> w2), <span class="dv">3</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+<p>Because the two readouts genuinely disagree by more than sampling noise (they were simulated with means <span class="math inline">-0.72</span> and <span class="math inline">-0.44</span>), the <span class="math inline">J</span>-test here will <em>reject</em>: the data are telling you the two sources are not measuring the same <span class="math inline">\theta</span>. Set both means equal and the <span class="math inline">J</span>-test will stop rejecting — a hands-on demonstration of what the test detects.</p>
+</section>
+<section id="exercises" class="level2 exercises">
+<h2 class="exercises anchored" data-anchor-id="exercises">Exercises</h2>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 1</span></p>
+<p>A region records waiting times (in days) for a <em>distriktssköterska</em> (district nurse) appointment. You assume waiting times follow an exponential distribution with rate <span class="math inline">\lambda</span>, for which <span class="math inline">E[w] = 1/\lambda</span>. In a sample of 400 patients the mean waiting time is <span class="math inline">\bar w = 8</span> days. (a) Use the classical method of moments to estimate <span class="math inline">\lambda</span>. (b) The exponential also satisfies <span class="math inline">\operatorname{Var}(w) = 1/\lambda^2</span>. If the sample variance is <span class="math inline">61</span> days<span class="math inline">^2</span>, is the single-parameter exponential model adequate, or do the two moment-based estimates of <span class="math inline">\lambda</span> disagree?</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> Equate the first sample moment to the population mean: <span class="math inline">\bar w = 1/\lambda</span>, so <span class="math inline">\hat\lambda = 1/\bar w = 1/8 = 0.125</span> per day.</p>
+<p><strong>(b)</strong> The second moment gives a <em>separate</em> estimate. From <span class="math inline">\operatorname{Var}(w) = 1/\lambda^2</span> we get <span class="math inline">\hat\lambda = 1/\sqrt{61} = 1/7.81 \approx 0.128</span> per day. The mean-based estimate is <span class="math inline">0.125</span> and the variance-based estimate is <span class="math inline">0.128</span> — very close. The exponential imposes mean <span class="math inline">=</span> standard deviation (<span class="math inline">1/\lambda</span> for both): here <span class="math inline">\bar w = 8</span> and <span class="math inline">\sqrt{61} = 7.81</span>, almost equal, so the model is adequate. Had the variance been, say, <span class="math inline">400</span> (sd <span class="math inline">= 20 \gg 8</span>), the two estimates would clash — the over-dispersion would reject the exponential. This is the method-of-moments precursor to the over-identification idea: a one-parameter model with two moments is over-identified, and disagreement between the moment-based estimates is informal evidence of misspecification.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 2</span></p>
+<p>In the interactive’s notation, <span class="math inline">g_1(\theta) = \bar a - \theta</span> and <span class="math inline">g_2(\theta) = \bar b - \theta</span>, with weights <span class="math inline">w_1</span> and <span class="math inline">w_2</span>. (a) Minimise <span class="math inline">Q(\theta) = w_1 g_1(\theta)^2 + w_2 g_2(\theta)^2</span> analytically to find <span class="math inline">\hat\theta</span>. (b) Plug in the interactive’s numbers (<span class="math inline">\bar a = -0.72</span>, <span class="math inline">\bar b = -0.44</span>) under equal weights and under efficient weights (<span class="math inline">w_1 = 1/0.020</span>, <span class="math inline">w_2 = 1/0.075</span>). Confirm the efficient estimate is pulled toward the register readout.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> Differentiate and set to zero:</p>
+<p><span class="math display">
+\frac{dQ}{d\theta} = -2 w_1 (\bar a - \theta) - 2 w_2 (\bar b - \theta) = 0
+\;\Longrightarrow\;
+\hat\theta = \frac{w_1 \bar a + w_2 \bar b}{w_1 + w_2}.
+</span></p>
+<p>The GMM estimate is the <strong>weighted mean</strong> of the two targets — the inverse-variance weighted mean when <span class="math inline">w_j = 1/\operatorname{Var}(g_j)</span>.</p>
+<p><strong>(b)</strong> <em>Equal weights</em> (<span class="math inline">w_1 = w_2 = 1</span>): <span class="math inline">\hat\theta = (-0.72 - 0.44)/2 = -0.58</span>.</p>
+<p><em>Efficient weights</em> (<span class="math inline">w_1 = 1/0.020 = 50</span>, <span class="math inline">w_2 = 1/0.075 = 13.33</span>):</p>
+<p><span class="math display">
+\hat\theta = \frac{50(-0.72) + 13.33(-0.44)}{50 + 13.33} = \frac{-36.0 - 5.87}{63.33} = \frac{-41.87}{63.33} \approx -0.661.
+</span></p>
+<p>The efficient estimate <span class="math inline">-0.661</span> sits much closer to the precise register readout <span class="math inline">-0.72</span> than the equal-weight estimate <span class="math inline">-0.58</span> does. Down-weighting the noisy survey is exactly the efficiency gain Hansen’s theorem promises. <span class="math inline">\checkmark</span></p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 3</span></p>
+<p>A health economist estimates the effect of nurse contact hours on HbA1c using <strong>three</strong> instruments (distance to the nearest vårdcentral, a same-week appointment-availability index, and a regional staffing ratio) for <strong>one</strong> endogenous regressor. (a) How many over-identifying restrictions are there? (b) State the moment conditions and the degrees of freedom of the Hansen <span class="math inline">J</span>-test. (c) The <span class="math inline">J</span>-test rejects at the 1% level. List two distinct things that could be wrong, and explain why the test cannot tell you which.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> With <span class="math inline">m = 3</span> instruments (moments) and <span class="math inline">p = 1</span> structural parameter on the endogenous regressor (ignoring the intercept for clarity, or counting it symmetrically on both sides), the number of over-identifying restrictions is <span class="math inline">m - p</span>. With one endogenous coefficient and three instruments there are <span class="math inline">3 - 1 = 2</span> over-identifying restrictions.</p>
+<p><strong>(b)</strong> The moment conditions are <span class="math inline">E[z_{ij}(y_i - x_i^{\top}\beta)] = 0</span> for each instrument <span class="math inline">j = 1, 2, 3</span> — each instrument must be orthogonal to the structural error. The <span class="math inline">J</span>-statistic is asymptotically <span class="math inline">\chi^2_{2}</span> (degrees of freedom <span class="math inline">= m - p = 2</span>).</p>
+<p><strong>(c)</strong> Two possibilities: (i) one or more instruments are <em>invalid</em> — e.g., the regional staffing ratio affects HbA1c directly (through overall care quality), violating the exclusion restriction; (ii) the <em>structural model is misspecified</em> — e.g., the true effect of nursing on HbA1c is nonlinear, so the linear moment conditions cannot all hold simultaneously. The <span class="math inline">J</span>-test is a <strong>joint</strong> test of all the moment conditions together: it aggregates all <span class="math inline">m</span> standardised moments into a single number and asks whether that number is too big. A rejection says “the moments are jointly incompatible” but cannot attribute the blame to a specific instrument or to functional form, because every culprit inflates the same statistic.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 4</span></p>
+<p>Show that in the just-identified case (<span class="math inline">m = p</span>) the GMM estimate does not depend on the weighting matrix <span class="math inline">W</span>, and that the Hansen <span class="math inline">J</span>-statistic is identically zero. Why does this mean OLS (viewed as GMM) offers no over-identification test?</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p>When <span class="math inline">m = p</span>, the sample moment vector <span class="math inline">\bar g_n(\theta)</span> has the same number of components as <span class="math inline">\theta</span> has free parameters. Generically the system of equations <span class="math inline">\bar g_n(\theta) = 0</span> has a solution <span class="math inline">\hat\theta</span> that sets <em>every</em> sample moment to exactly zero. At that <span class="math inline">\hat\theta</span>:</p>
+<ul>
+<li><p>The objective is <span class="math inline">Q_n(\hat\theta) = \bar g_n(\hat\theta)^{\top} W \bar g_n(\hat\theta) = 0^{\top} W\, 0 = 0</span> for <strong>any</strong> positive-definite <span class="math inline">W</span>. Since <span class="math inline">Q_n \ge 0</span> always and equals <span class="math inline">0</span> here, <span class="math inline">\hat\theta</span> minimises <span class="math inline">Q_n</span> regardless of <span class="math inline">W</span>. So the weighting matrix is irrelevant — changing <span class="math inline">W</span> cannot change the minimiser when the minimum value is already zero.</p></li>
+<li><p>The <span class="math inline">J</span>-statistic is <span class="math inline">J = n\,Q_n(\hat\theta) = n \cdot 0 = 0</span> identically. There is nothing to test.</p></li>
+</ul>
+<p>This is precisely OLS’s situation: the moment condition <span class="math inline">E[x_i(y_i - x_i^{\top}\beta)] = 0</span> supplies exactly <span class="math inline">p</span> moments for <span class="math inline">p</span> coefficients (just-identified), so the sample moments are zeroed out exactly and <span class="math inline">J \equiv 0</span>. With <span class="math inline">m - p = 0</span> over-identifying restrictions, the <span class="math inline">\chi^2_0</span> “distribution” is degenerate — there is no spare moment whose validity could be checked against the data. You can only test over-identifying restrictions when you have moments to spare.</p>
+</div>
+</details>
+</div>
+<div class="key-takeaways">
+<p><strong>Key takeaways</strong></p>
+<ul>
+<li>The classical method of moments equates sample moments to population moments and solves; GMM generalises this to moment conditions <span class="math inline">E[g(w,\theta)] = 0</span> with possibly more moments than parameters.</li>
+<li>GMM minimises the quadratic form <span class="math inline">Q_n(\theta) = \bar g_n(\theta)^{\top} W \bar g_n(\theta)</span>; in the just-identified case the moments are zeroed exactly and <span class="math inline">W</span> is irrelevant, while in the over-identified case <span class="math inline">W</span> governs how disagreeing moments are traded off.</li>
+<li>The efficient weighting matrix is <span class="math inline">W = S^{-1}</span>, the inverse of the moment covariance — down-weight noisy moments, up-weight precise ones — delivering the smallest asymptotic variance <span class="math inline">(G^{\top}S^{-1}G)^{-1}</span>.</li>
+<li>OLS and 2SLS/IV are GMM with specific moment conditions (<span class="math inline">E[x u] = 0</span> and <span class="math inline">E[z u] = 0</span>); 2SLS uses a non-efficient weighting matrix that efficient GMM improves on under heteroskedasticity.</li>
+<li>Hansen’s <span class="math inline">J = n\,Q_n(\hat\theta) \xrightarrow{d} \chi^2_{m-p}</span> tests the joint validity of the over-identifying restrictions; it exists only when <span class="math inline">m &gt; p</span> and cannot say <em>which</em> moment is at fault.</li>
+</ul>
+</div>
+</section>
+<section id="what-comes-next" class="level2">
+<h2 class="anchored" data-anchor-id="what-comes-next">What Comes Next</h2>
+<p>We now have two complete estimation philosophies side by side: maximum likelihood, which extracts everything from a fully specified distribution, and GMM, which asks only for a set of moment conditions. Both deliver estimators that are consistent and asymptotically normal — which raises the practical question that animates every empirical paper: <strong>how do we test hypotheses about the parameters we have estimated?</strong> The next page, <a href="../../content/11-mle-gmm/likelihood-inference.html">The Classical Trinity: LR, Wald, and LM Tests</a>, develops the three canonical test statistics — the likelihood ratio, the Wald test, and the Lagrange multiplier (score) test — shows that they are asymptotically equivalent yet probe the likelihood surface from three different vantage points, and connects the LM/score test directly to the moment-based thinking of this page.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<div id="reading-progress"></div>
+<script>
+(function () {
+  function update() {
+    var el = document.getElementById('reading-progress');
+    if (!el) return;
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    var pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+    el.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  if (document.readyState !== 'loading') update();
+  else document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
+<script type="ojs-module-contents">
+eyJjb250ZW50cyI6W3sibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ilxudmlld29mIG1sZWdtbV90aGV0YSA9IElucHV0cy5yYW5nZShbLTEuNCwgMC4yXSwge1xuICB2YWx1ZTogLTAuNixcbiAgc3RlcDogMC4wMSxcbiAgbGFiZWw6IFwizrgg4oCUIGFzc3VtZWQgYXZlcmFnZSBIYkExYyByZWR1Y3Rpb24gKHBwKVwiXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC0yIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG52aWV3b2YgbWxlZ21tX3dlaWdodGluZyA9IElucHV0cy5yYWRpbyhcbiAgW1wiRXF1YWwgd2VpZ2h0c1wiLCBcIkVmZmljaWVudCB3ZWlnaHRzIChpbnZlcnNlIHZhcmlhbmNlKVwiXSxcbiAgeyBsYWJlbDogXCJXZWlnaHRpbmcgbWF0cml4IFdcIiwgdmFsdWU6IFwiRWZmaWNpZW50IHdlaWdodHMgKGludmVyc2UgdmFyaWFuY2UpXCIgfVxuKVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC0zIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyDilIDilIAgVGhlIHR3byBmaXhlZCBtb21lbnQgdGFyZ2V0cyAodGhlIG92ZXItaWRlbnRpZmllZCBzY2VuYXJpbykuIOKUgOKUgFxuLy8gYS1iYXI6IHJlZ2lzdGVyLWJhc2VkIHJlYWRvdXQgb2YgdGhlIHByb2dyYW0ncyBhdmVyYWdlIEhiQTFjIHJlZHVjdGlvbi5cbi8vIGItYmFyOiBzdXJ2ZXktYmFzZWQgcmVhZG91dC4gVGhleSBESVNBR1JFRSwgc28gbm8gc2luZ2xlIM64IHplcm9lcyBib3RoLlxuLy8gVGhlIHJlZ2lzdGVyIHNvdXJjZSBpcyBtb3JlIHByZWNpc2UgKHNtYWxsZXIgdmFyaWFuY2UpIHRoYW4gdGhlIHN1cnZleS5cbm1sZWdtbV9hQmFyID0gLTAuNzIgICAgICAgIC8vIHJlZ2lzdGVyIHJlYWRvdXQgKHBwKS4gTG93ZXIgPSBiaWdnZXIgYmVuZWZpdC5cbm1sZWdtbV9iQmFyID0gLTAuNDQgICAgICAgIC8vIHN1cnZleSByZWFkb3V0IChwcCkuXG5tbGVnbW1fdmFyQSA9IDAuMDIwICAgICAgICAvLyB2YXJpYW5jZSBvZiByZWdpc3RlciBtb21lbnQgKHNtYWxsID0gcmVsaWFibGUpXG5tbGVnbW1fdmFyQiA9IDAuMDc1ICAgICAgICAvLyB2YXJpYW5jZSBvZiBzdXJ2ZXkgbW9tZW50IChsYXJnZXIgPSBub2lzaWVyKVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC00IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBFZmZpY2llbnQgd2VpZ2h0cyBhcmUgaW52ZXJzZSB2YXJpYW5jZXMgKGRpYWdvbmFsIG9wdGltYWwgVyBoZXJlLCBiZWNhdXNlXG4vLyB0aGUgdHdvIHJlYWRvdXRzIGFyZSBpbmRlcGVuZGVudCkuIEVxdWFsIHdlaWdodHMgaWdub3JlIHByZWNpc2lvbi5cbm1sZWdtbV93ZWlnaHRzID0ge1xuICBpZiAobWxlZ21tX3dlaWdodGluZyA9PT0gXCJFcXVhbCB3ZWlnaHRzXCIpIHJldHVybiB7IHcxOiAxLCB3MjogMSB9O1xuICByZXR1cm4geyB3MTogMSAvIG1sZWdtbV92YXJBLCB3MjogMSAvIG1sZWdtbV92YXJCIH07XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTUiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIFNhbXBsZSBtb21lbnRzIGF0IHRoZSBjdXJyZW50IM64IChlYWNoIGlzIGEgc3RyYWlnaHQgbGluZSBpbiDOuCkuXG5tbGVnbW1fZzEgPSBtbGVnbW1fYUJhciAtIG1sZWdtbV90aGV0YVxubWxlZ21tX2cyID0gbWxlZ21tX2JCYXIgLSBtbGVnbW1fdGhldGFcblxuLy8gR01NIG9iamVjdGl2ZSBhdCB0aGUgY3VycmVudCDOuC5cbm1sZWdtbV9RID0gbWxlZ21tX3dlaWdodHMudzEgKiBtbGVnbW1fZzEgKiogMiArIG1sZWdtbV93ZWlnaHRzLncyICogbWxlZ21tX2cyICoqIDJcblxuLy8gQ2xvc2VkLWZvcm0gbWluaW1pc2VyIG9mIHcxIChhLc64KV4yICsgdzIgKGItzrgpXjIgaXMgdGhlIHdlaWdodGVkIG1lYW4uXG5tbGVnbW1fdGhldGFIYXQgPSAobWxlZ21tX3dlaWdodHMudzEgKiBtbGVnbW1fYUJhciArIG1sZWdtbV93ZWlnaHRzLncyICogbWxlZ21tX2JCYXIpXG4gICAgICAgICAgICAgICAgLyAobWxlZ21tX3dlaWdodHMudzEgKyBtbGVnbW1fd2VpZ2h0cy53MilcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtNiIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6IlxuLy8gU2FtcGxlIHRoZSB0d28gbW9tZW50IGxpbmVzIGFuZCB0aGUgb2JqZWN0aXZlIGN1cnZlIG92ZXIgdGhlIM64IGRvbWFpbi5cbm1sZWdtbV9ncmlkID0gZDMucmFuZ2UoLTEuNCwgMC4yMDAxLCAwLjAxKVxuXG5tbGVnbW1fbW9tZW50RGF0YSA9IG1sZWdtbV9ncmlkLmZsYXRNYXAodCA9PiBbXG4gIHsgdGhldGE6IHQsIHZhbHVlOiBtbGVnbW1fYUJhciAtIHQsIG1vbWVudDogXCJn4oKBOiByZWdpc3RlclwiIH0sXG4gIHsgdGhldGE6IHQsIHZhbHVlOiBtbGVnbW1fYkJhciAtIHQsIG1vbWVudDogXCJn4oKCOiBzdXJ2ZXlcIiB9XG5dKVxuXG5tbGVnbW1fb2JqRGF0YSA9IG1sZWdtbV9ncmlkLm1hcCh0ID0+ICh7XG4gIHRoZXRhOiB0LFxuICBROiBtbGVnbW1fd2VpZ2h0cy53MSAqIChtbGVnbW1fYUJhciAtIHQpICoqIDJcbiAgICsgbWxlZ21tX3dlaWdodHMudzIgKiAobWxlZ21tX2JCYXIgLSB0KSAqKiAyXG59KSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtNyIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6IlxuLy8g4pSA4pSAIFRvcCBwYW5lbDogdGhlIHR3byBtb21lbnQgY29uZGl0aW9ucyBhcyBsaW5lcyBpbiDOuC4g4pSA4pSAXG4vLyBFYWNoIGNyb3NzZXMgemVybyBhdCBpdHMgb3duIHRhcmdldDsgdGhlIHZlcnRpY2FsIGJhcnMgYXQgdGhlIGN1cnJlbnQgzrhcbi8vIGFyZSB0aGUgcmVzaWR1YWxzIGfigoEozrgpIGFuZCBn4oKCKM64KSB0aGF0IEdNTSBpcyB0cnlpbmcgdG8gc2hyaW5rLlxuUGxvdC5wbG90KHtcbiAgaGVpZ2h0OiAyNTAsXG4gIG1hcmdpbkxlZnQ6IDU4LFxuICBtYXJnaW5Cb3R0b206IDQ2LFxuICBzdHlsZTogeyBmb250RmFtaWx5OiBcIidJbnRlcicsIHN5c3RlbS11aSwgc2Fucy1zZXJpZlwiLCBmb250U2l6ZTogXCIxMnB4XCIgfSxcbiAgeDogeyBsYWJlbDogXCLOuCDigJQgYXNzdW1lZCBhdmVyYWdlIEhiQTFjIHJlZHVjdGlvbiAocHApXCIsIGRvbWFpbjogWy0xLjQsIDAuMl0sIGdyaWQ6IHRydWUgfSxcbiAgeTogeyBsYWJlbDogXCJtb21lbnQgdmFsdWUgZyjOuClcIiwgZG9tYWluOiBbLTEuMSwgMS4xXSwgZ3JpZDogdHJ1ZSB9LFxuICBjb2xvcjoge1xuICAgIGRvbWFpbjogW1wiZ+KCgTogcmVnaXN0ZXJcIiwgXCJn4oKCOiBzdXJ2ZXlcIl0sXG4gICAgcmFuZ2U6IFtcIiM5OTAwMDBcIiwgXCIjM2Q1YTZjXCJdLFxuICAgIGxlZ2VuZDogdHJ1ZVxuICB9LFxuICBtYXJrczogW1xuICAgIFBsb3QucnVsZVkoWzBdLCB7IHN0cm9rZTogXCIjMWMxYzFhXCIsIHN0cm9rZVdpZHRoOiAxIH0pLFxuICAgIFBsb3QubGluZShtbGVnbW1fbW9tZW50RGF0YSwgeyB4OiBcInRoZXRhXCIsIHk6IFwidmFsdWVcIiwgc3Ryb2tlOiBcIm1vbWVudFwiLCBzdHJva2VXaWR0aDogMi41IH0pLFxuXG4gICAgLy8gUmVzaWR1YWwgYmFycyBhdCB0aGUgY3VycmVudCDOuC5cbiAgICBQbG90LnJ1bGVYKFttbGVnbW1fdGhldGFdLCB7XG4gICAgICB5MTogMCwgeTI6IG1sZWdtbV9nMSwgc3Ryb2tlOiBcIiM5OTAwMDBcIiwgc3Ryb2tlV2lkdGg6IDYsIHN0cm9rZU9wYWNpdHk6IDAuMzBcbiAgICB9KSxcbiAgICBQbG90LnJ1bGVYKFttbGVnbW1fdGhldGEgKyAwLjAxMl0sIHtcbiAgICAgIHkxOiAwLCB5MjogbWxlZ21tX2cyLCBzdHJva2U6IFwiIzNkNWE2Y1wiLCBzdHJva2VXaWR0aDogNiwgc3Ryb2tlT3BhY2l0eTogMC4zMFxuICAgIH0pLFxuXG4gICAgLy8gQ3VycmVudC3OuCBtYXJrZXIuXG4gICAgUGxvdC5ydWxlWChbbWxlZ21tX3RoZXRhXSwgeyBzdHJva2U6IFwiIzljN2EzM1wiLCBzdHJva2VXaWR0aDogMS41LCBzdHJva2VEYXNoYXJyYXk6IFwiMywzXCIgfSksXG4gICAgUGxvdC5kb3QoW3sgeDogbWxlZ21tX3RoZXRhLCB5OiBtbGVnbW1fZzEgfV0sIHsgeDogXCJ4XCIsIHk6IFwieVwiLCBmaWxsOiBcIiM5OTAwMDBcIiwgcjogNC41IH0pLFxuICAgIFBsb3QuZG90KFt7IHg6IG1sZWdtbV90aGV0YSwgeTogbWxlZ21tX2cyIH1dLCB7IHg6IFwieFwiLCB5OiBcInlcIiwgZmlsbDogXCIjM2Q1YTZjXCIsIHI6IDQuNSB9KSxcblxuICAgIC8vIFdoZXJlIGVhY2ggbW9tZW50IGlzIHNhdGlzZmllZCAoY3Jvc3NlcyB6ZXJvKS5cbiAgICBQbG90LmRvdChbeyB4OiBtbGVnbW1fYUJhciwgeTogMCB9XSwgeyB4OiBcInhcIiwgeTogXCJ5XCIsIHN0cm9rZTogXCIjOTkwMDAwXCIsIGZpbGw6IFwid2hpdGVcIiwgcjogNCB9KSxcbiAgICBQbG90LmRvdChbeyB4OiBtbGVnbW1fYkJhciwgeTogMCB9XSwgeyB4OiBcInhcIiwgeTogXCJ5XCIsIHN0cm9rZTogXCIjM2Q1YTZjXCIsIGZpbGw6IFwid2hpdGVcIiwgcjogNCB9KVxuICBdXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC04IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyDilIDilIAgQm90dG9tIHBhbmVsOiB0aGUgR01NIG9iamVjdGl2ZSBRKM64KSwgYSBwYXJhYm9sYSB3aG9zZSBtaW5pbXVtIGlzIM64zIIuIOKUgOKUgFxuUGxvdC5wbG90KHtcbiAgaGVpZ2h0OiAyNTAsXG4gIG1hcmdpbkxlZnQ6IDU4LFxuICBtYXJnaW5Cb3R0b206IDQ2LFxuICBzdHlsZTogeyBmb250RmFtaWx5OiBcIidJbnRlcicsIHN5c3RlbS11aSwgc2Fucy1zZXJpZlwiLCBmb250U2l6ZTogXCIxMnB4XCIgfSxcbiAgeDogeyBsYWJlbDogXCLOuCDigJQgYXNzdW1lZCBhdmVyYWdlIEhiQTFjIHJlZHVjdGlvbiAocHApXCIsIGRvbWFpbjogWy0xLjQsIDAuMl0sIGdyaWQ6IHRydWUgfSxcbiAgeTogeyBsYWJlbDogXCJHTU0gb2JqZWN0aXZlICBRKM64KVwiLCBkb21haW46IFswLCBkMy5tYXgobWxlZ21tX29iakRhdGEsIGQgPT4gZC5RKSAqIDEuMDhdLCBncmlkOiB0cnVlIH0sXG4gIG1hcmtzOiBbXG4gICAgUGxvdC5hcmVhWShtbGVnbW1fb2JqRGF0YSwgeyB4OiBcInRoZXRhXCIsIHk6IFwiUVwiLCBmaWxsOiBcIiM5OTAwMDBcIiwgZmlsbE9wYWNpdHk6IDAuMDYgfSksXG4gICAgUGxvdC5saW5lKG1sZWdtbV9vYmpEYXRhLCB7IHg6IFwidGhldGFcIiwgeTogXCJRXCIsIHN0cm9rZTogXCIjOTkwMDAwXCIsIHN0cm9rZVdpZHRoOiAyLjUgfSksXG5cbiAgICAvLyBDdXJyZW50IM64IGFuZCBpdHMgUSB2YWx1ZS5cbiAgICBQbG90LnJ1bGVYKFttbGVnbW1fdGhldGFdLCB7IHN0cm9rZTogXCIjOWM3YTMzXCIsIHN0cm9rZVdpZHRoOiAxLjUsIHN0cm9rZURhc2hhcnJheTogXCIzLDNcIiB9KSxcbiAgICBQbG90LmRvdChbeyB4OiBtbGVnbW1fdGhldGEsIHk6IG1sZWdtbV9RIH1dLCB7IHg6IFwieFwiLCB5OiBcInlcIiwgZmlsbDogXCIjOWM3YTMzXCIsIHI6IDUgfSksXG5cbiAgICAvLyBUaGUgZWZmaWNpZW50L2VxdWFsIG1pbmltaXNlciDOuMyCLlxuICAgIFBsb3QucnVsZVgoW21sZWdtbV90aGV0YUhhdF0sIHsgc3Ryb2tlOiBcIiMyZTZmNDBcIiwgc3Ryb2tlV2lkdGg6IDIgfSksXG4gICAgUGxvdC5kb3QoW3sgeDogbWxlZ21tX3RoZXRhSGF0LCB5OiAwIH1dLCB7IHg6IFwieFwiLCB5OiBcInlcIiwgZmlsbDogXCIjMmU2ZjQwXCIsIHI6IDUgfSksXG4gICAgUGxvdC50ZXh0KFt7IHg6IG1sZWdtbV90aGV0YUhhdCwgeTogMCB9XSwge1xuICAgICAgeDogXCJ4XCIsIHk6IFwieVwiLFxuICAgICAgdGV4dDogW2DOuMyCID0gJHttbGVnbW1fdGhldGFIYXQudG9GaXhlZCgzKX1gXSxcbiAgICAgIGR5OiAtMTAsIGZpbGw6IFwiIzJlNmY0MFwiLCBmb250V2VpZ2h0OiA3MDAsIGZvbnRTaXplOiAxMiwgdGV4dEFuY2hvcjogXCJtaWRkbGVcIlxuICAgIH0pXG4gIF1cbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTkiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIExpdmUgcmVhZG91dCBwYW5lbDogY3VycmVudCByZXNpZHVhbHMsIHdlaWdodHMsIG9iamVjdGl2ZSwgYW5kIM64zIIuXG57XG4gIGNvbnN0IGZtdCA9IHYgPT4gYCR7diA+PSAwID8gXCIrXCIgOiBcIlwifSR7di50b0ZpeGVkKDMpfWA7XG4gIGNvbnN0IG9uVGFyZ2V0ID0gTWF0aC5hYnMobWxlZ21tX3RoZXRhIC0gbWxlZ21tX3RoZXRhSGF0KSA8IDAuMDA2O1xuICBjb25zdCB0aWxlID0gKG5hbWUsIHZhbHVlLCBjb2xvciwgYmcpID0+IGh0bWxgPGRpdiBzdHlsZT1cIlxuICAgICAgZmxleDogMSAxIDA7IG1pbi13aWR0aDogN3JlbTsgdGV4dC1hbGlnbjogY2VudGVyO1xuICAgICAgcGFkZGluZzogMC41cmVtIDAuNHJlbTsgYm9yZGVyLXJhZGl1czogMC40cmVtOyBiYWNrZ3JvdW5kOiAke2JnfTtcbiAgICAgIGJvcmRlcjogMXB4IHNvbGlkICNlNmUzZGI7XCI+XG4gICAgPGRpdiBzdHlsZT1cImZvbnQtZmFtaWx5OidJbnRlcicsc3lzdGVtLXVpLHNhbnMtc2VyaWY7IGZvbnQtc2l6ZTowLjY2cmVtO1xuICAgICAgICBmb250LXdlaWdodDo3MDA7IHRleHQtdHJhbnNmb3JtOnVwcGVyY2FzZTsgbGV0dGVyLXNwYWNpbmc6MC4wNWVtO1xuICAgICAgICBjb2xvcjojNzk3NjZlO1wiPiR7bmFtZX08L2Rpdj5cbiAgICA8ZGl2IHN0eWxlPVwiZm9udC1mYW1pbHk6J0pldEJyYWlucyBNb25vJyxtb25vc3BhY2U7IGZvbnQtc2l6ZToxLjE1cmVtO1xuICAgICAgICBmb250LXdlaWdodDo3MDA7IGNvbG9yOiR7Y29sb3J9O1wiPiR7dmFsdWV9PC9kaXY+XG4gIDwvZGl2PmA7XG4gIHJldHVybiBodG1sYDxkaXYgc3R5bGU9XCJkaXNwbGF5OmZsZXg7IGZsZXgtd3JhcDp3cmFwOyBnYXA6MC41cmVtOyBtYXJnaW4tdG9wOjAuNzVyZW07XCI+XG4gICAgJHt0aWxlKFwiZ+KCgSAocmVnaXN0ZXIpXCIsIGZtdChtbGVnbW1fZzEpLCBcIiM5OTAwMDBcIiwgXCJyZ2JhKDE1MywwLDAsMC4wNClcIil9XG4gICAgJHt0aWxlKFwiZ+KCgiAoc3VydmV5KVwiLCAgIGZtdChtbGVnbW1fZzIpLCBcIiMzZDVhNmNcIiwgXCIjZjZmNWYxXCIpfVxuICAgICR7dGlsZShcIk9iamVjdGl2ZSBRKM64KVwiLCBtbGVnbW1fUS50b0ZpeGVkKDMpLCBcIiM5YzdhMzNcIiwgXCIjZjZmNWYxXCIpfVxuICAgICR7dGlsZShcIs64zIIgKG1pbmltaXNlcilcIiwgbWxlZ21tX3RoZXRhSGF0LnRvRml4ZWQoMyksXG4gICAgICAgIG9uVGFyZ2V0ID8gXCIjMmU2ZjQwXCIgOiBcIiMxYzFjMWFcIixcbiAgICAgICAgb25UYXJnZXQgPyBcInJnYmEoNDYsMTExLDY0LDAuMDgpXCIgOiBcIiNmZmZmZmZcIil9XG4gIDwvZGl2PmA7XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ21sZWdtbV90aGV0YScpIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0UXVpZXQiLCJzb3VyY2UiOiJzaGlueUlucHV0KCdtbGVnbW1fd2VpZ2h0aW5nJykifV19
+</script>
+<script type="module">
+if (window.location.protocol === "file:") { alert("The OJS runtime does not work with file:// URLs. Please use a web server to view this document."); }
+window._ojs.paths.runtimeToDoc = "../../content/11-mle-gmm";
+window._ojs.paths.runtimeToRoot = "../..";
+window._ojs.paths.docToRoot = "../..";
+window._ojs.selfContained = false;
+window._ojs.runtime.interpretFromScriptTags();
+</script>
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../content/11-mle-gmm/properties-asymptotics.html" class="pagination-link" aria-label="Properties and Asymptotics of MLE">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Properties and Asymptotics of MLE</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../content/11-mle-gmm/likelihood-inference.html" class="pagination-link" aria-label="The Classical Trinity: LR, Wald, and LM Tests">
+        <span class="nav-page-text">The Classical Trinity: LR, Wald, and LM Tests</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

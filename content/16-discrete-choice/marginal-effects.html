@@ -1,0 +1,2289 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.27">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Interpreting Nonlinear Models: Marginal Effects and Odds Ratios – Causal Inference – See It, Break It, Prove It</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../content/16-discrete-choice/multinomial-ordered.html" rel="next">
+<link href="../../content/16-discrete-choice/binary-outcomes.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-8b4baf804e461d9b72633f0de59a0cac.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-8177dda9a46fdb7befe495ea115a53e7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script type="module" src="../../site_libs/quarto-ojs/quarto-ojs-runtime.js"></script>
+<link href="../../site_libs/quarto-ojs/quarto-ojs.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Causal Inference – See It, Break It, Prove It</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../../content/index.html" aria-current="page"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/00-intro/index.html"> 
+<span class="menu-text">Start Learning</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/glossary.html"> 
+<span class="menu-text">Glossary</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/your-username/causal-inference-site"> <i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/16-discrete-choice/index.html">Binary &amp; Discrete Choice</a></li><li class="breadcrumb-item"><a href="../../content/16-discrete-choice/marginal-effects.html">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Home</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Causal Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">0. Introduction</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/00-intro/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">1. Fundamental Problem</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Fundamental Problem of Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/potential-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Potential Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/selection-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/randomization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">2. DAGs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Directed Acyclic Graphs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">DAG Basics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/d-separation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">d-Separation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/good-bad-controls.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Good and Bad Controls</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">3. Statistical Foundations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Statistical Foundations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/distributions-spread.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributions and Spread</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/hypothesis-testing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hypothesis Testing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/confidence-intervals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Confidence Intervals</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/reading-output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading Regression Output</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">4. Regression</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/ols-mechanics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLS Mechanics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/frisch-waugh-lovell.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Frisch-Waugh-Lovell</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/omitted-variable-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Omitted Variable Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/interactions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interactions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/functional-form.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Functional Form</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">5. Panel Data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/panel-structure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Structure</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/fixed-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/practical-issues.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Issues</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">6. Diff-in-Differences</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/classic-2x2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic 2x2 Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/regression-did.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression DiD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/parallel-trends.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel Trends</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/staggered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Staggered Adoption</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/modern-estimators.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Estimators</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">7. Instrumental Variables</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/endogeneity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Endogeneity Problem</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/two-stage-least-squares.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Two-Stage Least Squares</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/relevance-exclusion.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Relevance and Exclusion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/weak-instruments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weak Instruments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/late.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LATE and Compliers</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">8. Regression Discontinuity</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/sharp-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sharp Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/estimation-bandwidth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Estimation and Bandwidth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/fuzzy-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fuzzy Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/validity-tests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Validity and Falsification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/interpretation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpretation and External Validity</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true">
+ <span class="menu-text">9. Matching &amp; Propensity Scores</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching &amp; Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/selection-on-observables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection on Observables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/matching-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/propensity-scores.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/weighting-ipw.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weighting and Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/overlap-diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overlap and Balance Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true">
+ <span class="menu-text">10. Synthetic Control</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Synthetic Control Method</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference for Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and Practical Issues</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/case-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: A Swedish Regional Reform</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true">
+ <span class="menu-text">Part II · The Econometrician’s Toolkit</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood: The Likelihood Principle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/properties-asymptotics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Properties and Asymptotics of MLE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/method-of-moments-gmm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Method of Moments and GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Classical Trinity: LR, Wald, and LM Tests</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/the-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Bootstrap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/randomization-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/cluster-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustered and Wild Bootstrap</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-16" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/ovb-sensitivity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity to Omitted Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/rosenbaum-bounds.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rosenbaum Bounds</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/partial-identification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Identification and Bounds</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="true">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-17" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/binary-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary Outcomes: LPM, Logit, and Probit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/marginal-effects.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/multinomial-ordered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multinomial and Ordered Choice</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false">
+ <span class="menu-text">Count Data</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-18" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Count Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/poisson-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Poisson Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/overdispersion-negbin.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overdispersion and the Negative Binomial</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/zero-inflation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Excess Zeros: Hurdle and Zero-Inflated Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-19" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/censoring-truncation-tobit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation, and the Tobit Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/heckman-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sample Selection: The Heckman Model</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-20" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/survival-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival Analysis: Hazards and the Kaplan-Meier Curve</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/cox-proportional-hazards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Cox Proportional Hazards Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/parametric-competing-risks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parametric Duration and Competing Risks</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false">
+ <span class="menu-text">Random Effects</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-21" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/random-effects-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Random Effects Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/fe-vs-re.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed versus Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/correlated-re-mundlak.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Correlated Random Effects: The Mundlak Device</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-22" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/partial-pooling-shrinkage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Pooling and Shrinkage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/random-intercepts-slopes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Intercepts and Random Slopes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/variance-components-icc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Variance Components and the ICC</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/growth-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Growth Curve Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-23" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/quantile-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/distributional-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributional Treatment Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/decompositions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decompositions: Oaxaca-Blinder and Beyond</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false">
+ <span class="menu-text">Time Series Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-24" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Time Series Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/stationarity-arima.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stationarity and ARIMA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/unit-roots-cointegration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unit Roots and Cointegration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/var-impulse-response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VAR and Impulse Responses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/volatility-garch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Volatility: ARCH and GARCH</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-25" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-density.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel Density Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-local-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel and Local Polynomial Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/series-splines.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Series and Spline Methods</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-26" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/regularization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularization: Ridge, LASSO, and Elastic Net</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/trees-forests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trees, Forests, and Boosting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/double-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Double and Debiased Machine Learning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/causal-forests-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Heterogeneous Effects and Policy Learning</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-27" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayes-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Inference: Priors and Posteriors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/mcmc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCMC: Sampling the Posterior</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayesian-regression-hierarchical.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Regression and Hierarchical Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-28" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/glossary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glossary</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#the-question-behind-every-logit-table" id="toc-the-question-behind-every-logit-table" class="nav-link active" data-scroll-target="#the-question-behind-every-logit-table">The Question Behind Every Logit Table</a></li>
+  <li><a href="#why-a-coefficient-is-not-an-effect" id="toc-why-a-coefficient-is-not-an-effect" class="nav-link" data-scroll-target="#why-a-coefficient-is-not-an-effect">Why a Coefficient Is Not an Effect</a></li>
+  <li><a href="#see-it-drag-x-along-the-s-curve" id="toc-see-it-drag-x-along-the-s-curve" class="nav-link" data-scroll-target="#see-it-drag-x-along-the-s-curve">See It: Drag <span class="math inline">x</span> Along the S-Curve</a>
+  <ul class="collapse">
+  <li><a href="#how-to-read-the-s-curve-and-its-tangent" id="toc-how-to-read-the-s-curve-and-its-tangent" class="nav-link" data-scroll-target="#how-to-read-the-s-curve-and-its-tangent">How to Read the S-Curve and Its Tangent</a></li>
+  </ul></li>
+  <li><a href="#ame-vs.-mem-two-ways-to-summarize-a-curve" id="toc-ame-vs.-mem-two-ways-to-summarize-a-curve" class="nav-link" data-scroll-target="#ame-vs.-mem-two-ways-to-summarize-a-curve">AME vs.&nbsp;MEM: Two Ways to Summarize a Curve</a></li>
+  <li><a href="#partial-effects-for-dummy-regressors" id="toc-partial-effects-for-dummy-regressors" class="nav-link" data-scroll-target="#partial-effects-for-dummy-regressors">Partial Effects for Dummy Regressors</a></li>
+  <li><a href="#odds-ratios-the-logit-specific-shortcut" id="toc-odds-ratios-the-logit-specific-shortcut" class="nav-link" data-scroll-target="#odds-ratios-the-logit-specific-shortcut">Odds Ratios: The Logit-Specific Shortcut</a></li>
+  <li><a href="#computing-marginal-effects-and-odds-ratios" id="toc-computing-marginal-effects-and-odds-ratios" class="nav-link" data-scroll-target="#computing-marginal-effects-and-odds-ratios">Computing Marginal Effects and Odds Ratios</a></li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  <li><a href="#what-comes-next" id="toc-what-comes-next" class="nav-link" data-scroll-target="#what-comes-next">What Comes Next</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/16-discrete-choice/index.html">Binary &amp; Discrete Choice</a></li><li class="breadcrumb-item"><a href="../../content/16-discrete-choice/marginal-effects.html">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</h1>
+<p class="subtitle lead">From coefficients to effects you can report</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="learning-objectives">
+<p><strong>In this section, you will learn to</strong></p>
+<ul>
+<li>Explain why a logit or probit <em>coefficient</em> is not, by itself, an interpretable effect on the probability of the outcome</li>
+<li>Define the marginal effect of a continuous regressor and read it off the slope (tangent) of the fitted S-curve</li>
+<li>Distinguish the Average Marginal Effect (AME) from the Marginal Effect at the Mean (MEM), and say when each is appropriate</li>
+<li>Convert a logit coefficient into an odds ratio <span class="math inline">\exp(\beta)</span> and state exactly what it does and does not mean</li>
+<li>Compute the partial effect of a <em>dummy</em> regressor as a difference in predicted probabilities, and report effects in R and Python</li>
+</ul>
+</div>
+<section id="the-question-behind-every-logit-table" class="level2">
+<h2 class="anchored" data-anchor-id="the-question-behind-every-logit-table">The Question Behind Every Logit Table</h2>
+<p>A <em>vårdcentral</em> (primary care center) in Region Uppsala runs a logistic regression to predict whether a Type 2 diabetes patient reaches the HbA1c target (at or below 52 mmol/mol) within a year. One regressor is the number of <em>distriktssköterska</em> (district nurse) follow-up visits. The software reports a coefficient of <span class="math inline">\hat\beta = 0.42</span>. The <em>verksamhetschef</em> (clinic manager) asks the obvious question: <strong>“so how much does one extra visit raise a patient’s chance of hitting target?”</strong></p>
+<p>The honest first answer is uncomfortable: <em>it depends on the patient.</em> In ordinary least squares, the coefficient <span class="math inline">\hat\beta</span> <em>is</em> the answer — every patient’s predicted outcome rises by exactly <span class="math inline">\hat\beta</span> per extra visit, full stop. But logit and probit run the linear index <span class="math inline">x'\beta</span> through an S-shaped curve. On that curve, the same one-unit nudge in <span class="math inline">x</span> moves the probability a lot in the steep middle and almost nothing in the flat tails. A patient already at 90% probability of success has little room to gain; a patient near 50% gains the most. The coefficient <span class="math inline">0.42</span> is measured on the <em>latent index / log-odds</em> scale, not on the probability scale anyone actually reports.</p>
+<p>This page is about closing that gap: turning the coefficients from <a href="../../content/16-discrete-choice/binary-outcomes.html">Binary Outcomes: LPM, Logit, and Probit</a> into numbers a clinic manager, a regional board, or a referee can read — <strong>marginal effects</strong> on the probability scale, and <strong>odds ratios</strong> for logit. These models are fit by maximum likelihood (see the <a href="../11-mle-gmm/">Maximum Likelihood module</a>); here we take the fitted <span class="math inline">\hat\beta</span> as given and ask what it <em>means</em>.</p>
+</section>
+<section id="why-a-coefficient-is-not-an-effect" class="level2">
+<h2 class="anchored" data-anchor-id="why-a-coefficient-is-not-an-effect">Why a Coefficient Is Not an Effect</h2>
+<p>Write the logit model for the probability that patient <span class="math inline">i</span> reaches target:</p>
+<p><span class="math display">
+P(y_i = 1 \mid x_i) = \Lambda(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}},
+</span></p>
+<p>where <span class="math inline">\Lambda</span> is the logistic (sigmoid) CDF. <strong>Read this as</strong>: “the probability of success equals the logistic function evaluated at the linear index <span class="math inline">x_i'\beta</span>.” The index <span class="math inline">x_i'\beta</span> can be any real number; <span class="math inline">\Lambda</span> squashes it into <span class="math inline">(0,1)</span>. For probit, replace <span class="math inline">\Lambda</span> with <span class="math inline">\Phi</span>, the standard Normal CDF.</p>
+<p>The effect of a small change in a <em>continuous</em> regressor <span class="math inline">x_k</span> is the derivative of this probability with respect to <span class="math inline">x_k</span> — the slope of the curve at that patient’s position. By the chain rule,</p>
+<p><span class="math display">
+\frac{\partial P(y=1 \mid x)}{\partial x_k} \;=\; \underbrace{\lambda(x'\beta)}_{\text{density at the index}} \cdot \beta_k ,
+</span></p>
+<p>where <span class="math inline">\lambda = \Lambda(1-\Lambda)</span> is the logistic density (for probit it is <span class="math inline">\phi</span>, the Normal density). <strong>Read this as</strong>: “the marginal effect equals the coefficient <span class="math inline">\beta_k</span> scaled by the height of the density at the patient’s index value.” That scaling factor <span class="math inline">\lambda(x'\beta)</span> is the punchline: it is <strong>largest where the index is near zero (probability near 0.5)</strong> and <strong>shrinks toward zero in the tails</strong>. The coefficient sets the <em>direction</em> and a common <em>ceiling</em>; the curve decides how much of that ceiling each patient actually gets.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>marginal effect</strong> of a continuous regressor <span class="math inline">x_k</span> is the partial derivative of the predicted probability with respect to <span class="math inline">x_k</span>:</p>
+<p><span class="math display">
+\text{ME}_k(x) \;=\; \frac{\partial P(y=1\mid x)}{\partial x_k} \;=\; f(x'\beta)\,\beta_k,
+</span></p>
+<p>where <span class="math inline">f = \lambda</span> for logit and <span class="math inline">f = \phi</span> for probit. It is the <em>instantaneous slope of the S-curve</em> at the point <span class="math inline">x</span>, in units of “change in probability per one-unit change in <span class="math inline">x_k</span>.” Because <span class="math inline">f(x'\beta)</span> depends on <strong>where the patient sits</strong>, every individual has their own marginal effect.</p>
+</div>
+<p>So <span class="math inline">\hat\beta = 0.42</span> does not mean “+0.42 in probability.” It means “+0.42 on the log-odds scale,” and the probability effect ranges from near zero (for patients already almost certain to succeed or fail) up to a maximum of <span class="math inline">0.25 \times 0.42 \approx 0.105</span> at the steepest point of the curve, since the logistic density peaks at <span class="math inline">\lambda = 0.25</span> when <span class="math inline">\Lambda = 0.5</span>.</p>
+</section>
+<section id="see-it-drag-x-along-the-s-curve" class="level2">
+<h2 class="anchored" data-anchor-id="see-it-drag-x-along-the-s-curve">See It: Drag <span class="math inline">x</span> Along the S-Curve</h2>
+<p>The interactive below fits a one-regressor logit of “reached HbA1c target” on the number of district-nurse follow-up visits. Drag the visit count and watch the <strong>tangent line</strong> pivot: its slope <em>is</em> the marginal effect at that patient. The slope is steepest where the curve passes through <span class="math inline">p = 0.5</span> and flattens to nothing in both tails. The two summary numbers — AME and MEM, defined just below — are drawn on the same curve so you can see they are generally <em>different</em> points.</p>
+<section id="marginal-effect-the-slope-of-the-probability-curve" class="level4 interactive-container">
+<h4 class="anchored" data-anchor-id="marginal-effect-the-slope-of-the-probability-curve">Marginal effect = the slope of the probability curve</h4>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb1" data-startfrom="63" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 62;"><span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a><span class="co">// Uppsala-academic palette tokens, shared across this page's interactives.</span></span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a>bcme_pal <span class="op">=</span> ({</span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>  <span class="dt">focal</span><span class="op">:</span>  <span class="st">"#990000"</span><span class="op">,</span>  <span class="co">// focal series (Uppsala red): the fitted probability curve</span></span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>  <span class="dt">slate</span><span class="op">:</span>  <span class="st">"#3d5a6c"</span><span class="op">,</span>  <span class="co">// comparison (slate): the tangent / MEM marker</span></span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a>  <span class="dt">good</span><span class="op">:</span>   <span class="st">"#2e6f40"</span><span class="op">,</span>  <span class="co">// on-target green: AME marker</span></span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ochre</span><span class="op">:</span>  <span class="st">"#9c7a33"</span><span class="op">,</span>  <span class="co">// highlight / annotation</span></span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ink</span><span class="op">:</span>    <span class="st">"#1c1c1a"</span><span class="op">,</span>  <span class="co">// ink text &amp; reference lines</span></span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a>  <span class="dt">axis</span><span class="op">:</span>   <span class="st">"#79766e"</span><span class="op">,</span>  <span class="co">// axis text (muted Uppsala token)</span></span>
+<span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a>  <span class="dt">hair</span><span class="op">:</span>   <span class="st">"#e6e3db"</span><span class="op">,</span>  <span class="co">// gridlines</span></span>
+<span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a>  <span class="dt">muted</span><span class="op">:</span>  <span class="st">"#79766e"</span><span class="op">,</span>  <span class="co">// muted ink</span></span>
+<span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a>  <span class="dt">fill</span><span class="op">:</span>   <span class="st">"#f6f5f1"</span>   <span class="co">// subtle tile fill</span></span>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb2" data-startfrom="79" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 78;"><span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a><span class="co">// Fitted logit coefficients for "reached HbA1c target" on follow-up visits.</span></span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a><span class="co">// These stand in for a glm() fit; beta0 puts the 50% crossover at ~4.5 visits.</span></span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>bcme_beta0 <span class="op">=</span> <span class="op">-</span><span class="fl">1.9</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb3" data-startfrom="86" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 85;"><span id="cb3-86"><a href="#cb3-86" aria-hidden="true" tabindex="-1"></a>bcme_beta1 <span class="op">=</span> <span class="fl">0.42</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb4" data-startfrom="91" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 90;"><span id="cb4-91"><a href="#cb4-91" aria-hidden="true" tabindex="-1"></a><span class="co">// Logistic CDF and density used throughout.</span></span>
+<span id="cb4-92"><a href="#cb4-92" aria-hidden="true" tabindex="-1"></a>bcme_Lambda <span class="op">=</span> z <span class="kw">=&gt;</span> <span class="dv">1</span> <span class="op">/</span> (<span class="dv">1</span> <span class="op">+</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">exp</span>(<span class="op">-</span>z))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb5" data-startfrom="97" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 96;"><span id="cb5-97"><a href="#cb5-97" aria-hidden="true" tabindex="-1"></a>bcme_lambda <span class="op">=</span> z <span class="kw">=&gt;</span> { <span class="kw">const</span> L <span class="op">=</span> <span class="fu">bcme_Lambda</span>(z)<span class="op">;</span> <span class="cf">return</span> L <span class="op">*</span> (<span class="dv">1</span> <span class="op">-</span> L)<span class="op">;</span> }</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-5" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb6" data-startfrom="102" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 101;"><span id="cb6-102"><a href="#cb6-102" aria-hidden="true" tabindex="-1"></a>viewof bcme_xVisits <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">0</span><span class="op">,</span> <span class="dv">12</span>]<span class="op">,</span> {</span>
+<span id="cb6-103"><a href="#cb6-103" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="fl">4.5</span><span class="op">,</span></span>
+<span id="cb6-104"><a href="#cb6-104" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.1</span><span class="op">,</span></span>
+<span id="cb6-105"><a href="#cb6-105" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Patient's follow-up visits  x  (drag along the curve)"</span></span>
+<span id="cb6-106"><a href="#cb6-106" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-6" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb7" data-startfrom="112" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 111;"><span id="cb7-112"><a href="#cb7-112" aria-hidden="true" tabindex="-1"></a><span class="co">// The fitted probability curve, sampled on a fine grid for plotting.</span></span>
+<span id="cb7-113"><a href="#cb7-113" aria-hidden="true" tabindex="-1"></a>bcme_curve <span class="op">=</span> d3<span class="op">.</span><span class="fu">range</span>(<span class="dv">0</span><span class="op">,</span> <span class="fl">12.01</span><span class="op">,</span> <span class="fl">0.1</span>)<span class="op">.</span><span class="fu">map</span>(x <span class="kw">=&gt;</span> ({</span>
+<span id="cb7-114"><a href="#cb7-114" aria-hidden="true" tabindex="-1"></a>  x<span class="op">,</span></span>
+<span id="cb7-115"><a href="#cb7-115" aria-hidden="true" tabindex="-1"></a>  <span class="dt">p</span><span class="op">:</span> <span class="fu">bcme_Lambda</span>(bcme_beta0 <span class="op">+</span> bcme_beta1 <span class="op">*</span> x)</span>
+<span id="cb7-116"><a href="#cb7-116" aria-hidden="true" tabindex="-1"></a>}))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-7" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb8" data-startfrom="122" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 121;"><span id="cb8-122"><a href="#cb8-122" aria-hidden="true" tabindex="-1"></a><span class="co">// Marginal effect at the dragged patient: slope of the curve there.</span></span>
+<span id="cb8-123"><a href="#cb8-123" aria-hidden="true" tabindex="-1"></a>bcme_meHere <span class="op">=</span> <span class="fu">bcme_lambda</span>(bcme_beta0 <span class="op">+</span> bcme_beta1 <span class="op">*</span> bcme_xVisits) <span class="op">*</span> bcme_beta1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-8" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb9" data-startfrom="129" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 128;"><span id="cb9-129"><a href="#cb9-129" aria-hidden="true" tabindex="-1"></a>bcme_pHere <span class="op">=</span> <span class="fu">bcme_Lambda</span>(bcme_beta0 <span class="op">+</span> bcme_beta1 <span class="op">*</span> bcme_xVisits)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-9" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb10" data-startfrom="135" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 134;"><span id="cb10-135"><a href="#cb10-135" aria-hidden="true" tabindex="-1"></a><span class="co">// A short tangent segment through the dragged point, with slope = bcme_meHere.</span></span>
+<span id="cb10-136"><a href="#cb10-136" aria-hidden="true" tabindex="-1"></a><span class="co">// Drawn over a +/- 1.6 visit window so it reads as "the local linear approx".</span></span>
+<span id="cb10-137"><a href="#cb10-137" aria-hidden="true" tabindex="-1"></a>bcme_tangent <span class="op">=</span> {</span>
+<span id="cb10-138"><a href="#cb10-138" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> half <span class="op">=</span> <span class="fl">1.6</span><span class="op">;</span></span>
+<span id="cb10-139"><a href="#cb10-139" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> x0 <span class="op">=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">max</span>(<span class="dv">0</span><span class="op">,</span> bcme_xVisits <span class="op">-</span> half)<span class="op">;</span></span>
+<span id="cb10-140"><a href="#cb10-140" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> x1 <span class="op">=</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">min</span>(<span class="dv">12</span><span class="op">,</span> bcme_xVisits <span class="op">+</span> half)<span class="op">;</span></span>
+<span id="cb10-141"><a href="#cb10-141" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> [</span>
+<span id="cb10-142"><a href="#cb10-142" aria-hidden="true" tabindex="-1"></a>    { <span class="dt">x</span><span class="op">:</span> x0<span class="op">,</span> <span class="dt">p</span><span class="op">:</span> bcme_pHere <span class="op">+</span> bcme_meHere <span class="op">*</span> (x0 <span class="op">-</span> bcme_xVisits) }<span class="op">,</span></span>
+<span id="cb10-143"><a href="#cb10-143" aria-hidden="true" tabindex="-1"></a>    { <span class="dt">x</span><span class="op">:</span> x1<span class="op">,</span> <span class="dt">p</span><span class="op">:</span> bcme_pHere <span class="op">+</span> bcme_meHere <span class="op">*</span> (x1 <span class="op">-</span> bcme_xVisits) }</span>
+<span id="cb10-144"><a href="#cb10-144" aria-hidden="true" tabindex="-1"></a>  ]<span class="op">;</span></span>
+<span id="cb10-145"><a href="#cb10-145" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-10" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb11" data-startfrom="151" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 150;"><span id="cb11-151"><a href="#cb11-151" aria-hidden="true" tabindex="-1"></a><span class="co">// A small synthetic sample of patients, used to compute the AME honestly</span></span>
+<span id="cb11-152"><a href="#cb11-152" aria-hidden="true" tabindex="-1"></a><span class="co">// (average of each patient's own marginal effect) and to place the MEM.</span></span>
+<span id="cb11-153"><a href="#cb11-153" aria-hidden="true" tabindex="-1"></a><span class="co">// Visit counts drawn once, deterministically, so the page is reproducible.</span></span>
+<span id="cb11-154"><a href="#cb11-154" aria-hidden="true" tabindex="-1"></a>bcme_sample <span class="op">=</span> {</span>
+<span id="cb11-155"><a href="#cb11-155" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> rng <span class="op">=</span> d3<span class="op">.</span><span class="at">randomNormal</span><span class="op">.</span><span class="fu">source</span>(d3<span class="op">.</span><span class="fu">randomLcg</span>(<span class="dv">2024</span>))(<span class="fl">4.6</span><span class="op">,</span> <span class="fl">2.3</span>)<span class="op">;</span></span>
+<span id="cb11-156"><a href="#cb11-156" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> xs <span class="op">=</span> d3<span class="op">.</span><span class="fu">range</span>(<span class="dv">300</span>)<span class="op">.</span><span class="fu">map</span>(() <span class="kw">=&gt;</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">max</span>(<span class="dv">0</span><span class="op">,</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">min</span>(<span class="dv">12</span><span class="op">,</span> <span class="fu">rng</span>())))<span class="op">;</span></span>
+<span id="cb11-157"><a href="#cb11-157" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> xs<span class="op">.</span><span class="fu">map</span>(x <span class="kw">=&gt;</span> ({ x<span class="op">,</span> <span class="dt">idx</span><span class="op">:</span> bcme_beta0 <span class="op">+</span> bcme_beta1 <span class="op">*</span> x }))<span class="op">;</span></span>
+<span id="cb11-158"><a href="#cb11-158" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-11" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb12" data-startfrom="164" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 163;"><span id="cb12-164"><a href="#cb12-164" aria-hidden="true" tabindex="-1"></a><span class="co">// AME: average over patients of f(x_i'beta) * beta1  (the recommended summary).</span></span>
+<span id="cb12-165"><a href="#cb12-165" aria-hidden="true" tabindex="-1"></a>bcme_AME <span class="op">=</span> d3<span class="op">.</span><span class="fu">mean</span>(bcme_sample<span class="op">,</span> d <span class="kw">=&gt;</span> <span class="fu">bcme_lambda</span>(d<span class="op">.</span><span class="at">idx</span>) <span class="op">*</span> bcme_beta1)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-12" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb13" data-startfrom="171" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 170;"><span id="cb13-171"><a href="#cb13-171" aria-hidden="true" tabindex="-1"></a><span class="co">// MEM: f(xbar'beta) * beta1, evaluated at the mean regressor value.</span></span>
+<span id="cb13-172"><a href="#cb13-172" aria-hidden="true" tabindex="-1"></a>bcme_xbar <span class="op">=</span> d3<span class="op">.</span><span class="fu">mean</span>(bcme_sample<span class="op">,</span> d <span class="kw">=&gt;</span> d<span class="op">.</span><span class="at">x</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-13" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb14" data-startfrom="178" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 177;"><span id="cb14-178"><a href="#cb14-178" aria-hidden="true" tabindex="-1"></a>bcme_MEM <span class="op">=</span> <span class="fu">bcme_lambda</span>(bcme_beta0 <span class="op">+</span> bcme_beta1 <span class="op">*</span> bcme_xbar) <span class="op">*</span> bcme_beta1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-14" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb15" data-startfrom="184" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 183;"><span id="cb15-184"><a href="#cb15-184" aria-hidden="true" tabindex="-1"></a>bcme_pMEM <span class="op">=</span> <span class="fu">bcme_Lambda</span>(bcme_beta0 <span class="op">+</span> bcme_beta1 <span class="op">*</span> bcme_xbar)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-15" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb16" data-startfrom="189" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 188;"><span id="cb16-189"><a href="#cb16-189" aria-hidden="true" tabindex="-1"></a>Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb16-190"><a href="#cb16-190" aria-hidden="true" tabindex="-1"></a>  <span class="dt">width</span><span class="op">:</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">min</span>(<span class="dv">680</span><span class="op">,</span> width)<span class="op">,</span></span>
+<span id="cb16-191"><a href="#cb16-191" aria-hidden="true" tabindex="-1"></a>  <span class="dt">height</span><span class="op">:</span> <span class="dv">380</span><span class="op">,</span></span>
+<span id="cb16-192"><a href="#cb16-192" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">64</span><span class="op">,</span></span>
+<span id="cb16-193"><a href="#cb16-193" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">48</span><span class="op">,</span></span>
+<span id="cb16-194"><a href="#cb16-194" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginRight</span><span class="op">:</span> <span class="dv">22</span><span class="op">,</span></span>
+<span id="cb16-195"><a href="#cb16-195" aria-hidden="true" tabindex="-1"></a>  <span class="dt">style</span><span class="op">:</span> {</span>
+<span id="cb16-196"><a href="#cb16-196" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"'Inter', system-ui, sans-serif"</span><span class="op">,</span></span>
+<span id="cb16-197"><a href="#cb16-197" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fontSize</span><span class="op">:</span> <span class="st">"12px"</span><span class="op">,</span></span>
+<span id="cb16-198"><a href="#cb16-198" aria-hidden="true" tabindex="-1"></a>    <span class="dt">background</span><span class="op">:</span> <span class="st">"transparent"</span><span class="op">,</span></span>
+<span id="cb16-199"><a href="#cb16-199" aria-hidden="true" tabindex="-1"></a>    <span class="dt">color</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">axis</span></span>
+<span id="cb16-200"><a href="#cb16-200" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb16-201"><a href="#cb16-201" aria-hidden="true" tabindex="-1"></a>  <span class="dt">x</span><span class="op">:</span> {</span>
+<span id="cb16-202"><a href="#cb16-202" aria-hidden="true" tabindex="-1"></a>    <span class="dt">label</span><span class="op">:</span> <span class="st">"Follow-up visits  x  →"</span><span class="op">,</span></span>
+<span id="cb16-203"><a href="#cb16-203" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> [<span class="dv">0</span><span class="op">,</span> <span class="dv">12</span>]<span class="op">,</span></span>
+<span id="cb16-204"><a href="#cb16-204" aria-hidden="true" tabindex="-1"></a>    <span class="dt">grid</span><span class="op">:</span> <span class="kw">false</span></span>
+<span id="cb16-205"><a href="#cb16-205" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb16-206"><a href="#cb16-206" aria-hidden="true" tabindex="-1"></a>  <span class="dt">y</span><span class="op">:</span> {</span>
+<span id="cb16-207"><a href="#cb16-207" aria-hidden="true" tabindex="-1"></a>    <span class="dt">label</span><span class="op">:</span> <span class="st">"↑ P(reached HbA1c target)"</span><span class="op">,</span></span>
+<span id="cb16-208"><a href="#cb16-208" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> [<span class="dv">0</span><span class="op">,</span> <span class="dv">1</span>]<span class="op">,</span></span>
+<span id="cb16-209"><a href="#cb16-209" aria-hidden="true" tabindex="-1"></a>    <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span></span>
+<span id="cb16-210"><a href="#cb16-210" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb16-211"><a href="#cb16-211" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb16-212"><a href="#cb16-212" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">gridY</span>({ <span class="dt">stroke</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">hair</span> })<span class="op">,</span></span>
+<span id="cb16-213"><a href="#cb16-213" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Reference line at p = 0.5, where the slope (marginal effect) is largest.</span></span>
+<span id="cb16-214"><a href="#cb16-214" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleY</span>([<span class="fl">0.5</span>]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">hair</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">1</span> })<span class="op">,</span></span>
+<span id="cb16-215"><a href="#cb16-215" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The fitted logistic probability curve (focal — Uppsala red).</span></span>
+<span id="cb16-216"><a href="#cb16-216" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(bcme_curve<span class="op">,</span> {</span>
+<span id="cb16-217"><a href="#cb16-217" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"p"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">2.5</span></span>
+<span id="cb16-218"><a href="#cb16-218" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb16-219"><a href="#cb16-219" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The tangent at the dragged patient: its slope IS the marginal effect.</span></span>
+<span id="cb16-220"><a href="#cb16-220" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(bcme_tangent<span class="op">,</span> {</span>
+<span id="cb16-221"><a href="#cb16-221" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"p"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">slate</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">2</span><span class="op">,</span> <span class="dt">strokeDasharray</span><span class="op">:</span> <span class="st">"5,3"</span></span>
+<span id="cb16-222"><a href="#cb16-222" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb16-223"><a href="#cb16-223" aria-hidden="true" tabindex="-1"></a>    <span class="co">// MEM marker (slate hollow) — evaluated at the mean regressor.</span></span>
+<span id="cb16-224"><a href="#cb16-224" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> bcme_xbar<span class="op">,</span> <span class="dt">p</span><span class="op">:</span> bcme_pMEM }]<span class="op">,</span> {</span>
+<span id="cb16-225"><a href="#cb16-225" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"p"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">stroke</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">slate</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">2</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="dv">5</span></span>
+<span id="cb16-226"><a href="#cb16-226" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb16-227"><a href="#cb16-227" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">text</span>([{ <span class="dt">x</span><span class="op">:</span> bcme_xbar<span class="op">,</span> <span class="dt">p</span><span class="op">:</span> bcme_pMEM }]<span class="op">,</span> {</span>
+<span id="cb16-228"><a href="#cb16-228" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"p"</span><span class="op">,</span></span>
+<span id="cb16-229"><a href="#cb16-229" aria-hidden="true" tabindex="-1"></a>      <span class="dt">text</span><span class="op">:</span> d <span class="kw">=&gt;</span> <span class="vs">`mean x = </span><span class="sc">${</span>bcme_xbar<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">1</span>)<span class="sc">}</span><span class="vs">`</span><span class="op">,</span></span>
+<span id="cb16-230"><a href="#cb16-230" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fill</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">slate</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="fl">10.5</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="dv">600</span><span class="op">,</span></span>
+<span id="cb16-231"><a href="#cb16-231" aria-hidden="true" tabindex="-1"></a>      <span class="dt">dy</span><span class="op">:</span> <span class="dv">16</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"middle"</span><span class="op">,</span></span>
+<span id="cb16-232"><a href="#cb16-232" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">3</span><span class="op">,</span> <span class="dt">paintOrder</span><span class="op">:</span> <span class="st">"stroke"</span></span>
+<span id="cb16-233"><a href="#cb16-233" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb16-234"><a href="#cb16-234" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The dragged patient (focal red dot) on the curve.</span></span>
+<span id="cb16-235"><a href="#cb16-235" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>([{ <span class="dt">x</span><span class="op">:</span> bcme_xVisits<span class="op">,</span> <span class="dt">p</span><span class="op">:</span> bcme_pHere }]<span class="op">,</span> {</span>
+<span id="cb16-236"><a href="#cb16-236" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"p"</span><span class="op">,</span> <span class="dt">fill</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="dv">6</span></span>
+<span id="cb16-237"><a href="#cb16-237" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb16-238"><a href="#cb16-238" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">text</span>([{ <span class="dt">x</span><span class="op">:</span> bcme_xVisits<span class="op">,</span> <span class="dt">p</span><span class="op">:</span> bcme_pHere }]<span class="op">,</span> {</span>
+<span id="cb16-239"><a href="#cb16-239" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"p"</span><span class="op">,</span></span>
+<span id="cb16-240"><a href="#cb16-240" aria-hidden="true" tabindex="-1"></a>      <span class="dt">text</span><span class="op">:</span> d <span class="kw">=&gt;</span> <span class="vs">`slope = </span><span class="sc">${</span>bcme_meHere<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="sc">}</span><span class="vs">`</span><span class="op">,</span></span>
+<span id="cb16-241"><a href="#cb16-241" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fill</span><span class="op">:</span> bcme_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">12</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="dv">700</span><span class="op">,</span></span>
+<span id="cb16-242"><a href="#cb16-242" aria-hidden="true" tabindex="-1"></a>      <span class="dt">dy</span><span class="op">:</span> <span class="op">-</span><span class="dv">14</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"middle"</span><span class="op">,</span></span>
+<span id="cb16-243"><a href="#cb16-243" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">3</span><span class="op">,</span> <span class="dt">paintOrder</span><span class="op">:</span> <span class="st">"stroke"</span></span>
+<span id="cb16-244"><a href="#cb16-244" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb16-245"><a href="#cb16-245" aria-hidden="true" tabindex="-1"></a>  ]</span>
+<span id="cb16-246"><a href="#cb16-246" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-16" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb17" data-startfrom="251" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 250;"><span id="cb17-251"><a href="#cb17-251" aria-hidden="true" tabindex="-1"></a><span class="co">// Live readout tying the picture to the numbers. Inside an ojs html`` cell so the</span></span>
+<span id="cb17-252"><a href="#cb17-252" aria-hidden="true" tabindex="-1"></a><span class="co">// reactive values interpolate (markdown ${...} would render literally).</span></span>
+<span id="cb17-253"><a href="#cb17-253" aria-hidden="true" tabindex="-1"></a>{</span>
+<span id="cb17-254"><a href="#cb17-254" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> tile <span class="op">=</span> (label<span class="op">,</span> value<span class="op">,</span> color<span class="op">,</span> sub) <span class="kw">=&gt;</span> <span class="fu">html</span><span class="vs">`&lt;div style="</span></span>
+<span id="cb17-255"><a href="#cb17-255" aria-hidden="true" tabindex="-1"></a><span class="vs">      flex: 1 1 0; min-width: 7.5rem; text-align: center;</span></span>
+<span id="cb17-256"><a href="#cb17-256" aria-hidden="true" tabindex="-1"></a><span class="vs">      padding: 0.55rem 0.4rem; border-radius: 0.4rem;</span></span>
+<span id="cb17-257"><a href="#cb17-257" aria-hidden="true" tabindex="-1"></a><span class="vs">      background: </span><span class="sc">${</span>bcme_pal<span class="op">.</span><span class="at">fill</span><span class="sc">}</span><span class="vs">; border: 1px solid </span><span class="sc">${</span>bcme_pal<span class="op">.</span><span class="at">hair</span><span class="sc">}</span><span class="vs">;"&gt;</span></span>
+<span id="cb17-258"><a href="#cb17-258" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'Inter',system-ui,sans-serif; font-size:0.64rem;</span></span>
+<span id="cb17-259"><a href="#cb17-259" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; text-transform:uppercase; letter-spacing:0.05em;</span></span>
+<span id="cb17-260"><a href="#cb17-260" aria-hidden="true" tabindex="-1"></a><span class="vs">        color:</span><span class="sc">${</span>bcme_pal<span class="op">.</span><span class="at">muted</span><span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>label<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb17-261"><a href="#cb17-261" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'JetBrains Mono',monospace; font-size:1.12rem;</span></span>
+<span id="cb17-262"><a href="#cb17-262" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; color:</span><span class="sc">${</span>color<span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>value<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb17-263"><a href="#cb17-263" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'Inter',system-ui,sans-serif; font-size:0.62rem;</span></span>
+<span id="cb17-264"><a href="#cb17-264" aria-hidden="true" tabindex="-1"></a><span class="vs">        color:</span><span class="sc">${</span>bcme_pal<span class="op">.</span><span class="at">muted</span><span class="sc">}</span><span class="vs">; margin-top:0.1rem;"&gt;</span><span class="sc">${</span>sub<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb17-265"><a href="#cb17-265" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb17-266"><a href="#cb17-266" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">html</span><span class="vs">`&lt;div style="display:flex; flex-wrap:wrap; gap:0.5rem;</span></span>
+<span id="cb17-267"><a href="#cb17-267" aria-hidden="true" tabindex="-1"></a><span class="vs">      margin-top:0.75rem;"&gt;</span></span>
+<span id="cb17-268"><a href="#cb17-268" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"ME at your patient"</span><span class="op">,</span> <span class="st">"+"</span> <span class="op">+</span> bcme_meHere<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="op">,</span> bcme_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span></span>
+<span id="cb17-269"><a href="#cb17-269" aria-hidden="true" tabindex="-1"></a>        <span class="st">"Δprob per +1 visit, here"</span>)<span class="sc">}</span></span>
+<span id="cb17-270"><a href="#cb17-270" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"P here"</span><span class="op">,</span> bcme_pHere<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="op">,</span> bcme_pal<span class="op">.</span><span class="at">ink</span><span class="op">,</span> <span class="st">"current probability"</span>)<span class="sc">}</span></span>
+<span id="cb17-271"><a href="#cb17-271" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"AME"</span><span class="op">,</span> <span class="st">"+"</span> <span class="op">+</span> bcme_AME<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="op">,</span> bcme_pal<span class="op">.</span><span class="at">good</span><span class="op">,</span> <span class="st">"averaged over patients"</span>)<span class="sc">}</span></span>
+<span id="cb17-272"><a href="#cb17-272" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">tile</span>(<span class="st">"MEM"</span><span class="op">,</span> <span class="st">"+"</span> <span class="op">+</span> bcme_MEM<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">3</span>)<span class="op">,</span> bcme_pal<span class="op">.</span><span class="at">slate</span><span class="op">,</span> <span class="st">"at the mean patient"</span>)<span class="sc">}</span></span>
+<span id="cb17-273"><a href="#cb17-273" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb17-274"><a href="#cb17-274" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-17" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+</section>
+<section id="how-to-read-the-s-curve-and-its-tangent" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-s-curve-and-its-tangent">How to Read the S-Curve and Its Tangent</h3>
+<p>Work through these in order; each isolates one idea.</p>
+<p><strong>Step 1: Read the curve.</strong> The red S-curve is the fitted probability <span class="math inline">\Lambda(\hat\beta_0 + \hat\beta_1 x)</span> that a patient reaches the HbA1c target, as a function of follow-up visits <span class="math inline">x</span>. It is flat near 0 visits (almost no one hits target), rises through the middle, and flattens again near 1 (almost everyone hits target). This is the shape that makes the coefficient non-interpretable on its own.</p>
+<p><strong>Step 2: Watch the tangent pivot.</strong> Drag the patient’s visit count. The slate dashed line is the <em>tangent</em> to the curve at that patient. Its slope is the marginal effect — the “ME at your patient” tile. Park the patient near the middle (around 4 to 5 visits, where <span class="math inline">p \approx 0.5</span>) and the tangent is steep: an extra visit buys the most probability. Drag to the far right (10+ visits) and the tangent goes nearly flat: that patient was already near-certain, so an extra visit barely moves them.</p>
+<p><strong>Step 3: Confirm the maximum is at <span class="math inline">p = 0.5</span>.</strong> The thin horizontal reference line marks <span class="math inline">p = 0.5</span>. The tangent is steepest exactly where the red curve crosses it. The largest possible marginal effect for this regressor is <span class="math inline">0.25 \times \hat\beta_1 = 0.25 \times 0.42 \approx 0.105</span> — you cannot get a bigger probability bump than that, no matter the patient.</p>
+<p><strong>Step 4: Compare AME and MEM.</strong> The green “AME” tile averages each of 300 patients’ <em>own</em> tangent slopes; the slate “MEM” tile is the single slope at the <em>average</em> patient (the hollow slate dot at “mean x”). They are close here but not identical — AME averages the curve’s slope over the whole spread of patients, while MEM reads it at one representative point. When patients are bunched in the steep middle the two nearly coincide; when they straddle the flat tails they diverge.</p>
+</section>
+</section>
+<section id="ame-vs.-mem-two-ways-to-summarize-a-curve" class="level2">
+<h2 class="anchored" data-anchor-id="ame-vs.-mem-two-ways-to-summarize-a-curve">AME vs.&nbsp;MEM: Two Ways to Summarize a Curve</h2>
+<p>Because every patient has their own marginal effect, we need <em>one</em> number to report. There are two standard ways to collapse the distribution of effects, and they answer subtly different questions.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>Average Marginal Effect (AME)</strong> computes each observation’s marginal effect at its <em>own</em> covariate values, then averages:</p>
+<p><span class="math display">
+\text{AME}_k \;=\; \frac{1}{n}\sum_{i=1}^{n} f(x_i'\hat\beta)\,\hat\beta_k.
+</span></p>
+<p><strong>Read this as</strong>: “average, over all <span class="math inline">n</span> patients, of each patient’s own slope.” It is the mean of the individual effects — “if every patient in the sample got one more visit, the average increase in the probability of hitting target.”</p>
+<p>The <strong>Marginal Effect at the Mean (MEM)</strong> instead builds one synthetic average patient and evaluates the slope there:</p>
+<p><span class="math display">
+\text{MEM}_k \;=\; f(\bar{x}'\hat\beta)\,\hat\beta_k.
+</span></p>
+<p><strong>Read this as</strong>: “the slope at the single hypothetical patient whose covariates equal the sample means.” It describes a patient who may not exist (e.g., <span class="math inline">0.6</span> of a comorbidity).</p>
+</div>
+<div class="glass-card glass-card--insight">
+<p><strong>Prefer the AME.</strong> The AME averages a genuine quantity — each real patient’s own effect — so it answers the policy question “what happens on average if I nudge <span class="math inline">x</span> for everyone?” The MEM evaluates the effect at an <em>average patient</em> who is often a fiction (half a diagnosis, <span class="math inline">0.3</span> of a region). With dummy regressors the MEM is especially odd: the “mean patient” is <span class="math inline">73\%</span> female. The two coincide only when <span class="math inline">f</span> is roughly linear over the range of the data; they diverge when patients sit in the curve’s flat tails. Modern packages (<code>marginaleffects</code>, <code>margins</code>, <code>get_margeff</code>) default to the AME for exactly this reason.</p>
+</div>
+</section>
+<section id="partial-effects-for-dummy-regressors" class="level2">
+<h2 class="anchored" data-anchor-id="partial-effects-for-dummy-regressors">Partial Effects for Dummy Regressors</h2>
+<p>The derivative formula assumes <span class="math inline">x_k</span> can change by an infinitesimal amount. A <em>dummy</em> regressor — say <span class="math inline">\text{kvinna}_i = 1</span> for female patients — cannot. It only takes the values 0 and 1, so its effect is not a slope but a <strong>discrete difference</strong> in predicted probability between the two states, holding everything else fixed.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>partial effect of a dummy</strong> <span class="math inline">d</span> is the difference in predicted probability when <span class="math inline">d</span> is switched from 0 to 1, with all other covariates <span class="math inline">x</span> held at fixed values:</p>
+<p><span class="math display">
+\Delta_d \;=\; F\!\big(\beta_0 + \beta_d \cdot 1 + x'\beta\big) \;-\; F\!\big(\beta_0 + \beta_d \cdot 0 + x'\beta\big),
+</span></p>
+<p>where <span class="math inline">F = \Lambda</span> (logit) or <span class="math inline">\Phi</span> (probit). <strong>Read this as</strong>: “the predicted probability with the dummy on, minus the predicted probability with it off.” Averaging <span class="math inline">\Delta_d</span> over the sample gives the <em>average</em> discrete change — the dummy analogue of the AME.</p>
+</div>
+<p>For example, if switching <span class="math inline">\text{kvinna}</span> from 0 to 1 (other covariates at their observed values, averaged) raises the predicted probability of hitting target from <span class="math inline">0.61</span> to <span class="math inline">0.68</span>, the reportable partial effect is <span class="math inline">+0.07</span> — “women in this program are 7 percentage points more likely to reach target, holding visits and age fixed.” That is a sentence a regional board understands; the raw coefficient <span class="math inline">\beta_d</span> on the log-odds scale is not.</p>
+</section>
+<section id="odds-ratios-the-logit-specific-shortcut" class="level2">
+<h2 class="anchored" data-anchor-id="odds-ratios-the-logit-specific-shortcut">Odds Ratios: The Logit-Specific Shortcut</h2>
+<p>Logit has one extra interpretive trick that probit lacks. Exponentiating a logit coefficient gives an <strong>odds ratio</strong>, which is <em>constant</em> across patients — it does not depend on where you sit on the curve. The price is that it speaks the language of <em>odds</em>, not probabilities.</p>
+<p>Recall the odds of success are <span class="math inline">\text{odds} = p/(1-p)</span>. The logit model is linear in the <strong>log-odds</strong>:</p>
+<p><span class="math display">
+\log\frac{P(y=1\mid x)}{P(y=0\mid x)} \;=\; x'\beta.
+</span></p>
+<p><strong>Read this as</strong>: “the log of the odds of success equals the linear index <span class="math inline">x'\beta</span>.” Increase <span class="math inline">x_k</span> by one unit and the log-odds rise by exactly <span class="math inline">\beta_k</span> — for <em>every</em> patient, because this scale is linear. Exponentiating, the <em>odds</em> get <strong>multiplied</strong> by <span class="math inline">e^{\beta_k}</span>.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>odds ratio</strong> for a one-unit increase in <span class="math inline">x_k</span> is</p>
+<p><span class="math display">
+\text{OR}_k \;=\; e^{\beta_k}.
+</span></p>
+<p><strong>Read this as</strong>: “<span class="math inline">e</span> raised to the coefficient.” It is the multiplicative factor by which the odds of success change per one-unit increase in <span class="math inline">x_k</span>. <span class="math inline">\text{OR} &gt; 1</span> means the odds rise, <span class="math inline">\text{OR} &lt; 1</span> means they fall, <span class="math inline">\text{OR} = 1</span> means no effect. For our visits coefficient, <span class="math inline">\text{OR} = e^{0.42} \approx 1.52</span>: <strong>each extra district-nurse visit multiplies the odds of hitting target by about 1.5</strong> — a <span class="math inline">52\%</span> increase in the <em>odds</em> (not the probability).</p>
+</div>
+<div class="glass-card glass-card--warning">
+<p><strong>An odds ratio is not a risk ratio, and not a probability change.</strong> “<span class="math inline">52\%</span> higher odds” is routinely misread as “<span class="math inline">52\%</span> more likely.” When the baseline probability is small the two are close, but for a patient already at <span class="math inline">p = 0.8</span> (odds <span class="math inline">4{:}1</span>), multiplying the odds by <span class="math inline">1.52</span> gives odds <span class="math inline">6.08{:}1</span>, i.e.&nbsp;<span class="math inline">p = 0.859</span> — a rise of only <span class="math inline">5.9</span> percentage points, nowhere near <span class="math inline">52\%</span>. The odds ratio’s virtue (constant across patients) is also its limitation: a <em>constant odds ratio</em> corresponds to a <em>probability effect that still depends on the baseline</em>. Report odds ratios for compactness, but report a marginal effect (AME) when you want the answer on the probability scale your audience thinks in.</p>
+</div>
+<details>
+<summary>
+Math Details: Deriving the marginal effects and the AME/MEM distinction
+</summary>
+<div class="details-content">
+<section id="marginal-effect-by-the-chain-rule" class="level3">
+<h3 class="anchored" data-anchor-id="marginal-effect-by-the-chain-rule">Marginal effect by the chain rule</h3>
+<p>For an index model <span class="math inline">P(y=1\mid x) = F(x'\beta)</span> with a continuous regressor <span class="math inline">x_k</span>, differentiate with respect to <span class="math inline">x_k</span>. Only the index <span class="math inline">x'\beta</span> depends on <span class="math inline">x_k</span>, and <span class="math inline">\partial(x'\beta)/\partial x_k = \beta_k</span>, so by the chain rule</p>
+<p><span class="math display">
+\frac{\partial F(x'\beta)}{\partial x_k} = F'(x'\beta)\cdot \frac{\partial (x'\beta)}{\partial x_k} = f(x'\beta)\,\beta_k,
+</span></p>
+<p>where <span class="math inline">f = F'</span> is the density. Two specializations:</p>
+<p><strong>Probit.</strong> <span class="math inline">F = \Phi</span>, so <span class="math inline">f = \phi</span>, the standard Normal density. The marginal effect is <span class="math display">
+\text{ME}_k^{\text{probit}} = \phi(x'\beta)\,\beta_k.
+</span></p>
+<p><strong>Logit.</strong> <span class="math inline">F = \Lambda</span>, the logistic CDF. Its derivative is <span class="math display">
+\Lambda'(z) = \frac{e^{-z}}{(1+e^{-z})^2} = \Lambda(z)\big(1 - \Lambda(z)\big),
+</span> so writing <span class="math inline">\Lambda = \Lambda(x'\beta)</span>, <span class="math display">
+\text{ME}_k^{\text{logit}} = \Lambda\,(1-\Lambda)\,\beta_k.
+</span></p>
+<p>The factor <span class="math inline">\Lambda(1-\Lambda)</span> is the variance of a Bernoulli with success probability <span class="math inline">\Lambda</span>. It is maximized at <span class="math inline">\Lambda = 1/2</span>, where it equals <span class="math inline">1/4</span>; hence the largest possible logit marginal effect of regressor <span class="math inline">k</span> is <span class="math inline">\tfrac14\beta_k</span>. It vanishes as <span class="math inline">\Lambda \to 0</span> or <span class="math inline">\Lambda \to 1</span> — the flat tails of the S-curve.</p>
+</section>
+<section id="why-the-odds-ratio-is-constant" class="level3">
+<h3 class="anchored" data-anchor-id="why-the-odds-ratio-is-constant">Why the odds ratio is constant</h3>
+<p>From <span class="math inline">\Lambda(z) = 1/(1+e^{-z})</span> we get <span class="math inline">1-\Lambda(z) = e^{-z}/(1+e^{-z})</span>, so the odds are <span class="math display">
+\frac{\Lambda(z)}{1-\Lambda(z)} = \frac{1}{e^{-z}} = e^{z} = e^{x'\beta}.
+</span> Increase <span class="math inline">x_k</span> by 1: the odds become <span class="math inline">e^{x'\beta + \beta_k} = e^{x'\beta}\cdot e^{\beta_k}</span>. The multiplicative factor <span class="math inline">e^{\beta_k}</span> is free of <span class="math inline">x</span> — this is special to the logistic link and is why odds ratios are a logit-only convenience. The corresponding <em>probability</em> change, <span class="math inline">\Lambda(x'\beta+\beta_k) - \Lambda(x'\beta)</span>, still depends on the baseline <span class="math inline">x'\beta</span>.</p>
+</section>
+<section id="ame-vs-mem-as-two-functionals-of-the-same-fit" class="level3">
+<h3 class="anchored" data-anchor-id="ame-vs-mem-as-two-functionals-of-the-same-fit">AME vs MEM as two functionals of the same fit</h3>
+<p>Both summaries push the per-observation marginal effect <span class="math inline">m_i = f(x_i'\hat\beta)\,\hat\beta_k</span> through a different operator:</p>
+<p><span class="math display">
+\text{AME}_k = \frac1n\sum_i f(x_i'\hat\beta)\,\hat\beta_k = \frac1n\sum_i m_i,
+\qquad
+\text{MEM}_k = f\!\Big(\Big(\tfrac1n\sum_i x_i\Big)'\hat\beta\Big)\,\hat\beta_k.
+</span></p>
+<p>The AME applies <span class="math inline">f</span> first and averages second; the MEM averages the covariates first and applies <span class="math inline">f</span> once. Because <span class="math inline">f</span> (the Normal or logistic density) is <strong>nonlinear</strong> — concave near its peak, convex in the tails — Jensen’s inequality says <span class="math inline">\frac1n\sum_i f(x_i'\hat\beta) \neq f(\bar x'\hat\beta)</span> in general, so <span class="math inline">\text{AME} \neq \text{MEM}</span>. They agree exactly only if <span class="math inline">f</span> is linear over the support of the data, or if all <span class="math inline">x_i</span> are identical. Standard errors for both come from the delta method applied to the (smooth) functions above, using the MLE variance of <span class="math inline">\hat\beta</span>.</p>
+</section>
+</div>
+</details>
+</section>
+<section id="computing-marginal-effects-and-odds-ratios" class="level2">
+<h2 class="anchored" data-anchor-id="computing-marginal-effects-and-odds-ratios">Computing Marginal Effects and Odds Ratios</h2>
+<p>Both panels fit the same logit — “reached HbA1c target” on follow-up visits, patient age, and a female dummy — then report the AME, the MEM, the dummy’s average partial effect, and the odds ratios. In R use <code>marginaleffects</code> (or the older <code>margins</code>); in Python use <code>statsmodels</code>’ <code>get_margeff</code>. Do <strong>not</strong> read the raw coefficients as effects.</p>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">R</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">Python</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages(c("marginaleffects"))  # if needed</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(marginaleffects)</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2024</span>)</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">600</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>visits <span class="ot">&lt;-</span> <span class="fu">pmax</span>(<span class="dv">0</span>, <span class="fu">round</span>(<span class="fu">rnorm</span>(n, <span class="fl">4.6</span>, <span class="fl">2.3</span>)))     <span class="co"># district-nurse follow-ups</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>age    <span class="ot">&lt;-</span> <span class="fu">round</span>(<span class="fu">rnorm</span>(n, <span class="dv">64</span>, <span class="dv">11</span>))                 <span class="co"># patient age, years</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>kvinna <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.55</span>)                      <span class="co"># 1 = female</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="co"># True data-generating index, then a Bernoulli draw for the target outcome.</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>idx <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">1.9</span> <span class="sc">+</span> <span class="fl">0.42</span> <span class="sc">*</span> visits <span class="sc">-</span> <span class="fl">0.015</span> <span class="sc">*</span> (age <span class="sc">-</span> <span class="dv">64</span>) <span class="sc">+</span> <span class="fl">0.30</span> <span class="sc">*</span> kvinna</span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>y   <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(idx))                  <span class="co"># 1 = reached HbA1c target</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>df  <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(y, visits, age, kvinna)</span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">glm</span>(y <span class="sc">~</span> visits <span class="sc">+</span> age <span class="sc">+</span> kvinna, <span class="at">family =</span> <span class="fu">binomial</span>(<span class="at">link =</span> <span class="st">"logit"</span>), <span class="at">data =</span> df)</span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="co"># Raw coefficients are on the LOG-ODDS scale — NOT effects on probability.</span></span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a><span class="fu">coef</span>(fit)</span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a><span class="co"># Odds ratios = exp(beta), with CIs. Logit-specific, constant across patients.</span></span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="fu">cbind</span>(<span class="at">OR =</span> <span class="fu">coef</span>(fit), <span class="fu">confint</span>(fit)))</span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Average Marginal Effect (recommended default): each patient's own slope,</span></span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a><span class="co"># averaged. "dydx" for continuous regressors; for the dummy it reports the</span></span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a><span class="co"># average discrete 0 -&gt; 1 change automatically.</span></span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a><span class="fu">avg_slopes</span>(fit)</span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a><span class="co"># Marginal Effect at the Mean: evaluate the slope at the average covariate vector.</span></span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a><span class="fu">slopes</span>(fit, <span class="at">newdata =</span> <span class="st">"mean"</span>)</span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a><span class="co"># Average partial effect of the female dummy as an explicit contrast.</span></span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a><span class="fu">avg_comparisons</span>(fit, <span class="at">variables =</span> <span class="st">"kvinna"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> statsmodels.formula.api <span class="im">as</span> smf</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">2024</span>)</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>n <span class="op">=</span> <span class="dv">600</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>visits <span class="op">=</span> np.clip(np.<span class="bu">round</span>(rng.normal(<span class="fl">4.6</span>, <span class="fl">2.3</span>, n)), <span class="dv">0</span>, <span class="va">None</span>)  <span class="co"># follow-ups</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>age    <span class="op">=</span> np.<span class="bu">round</span>(rng.normal(<span class="dv">64</span>, <span class="dv">11</span>, n))                       <span class="co"># age, years</span></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>kvinna <span class="op">=</span> rng.binomial(<span class="dv">1</span>, <span class="fl">0.55</span>, n)                              <span class="co"># 1 = female</span></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a><span class="co"># True index, then a Bernoulli draw for "reached HbA1c target".</span></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>idx <span class="op">=</span> <span class="op">-</span><span class="fl">1.9</span> <span class="op">+</span> <span class="fl">0.42</span> <span class="op">*</span> visits <span class="op">-</span> <span class="fl">0.015</span> <span class="op">*</span> (age <span class="op">-</span> <span class="dv">64</span>) <span class="op">+</span> <span class="fl">0.30</span> <span class="op">*</span> kvinna</span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>p   <span class="op">=</span> <span class="dv">1</span> <span class="op">/</span> (<span class="dv">1</span> <span class="op">+</span> np.exp(<span class="op">-</span>idx))</span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a>y   <span class="op">=</span> rng.binomial(<span class="dv">1</span>, p)</span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a>df  <span class="op">=</span> pd.DataFrame({<span class="st">"y"</span>: y, <span class="st">"visits"</span>: visits, <span class="st">"age"</span>: age, <span class="st">"kvinna"</span>: kvinna})</span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a>fit <span class="op">=</span> smf.logit(<span class="st">"y ~ visits + age + kvinna"</span>, data<span class="op">=</span>df).fit()</span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Raw coefficients are LOG-ODDS, not probability effects.</span></span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(fit.params)</span>
+<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a><span class="co"># Odds ratios = exp(beta). Logit-specific and constant across patients.</span></span>
+<span id="cb19-23"><a href="#cb19-23" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(np.exp(fit.params))</span>
+<span id="cb19-24"><a href="#cb19-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-25"><a href="#cb19-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Average Marginal Effect (default): each obs's own slope, then averaged.</span></span>
+<span id="cb19-26"><a href="#cb19-26" aria-hidden="true" tabindex="-1"></a><span class="co"># 'dydx' for continuous; the dummy gets an average discrete change.</span></span>
+<span id="cb19-27"><a href="#cb19-27" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(fit.get_margeff(at<span class="op">=</span><span class="st">"overall"</span>, method<span class="op">=</span><span class="st">"dydx"</span>).summary())</span>
+<span id="cb19-28"><a href="#cb19-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-29"><a href="#cb19-29" aria-hidden="true" tabindex="-1"></a><span class="co"># Marginal Effect at the Mean: evaluate at the average covariate vector.</span></span>
+<span id="cb19-30"><a href="#cb19-30" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(fit.get_margeff(at<span class="op">=</span><span class="st">"mean"</span>, method<span class="op">=</span><span class="st">"dydx"</span>).summary())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+<p>In both languages the AME for <code>visits</code> lands near <span class="math inline">+0.08</span> — “one extra district-nurse visit raises the probability of hitting target by about 8 percentage points on average” — while the odds ratio is <span class="math inline">e^{0.42}\approx 1.52</span>. The numbers agree across R and Python up to the random draw; the AME and odds ratio describe the <em>same</em> coefficient on two different scales.</p>
+</section>
+<section id="exercises" class="level2 exercises">
+<h2 class="exercises anchored" data-anchor-id="exercises">Exercises</h2>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 1</span></p>
+<p>A logit for “patient readmitted to hospital within 30 days” includes a continuous regressor <em>daily medications</em> with coefficient <span class="math inline">\hat\beta = 0.25</span>.</p>
+<ol type="a">
+<li>What is the largest possible marginal effect of one extra daily medication on the probability of readmission? (b) For a patient currently at predicted probability <span class="math inline">p = 0.10</span>, what is the marginal effect there? (c) Explain why (a) and (b) differ.</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> The logit marginal effect is <span class="math inline">\Lambda(1-\Lambda)\,\hat\beta</span>, maximized at <span class="math inline">\Lambda = 0.5</span> where <span class="math inline">\Lambda(1-\Lambda) = 0.25</span>. So the largest possible effect is <span class="math inline">0.25 \times 0.25 = 0.0625</span>, i.e.&nbsp;about <span class="math inline">+6.25</span> percentage points per extra medication — attained only for a patient at <span class="math inline">p = 0.5</span>.</p>
+<p><strong>(b)</strong> At <span class="math inline">p = 0.10</span>, <span class="math inline">\Lambda(1-\Lambda) = 0.10 \times 0.90 = 0.09</span>. The marginal effect is <span class="math inline">0.09 \times 0.25 = 0.0225</span>, about <span class="math inline">+2.25</span> percentage points.</p>
+<p><strong>(c)</strong> They differ because the marginal effect is the <em>slope of the S-curve</em>, which depends on where the patient sits. At <span class="math inline">p = 0.5</span> the curve is steepest; at <span class="math inline">p = 0.10</span> it is in the lower tail and much flatter, so the same coefficient buys far less probability. The coefficient is constant; the probability effect is not.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 2</span></p>
+<p>A logit for “reached HbA1c target” reports an odds ratio of <span class="math inline">1.80</span> for being enrolled in a structured <em>Diabetessamordning</em> (diabetes coordination program).</p>
+<ol type="a">
+<li>State the effect in words on the odds scale. (b) A patient under standard care has probability <span class="math inline">0.40</span> of hitting target. What is their probability if enrolled, according to this odds ratio? (c) What is the percentage-point change, and why is it not <span class="math inline">80\%</span>?</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> Enrolling in the program multiplies a patient’s <em>odds</em> of reaching target by <span class="math inline">1.80</span> — an <span class="math inline">80\%</span> increase in the odds, holding other covariates fixed.</p>
+<p><strong>(b)</strong> Baseline odds at <span class="math inline">p = 0.40</span>: <span class="math inline">0.40/0.60 = 0.6\overline{6}</span>. Multiply by <span class="math inline">1.80</span>: new odds <span class="math inline">= 1.20</span>. Convert back: <span class="math inline">p = \text{odds}/(1+\text{odds}) = 1.20/2.20 = 0.5\overline{45} \approx 0.545</span>.</p>
+<p><strong>(c)</strong> The probability rises from <span class="math inline">0.40</span> to about <span class="math inline">0.545</span> — a change of roughly <span class="math inline">+14.5</span> percentage points, not <span class="math inline">80\%</span>. The <span class="math inline">80\%</span> refers to <em>odds</em>, a ratio of probabilities, not the probability itself. The percentage-point change depends on the baseline; at a different starting probability the same odds ratio gives a different probability change. This is exactly why an AME is more transparent to a non-technical audience.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 3</span></p>
+<p>A colleague reports the MEM for <em>follow-up visits</em> and you report the AME from the same fitted logit. Yours is <span class="math inline">+0.081</span>; theirs is <span class="math inline">+0.103</span>.</p>
+<ol type="a">
+<li>Define each quantity in one sentence. (b) Give a concrete reason they differ. (c) Which would you put in a policy brief, and why?</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> The <strong>AME</strong> averages each patient’s own marginal effect <span class="math inline">f(x_i'\hat\beta)\hat\beta_k</span> over the sample; the <strong>MEM</strong> evaluates a single marginal effect <span class="math inline">f(\bar x'\hat\beta)\hat\beta_k</span> at the average covariate vector.</p>
+<p><strong>(b)</strong> The density factor <span class="math inline">f</span> is nonlinear, so by Jensen’s inequality the average of the slopes (<span class="math inline">\text{AME}</span>) generally differs from the slope at the average (<span class="math inline">\text{MEM}</span>). Here the MEM is larger, which happens when the <em>average patient</em> sits closer to the steep middle of the curve (<span class="math inline">p \approx 0.5</span>) than the bulk of the actual patients, many of whom lie in the flatter tails where their individual slopes are smaller — dragging the average (AME) down.</p>
+<p><strong>(c)</strong> The AME, for a policy brief. It is the average of effects on <em>real</em> patients and answers “if every patient got one more visit, how much does the average probability rise?” The MEM describes a hypothetical average patient (possibly <span class="math inline">0.55</span> female, <span class="math inline">4.6</span> visits) who may not exist, and is harder to defend to a non-technical audience.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 4</span></p>
+<p>Using the interactive at the top of the page, set the patient to <span class="math inline">x = 4.5</span> visits (near the 50% crossover) and note the slope; then drag to <span class="math inline">x = 11</span> visits.</p>
+<ol type="a">
+<li>What happens to the marginal effect (the tangent slope), and why? (b) The fitted <span class="math inline">\hat\beta_1 = 0.42</span> never changes as you drag — so what <em>does</em> change to make the probability effect shrink? (c) Convert <span class="math inline">\hat\beta_1</span> to an odds ratio and confirm it is the same regardless of where the patient sits.</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> At <span class="math inline">x = 4.5</span> the patient is near <span class="math inline">p = 0.5</span>, where the curve is steepest, so the tangent slope (marginal effect) is near its maximum, <span class="math inline">0.25 \times 0.42 \approx 0.105</span>. At <span class="math inline">x = 11</span> the patient is far up the curve near <span class="math inline">p \approx 0.95</span>, in the flat upper tail, so the slope is small — an extra visit barely raises an already-near-certain probability.</p>
+<p><strong>(b)</strong> The coefficient <span class="math inline">\hat\beta_1</span> is fixed; what changes is the <strong>density factor</strong> <span class="math inline">\Lambda(x'\hat\beta)\big(1-\Lambda(x'\hat\beta)\big)</span>. It is <span class="math inline">\approx 0.25</span> at <span class="math inline">p = 0.5</span> but collapses toward <span class="math inline">0</span> in the tails (at <span class="math inline">p = 0.95</span> it is <span class="math inline">0.95 \times 0.05 \approx 0.0475</span>). The marginal effect is this factor times <span class="math inline">\hat\beta_1</span>, so it shrinks even though <span class="math inline">\hat\beta_1</span> is constant.</p>
+<p><strong>(c)</strong> The odds ratio is <span class="math inline">e^{0.42} \approx 1.52</span>. Because the logit is linear in the log-odds, a one-unit increase in <span class="math inline">x</span> multiplies the odds by <span class="math inline">e^{\hat\beta_1}</span> <em>regardless of the starting point</em> — the odds ratio is constant across patients even though the probability effect (part b) is not.</p>
+</div>
+</details>
+</div>
+<div class="key-takeaways">
+<p><strong>Key takeaways</strong></p>
+<ul>
+<li>A logit or probit coefficient lives on the latent index / log-odds scale; it sets direction and a ceiling, but is <em>not</em> the effect on the probability of the outcome.</li>
+<li>The marginal effect of a continuous regressor is <span class="math inline">f(x'\hat\beta)\,\hat\beta_k</span> — the slope of the S-curve, largest near <span class="math inline">p = 0.5</span> and vanishing in the tails, so every patient has their own.</li>
+<li>Report the <strong>AME</strong> (average each patient’s own slope) over the <strong>MEM</strong> (slope at the average patient): the AME averages effects on real units, the MEM describes a possibly-fictional average patient.</li>
+<li>For a dummy regressor the partial effect is a <em>discrete</em> difference in predicted probability (0 vs 1), averaged over the sample.</li>
+<li>The odds ratio <span class="math inline">e^{\hat\beta_k}</span> is a logit-only convenience: constant across patients on the odds scale, but “higher odds” is not “higher probability” — use the AME when your audience thinks in probabilities.</li>
+</ul>
+</div>
+</section>
+<section id="what-comes-next" class="level2">
+<h2 class="anchored" data-anchor-id="what-comes-next">What Comes Next</h2>
+<p>We can now turn any logit or probit fit into a reportable effect: a marginal effect on the probability scale, an AME for the headline number, a partial effect for dummies, and an odds ratio for compact summaries. So far the outcome has been <em>binary</em> — one threshold, target reached or not. But many primary-care outcomes have more than two categories: which of several vårdcentraler a patient chooses, or an <em>ordered</em> severity scale from “well controlled” to “poorly controlled.” The same maximum-likelihood machinery and the same “coefficients are not effects” warning carry over, but the marginal effects now come as a <em>vector</em> across categories. The next page, <a href="../../content/16-discrete-choice/multinomial-ordered.html">Multinomial and Ordered Choice</a>, builds those models and shows how to read their effects.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<div id="reading-progress"></div>
+<script>
+(function () {
+  function update() {
+    var el = document.getElementById('reading-progress');
+    if (!el) return;
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    var pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+    el.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  if (document.readyState !== 'loading') update();
+  else document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
+<script type="ojs-module-contents">
+eyJjb250ZW50cyI6W3sibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ii8vIFVwcHNhbGEtYWNhZGVtaWMgcGFsZXR0ZSB0b2tlbnMsIHNoYXJlZCBhY3Jvc3MgdGhpcyBwYWdlJ3MgaW50ZXJhY3RpdmVzLlxuYmNtZV9wYWwgPSAoe1xuICBmb2NhbDogIFwiIzk5MDAwMFwiLCAgLy8gZm9jYWwgc2VyaWVzIChVcHBzYWxhIHJlZCk6IHRoZSBmaXR0ZWQgcHJvYmFiaWxpdHkgY3VydmVcbiAgc2xhdGU6ICBcIiMzZDVhNmNcIiwgIC8vIGNvbXBhcmlzb24gKHNsYXRlKTogdGhlIHRhbmdlbnQgLyBNRU0gbWFya2VyXG4gIGdvb2Q6ICAgXCIjMmU2ZjQwXCIsICAvLyBvbi10YXJnZXQgZ3JlZW46IEFNRSBtYXJrZXJcbiAgb2NocmU6ICBcIiM5YzdhMzNcIiwgIC8vIGhpZ2hsaWdodCAvIGFubm90YXRpb25cbiAgaW5rOiAgICBcIiMxYzFjMWFcIiwgIC8vIGluayB0ZXh0ICYgcmVmZXJlbmNlIGxpbmVzXG4gIGF4aXM6ICAgXCIjNzk3NjZlXCIsICAvLyBheGlzIHRleHQgKG11dGVkIFVwcHNhbGEgdG9rZW4pXG4gIGhhaXI6ICAgXCIjZTZlM2RiXCIsICAvLyBncmlkbGluZXNcbiAgbXV0ZWQ6ICBcIiM3OTc2NmVcIiwgIC8vIG11dGVkIGlua1xuICBmaWxsOiAgIFwiI2Y2ZjVmMVwiICAgLy8gc3VidGxlIHRpbGUgZmlsbFxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMiIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ii8vIEZpdHRlZCBsb2dpdCBjb2VmZmljaWVudHMgZm9yIFwicmVhY2hlZCBIYkExYyB0YXJnZXRcIiBvbiBmb2xsb3ctdXAgdmlzaXRzLlxuLy8gVGhlc2Ugc3RhbmQgaW4gZm9yIGEgZ2xtKCkgZml0OyBiZXRhMCBwdXRzIHRoZSA1MCUgY3Jvc3NvdmVyIGF0IH40LjUgdmlzaXRzLlxuYmNtZV9iZXRhMCA9IC0xLjlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMyIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6ImJjbWVfYmV0YTEgPSAwLjQyXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTQiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiIvLyBMb2dpc3RpYyBDREYgYW5kIGRlbnNpdHkgdXNlZCB0aHJvdWdob3V0LlxuYmNtZV9MYW1iZGEgPSB6ID0+IDEgLyAoMSArIE1hdGguZXhwKC16KSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtNSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6ImJjbWVfbGFtYmRhID0geiA9PiB7IGNvbnN0IEwgPSBiY21lX0xhbWJkYSh6KTsgcmV0dXJuIEwgKiAoMSAtIEwpOyB9XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTYiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJ2aWV3b2YgYmNtZV94VmlzaXRzID0gSW5wdXRzLnJhbmdlKFswLCAxMl0sIHtcbiAgdmFsdWU6IDQuNSxcbiAgc3RlcDogMC4xLFxuICBsYWJlbDogXCJQYXRpZW50J3MgZm9sbG93LXVwIHZpc2l0cyAgeCAgKGRyYWcgYWxvbmcgdGhlIGN1cnZlKVwiXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC03IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gVGhlIGZpdHRlZCBwcm9iYWJpbGl0eSBjdXJ2ZSwgc2FtcGxlZCBvbiBhIGZpbmUgZ3JpZCBmb3IgcGxvdHRpbmcuXG5iY21lX2N1cnZlID0gZDMucmFuZ2UoMCwgMTIuMDEsIDAuMSkubWFwKHggPT4gKHtcbiAgeCxcbiAgcDogYmNtZV9MYW1iZGEoYmNtZV9iZXRhMCArIGJjbWVfYmV0YTEgKiB4KVxufSkpXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTgiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiIvLyBNYXJnaW5hbCBlZmZlY3QgYXQgdGhlIGRyYWdnZWQgcGF0aWVudDogc2xvcGUgb2YgdGhlIGN1cnZlIHRoZXJlLlxuYmNtZV9tZUhlcmUgPSBiY21lX2xhbWJkYShiY21lX2JldGEwICsgYmNtZV9iZXRhMSAqIGJjbWVfeFZpc2l0cykgKiBiY21lX2JldGExXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTkiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJiY21lX3BIZXJlID0gYmNtZV9MYW1iZGEoYmNtZV9iZXRhMCArIGJjbWVfYmV0YTEgKiBiY21lX3hWaXNpdHMpXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTEwIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gQSBzaG9ydCB0YW5nZW50IHNlZ21lbnQgdGhyb3VnaCB0aGUgZHJhZ2dlZCBwb2ludCwgd2l0aCBzbG9wZSA9IGJjbWVfbWVIZXJlLlxuLy8gRHJhd24gb3ZlciBhICsvLSAxLjYgdmlzaXQgd2luZG93IHNvIGl0IHJlYWRzIGFzIFwidGhlIGxvY2FsIGxpbmVhciBhcHByb3hcIi5cbmJjbWVfdGFuZ2VudCA9IHtcbiAgY29uc3QgaGFsZiA9IDEuNjtcbiAgY29uc3QgeDAgPSBNYXRoLm1heCgwLCBiY21lX3hWaXNpdHMgLSBoYWxmKTtcbiAgY29uc3QgeDEgPSBNYXRoLm1pbigxMiwgYmNtZV94VmlzaXRzICsgaGFsZik7XG4gIHJldHVybiBbXG4gICAgeyB4OiB4MCwgcDogYmNtZV9wSGVyZSArIGJjbWVfbWVIZXJlICogKHgwIC0gYmNtZV94VmlzaXRzKSB9LFxuICAgIHsgeDogeDEsIHA6IGJjbWVfcEhlcmUgKyBiY21lX21lSGVyZSAqICh4MSAtIGJjbWVfeFZpc2l0cykgfVxuICBdO1xufVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC0xMSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ii8vIEEgc21hbGwgc3ludGhldGljIHNhbXBsZSBvZiBwYXRpZW50cywgdXNlZCB0byBjb21wdXRlIHRoZSBBTUUgaG9uZXN0bHlcbi8vIChhdmVyYWdlIG9mIGVhY2ggcGF0aWVudCdzIG93biBtYXJnaW5hbCBlZmZlY3QpIGFuZCB0byBwbGFjZSB0aGUgTUVNLlxuLy8gVmlzaXQgY291bnRzIGRyYXduIG9uY2UsIGRldGVybWluaXN0aWNhbGx5LCBzbyB0aGUgcGFnZSBpcyByZXByb2R1Y2libGUuXG5iY21lX3NhbXBsZSA9IHtcbiAgY29uc3Qgcm5nID0gZDMucmFuZG9tTm9ybWFsLnNvdXJjZShkMy5yYW5kb21MY2coMjAyNCkpKDQuNiwgMi4zKTtcbiAgY29uc3QgeHMgPSBkMy5yYW5nZSgzMDApLm1hcCgoKSA9PiBNYXRoLm1heCgwLCBNYXRoLm1pbigxMiwgcm5nKCkpKSk7XG4gIHJldHVybiB4cy5tYXAoeCA9PiAoeyB4LCBpZHg6IGJjbWVfYmV0YTAgKyBiY21lX2JldGExICogeCB9KSk7XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTEyIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gQU1FOiBhdmVyYWdlIG92ZXIgcGF0aWVudHMgb2YgZih4X2knYmV0YSkgKiBiZXRhMSAgKHRoZSByZWNvbW1lbmRlZCBzdW1tYXJ5KS5cbmJjbWVfQU1FID0gZDMubWVhbihiY21lX3NhbXBsZSwgZCA9PiBiY21lX2xhbWJkYShkLmlkeCkgKiBiY21lX2JldGExKVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC0xMyIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ii8vIE1FTTogZih4YmFyJ2JldGEpICogYmV0YTEsIGV2YWx1YXRlZCBhdCB0aGUgbWVhbiByZWdyZXNzb3IgdmFsdWUuXG5iY21lX3hiYXIgPSBkMy5tZWFuKGJjbWVfc2FtcGxlLCBkID0+IGQueClcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTQiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJiY21lX01FTSA9IGJjbWVfbGFtYmRhKGJjbWVfYmV0YTAgKyBiY21lX2JldGExICogYmNtZV94YmFyKSAqIGJjbWVfYmV0YTFcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTUiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJiY21lX3BNRU0gPSBiY21lX0xhbWJkYShiY21lX2JldGEwICsgYmNtZV9iZXRhMSAqIGJjbWVfeGJhcilcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTYiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJQbG90LnBsb3Qoe1xuICB3aWR0aDogTWF0aC5taW4oNjgwLCB3aWR0aCksXG4gIGhlaWdodDogMzgwLFxuICBtYXJnaW5MZWZ0OiA2NCxcbiAgbWFyZ2luQm90dG9tOiA0OCxcbiAgbWFyZ2luUmlnaHQ6IDIyLFxuICBzdHlsZToge1xuICAgIGZvbnRGYW1pbHk6IFwiJ0ludGVyJywgc3lzdGVtLXVpLCBzYW5zLXNlcmlmXCIsXG4gICAgZm9udFNpemU6IFwiMTJweFwiLFxuICAgIGJhY2tncm91bmQ6IFwidHJhbnNwYXJlbnRcIixcbiAgICBjb2xvcjogYmNtZV9wYWwuYXhpc1xuICB9LFxuICB4OiB7XG4gICAgbGFiZWw6IFwiRm9sbG93LXVwIHZpc2l0cyAgeCAg4oaSXCIsXG4gICAgZG9tYWluOiBbMCwgMTJdLFxuICAgIGdyaWQ6IGZhbHNlXG4gIH0sXG4gIHk6IHtcbiAgICBsYWJlbDogXCLihpEgUChyZWFjaGVkIEhiQTFjIHRhcmdldClcIixcbiAgICBkb21haW46IFswLCAxXSxcbiAgICBncmlkOiB0cnVlXG4gIH0sXG4gIG1hcmtzOiBbXG4gICAgUGxvdC5ncmlkWSh7IHN0cm9rZTogYmNtZV9wYWwuaGFpciB9KSxcbiAgICAvLyBSZWZlcmVuY2UgbGluZSBhdCBwID0gMC41LCB3aGVyZSB0aGUgc2xvcGUgKG1hcmdpbmFsIGVmZmVjdCkgaXMgbGFyZ2VzdC5cbiAgICBQbG90LnJ1bGVZKFswLjVdLCB7IHN0cm9rZTogYmNtZV9wYWwuaGFpciwgc3Ryb2tlV2lkdGg6IDEgfSksXG4gICAgLy8gVGhlIGZpdHRlZCBsb2dpc3RpYyBwcm9iYWJpbGl0eSBjdXJ2ZSAoZm9jYWwg4oCUIFVwcHNhbGEgcmVkKS5cbiAgICBQbG90LmxpbmUoYmNtZV9jdXJ2ZSwge1xuICAgICAgeDogXCJ4XCIsIHk6IFwicFwiLCBzdHJva2U6IGJjbWVfcGFsLmZvY2FsLCBzdHJva2VXaWR0aDogMi41XG4gICAgfSksXG4gICAgLy8gVGhlIHRhbmdlbnQgYXQgdGhlIGRyYWdnZWQgcGF0aWVudDogaXRzIHNsb3BlIElTIHRoZSBtYXJnaW5hbCBlZmZlY3QuXG4gICAgUGxvdC5saW5lKGJjbWVfdGFuZ2VudCwge1xuICAgICAgeDogXCJ4XCIsIHk6IFwicFwiLCBzdHJva2U6IGJjbWVfcGFsLnNsYXRlLCBzdHJva2VXaWR0aDogMiwgc3Ryb2tlRGFzaGFycmF5OiBcIjUsM1wiXG4gICAgfSksXG4gICAgLy8gTUVNIG1hcmtlciAoc2xhdGUgaG9sbG93KSDigJQgZXZhbHVhdGVkIGF0IHRoZSBtZWFuIHJlZ3Jlc3Nvci5cbiAgICBQbG90LmRvdChbeyB4OiBiY21lX3hiYXIsIHA6IGJjbWVfcE1FTSB9XSwge1xuICAgICAgeDogXCJ4XCIsIHk6IFwicFwiLCBmaWxsOiBcIndoaXRlXCIsIHN0cm9rZTogYmNtZV9wYWwuc2xhdGUsIHN0cm9rZVdpZHRoOiAyLCByOiA1XG4gICAgfSksXG4gICAgUGxvdC50ZXh0KFt7IHg6IGJjbWVfeGJhciwgcDogYmNtZV9wTUVNIH1dLCB7XG4gICAgICB4OiBcInhcIiwgeTogXCJwXCIsXG4gICAgICB0ZXh0OiBkID0+IGBtZWFuIHggPSAke2JjbWVfeGJhci50b0ZpeGVkKDEpfWAsXG4gICAgICBmaWxsOiBiY21lX3BhbC5zbGF0ZSwgZm9udFNpemU6IDEwLjUsIGZvbnRXZWlnaHQ6IDYwMCxcbiAgICAgIGR5OiAxNiwgdGV4dEFuY2hvcjogXCJtaWRkbGVcIixcbiAgICAgIHN0cm9rZTogXCJ3aGl0ZVwiLCBzdHJva2VXaWR0aDogMywgcGFpbnRPcmRlcjogXCJzdHJva2VcIlxuICAgIH0pLFxuICAgIC8vIFRoZSBkcmFnZ2VkIHBhdGllbnQgKGZvY2FsIHJlZCBkb3QpIG9uIHRoZSBjdXJ2ZS5cbiAgICBQbG90LmRvdChbeyB4OiBiY21lX3hWaXNpdHMsIHA6IGJjbWVfcEhlcmUgfV0sIHtcbiAgICAgIHg6IFwieFwiLCB5OiBcInBcIiwgZmlsbDogYmNtZV9wYWwuZm9jYWwsIHI6IDZcbiAgICB9KSxcbiAgICBQbG90LnRleHQoW3sgeDogYmNtZV94VmlzaXRzLCBwOiBiY21lX3BIZXJlIH1dLCB7XG4gICAgICB4OiBcInhcIiwgeTogXCJwXCIsXG4gICAgICB0ZXh0OiBkID0+IGBzbG9wZSA9ICR7YmNtZV9tZUhlcmUudG9GaXhlZCgzKX1gLFxuICAgICAgZmlsbDogYmNtZV9wYWwuZm9jYWwsIGZvbnRTaXplOiAxMiwgZm9udFdlaWdodDogNzAwLFxuICAgICAgZHk6IC0xNCwgdGV4dEFuY2hvcjogXCJtaWRkbGVcIixcbiAgICAgIHN0cm9rZTogXCJ3aGl0ZVwiLCBzdHJva2VXaWR0aDogMywgcGFpbnRPcmRlcjogXCJzdHJva2VcIlxuICAgIH0pXG4gIF1cbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTE3IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiLy8gTGl2ZSByZWFkb3V0IHR5aW5nIHRoZSBwaWN0dXJlIHRvIHRoZSBudW1iZXJzLiBJbnNpZGUgYW4gb2pzIGh0bWxgYCBjZWxsIHNvIHRoZVxuLy8gcmVhY3RpdmUgdmFsdWVzIGludGVycG9sYXRlIChtYXJrZG93biAkey4uLn0gd291bGQgcmVuZGVyIGxpdGVyYWxseSkuXG57XG4gIGNvbnN0IHRpbGUgPSAobGFiZWwsIHZhbHVlLCBjb2xvciwgc3ViKSA9PiBodG1sYDxkaXYgc3R5bGU9XCJcbiAgICAgIGZsZXg6IDEgMSAwOyBtaW4td2lkdGg6IDcuNXJlbTsgdGV4dC1hbGlnbjogY2VudGVyO1xuICAgICAgcGFkZGluZzogMC41NXJlbSAwLjRyZW07IGJvcmRlci1yYWRpdXM6IDAuNHJlbTtcbiAgICAgIGJhY2tncm91bmQ6ICR7YmNtZV9wYWwuZmlsbH07IGJvcmRlcjogMXB4IHNvbGlkICR7YmNtZV9wYWwuaGFpcn07XCI+XG4gICAgPGRpdiBzdHlsZT1cImZvbnQtZmFtaWx5OidJbnRlcicsc3lzdGVtLXVpLHNhbnMtc2VyaWY7IGZvbnQtc2l6ZTowLjY0cmVtO1xuICAgICAgICBmb250LXdlaWdodDo3MDA7IHRleHQtdHJhbnNmb3JtOnVwcGVyY2FzZTsgbGV0dGVyLXNwYWNpbmc6MC4wNWVtO1xuICAgICAgICBjb2xvcjoke2JjbWVfcGFsLm11dGVkfTtcIj4ke2xhYmVsfTwvZGl2PlxuICAgIDxkaXYgc3R5bGU9XCJmb250LWZhbWlseTonSmV0QnJhaW5zIE1vbm8nLG1vbm9zcGFjZTsgZm9udC1zaXplOjEuMTJyZW07XG4gICAgICAgIGZvbnQtd2VpZ2h0OjcwMDsgY29sb3I6JHtjb2xvcn07XCI+JHt2YWx1ZX08L2Rpdj5cbiAgICA8ZGl2IHN0eWxlPVwiZm9udC1mYW1pbHk6J0ludGVyJyxzeXN0ZW0tdWksc2Fucy1zZXJpZjsgZm9udC1zaXplOjAuNjJyZW07XG4gICAgICAgIGNvbG9yOiR7YmNtZV9wYWwubXV0ZWR9OyBtYXJnaW4tdG9wOjAuMXJlbTtcIj4ke3N1Yn08L2Rpdj5cbiAgPC9kaXY+YDtcbiAgcmV0dXJuIGh0bWxgPGRpdiBzdHlsZT1cImRpc3BsYXk6ZmxleDsgZmxleC13cmFwOndyYXA7IGdhcDowLjVyZW07XG4gICAgICBtYXJnaW4tdG9wOjAuNzVyZW07XCI+XG4gICAgJHt0aWxlKFwiTUUgYXQgeW91ciBwYXRpZW50XCIsIFwiK1wiICsgYmNtZV9tZUhlcmUudG9GaXhlZCgzKSwgYmNtZV9wYWwuZm9jYWwsXG4gICAgICAgIFwizpRwcm9iIHBlciArMSB2aXNpdCwgaGVyZVwiKX1cbiAgICAke3RpbGUoXCJQIGhlcmVcIiwgYmNtZV9wSGVyZS50b0ZpeGVkKDMpLCBiY21lX3BhbC5pbmssIFwiY3VycmVudCBwcm9iYWJpbGl0eVwiKX1cbiAgICAke3RpbGUoXCJBTUVcIiwgXCIrXCIgKyBiY21lX0FNRS50b0ZpeGVkKDMpLCBiY21lX3BhbC5nb29kLCBcImF2ZXJhZ2VkIG92ZXIgcGF0aWVudHNcIil9XG4gICAgJHt0aWxlKFwiTUVNXCIsIFwiK1wiICsgYmNtZV9NRU0udG9GaXhlZCgzKSwgYmNtZV9wYWwuc2xhdGUsIFwiYXQgdGhlIG1lYW4gcGF0aWVudFwiKX1cbiAgPC9kaXY+YDtcbn1cbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldFF1aWV0Iiwic291cmNlIjoic2hpbnlJbnB1dCgnYmNtZV94VmlzaXRzJykifV19
+</script>
+<script type="module">
+if (window.location.protocol === "file:") { alert("The OJS runtime does not work with file:// URLs. Please use a web server to view this document."); }
+window._ojs.paths.runtimeToDoc = "../../content/16-discrete-choice";
+window._ojs.paths.runtimeToRoot = "../..";
+window._ojs.paths.docToRoot = "../..";
+window._ojs.selfContained = false;
+window._ojs.runtime.interpretFromScriptTags();
+</script>
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../content/16-discrete-choice/binary-outcomes.html" class="pagination-link" aria-label="Binary Outcomes: LPM, Logit, and Probit">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Binary Outcomes: LPM, Logit, and Probit</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../content/16-discrete-choice/multinomial-ordered.html" class="pagination-link" aria-label="Multinomial and Ordered Choice">
+        <span class="nav-page-text">Multinomial and Ordered Choice</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

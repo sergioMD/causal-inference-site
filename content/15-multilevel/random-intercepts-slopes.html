@@ -1,0 +1,2395 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.27">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Random Intercepts and Random Slopes – Causal Inference – See It, Break It, Prove It</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../content/15-multilevel/variance-components-icc.html" rel="next">
+<link href="../../content/15-multilevel/partial-pooling-shrinkage.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-8b4baf804e461d9b72633f0de59a0cac.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-8177dda9a46fdb7befe495ea115a53e7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script type="module" src="../../site_libs/quarto-ojs/quarto-ojs-runtime.js"></script>
+<link href="../../site_libs/quarto-ojs/quarto-ojs.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Causal Inference – See It, Break It, Prove It</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../../content/index.html" aria-current="page"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/00-intro/index.html"> 
+<span class="menu-text">Start Learning</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/glossary.html"> 
+<span class="menu-text">Glossary</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/your-username/causal-inference-site"> <i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/15-multilevel/index.html">Multilevel &amp; Hierarchical Models</a></li><li class="breadcrumb-item"><a href="../../content/15-multilevel/random-intercepts-slopes.html">Random Intercepts and Random Slopes</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Home</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Causal Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">0. Introduction</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/00-intro/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">1. Fundamental Problem</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Fundamental Problem of Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/potential-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Potential Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/selection-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/randomization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">2. DAGs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Directed Acyclic Graphs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">DAG Basics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/d-separation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">d-Separation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/good-bad-controls.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Good and Bad Controls</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">3. Statistical Foundations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Statistical Foundations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/distributions-spread.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributions and Spread</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/hypothesis-testing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hypothesis Testing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/confidence-intervals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Confidence Intervals</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/reading-output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading Regression Output</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">4. Regression</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/ols-mechanics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLS Mechanics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/frisch-waugh-lovell.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Frisch-Waugh-Lovell</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/omitted-variable-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Omitted Variable Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/interactions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interactions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/functional-form.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Functional Form</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">5. Panel Data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/panel-structure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Structure</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/fixed-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/practical-issues.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Issues</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">6. Diff-in-Differences</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/classic-2x2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic 2x2 Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/regression-did.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression DiD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/parallel-trends.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel Trends</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/staggered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Staggered Adoption</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/modern-estimators.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Estimators</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">7. Instrumental Variables</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/endogeneity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Endogeneity Problem</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/two-stage-least-squares.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Two-Stage Least Squares</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/relevance-exclusion.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Relevance and Exclusion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/weak-instruments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weak Instruments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/late.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LATE and Compliers</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">8. Regression Discontinuity</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/sharp-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sharp Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/estimation-bandwidth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Estimation and Bandwidth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/fuzzy-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fuzzy Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/validity-tests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Validity and Falsification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/interpretation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpretation and External Validity</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true">
+ <span class="menu-text">9. Matching &amp; Propensity Scores</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching &amp; Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/selection-on-observables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection on Observables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/matching-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/propensity-scores.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/weighting-ipw.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weighting and Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/overlap-diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overlap and Balance Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true">
+ <span class="menu-text">10. Synthetic Control</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Synthetic Control Method</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference for Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and Practical Issues</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/case-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: A Swedish Regional Reform</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true">
+ <span class="menu-text">Part II · The Econometrician’s Toolkit</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood: The Likelihood Principle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/properties-asymptotics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Properties and Asymptotics of MLE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/method-of-moments-gmm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Method of Moments and GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Classical Trinity: LR, Wald, and LM Tests</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/the-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Bootstrap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/randomization-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/cluster-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustered and Wild Bootstrap</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-16" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/ovb-sensitivity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity to Omitted Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/rosenbaum-bounds.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rosenbaum Bounds</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/partial-identification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Identification and Bounds</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-17" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/binary-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary Outcomes: LPM, Logit, and Probit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/marginal-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/multinomial-ordered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multinomial and Ordered Choice</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false">
+ <span class="menu-text">Count Data</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-18" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Count Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/poisson-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Poisson Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/overdispersion-negbin.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overdispersion and the Negative Binomial</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/zero-inflation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Excess Zeros: Hurdle and Zero-Inflated Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-19" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/censoring-truncation-tobit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation, and the Tobit Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/heckman-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sample Selection: The Heckman Model</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-20" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/survival-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival Analysis: Hazards and the Kaplan-Meier Curve</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/cox-proportional-hazards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Cox Proportional Hazards Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/parametric-competing-risks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parametric Duration and Competing Risks</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false">
+ <span class="menu-text">Random Effects</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-21" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/random-effects-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Random Effects Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/fe-vs-re.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed versus Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/correlated-re-mundlak.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Correlated Random Effects: The Mundlak Device</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="true">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-22" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/partial-pooling-shrinkage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Pooling and Shrinkage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/random-intercepts-slopes.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Random Intercepts and Random Slopes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/variance-components-icc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Variance Components and the ICC</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/growth-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Growth Curve Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-23" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/quantile-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/distributional-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributional Treatment Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/decompositions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decompositions: Oaxaca-Blinder and Beyond</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false">
+ <span class="menu-text">Time Series Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-24" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Time Series Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/stationarity-arima.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stationarity and ARIMA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/unit-roots-cointegration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unit Roots and Cointegration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/var-impulse-response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VAR and Impulse Responses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/volatility-garch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Volatility: ARCH and GARCH</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-25" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-density.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel Density Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-local-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel and Local Polynomial Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/series-splines.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Series and Spline Methods</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-26" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/regularization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularization: Ridge, LASSO, and Elastic Net</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/trees-forests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trees, Forests, and Boosting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/double-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Double and Debiased Machine Learning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/causal-forests-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Heterogeneous Effects and Policy Learning</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-27" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayes-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Inference: Priors and Posteriors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/mcmc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCMC: Sampling the Posterior</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayesian-regression-hierarchical.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Regression and Hierarchical Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-28" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/glossary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glossary</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#one-slope-for-everyone-or-one-per-region" id="toc-one-slope-for-everyone-or-one-per-region" class="nav-link active" data-scroll-target="#one-slope-for-everyone-or-one-per-region">One Slope for Everyone, or One per Region?</a></li>
+  <li><a href="#the-varying-intercept-model" id="toc-the-varying-intercept-model" class="nav-link" data-scroll-target="#the-varying-intercept-model">The Varying-Intercept Model</a></li>
+  <li><a href="#letting-the-slope-vary-too" id="toc-letting-the-slope-vary-too" class="nav-link" data-scroll-target="#letting-the-slope-vary-too">Letting the Slope Vary Too</a>
+  <ul class="collapse">
+  <li><a href="#how-to-read-the-fan-plot" id="toc-how-to-read-the-fan-plot" class="nav-link" data-scroll-target="#how-to-read-the-fan-plot">How to Read the Fan Plot</a></li>
+  </ul></li>
+  <li><a href="#partial-pooling-where-the-group-lines-come-from" id="toc-partial-pooling-where-the-group-lines-come-from" class="nav-link" data-scroll-target="#partial-pooling-where-the-group-lines-come-from">Partial Pooling: Where the Group Lines Come From</a></li>
+  <li><a href="#when-do-you-need-a-random-slope" id="toc-when-do-you-need-a-random-slope" class="nav-link" data-scroll-target="#when-do-you-need-a-random-slope">When Do You Need a Random Slope?</a></li>
+  <li><a href="#fitting-the-mixed-model" id="toc-fitting-the-mixed-model" class="nav-link" data-scroll-target="#fitting-the-mixed-model">Fitting the Mixed Model</a></li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  <li><a href="#what-comes-next" id="toc-what-comes-next" class="nav-link" data-scroll-target="#what-comes-next">What Comes Next</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/15-multilevel/index.html">Multilevel &amp; Hierarchical Models</a></li><li class="breadcrumb-item"><a href="../../content/15-multilevel/random-intercepts-slopes.html">Random Intercepts and Random Slopes</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Random Intercepts and Random Slopes</h1>
+<p class="subtitle lead">Letting relationships vary across groups</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="learning-objectives">
+<p><strong>In this section, you will learn to</strong></p>
+<ul>
+<li>Write the varying-intercept model <span class="math inline">y_{ij} = (\beta_0 + b_{0j}) + \beta_1 x_{ij} + \varepsilon_{ij}</span> and read its fixed part (the population-average line) against its random part (the group deviations)</li>
+<li>Extend it to a varying-slope model in which both the intercept and the slope of the staffing–outcome relationship vary across regioner, governed by a <span class="math inline">2\times2</span> random-effects covariance matrix</li>
+<li>Explain why group-specific lines are <em>partially pooled</em> toward the population line, and how the amount of pooling depends on the variance components and the group’s sample size</li>
+<li>Decide when a random slope is needed — when the relationship itself, not just the level, differs across groups</li>
+<li>Fit the model in R with <code>lmer(y ~ x + (x | group))</code> and in Python with <code>statsmodels</code> <code>MixedLM</code>, and interpret the variance–covariance estimates it returns</li>
+</ul>
+</div>
+<section id="one-slope-for-everyone-or-one-per-region" class="level2">
+<h2 class="anchored" data-anchor-id="one-slope-for-everyone-or-one-per-region">One Slope for Everyone, or One per Region?</h2>
+<p>Sweden’s 21 <em>regioner</em> (regions) each run a network of <em>vårdcentraler</em> (primary care centers), and the staffing of those centers varies enormously — a remote <em>vårdcentral</em> in Norrbotten may have one <em>distriktssköterska</em> (district nurse) per 1,400 listed patients, while an urban center in Stockholm has one per 700. A natural policy question is whether richer nurse staffing translates into better diabetes control, measured as the share of a center’s Type 2 diabetes patients whose HbA1c sits above the control threshold (lower is better).</p>
+<p>The crude approach pools every <em>vårdcentral</em> in the country into one scatterplot and fits a single line: one intercept, one slope. This <strong>complete-pooling</strong> model assumes the staffing–outcome relationship is <em>identical</em> in Norrbotten and Stockholm. The opposite extreme fits a <em>separate</em> regression inside each region — <strong>no pooling</strong> — and treats the 21 slopes as 21 unrelated numbers, even though a region with only a handful of centers gives a wildly unstable estimate.</p>
+<p>The previous page, <a href="../../content/15-multilevel/partial-pooling-shrinkage.html">Partial Pooling and Shrinkage</a>, showed that the honest middle ground is <strong>partial pooling</strong>: borrow strength across regions, pulling each region’s estimate toward the national average by an amount that reflects how noisy that region’s own data are. This page builds the engine that <em>does</em> the partial pooling for both the <strong>level</strong> of the relationship (the intercept) and its <strong>steepness</strong> (the slope). That engine is the <strong>linear mixed model</strong> with random intercepts and random slopes.</p>
+<div class="glass-card glass-card--insight">
+<p>A mixed model splits every group’s regression line into two pieces: a <strong>fixed part</strong> shared by all groups (the population-average line) and a <strong>random part</strong> that lets each group deviate from it. The deviations are not free parameters — they are draws from a distribution whose variance the model estimates. That single act of treating the deviations as draws is what produces partial pooling automatically.</p>
+</div>
+</section>
+<section id="the-varying-intercept-model" class="level2">
+<h2 class="anchored" data-anchor-id="the-varying-intercept-model">The Varying-Intercept Model</h2>
+<p>Index <em>vårdcentral</em> <span class="math inline">i</span> within region <span class="math inline">j</span>. Let <span class="math inline">y_{ij}</span> be the center’s poor-control share (in percentage points) and <span class="math inline">x_{ij}</span> its nurse staffing (nurses per 1,000 listed patients, centered at the national mean so <span class="math inline">x=0</span> is an average-staffed center). The <strong>varying-intercept</strong> model is</p>
+<p><span class="math display">
+y_{ij} = (\beta_0 + b_{0j}) + \beta_1 x_{ij} + \varepsilon_{ij}, \qquad
+b_{0j} \sim \mathcal{N}(0,\,\tau_0^2), \quad
+\varepsilon_{ij} \sim \mathcal{N}(0,\,\sigma^2).
+</span></p>
+<p><strong>Read the mean structure aloud</strong>: “Region <span class="math inline">j</span>’s line has the <em>same</em> slope <span class="math inline">\beta_1</span> as every other region, but its intercept is the population intercept <span class="math inline">\beta_0</span> shifted up or down by a region-specific bump <span class="math inline">b_{0j}</span>.” The bumps <span class="math inline">b_{0j}</span> are not estimated one by one as free parameters; they are assumed to be <strong>draws from a single normal distribution</strong> centered at zero with variance <span class="math inline">\tau_0^2</span>. A region with a strong baseline care system draws a negative <span class="math inline">b_{0j}</span> (lower poor-control share at average staffing); a struggling region draws a positive one.</p>
+<p>This produces a fan of <strong>parallel lines</strong> — all sharing slope <span class="math inline">\beta_1</span>, vertically offset by their <span class="math inline">b_{0j}</span>. The quantity <span class="math inline">\tau_0</span> controls how widely the fan spreads: <span class="math inline">\tau_0 = 0</span> collapses every region onto the single population line (complete pooling), while a large <span class="math inline">\tau_0</span> lets the regions sit far apart.</p>
+<div class="glass-card glass-card--definition">
+<p>The model has two kinds of parameters, and keeping them straight is the whole game:</p>
+<ul>
+<li><strong>Fixed effects</strong> <span class="math inline">(\beta_0, \beta_1)</span> — the <strong>population-average</strong> intercept and slope. These describe the <em>average</em> <em>vårdcentral</em> in the <em>average</em> region and are the quantities a national policymaker reports.</li>
+<li><strong>Variance components</strong> <span class="math inline">(\tau_0^2, \sigma^2)</span> — the spread of the <em>between-region</em> intercept deviations and the spread of the <em>within-region</em> residuals. These describe how much regions differ and how noisy individual centers are.</li>
+</ul>
+<p>The region-specific bumps <span class="math inline">b_{0j}</span> are <strong>predicted</strong>, not estimated as fixed parameters — they are the <em>best linear unbiased predictors</em> (BLUPs), and they are what get partially pooled.</p>
+</div>
+</section>
+<section id="letting-the-slope-vary-too" class="level2">
+<h2 class="anchored" data-anchor-id="letting-the-slope-vary-too">Letting the Slope Vary Too</h2>
+<p>Parallel lines assume the <em>return to staffing</em> is the same everywhere: one extra nurse per 1,000 patients buys the same improvement in Norrbotten as in Stockholm. That is often false. In a sparsely populated region, an extra nurse may cover enormous distances and move the needle little; in a dense urban region the same nurse may run many more diabetes follow-ups. When the <strong>relationship itself</strong> varies across groups — not merely its level — we need a <strong>random slope</strong>.</p>
+<p><span class="math display">
+y_{ij} = (\beta_0 + b_{0j}) + (\beta_1 + b_{1j})\,x_{ij} + \varepsilon_{ij}.
+</span></p>
+<p><strong>Read this aloud</strong>: “Region <span class="math inline">j</span>’s line has both its own intercept <span class="math inline">(\beta_0 + b_{0j})</span> <em>and</em> its own slope <span class="math inline">(\beta_1 + b_{1j})</span>.” Now the region deviations come in <em>pairs</em> — a level shift <span class="math inline">b_{0j}</span> and a slope shift <span class="math inline">b_{1j}</span> — and these two are generally correlated. A region with an unusually high intercept (poor baseline control) might also have an unusually steep slope (staffing helps it more), or the reverse. We capture this with a <strong>bivariate normal</strong> distribution and a <span class="math inline">2\times2</span> covariance matrix:</p>
+<p><span class="math display">
+\begin{pmatrix} b_{0j} \\ b_{1j} \end{pmatrix}
+\sim \mathcal{N}\!\left(
+\begin{pmatrix} 0 \\ 0 \end{pmatrix},\;
+\boldsymbol{\Sigma}_b
+\right),
+\qquad
+\boldsymbol{\Sigma}_b =
+\begin{pmatrix}
+\tau_0^2 &amp; \rho\,\tau_0\tau_1 \\[2pt]
+\rho\,\tau_0\tau_1 &amp; \tau_1^2
+\end{pmatrix}.
+</span></p>
+<p><strong>Read the matrix aloud</strong>: “The intercept deviations have variance <span class="math inline">\tau_0^2</span>, the slope deviations have variance <span class="math inline">\tau_1^2</span>, and the off-diagonal <span class="math inline">\rho\,\tau_0\tau_1</span> is their covariance — so <span class="math inline">\rho</span> is the correlation between a region’s level and its steepness.” When <span class="math inline">\tau_1 = 0</span> we are back to parallel lines; as <span class="math inline">\tau_1</span> grows, the region lines <em>fan out</em>, crossing one another, and the sign of <span class="math inline">\rho</span> decides whether high-intercept regions tilt up or down.</p>
+<p>The interactive below lets you grow <span class="math inline">\tau_1</span> from zero and watch the parallel fan turn into a crossing fan, all while the fixed (population-average) line stays put.</p>
+<section id="from-parallel-lines-to-a-crossing-fan" class="level4 interactive-container">
+<h4 class="anchored" data-anchor-id="from-parallel-lines-to-a-crossing-fan">From Parallel Lines to a Crossing Fan</h4>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb1" data-startfrom="86" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 85;"><span id="cb1-86"><a href="#cb1-86" aria-hidden="true" tabindex="-1"></a><span class="co">// Concise "Start here" prompt above the controls (the full tour is below).</span></span>
+<span id="cb1-87"><a href="#cb1-87" aria-hidden="true" tabindex="-1"></a><span class="fu">html</span><span class="vs">`&lt;p style="</span></span>
+<span id="cb1-88"><a href="#cb1-88" aria-hidden="true" tabindex="-1"></a><span class="vs">    font-family: Inter, sans-serif;</span></span>
+<span id="cb1-89"><a href="#cb1-89" aria-hidden="true" tabindex="-1"></a><span class="vs">    font-size: 0.85rem;</span></span>
+<span id="cb1-90"><a href="#cb1-90" aria-hidden="true" tabindex="-1"></a><span class="vs">    color: </span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">axis</span><span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb1-91"><a href="#cb1-91" aria-hidden="true" tabindex="-1"></a><span class="vs">    background: </span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">fill</span><span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb1-92"><a href="#cb1-92" aria-hidden="true" tabindex="-1"></a><span class="vs">    border-left: 3px solid </span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">fixed</span><span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb1-93"><a href="#cb1-93" aria-hidden="true" tabindex="-1"></a><span class="vs">    padding: 0.5rem 0.75rem;</span></span>
+<span id="cb1-94"><a href="#cb1-94" aria-hidden="true" tabindex="-1"></a><span class="vs">    border-radius: 0 0.35rem 0.35rem 0;</span></span>
+<span id="cb1-95"><a href="#cb1-95" aria-hidden="true" tabindex="-1"></a><span class="vs">    margin: 0 0 0.75rem;"&gt;</span></span>
+<span id="cb1-96"><a href="#cb1-96" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;strong&gt;Start here:&lt;/strong&gt; leave the model on &lt;em&gt;Random intercepts only&lt;/em&gt;</span></span>
+<span id="cb1-97"><a href="#cb1-97" aria-hidden="true" tabindex="-1"></a><span class="vs">  and watch the eight region lines run parallel. Then switch to</span></span>
+<span id="cb1-98"><a href="#cb1-98" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;em&gt;+ random slopes&lt;/em&gt; and drag &lt;em&gt;Slope SD&lt;/em&gt; up to make the fan spread.</span></span>
+<span id="cb1-99"><a href="#cb1-99" aria-hidden="true" tabindex="-1"></a><span class="vs">  The thick red line never moves &amp;mdash; that is the population-average fit.</span></span>
+<span id="cb1-100"><a href="#cb1-100" aria-hidden="true" tabindex="-1"></a><span class="vs">&lt;/p&gt;`</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-1" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb2" data-startfrom="106" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 105;"><span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>viewof mlris_model <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">radio</span>(</span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>  [<span class="st">"Random intercepts only"</span><span class="op">,</span> <span class="st">"Random intercepts + slopes"</span>]<span class="op">,</span></span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>  { <span class="dt">label</span><span class="op">:</span> <span class="st">"Model"</span><span class="op">,</span> <span class="dt">value</span><span class="op">:</span> <span class="st">"Random intercepts only"</span> }</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb3" data-startfrom="115" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 114;"><span id="cb3-115"><a href="#cb3-115" aria-hidden="true" tabindex="-1"></a>viewof mlris_tau0 <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">0</span><span class="op">,</span> <span class="dv">6</span>]<span class="op">,</span> {</span>
+<span id="cb3-116"><a href="#cb3-116" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="dv">3</span><span class="op">,</span></span>
+<span id="cb3-117"><a href="#cb3-117" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.25</span><span class="op">,</span></span>
+<span id="cb3-118"><a href="#cb3-118" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Intercept SD (τ₀): how far region levels spread"</span></span>
+<span id="cb3-119"><a href="#cb3-119" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb4" data-startfrom="125" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 124;"><span id="cb4-125"><a href="#cb4-125" aria-hidden="true" tabindex="-1"></a>viewof mlris_tau1 <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">0</span><span class="op">,</span> <span class="dv">5</span>]<span class="op">,</span> {</span>
+<span id="cb4-126"><a href="#cb4-126" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span></span>
+<span id="cb4-127"><a href="#cb4-127" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.25</span><span class="op">,</span></span>
+<span id="cb4-128"><a href="#cb4-128" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Slope SD (τ₁): how much the staffing return varies"</span></span>
+<span id="cb4-129"><a href="#cb4-129" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb5" data-startfrom="135" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 134;"><span id="cb5-135"><a href="#cb5-135" aria-hidden="true" tabindex="-1"></a>viewof mlris_rho <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="op">-</span><span class="fl">0.9</span><span class="op">,</span> <span class="fl">0.9</span>]<span class="op">,</span> {</span>
+<span id="cb5-136"><a href="#cb5-136" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="op">-</span><span class="fl">0.4</span><span class="op">,</span></span>
+<span id="cb5-137"><a href="#cb5-137" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.1</span><span class="op">,</span></span>
+<span id="cb5-138"><a href="#cb5-138" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Intercept–slope correlation (ρ)"</span></span>
+<span id="cb5-139"><a href="#cb5-139" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-5" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb6" data-startfrom="145" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 144;"><span id="cb6-145"><a href="#cb6-145" aria-hidden="true" tabindex="-1"></a>viewof mlris_showPop <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">toggle</span>({</span>
+<span id="cb6-146"><a href="#cb6-146" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Show population-average line (fixed part)"</span><span class="op">,</span></span>
+<span id="cb6-147"><a href="#cb6-147" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="kw">true</span></span>
+<span id="cb6-148"><a href="#cb6-148" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-6" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb7" data-startfrom="154" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 153;"><span id="cb7-154"><a href="#cb7-154" aria-hidden="true" tabindex="-1"></a>viewof mlris_draw <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">button</span>(<span class="st">"Draw new regions"</span><span class="op">,</span> { <span class="dt">value</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">reduce</span><span class="op">:</span> v <span class="kw">=&gt;</span> v <span class="op">+</span> <span class="dv">1</span> })</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-7" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb8" data-startfrom="161" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 160;"><span id="cb8-161"><a href="#cb8-161" aria-hidden="true" tabindex="-1"></a><span class="co">// ── Uppsala-academic palette shared across this page's interactives. ──</span></span>
+<span id="cb8-162"><a href="#cb8-162" aria-hidden="true" tabindex="-1"></a>mlris_pal <span class="op">=</span> ({</span>
+<span id="cb8-163"><a href="#cb8-163" aria-hidden="true" tabindex="-1"></a>  <span class="dt">fixed</span><span class="op">:</span>  <span class="st">"#990000"</span><span class="op">,</span>   <span class="co">// population-average / fixed line (Uppsala red)</span></span>
+<span id="cb8-164"><a href="#cb8-164" aria-hidden="true" tabindex="-1"></a>  <span class="dt">group</span><span class="op">:</span>  <span class="st">"#3d5a6c"</span><span class="op">,</span>   <span class="co">// group (region) lines (slate)</span></span>
+<span id="cb8-165"><a href="#cb8-165" aria-hidden="true" tabindex="-1"></a>  <span class="dt">good</span><span class="op">:</span>    <span class="st">"#2e6f40"</span><span class="op">,</span>  <span class="co">// success / on-target (green)</span></span>
+<span id="cb8-166"><a href="#cb8-166" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ochre</span><span class="op">:</span>   <span class="st">"#9c7a33"</span><span class="op">,</span>  <span class="co">// highlight / true value / shrinkage path (ochre)</span></span>
+<span id="cb8-167"><a href="#cb8-167" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ink</span><span class="op">:</span>     <span class="st">"#1c1c1a"</span><span class="op">,</span>  <span class="co">// ink / reference lines</span></span>
+<span id="cb8-168"><a href="#cb8-168" aria-hidden="true" tabindex="-1"></a>  <span class="dt">axis</span><span class="op">:</span>    <span class="st">"#555555"</span><span class="op">,</span>  <span class="co">// axis text</span></span>
+<span id="cb8-169"><a href="#cb8-169" aria-hidden="true" tabindex="-1"></a>  <span class="dt">hair</span><span class="op">:</span>    <span class="st">"#e6e3db"</span><span class="op">,</span>  <span class="co">// gridlines / hairlines</span></span>
+<span id="cb8-170"><a href="#cb8-170" aria-hidden="true" tabindex="-1"></a>  <span class="dt">muted</span><span class="op">:</span>   <span class="st">"#79766e"</span><span class="op">,</span>  <span class="co">// muted ink / inactive</span></span>
+<span id="cb8-171"><a href="#cb8-171" aria-hidden="true" tabindex="-1"></a>  <span class="dt">fill</span><span class="op">:</span>    <span class="st">"#f6f5f1"</span>   <span class="co">// subtle tile fill</span></span>
+<span id="cb8-172"><a href="#cb8-172" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-8" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb9" data-startfrom="185" data-source-offset="-309"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 184;"><span id="cb9-185"><a href="#cb9-185" aria-hidden="true" tabindex="-1"></a>mlris_beta0 <span class="op">=</span> <span class="dv">22</span>      <span class="co">// poor-control share (%) at average staffing</span></span>
+<span id="cb9-186"><a href="#cb9-186" aria-hidden="true" tabindex="-1"></a>mlris_beta1 <span class="op">=</span> <span class="op">-</span><span class="fl">3.2</span>    <span class="co">// each +1 nurse/1000 lowers poor-control share by 3.2 pts</span></span>
+<span id="cb9-187"><a href="#cb9-187" aria-hidden="true" tabindex="-1"></a>mlris_xDom <span class="op">=</span> [<span class="op">-</span><span class="dv">3</span><span class="op">,</span> <span class="dv">3</span>]  <span class="co">// centered staffing range shown on the x-axis</span></span>
+<span id="cb9-188"><a href="#cb9-188" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-189"><a href="#cb9-189" aria-hidden="true" tabindex="-1"></a><span class="co">// Number of regions drawn and centers per region (kept small so lines read).</span></span>
+<span id="cb9-190"><a href="#cb9-190" aria-hidden="true" tabindex="-1"></a>mlris_J <span class="op">=</span> <span class="dv">8</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-9-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-9-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-9-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-9-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb10" data-startfrom="195" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 194;"><span id="cb10-195"><a href="#cb10-195" aria-hidden="true" tabindex="-1"></a><span class="co">// Generate the J region-specific (b0j, b1j) draws from the bivariate normal</span></span>
+<span id="cb10-196"><a href="#cb10-196" aria-hidden="true" tabindex="-1"></a><span class="co">// implied by τ0, τ1, ρ. The Cholesky factor of the 2x2 covariance turns two</span></span>
+<span id="cb10-197"><a href="#cb10-197" aria-hidden="true" tabindex="-1"></a><span class="co">// independent standard-normal draws into a correlated pair (see Math Details).</span></span>
+<span id="cb10-198"><a href="#cb10-198" aria-hidden="true" tabindex="-1"></a><span class="co">// mlris_draw is referenced so the "Draw new regions" button resamples; the</span></span>
+<span id="cb10-199"><a href="#cb10-199" aria-hidden="true" tabindex="-1"></a><span class="co">// model toggle zeroes the slope deviations when slopes are switched off.</span></span>
+<span id="cb10-200"><a href="#cb10-200" aria-hidden="true" tabindex="-1"></a>mlris_regions <span class="op">=</span> {</span>
+<span id="cb10-201"><a href="#cb10-201" aria-hidden="true" tabindex="-1"></a>  mlris_draw<span class="op">;</span>                          <span class="co">// dependency: click → fresh draw</span></span>
+<span id="cb10-202"><a href="#cb10-202" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> useSlopes <span class="op">=</span> mlris_model <span class="op">===</span> <span class="st">"Random intercepts + slopes"</span><span class="op">;</span></span>
+<span id="cb10-203"><a href="#cb10-203" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> t0 <span class="op">=</span> mlris_tau0<span class="op">;</span></span>
+<span id="cb10-204"><a href="#cb10-204" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> t1 <span class="op">=</span> useSlopes <span class="op">?</span> mlris_tau1 <span class="op">:</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb10-205"><a href="#cb10-205" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> rho <span class="op">=</span> useSlopes <span class="op">?</span> mlris_rho <span class="op">:</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb10-206"><a href="#cb10-206" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-207"><a href="#cb10-207" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Cholesky of Σ = [[t0², ρ t0 t1],[ρ t0 t1, t1²]]:</span></span>
+<span id="cb10-208"><a href="#cb10-208" aria-hidden="true" tabindex="-1"></a>  <span class="co">//   L = [[t0, 0],[ρ t1, t1√(1−ρ²)]],  (b0,b1) = L (z0,z1).</span></span>
+<span id="cb10-209"><a href="#cb10-209" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> z <span class="op">=</span> d3<span class="op">.</span><span class="fu">randomNormal</span>(<span class="dv">0</span><span class="op">,</span> <span class="dv">1</span>)<span class="op">;</span></span>
+<span id="cb10-210"><a href="#cb10-210" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> out <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb10-211"><a href="#cb10-211" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (<span class="kw">let</span> j <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> j <span class="op">&lt;</span> mlris_J<span class="op">;</span> j<span class="op">++</span>) {</span>
+<span id="cb10-212"><a href="#cb10-212" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> z0 <span class="op">=</span> <span class="fu">z</span>()<span class="op">,</span> z1 <span class="op">=</span> <span class="fu">z</span>()<span class="op">;</span></span>
+<span id="cb10-213"><a href="#cb10-213" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> b0 <span class="op">=</span> t0 <span class="op">*</span> z0<span class="op">;</span></span>
+<span id="cb10-214"><a href="#cb10-214" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> b1 <span class="op">=</span> rho <span class="op">*</span> t1 <span class="op">*</span> z0 <span class="op">+</span> t1 <span class="op">*</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">sqrt</span>(<span class="dv">1</span> <span class="op">-</span> rho <span class="op">*</span> rho) <span class="op">*</span> z1<span class="op">;</span></span>
+<span id="cb10-215"><a href="#cb10-215" aria-hidden="true" tabindex="-1"></a>    out<span class="op">.</span><span class="fu">push</span>({ <span class="dt">region</span><span class="op">:</span> j <span class="op">+</span> <span class="dv">1</span><span class="op">,</span> b0<span class="op">,</span> b1 })<span class="op">;</span></span>
+<span id="cb10-216"><a href="#cb10-216" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb10-217"><a href="#cb10-217" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> out<span class="op">;</span></span>
+<span id="cb10-218"><a href="#cb10-218" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-10" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb11" data-startfrom="229" data-source-offset="-142"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 228;"><span id="cb11-229"><a href="#cb11-229" aria-hidden="true" tabindex="-1"></a>mlris_lineData <span class="op">=</span> mlris_regions<span class="op">.</span><span class="fu">flatMap</span>(r <span class="kw">=&gt;</span> {</span>
+<span id="cb11-230"><a href="#cb11-230" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> a <span class="op">=</span> mlris_beta0 <span class="op">+</span> r<span class="op">.</span><span class="at">b0</span><span class="op">;</span></span>
+<span id="cb11-231"><a href="#cb11-231" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> s <span class="op">=</span> mlris_beta1 <span class="op">+</span> r<span class="op">.</span><span class="at">b1</span><span class="op">;</span></span>
+<span id="cb11-232"><a href="#cb11-232" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> [</span>
+<span id="cb11-233"><a href="#cb11-233" aria-hidden="true" tabindex="-1"></a>    { <span class="dt">region</span><span class="op">:</span> r<span class="op">.</span><span class="at">region</span><span class="op">,</span> <span class="dt">kind</span><span class="op">:</span> <span class="st">"region"</span><span class="op">,</span> <span class="dt">x</span><span class="op">:</span> mlris_xDom[<span class="dv">0</span>]<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> a <span class="op">+</span> s <span class="op">*</span> mlris_xDom[<span class="dv">0</span>] }<span class="op">,</span></span>
+<span id="cb11-234"><a href="#cb11-234" aria-hidden="true" tabindex="-1"></a>    { <span class="dt">region</span><span class="op">:</span> r<span class="op">.</span><span class="at">region</span><span class="op">,</span> <span class="dt">kind</span><span class="op">:</span> <span class="st">"region"</span><span class="op">,</span> <span class="dt">x</span><span class="op">:</span> mlris_xDom[<span class="dv">1</span>]<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> a <span class="op">+</span> s <span class="op">*</span> mlris_xDom[<span class="dv">1</span>] }</span>
+<span id="cb11-235"><a href="#cb11-235" aria-hidden="true" tabindex="-1"></a>  ]<span class="op">;</span></span>
+<span id="cb11-236"><a href="#cb11-236" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb11-237"><a href="#cb11-237" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-238"><a href="#cb11-238" aria-hidden="true" tabindex="-1"></a>mlris_popData <span class="op">=</span> [</span>
+<span id="cb11-239"><a href="#cb11-239" aria-hidden="true" tabindex="-1"></a>  { <span class="dt">x</span><span class="op">:</span> mlris_xDom[<span class="dv">0</span>]<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> mlris_beta0 <span class="op">+</span> mlris_beta1 <span class="op">*</span> mlris_xDom[<span class="dv">0</span>] }<span class="op">,</span></span>
+<span id="cb11-240"><a href="#cb11-240" aria-hidden="true" tabindex="-1"></a>  { <span class="dt">x</span><span class="op">:</span> mlris_xDom[<span class="dv">1</span>]<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> mlris_beta0 <span class="op">+</span> mlris_beta1 <span class="op">*</span> mlris_xDom[<span class="dv">1</span>] }</span>
+<span id="cb11-241"><a href="#cb11-241" aria-hidden="true" tabindex="-1"></a>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-11-1" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell-output cell-output-display hidden">
+<div>
+<div id="ojs-cell-11-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb12" data-startfrom="245" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 244;"><span id="cb12-245"><a href="#cb12-245" aria-hidden="true" tabindex="-1"></a>Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb12-246"><a href="#cb12-246" aria-hidden="true" tabindex="-1"></a>  <span class="dt">width</span><span class="op">:</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">min</span>(<span class="dv">680</span><span class="op">,</span> width)<span class="op">,</span></span>
+<span id="cb12-247"><a href="#cb12-247" aria-hidden="true" tabindex="-1"></a>  <span class="dt">height</span><span class="op">:</span> <span class="dv">360</span><span class="op">,</span></span>
+<span id="cb12-248"><a href="#cb12-248" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">58</span><span class="op">,</span></span>
+<span id="cb12-249"><a href="#cb12-249" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">46</span><span class="op">,</span></span>
+<span id="cb12-250"><a href="#cb12-250" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginRight</span><span class="op">:</span> <span class="dv">40</span><span class="op">,</span></span>
+<span id="cb12-251"><a href="#cb12-251" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginTop</span><span class="op">:</span> <span class="dv">18</span><span class="op">,</span></span>
+<span id="cb12-252"><a href="#cb12-252" aria-hidden="true" tabindex="-1"></a>  <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb12-253"><a href="#cb12-253" aria-hidden="true" tabindex="-1"></a>  <span class="dt">style</span><span class="op">:</span> { <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"Inter, sans-serif"</span> }<span class="op">,</span></span>
+<span id="cb12-254"><a href="#cb12-254" aria-hidden="true" tabindex="-1"></a>  <span class="dt">x</span><span class="op">:</span> {</span>
+<span id="cb12-255"><a href="#cb12-255" aria-hidden="true" tabindex="-1"></a>    <span class="dt">label</span><span class="op">:</span> <span class="st">"Nurse staffing (centered: nurses per 1,000 patients) →"</span><span class="op">,</span></span>
+<span id="cb12-256"><a href="#cb12-256" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> mlris_xDom</span>
+<span id="cb12-257"><a href="#cb12-257" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb12-258"><a href="#cb12-258" aria-hidden="true" tabindex="-1"></a>  <span class="dt">y</span><span class="op">:</span> {</span>
+<span id="cb12-259"><a href="#cb12-259" aria-hidden="true" tabindex="-1"></a>    <span class="dt">label</span><span class="op">:</span> <span class="st">"↑ Poor HbA1c control (% of patients)"</span><span class="op">,</span></span>
+<span id="cb12-260"><a href="#cb12-260" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> [<span class="dv">4</span><span class="op">,</span> <span class="dv">40</span>]</span>
+<span id="cb12-261"><a href="#cb12-261" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb12-262"><a href="#cb12-262" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb12-263"><a href="#cb12-263" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Vertical reference at x = 0 (average staffing): where intercepts live.</span></span>
+<span id="cb12-264"><a href="#cb12-264" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleX</span>([<span class="dv">0</span>]<span class="op">,</span> { <span class="dt">stroke</span><span class="op">:</span> mlris_pal<span class="op">.</span><span class="at">hair</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">1</span> })<span class="op">,</span></span>
+<span id="cb12-265"><a href="#cb12-265" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-266"><a href="#cb12-266" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Region lines (slate, semi-transparent so overlap reads).</span></span>
+<span id="cb12-267"><a href="#cb12-267" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(mlris_lineData<span class="op">,</span> {</span>
+<span id="cb12-268"><a href="#cb12-268" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span> <span class="dt">z</span><span class="op">:</span> <span class="st">"region"</span><span class="op">,</span></span>
+<span id="cb12-269"><a href="#cb12-269" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> mlris_pal<span class="op">.</span><span class="at">group</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">1.6</span><span class="op">,</span> <span class="dt">strokeOpacity</span><span class="op">:</span> <span class="fl">0.7</span></span>
+<span id="cb12-270"><a href="#cb12-270" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb12-271"><a href="#cb12-271" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-272"><a href="#cb12-272" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Small region labels at the right end of each line.</span></span>
+<span id="cb12-273"><a href="#cb12-273" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">text</span>(</span>
+<span id="cb12-274"><a href="#cb12-274" aria-hidden="true" tabindex="-1"></a>      mlris_lineData<span class="op">.</span><span class="fu">filter</span>(d <span class="kw">=&gt;</span> d<span class="op">.</span><span class="at">x</span> <span class="op">===</span> mlris_xDom[<span class="dv">1</span>])<span class="op">,</span></span>
+<span id="cb12-275"><a href="#cb12-275" aria-hidden="true" tabindex="-1"></a>      {</span>
+<span id="cb12-276"><a href="#cb12-276" aria-hidden="true" tabindex="-1"></a>        <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span></span>
+<span id="cb12-277"><a href="#cb12-277" aria-hidden="true" tabindex="-1"></a>        <span class="dt">text</span><span class="op">:</span> d <span class="kw">=&gt;</span> <span class="vs">`R</span><span class="sc">${</span>d<span class="op">.</span><span class="at">region</span><span class="sc">}</span><span class="vs">`</span><span class="op">,</span></span>
+<span id="cb12-278"><a href="#cb12-278" aria-hidden="true" tabindex="-1"></a>        <span class="dt">dx</span><span class="op">:</span> <span class="dv">8</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"start"</span><span class="op">,</span></span>
+<span id="cb12-279"><a href="#cb12-279" aria-hidden="true" tabindex="-1"></a>        <span class="dt">fill</span><span class="op">:</span> mlris_pal<span class="op">.</span><span class="at">group</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">9</span></span>
+<span id="cb12-280"><a href="#cb12-280" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb12-281"><a href="#cb12-281" aria-hidden="true" tabindex="-1"></a>    )<span class="op">,</span></span>
+<span id="cb12-282"><a href="#cb12-282" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-283"><a href="#cb12-283" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Population-average (fixed) line — thick red, drawn last so it sits on top.</span></span>
+<span id="cb12-284"><a href="#cb12-284" aria-hidden="true" tabindex="-1"></a>    mlris_showPop <span class="op">?</span> Plot<span class="op">.</span><span class="fu">line</span>(mlris_popData<span class="op">,</span> {</span>
+<span id="cb12-285"><a href="#cb12-285" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span></span>
+<span id="cb12-286"><a href="#cb12-286" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> mlris_pal<span class="op">.</span><span class="at">fixed</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">3.5</span></span>
+<span id="cb12-287"><a href="#cb12-287" aria-hidden="true" tabindex="-1"></a>    }) <span class="op">:</span> <span class="kw">null</span><span class="op">,</span></span>
+<span id="cb12-288"><a href="#cb12-288" aria-hidden="true" tabindex="-1"></a>    mlris_showPop <span class="op">?</span> Plot<span class="op">.</span><span class="fu">text</span>([mlris_popData[<span class="dv">0</span>]]<span class="op">,</span> {</span>
+<span id="cb12-289"><a href="#cb12-289" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"x"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span></span>
+<span id="cb12-290"><a href="#cb12-290" aria-hidden="true" tabindex="-1"></a>      <span class="dt">text</span><span class="op">:</span> [<span class="st">"Population average"</span>]<span class="op">,</span></span>
+<span id="cb12-291"><a href="#cb12-291" aria-hidden="true" tabindex="-1"></a>      <span class="dt">dx</span><span class="op">:</span> <span class="dv">6</span><span class="op">,</span> <span class="dt">dy</span><span class="op">:</span> <span class="op">-</span><span class="dv">10</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"start"</span><span class="op">,</span></span>
+<span id="cb12-292"><a href="#cb12-292" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fill</span><span class="op">:</span> mlris_pal<span class="op">.</span><span class="at">fixed</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">11</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="st">"bold"</span><span class="op">,</span></span>
+<span id="cb12-293"><a href="#cb12-293" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">3</span><span class="op">,</span> <span class="dt">paintOrder</span><span class="op">:</span> <span class="st">"stroke"</span></span>
+<span id="cb12-294"><a href="#cb12-294" aria-hidden="true" tabindex="-1"></a>    }) <span class="op">:</span> <span class="kw">null</span></span>
+<span id="cb12-295"><a href="#cb12-295" aria-hidden="true" tabindex="-1"></a>  ]</span>
+<span id="cb12-296"><a href="#cb12-296" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-12" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb13" data-startfrom="302" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 301;"><span id="cb13-302"><a href="#cb13-302" aria-hidden="true" tabindex="-1"></a><span class="co">// Live readout of the variance components currently in force, plus the spread</span></span>
+<span id="cb13-303"><a href="#cb13-303" aria-hidden="true" tabindex="-1"></a><span class="co">// of the eight realized region slopes so the reader sees τ1 "bite."</span></span>
+<span id="cb13-304"><a href="#cb13-304" aria-hidden="true" tabindex="-1"></a>{</span>
+<span id="cb13-305"><a href="#cb13-305" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> useSlopes <span class="op">=</span> mlris_model <span class="op">===</span> <span class="st">"Random intercepts + slopes"</span><span class="op">;</span></span>
+<span id="cb13-306"><a href="#cb13-306" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> slopes <span class="op">=</span> mlris_regions<span class="op">.</span><span class="fu">map</span>(r <span class="kw">=&gt;</span> mlris_beta1 <span class="op">+</span> (useSlopes <span class="op">?</span> r<span class="op">.</span><span class="at">b1</span> <span class="op">:</span> <span class="dv">0</span>))<span class="op">;</span></span>
+<span id="cb13-307"><a href="#cb13-307" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> sMin <span class="op">=</span> d3<span class="op">.</span><span class="fu">min</span>(slopes)<span class="op">,</span> sMax <span class="op">=</span> d3<span class="op">.</span><span class="fu">max</span>(slopes)<span class="op">;</span></span>
+<span id="cb13-308"><a href="#cb13-308" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-309"><a href="#cb13-309" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> item <span class="op">=</span> (label<span class="op">,</span> val<span class="op">,</span> color) <span class="kw">=&gt;</span> <span class="fu">html</span><span class="vs">`&lt;div style="</span></span>
+<span id="cb13-310"><a href="#cb13-310" aria-hidden="true" tabindex="-1"></a><span class="vs">      text-align:center; padding:0.5rem 0.25rem; border-radius:0.5rem;</span></span>
+<span id="cb13-311"><a href="#cb13-311" aria-hidden="true" tabindex="-1"></a><span class="vs">      background:</span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">fill</span><span class="sc">}</span><span class="vs">; min-height:3.6rem;"&gt;</span></span>
+<span id="cb13-312"><a href="#cb13-312" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:Inter,sans-serif; font-size:0.68rem; font-weight:700;</span></span>
+<span id="cb13-313"><a href="#cb13-313" aria-hidden="true" tabindex="-1"></a><span class="vs">        text-transform:uppercase; letter-spacing:0.04em; color:</span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">muted</span><span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>label<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb13-314"><a href="#cb13-314" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'JetBrains Mono',monospace; font-size:1.05rem;</span></span>
+<span id="cb13-315"><a href="#cb13-315" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; color:</span><span class="sc">${</span>color<span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>val<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb13-316"><a href="#cb13-316" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb13-317"><a href="#cb13-317" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-318"><a href="#cb13-318" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">html</span><span class="vs">`&lt;div style="</span></span>
+<span id="cb13-319"><a href="#cb13-319" aria-hidden="true" tabindex="-1"></a><span class="vs">      display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr));</span></span>
+<span id="cb13-320"><a href="#cb13-320" aria-hidden="true" tabindex="-1"></a><span class="vs">      gap:0.5rem; margin-top:0.75rem;"&gt;</span></span>
+<span id="cb13-321"><a href="#cb13-321" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">item</span>(<span class="st">"Pop. slope β₁"</span><span class="op">,</span> mlris_beta1<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">1</span>)<span class="op">,</span> mlris_pal<span class="op">.</span><span class="at">fixed</span>)<span class="sc">}</span></span>
+<span id="cb13-322"><a href="#cb13-322" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">item</span>(<span class="st">"τ₀ (intercepts)"</span><span class="op">,</span> mlris_tau0<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">2</span>)<span class="op">,</span> mlris_pal<span class="op">.</span><span class="at">group</span>)<span class="sc">}</span></span>
+<span id="cb13-323"><a href="#cb13-323" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">item</span>(<span class="st">"τ₁ (slopes)"</span><span class="op">,</span> (useSlopes <span class="op">?</span> mlris_tau1 <span class="op">:</span> <span class="dv">0</span>)<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">2</span>)<span class="op">,</span> mlris_pal<span class="op">.</span><span class="at">group</span>)<span class="sc">}</span></span>
+<span id="cb13-324"><a href="#cb13-324" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">item</span>(<span class="st">"Region slope range"</span><span class="op">,</span> <span class="vs">`</span><span class="sc">${</span>sMin<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">1</span>)<span class="sc">}</span><span class="vs"> … </span><span class="sc">${</span>sMax<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">1</span>)<span class="sc">}</span><span class="vs">`</span><span class="op">,</span> mlris_pal<span class="op">.</span><span class="at">ink</span>)<span class="sc">}</span></span>
+<span id="cb13-325"><a href="#cb13-325" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb13-326"><a href="#cb13-326" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-13" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb14" data-startfrom="332" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 331;"><span id="cb14-332"><a href="#cb14-332" aria-hidden="true" tabindex="-1"></a><span class="co">// Micro-caption tying the visual to the parameters.</span></span>
+<span id="cb14-333"><a href="#cb14-333" aria-hidden="true" tabindex="-1"></a><span class="fu">html</span><span class="vs">`&lt;p style="</span></span>
+<span id="cb14-334"><a href="#cb14-334" aria-hidden="true" tabindex="-1"></a><span class="vs">    font-family: Inter, sans-serif;</span></span>
+<span id="cb14-335"><a href="#cb14-335" aria-hidden="true" tabindex="-1"></a><span class="vs">    font-size: 0.78rem;</span></span>
+<span id="cb14-336"><a href="#cb14-336" aria-hidden="true" tabindex="-1"></a><span class="vs">    color: </span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">axis</span><span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb14-337"><a href="#cb14-337" aria-hidden="true" tabindex="-1"></a><span class="vs">    margin: 0.35rem 0 0;</span></span>
+<span id="cb14-338"><a href="#cb14-338" aria-hidden="true" tabindex="-1"></a><span class="vs">    line-height: 1.45;"&gt;</span></span>
+<span id="cb14-339"><a href="#cb14-339" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;span style="color:</span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">fixed</span><span class="sc">}</span><span class="vs">;font-weight:600;"&gt;Red&lt;/span&gt; = fixed</span></span>
+<span id="cb14-340"><a href="#cb14-340" aria-hidden="true" tabindex="-1"></a><span class="vs">  (population-average) line; &lt;span style="color:</span><span class="sc">${</span>mlris_pal<span class="op">.</span><span class="at">group</span><span class="sc">}</span><span class="vs">;font-weight:600;"&gt;slate&lt;/span&gt;</span></span>
+<span id="cb14-341"><a href="#cb14-341" aria-hidden="true" tabindex="-1"></a><span class="vs">  = the eight region lines (partially pooled toward red). With τ₁ = 0 they are</span></span>
+<span id="cb14-342"><a href="#cb14-342" aria-hidden="true" tabindex="-1"></a><span class="vs">  parallel; raise τ₁ and they fan out and cross.</span></span>
+<span id="cb14-343"><a href="#cb14-343" aria-hidden="true" tabindex="-1"></a><span class="vs">&lt;/p&gt;`</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-14" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+</section>
+<section id="how-to-read-the-fan-plot" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-fan-plot">How to Read the Fan Plot</h3>
+<p>Work through the controls in order; each isolates one idea.</p>
+<p><strong>Step 1: See the parallel fan.</strong> With the model on <strong>“Random intercepts only”</strong>, the eight slate region lines are all <em>parallel</em> — they share the population slope <span class="math inline">\beta_1 = -3.2</span> and differ only in height. The thick red line is the population-average fit. Each region line sits above or below it by its own draw <span class="math inline">b_{0j}</span>.</p>
+<p><strong>Step 2: Spread the levels.</strong> Drag <strong>Intercept SD (<span class="math inline">\tau_0</span>)</strong> up and down. At <span class="math inline">\tau_0 = 0</span> all eight lines collapse onto the red line (complete pooling). As <span class="math inline">\tau_0</span> grows, the parallel lines spread vertically — regions disagree about the <em>level</em> of poor control at average staffing, but still agree on the <em>return</em> to staffing.</p>
+<p><strong>Step 3: Turn on random slopes.</strong> Switch the model to <strong>“Random intercepts + slopes.”</strong> The <strong>Slope SD (<span class="math inline">\tau_1</span>)</strong> slider activates. Push it up from zero and the lines stop being parallel: they <em>fan out</em> and begin to cross. Now regions disagree about how steeply staffing helps. Notice the readout: the <strong>Region slope range</strong> widens as <span class="math inline">\tau_1</span> grows, while the population slope <span class="math inline">\beta_1</span> stays fixed at <span class="math inline">-3.2</span>.</p>
+<p><strong>Step 4: Tilt the fan with <span class="math inline">\rho</span>.</strong> Drag the <strong>Intercept–slope correlation (<span class="math inline">\rho</span>)</strong>. With <span class="math inline">\rho &lt; 0</span>, regions with high intercepts (worse baseline control, sitting above the red line near <span class="math inline">x=0</span>) tend to have <em>more negative</em> slopes (steeper improvement) — the lines pivot so the high-and-struggling regions catch up fastest. Flip <span class="math inline">\rho &gt; 0</span> and the pattern reverses: the worst regions also gain <em>least</em> from staffing. The sign of <span class="math inline">\rho</span> is a substantive claim about whether staffing is equalizing or compounding.</p>
+<p><strong>Step 5: Watch what never moves.</strong> Through every change, the red <strong>population-average line</strong> stays exactly where it is (toggle it off and on to confirm). The fixed part answers “what does the <em>average</em> region look like?”; the random part answers “how much do regions <em>differ</em>?” The two are separately estimated and separately interpreted.</p>
+<p><strong>Step 6: Resample.</strong> Click <strong>“Draw new regions”</strong> to draw a fresh set of eight <span class="math inline">(b_{0j}, b_{1j})</span> pairs from the same covariance matrix. The individual lines jump, but their <em>spread</em> is governed by <span class="math inline">\tau_0</span>, <span class="math inline">\tau_1</span>, <span class="math inline">\rho</span> — the quantities the mixed model actually estimates.</p>
+</section>
+</section>
+<section id="partial-pooling-where-the-group-lines-come-from" class="level2">
+<h2 class="anchored" data-anchor-id="partial-pooling-where-the-group-lines-come-from">Partial Pooling: Where the Group Lines Come From</h2>
+<p>In the plot above we <em>drew</em> the region deviations from a known covariance matrix. In a real analysis we do the reverse: we observe noisy data and must <em>infer</em> each region’s line. This is where partial pooling does its work. A region’s predicted line is <strong>not</strong> its own least-squares fit, and it is <strong>not</strong> the population line — it is a precision-weighted compromise between the two.</p>
+<div class="glass-card glass-card--insight">
+<p><strong>Partial pooling in one sentence.</strong> Each region’s predicted deviation is its own data’s estimate, <em>shrunk</em> toward zero (the population line) by a factor that grows with the noise in that region and shrinks with the spread <span class="math inline">\tau</span> between regions.</p>
+<p>For the intercept-only model, the predicted region effect is</p>
+<p><span class="math display">
+\hat{b}_{0j} \;=\; \underbrace{\frac{\tau_0^2}{\tau_0^2 + \sigma^2 / n_j}}_{\text{shrinkage weight } \lambda_j} \;\times\; \big(\bar{y}_j - \hat{\beta}_0 - \hat{\beta}_1 \bar{x}_j\big).
+</span></p>
+<p><strong>Read this aloud</strong>: “Take region <span class="math inline">j</span>’s raw average residual; keep only the fraction <span class="math inline">\lambda_j</span> of it, and discard the rest by pulling that region toward the population line.” A region with many centers (<span class="math inline">n_j</span> large) or large between-region spread (<span class="math inline">\tau_0^2</span> large) has <span class="math inline">\lambda_j \to 1</span> and is barely shrunk; a region with few, noisy centers has <span class="math inline">\lambda_j \to 0</span> and is pulled almost all the way to the national average.</p>
+</div>
+<p>This is exactly the <a href="../../content/15-multilevel/partial-pooling-shrinkage.html">shrinkage</a> you met on the previous page, now applied not to a single mean per group but to a whole <em>line</em> per group. With random slopes, the same logic acts on the pair <span class="math inline">(b_{0j}, b_{1j})</span> jointly through the matrix <span class="math inline">\boldsymbol{\Sigma}_b</span>: regions with little data have both their intercept <em>and</em> their slope dragged toward the population values, so a region with two centers cannot post an absurd slope just because its two points happen to line up steeply. The mixed model regularizes the per-group lines for free.</p>
+<div class="glass-card glass-card--assumption">
+<p><strong>What the random-effects assumptions buy you.</strong> Partial pooling is valid only if the group deviations behave like genuine draws from the assumed distribution. The mixed model assumes (i) <span class="math inline">b_{0j}, b_{1j}</span> are normal with the covariance <span class="math inline">\boldsymbol{\Sigma}_b</span>, (ii) the residuals <span class="math inline">\varepsilon_{ij}</span> are normal with constant variance <span class="math inline">\sigma^2</span>, and crucially (iii) the random effects are <strong>uncorrelated with the regressor <span class="math inline">x_{ij}</span></strong>. Assumption (iii) is the same exogeneity condition that separates random effects from fixed effects: if better-staffed regions also draw systematically better intercepts, the fixed-effect estimate <span class="math inline">\hat\beta_1</span> is biased, and you should compare against a fixed-effects specification before trusting the mixed model.</p>
+</div>
+</section>
+<section id="when-do-you-need-a-random-slope" class="level2">
+<h2 class="anchored" data-anchor-id="when-do-you-need-a-random-slope">When Do You Need a Random Slope?</h2>
+<p>Adding a random slope is not free: it spends parameters (<span class="math inline">\tau_1</span>, <span class="math inline">\rho</span>) and small samples often cannot estimate them, producing a <em>singular fit</em> in which the model collapses <span class="math inline">\tau_1</span> to zero. Include a random slope when:</p>
+<ul>
+<li><strong>Theory says the relationship varies.</strong> If you believe the return to staffing genuinely differs across regions — because geography, patient mix, or organization differs — a random slope encodes that belief and, just as importantly, <em>propagates the extra uncertainty</em> into the standard error of <span class="math inline">\hat\beta_1</span>. Omitting a needed random slope makes the fixed-effect standard errors <strong>too small</strong> and inferences over-confident.</li>
+<li><strong>The grouping variable is also the cluster of treatment.</strong> If staffing is assigned at the region level, a random slope on staffing is the multilevel analogue of cluster-robust inference: it prevents you from treating the centers in one region as independent replicates of the staffing effect.</li>
+<li><strong>The data can support it.</strong> You need enough groups (a common rule of thumb is at least 5–8, ideally many more) and enough units per group for <span class="math inline">\tau_1</span> to be estimable.</li>
+</ul>
+<p>Conversely, drop the random slope when the data are too thin, when the variance estimate is essentially zero, or when theory says the slope is structurally common across groups. The interactive’s <span class="math inline">\tau_1 = 0</span> position is exactly the parallel-lines model you fall back to.</p>
+<details>
+<summary>
+Math Details: The random-effects covariance matrix and the partially-pooled BLUPs
+</summary>
+<div class="details-content">
+<section id="stacking-the-model-in-matrix-form" class="level3">
+<h3 class="anchored" data-anchor-id="stacking-the-model-in-matrix-form">Stacking the model in matrix form</h3>
+<p>Collect the <span class="math inline">n_j</span> observations in region <span class="math inline">j</span> into a vector <span class="math inline">\mathbf{y}_j</span>. The varying-slope model for that region is</p>
+<p><span class="math display">
+\mathbf{y}_j = \mathbf{X}_j \boldsymbol\beta + \mathbf{Z}_j \mathbf{b}_j + \boldsymbol\varepsilon_j,
+\qquad
+\mathbf{b}_j \sim \mathcal{N}(\mathbf{0},\,\boldsymbol\Sigma_b),
+\quad
+\boldsymbol\varepsilon_j \sim \mathcal{N}(\mathbf{0},\,\sigma^2 \mathbf{I}).
+</span></p>
+<p>Here <span class="math inline">\mathbf{X}_j</span> and <span class="math inline">\mathbf{Z}_j</span> are the fixed- and random-effect design matrices. For a model with a random intercept <em>and</em> a random slope on <span class="math inline">x</span>, each row of <span class="math inline">\mathbf{Z}_j</span> is <span class="math inline">(1,\;x_{ij})</span>, and <span class="math inline">\mathbf{b}_j = (b_{0j}, b_{1j})'</span> with</p>
+<p><span class="math display">
+\boldsymbol\Sigma_b =
+\begin{pmatrix}
+\tau_0^2 &amp; \rho\,\tau_0\tau_1 \\
+\rho\,\tau_0\tau_1 &amp; \tau_1^2
+\end{pmatrix}.
+</span></p>
+</section>
+<section id="why-the-marginal-model-has-correlated-errors" class="level3">
+<h3 class="anchored" data-anchor-id="why-the-marginal-model-has-correlated-errors">Why the marginal model has correlated errors</h3>
+<p>Integrating out <span class="math inline">\mathbf{b}_j</span> gives the <strong>marginal</strong> distribution of the data in region <span class="math inline">j</span>:</p>
+<p><span class="math display">
+\mathbf{y}_j \sim \mathcal{N}\!\big(\mathbf{X}_j\boldsymbol\beta,\; \mathbf{V}_j\big),
+\qquad
+\mathbf{V}_j = \mathbf{Z}_j \boldsymbol\Sigma_b \mathbf{Z}_j' + \sigma^2 \mathbf{I}.
+</span></p>
+<p><strong>Read <span class="math inline">\mathbf{V}_j</span> aloud</strong>: “Within a region, two centers are correlated because they share the same random intercept and slope; the matrix <span class="math inline">\mathbf{Z}_j\boldsymbol\Sigma_b\mathbf{Z}_j'</span> is exactly that shared structure, and <span class="math inline">\sigma^2\mathbf{I}</span> is the leftover idiosyncratic noise.” This is why a mixed model is <em>not</em> the same as OLS with extra dummies: the off-diagonal correlations are modeled, not ignored.</p>
+</section>
+<section id="generating-correlated-draws-what-the-interactive-does" class="level3">
+<h3 class="anchored" data-anchor-id="generating-correlated-draws-what-the-interactive-does">Generating correlated draws (what the interactive does)</h3>
+<p>To simulate <span class="math inline">\mathbf{b}_j</span> we use the <strong>Cholesky factor</strong> <span class="math inline">\mathbf{L}</span> with <span class="math inline">\mathbf{L}\mathbf{L}' = \boldsymbol\Sigma_b</span>:</p>
+<p><span class="math display">
+\mathbf{L} =
+\begin{pmatrix}
+\tau_0 &amp; 0 \\
+\rho\,\tau_1 &amp; \tau_1\sqrt{1-\rho^2}
+\end{pmatrix},
+\qquad
+\begin{pmatrix} b_{0j} \\ b_{1j} \end{pmatrix} = \mathbf{L} \begin{pmatrix} z_{0j} \\ z_{1j} \end{pmatrix},
+\quad z \sim \mathcal{N}(0,1).
+</span></p>
+<p>You can verify <span class="math inline">\operatorname{Var}(b_{0j}) = \tau_0^2</span>, <span class="math inline">\operatorname{Var}(b_{1j}) = \rho^2\tau_1^2 + (1-\rho^2)\tau_1^2 = \tau_1^2</span>, and <span class="math inline">\operatorname{Cov}(b_{0j},b_{1j}) = \rho\,\tau_0\tau_1</span> — exactly <span class="math inline">\boldsymbol\Sigma_b</span>. This is the construction used in the fan plot.</p>
+</section>
+<section id="the-blup-is-a-shrinkage-estimator" class="level3">
+<h3 class="anchored" data-anchor-id="the-blup-is-a-shrinkage-estimator">The BLUP is a shrinkage estimator</h3>
+<p>Given <span class="math inline">\boldsymbol\beta</span> and the variance components, the best linear unbiased predictor of the random effects is</p>
+<p><span class="math display">
+\hat{\mathbf{b}}_j = \boldsymbol\Sigma_b \mathbf{Z}_j' \mathbf{V}_j^{-1} (\mathbf{y}_j - \mathbf{X}_j\boldsymbol\beta).
+</span></p>
+<p>For the intercept-only case (<span class="math inline">\mathbf{Z}_j = \mathbf{1}</span>, <span class="math inline">\boldsymbol\Sigma_b = \tau_0^2</span>), this collapses to the scalar shrinkage formula in the text:</p>
+<p><span class="math display">
+\hat{b}_{0j} = \frac{\tau_0^2}{\tau_0^2 + \sigma^2/n_j}\,\bar{r}_j,
+</span></p>
+<p>where <span class="math inline">\bar{r}_j</span> is region <span class="math inline">j</span>’s mean residual. The factor <span class="math inline">\lambda_j = \tau_0^2 / (\tau_0^2 + \sigma^2/n_j)</span> is the <strong>reliability</strong> of region <span class="math inline">j</span>’s data: it is the fraction of region <span class="math inline">j</span>’s apparent deviation that the model believes is signal rather than noise. As <span class="math inline">n_j \to \infty</span>, <span class="math inline">\lambda_j \to 1</span> (no pooling); as <span class="math inline">n_j \to 0</span> or <span class="math inline">\tau_0 \to 0</span>, <span class="math inline">\lambda_j \to 0</span> (complete pooling toward the population line).</p>
+</section>
+<section id="estimation" class="level3">
+<h3 class="anchored" data-anchor-id="estimation">Estimation</h3>
+<p>In practice <span class="math inline">\boldsymbol\beta</span> and the variance components are estimated jointly by <strong>maximum likelihood</strong> or, to remove the downward bias in the variance estimates, <strong>restricted maximum likelihood (REML)</strong> — the default in <code>lmer</code>. The BLUPs are then computed by plugging the estimated variance components into the formula above (technically EBLUPs, “empirical” BLUPs).</p>
+</section>
+</div>
+</details>
+</section>
+<section id="fitting-the-mixed-model" class="level2">
+<h2 class="anchored" data-anchor-id="fitting-the-mixed-model">Fitting the Mixed Model</h2>
+<p>Both implementations simulate centers nested in regions, then fit the varying-intercept-and-slope model and read off the fixed effects and the random-effects covariance.</p>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">R</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">Python</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lme4)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Simulate 21 regioner, ~12 vårdcentraler each ---</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co"># x = nurse staffing (centered);  y = poor-control share (%, lower is better).</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co"># True fixed part: beta0 = 22, beta1 = -3.2.</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Region random effects: tau0 = 3 (intercepts), tau1 = 1.5 (slopes), rho = -0.4.</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2025</span>)</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>J  <span class="ot">&lt;-</span> <span class="dv">21</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>nj <span class="ot">&lt;-</span> <span class="dv">12</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>Sigma <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">c</span>(<span class="dv">3</span><span class="sc">^</span><span class="dv">2</span>,            <span class="sc">-</span><span class="fl">0.4</span> <span class="sc">*</span> <span class="dv">3</span> <span class="sc">*</span> <span class="fl">1.5</span>,</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>                  <span class="sc">-</span><span class="fl">0.4</span> <span class="sc">*</span> <span class="dv">3</span> <span class="sc">*</span> <span class="fl">1.5</span>,  <span class="fl">1.5</span><span class="sc">^</span><span class="dv">2</span>), <span class="at">nrow =</span> <span class="dv">2</span>)</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>b <span class="ot">&lt;-</span> MASS<span class="sc">::</span><span class="fu">mvrnorm</span>(J, <span class="at">mu =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="at">Sigma =</span> Sigma)   <span class="co"># one (b0, b1) per region</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>panel <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(<span class="dv">1</span><span class="sc">:</span>J, <span class="cf">function</span>(j) {</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(nj, <span class="at">mean =</span> <span class="dv">0</span>, <span class="at">sd =</span> <span class="fl">1.2</span>)                 <span class="co"># centered staffing</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>  y <span class="ot">&lt;-</span> (<span class="dv">22</span> <span class="sc">+</span> b[j, <span class="dv">1</span>]) <span class="sc">+</span> (<span class="sc">-</span><span class="fl">3.2</span> <span class="sc">+</span> b[j, <span class="dv">2</span>]) <span class="sc">*</span> x <span class="sc">+</span> <span class="fu">rnorm</span>(nj, <span class="dv">0</span>, <span class="fl">2.5</span>)</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(<span class="at">region =</span> <span class="fu">factor</span>(j), <span class="at">x =</span> x, <span class="at">y =</span> y)</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Varying intercept AND slope: (x | region) ---</span></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>m_rs <span class="ot">&lt;-</span> <span class="fu">lmer</span>(y <span class="sc">~</span> x <span class="sc">+</span> (x <span class="sc">|</span> region), <span class="at">data =</span> panel)</span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(m_rs)</span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a><span class="co"># Fixed effects (population-average intercept and slope):</span></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a><span class="fu">fixef</span>(m_rs)</span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a><span class="co"># Random-effects covariance: tau0^2, tau1^2 and the intercept-slope correlation:</span></span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a><span class="fu">VarCorr</span>(m_rs)</span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a><span class="co"># Partially-pooled region lines (BLUPs added to the fixed part):</span></span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a><span class="fu">coef</span>(m_rs)<span class="sc">$</span>region <span class="sc">|&gt;</span> <span class="fu">head</span>()</span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-35"><a href="#cb15-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Compare with the random-INTERCEPT-only model (parallel lines):</span></span>
+<span id="cb15-36"><a href="#cb15-36" aria-hidden="true" tabindex="-1"></a>m_ri <span class="ot">&lt;-</span> <span class="fu">lmer</span>(y <span class="sc">~</span> x <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> region), <span class="at">data =</span> panel)</span>
+<span id="cb15-37"><a href="#cb15-37" aria-hidden="true" tabindex="-1"></a><span class="fu">anova</span>(m_ri, m_rs)   <span class="co"># LRT: does letting the slope vary improve fit?</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> statsmodels.formula.api <span class="im">as</span> smf</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Simulate 21 regioner, ~12 vårdcentraler each ---</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">2025</span>)</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>J, nj <span class="op">=</span> <span class="dv">21</span>, <span class="dv">12</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>tau0, tau1, rho <span class="op">=</span> <span class="fl">3.0</span>, <span class="fl">1.5</span>, <span class="op">-</span><span class="fl">0.4</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>Sigma <span class="op">=</span> np.array([[tau0<span class="op">**</span><span class="dv">2</span>,        rho <span class="op">*</span> tau0 <span class="op">*</span> tau1],</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>                  [rho <span class="op">*</span> tau0 <span class="op">*</span> tau1, tau1<span class="op">**</span><span class="dv">2</span>]])</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> rng.multivariate_normal([<span class="dv">0</span>, <span class="dv">0</span>], Sigma, size<span class="op">=</span>J)   <span class="co"># one (b0, b1) per region</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>rows <span class="op">=</span> []</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> j <span class="kw">in</span> <span class="bu">range</span>(J):</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> rng.normal(<span class="dv">0</span>, <span class="fl">1.2</span>, nj)                        <span class="co"># centered staffing</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>    y <span class="op">=</span> (<span class="dv">22</span> <span class="op">+</span> b[j, <span class="dv">0</span>]) <span class="op">+</span> (<span class="op">-</span><span class="fl">3.2</span> <span class="op">+</span> b[j, <span class="dv">1</span>]) <span class="op">*</span> x <span class="op">+</span> rng.normal(<span class="dv">0</span>, <span class="fl">2.5</span>, nj)</span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>    rows.append(pd.DataFrame({<span class="st">"region"</span>: j, <span class="st">"x"</span>: x, <span class="st">"y"</span>: y}))</span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>panel <span class="op">=</span> pd.concat(rows, ignore_index<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Varying intercept AND slope ---</span></span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a><span class="co"># re_formula="~x" adds a random slope on x; the model then estimates the full</span></span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a><span class="co"># 2x2 random-effects covariance (intercept var, slope var, their covariance).</span></span>
+<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a>m_rs <span class="op">=</span> smf.mixedlm(<span class="st">"y ~ x"</span>, data<span class="op">=</span>panel, groups<span class="op">=</span><span class="st">"region"</span>,</span>
+<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a>                   re_formula<span class="op">=</span><span class="st">"~x"</span>).fit(reml<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_rs.summary())</span>
+<span id="cb16-26"><a href="#cb16-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-27"><a href="#cb16-27" aria-hidden="true" tabindex="-1"></a><span class="co"># Fixed effects (population-average intercept and slope):</span></span>
+<span id="cb16-28"><a href="#cb16-28" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_rs.fe_params)</span>
+<span id="cb16-29"><a href="#cb16-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-30"><a href="#cb16-30" aria-hidden="true" tabindex="-1"></a><span class="co"># Random-effects covariance matrix (tau0^2, cov, tau1^2):</span></span>
+<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_rs.cov_re)</span>
+<span id="cb16-32"><a href="#cb16-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-33"><a href="#cb16-33" aria-hidden="true" tabindex="-1"></a><span class="co"># Random-intercept-only model for comparison (parallel lines):</span></span>
+<span id="cb16-34"><a href="#cb16-34" aria-hidden="true" tabindex="-1"></a>m_ri <span class="op">=</span> smf.mixedlm(<span class="st">"y ~ x"</span>, data<span class="op">=</span>panel, groups<span class="op">=</span><span class="st">"region"</span>).fit(reml<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb16-35"><a href="#cb16-35" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_ri.cov_re)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+<p>In both languages the fitted <strong>fixed effects</strong> recover the population-average line (intercept near 22, slope near <span class="math inline">-3.2</span>), while the <strong>random-effects covariance</strong> recovers the spread of region intercepts (<span class="math inline">\tau_0 \approx 3</span>), the spread of region slopes (<span class="math inline">\tau_1 \approx 1.5</span>), and their negative correlation (<span class="math inline">\rho \approx -0.4</span>). The <code>coef()</code> / per-region predictions return the <em>partially pooled</em> region lines — never the raw within-region OLS fits.</p>
+</section>
+<section id="exercises" class="level2 exercises">
+<h2 class="exercises anchored" data-anchor-id="exercises">Exercises</h2>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 1</span></p>
+<p>A <em>Folkhälsomyndigheten</em> (Public Health Agency) analyst fits a varying-intercept model of <em>vårdcentral</em> poor-control share on centered nurse staffing and reports <span class="math inline">\hat\beta_0 = 22.0</span>, <span class="math inline">\hat\beta_1 = -3.2</span>, <span class="math inline">\hat\tau_0 = 3.0</span>. Region 7 (a large region with many centers) has predicted intercept deviation <span class="math inline">\hat b_{0,7} = +4.5</span>; Region 18 (a tiny region) has predicted deviation <span class="math inline">\hat b_{0,18} = -1.0</span>.</p>
+<ol type="a">
+<li>Write Region 7’s predicted regression line. (b) At average staffing (<span class="math inline">x=0</span>), what poor-control share does the model predict for Region 7 versus Region 18? (c) The raw (no-pooling) intercept for Region 18 was <span class="math inline">19.0</span> (i.e.&nbsp;a raw deviation of <span class="math inline">-3.0</span>). Explain why the model reports only <span class="math inline">-1.0</span>.</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> In a varying-intercept model every region shares the population slope, so Region 7’s line is <span class="math display">
+\hat y = (\hat\beta_0 + \hat b_{0,7}) + \hat\beta_1 x = (22.0 + 4.5) - 3.2\,x = 26.5 - 3.2\,x.
+</span></p>
+<p><strong>(b)</strong> At <span class="math inline">x = 0</span> the slope term vanishes, so the prediction is just the intercept. Region 7: <span class="math inline">26.5\%</span>. Region 18: <span class="math inline">22.0 + (-1.0) = 21.0\%</span>. Region 7 has a substantially worse baseline.</p>
+<p><strong>(c)</strong> Region 18 is small, so <span class="math inline">n_{18}</span> is small and the shrinkage weight <span class="math inline">\lambda_{18} = \tau_0^2/(\tau_0^2 + \sigma^2/n_{18})</span> is well below 1. The model trusts its few noisy centers only partially and pulls the raw deviation of <span class="math inline">-3.0</span> toward the population line (zero). Here the reported <span class="math inline">-1.0</span> implies a shrinkage weight of about <span class="math inline">\lambda_{18} \approx 1.0/3.0 \approx 0.33</span> — only a third of the raw signal survives. A large region like Region 7 has <span class="math inline">\lambda_7 \approx 1</span> and is barely shrunk, which is why its sizable <span class="math inline">+4.5</span> deviation is reported nearly intact.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 2</span></p>
+<p>A colleague estimates a varying-slope model and reports <span class="math inline">\hat\tau_0 = 4.0</span> (intercept SD), <span class="math inline">\hat\tau_1 = 2.0</span> (slope SD), and <span class="math inline">\hat\rho = -0.6</span> (intercept–slope correlation).</p>
+<ol type="a">
+<li>Write the estimated <span class="math inline">2\times2</span> random-effects covariance matrix <span class="math inline">\hat{\boldsymbol\Sigma}_b</span>. (b) Interpret the sign of <span class="math inline">\rho</span> in plain language about regions. (c) A region with <span class="math inline">b_{0j} = +6</span> (high baseline poor control) — what slope deviation would you <em>expect</em> for it, and would that be equalizing or compounding?</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> The covariance is <span class="math inline">\rho\,\tau_0\tau_1 = (-0.6)(4.0)(2.0) = -4.8</span>, so <span class="math display">
+\hat{\boldsymbol\Sigma}_b =
+\begin{pmatrix}
+\tau_0^2 &amp; \rho\tau_0\tau_1 \\
+\rho\tau_0\tau_1 &amp; \tau_1^2
+\end{pmatrix}
+=
+\begin{pmatrix}
+16.0 &amp; -4.8 \\
+-4.8 &amp; 4.0
+\end{pmatrix}.
+</span></p>
+<p><strong>(b)</strong> <span class="math inline">\rho = -0.6 &lt; 0</span> means regions with <em>higher</em> intercepts (worse baseline poor-control share) tend to have <em>more negative</em> slopes (a steeper improvement in poor control per extra nurse). The struggling regions get more out of staffing.</p>
+<p><strong>(c)</strong> The conditional expectation of the slope deviation given the intercept deviation is <span class="math display">
+E[b_{1j}\mid b_{0j}] = \frac{\operatorname{Cov}(b_0,b_1)}{\operatorname{Var}(b_0)}\,b_{0j}
+= \frac{-4.8}{16.0}\times 6 = -1.8.
+</span> So a region <span class="math inline">6</span> points above average at baseline is expected to have a slope about <span class="math inline">1.8</span> <em>more negative</em> than the population slope — i.e.&nbsp;staffing helps it more. Because the worst-off regions improve fastest, this pattern is <strong>equalizing</strong>: it narrows the gap between regions as staffing rises.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 3</span></p>
+<p>Using the shrinkage formula <span class="math inline">\lambda_j = \tau_0^2 / (\tau_0^2 + \sigma^2/n_j)</span> with <span class="math inline">\tau_0 = 3</span> (so <span class="math inline">\tau_0^2 = 9</span>) and residual variance <span class="math inline">\sigma^2 = 25</span>:</p>
+<ol type="a">
+<li>Compute <span class="math inline">\lambda_j</span> for a region with <span class="math inline">n_j = 4</span> centers and for one with <span class="math inline">n_j = 40</span>. (b) A region’s raw mean residual is <span class="math inline">\bar r_j = +6.0</span>. Give the partially-pooled intercept deviation <span class="math inline">\hat b_{0j}</span> in each case. (c) What happens to <span class="math inline">\lambda_j</span> as <span class="math inline">\tau_0 \to 0</span>, and why does that make sense?</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> For <span class="math inline">n_j = 4</span>: <span class="math inline">\sigma^2/n_j = 25/4 = 6.25</span>, so <span class="math inline">\lambda_j = 9/(9 + 6.25) = 9/15.25 \approx 0.590</span>. For <span class="math inline">n_j = 40</span>: <span class="math inline">\sigma^2/n_j = 25/40 = 0.625</span>, so <span class="math inline">\lambda_j = 9/(9 + 0.625) = 9/9.625 \approx 0.935</span>.</p>
+<p><strong>(b)</strong> <span class="math inline">\hat b_{0j} = \lambda_j \bar r_j</span>. Small region: <span class="math inline">0.590 \times 6.0 \approx 3.54</span>. Large region: <span class="math inline">0.935 \times 6.0 \approx 5.61</span>. The small, noisy region is pulled much harder toward the population line; the large region keeps most of its raw signal.</p>
+<p><strong>(c)</strong> As <span class="math inline">\tau_0 \to 0</span>, the numerator <span class="math inline">\tau_0^2 \to 0</span> while the denominator stays positive, so <span class="math inline">\lambda_j \to 0</span> and every <span class="math inline">\hat b_{0j} \to 0</span>. This is <strong>complete pooling</strong>: if there is no genuine between-region spread, the model concludes that <em>all</em> apparent region differences are noise and collapses every region onto the single population line. That is the correct behavior — with <span class="math inline">\tau_0 = 0</span> there is nothing to distinguish the regions.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 4</span></p>
+<p>An analyst fits <code>lmer(y ~ x + (1 | region))</code> (random intercept only) and finds the staffing coefficient <span class="math inline">\hat\beta_1 = -3.2</span> with standard error <span class="math inline">0.4</span>. A reviewer insists the staffing effect plausibly varies across regions and asks for <code>(x | region)</code> instead.</p>
+<ol type="a">
+<li>Mechanically, what extra parameters does the reviewer’s model estimate? (b) Why might the standard error on <span class="math inline">\hat\beta_1</span> <em>increase</em> under the random-slope model even though the point estimate barely moves? (c) Under what circumstance would <code>lmer</code> warn of a <em>singular fit</em>, and what would you conclude?</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> The random-slope model <code>(x | region)</code> adds two parameters to the variance structure: the slope variance <span class="math inline">\tau_1^2</span> and the intercept–slope covariance <span class="math inline">\rho\,\tau_0\tau_1</span> (equivalently <span class="math inline">\tau_1</span> and <span class="math inline">\rho</span>). The fixed effects <span class="math inline">(\beta_0,\beta_1)</span> and the existing <span class="math inline">\tau_0</span>, <span class="math inline">\sigma^2</span> remain.</p>
+<p><strong>(b)</strong> The random-intercept-only model treats every center as an independent observation on the staffing slope, so it acts as if it has far more independent information about <span class="math inline">\beta_1</span> than it really does — understating the standard error. Allowing the slope to vary acknowledges that the staffing effect is itself uncertain across regions, and that extra between-region variability is propagated into the standard error of the <em>average</em> slope. The point estimate is roughly unbiased either way; the honest model just admits more uncertainty, so the SE rises (often substantially when <span class="math inline">\tau_1</span> is non-trivial). This is the multilevel analogue of why cluster-robust SEs are larger than naive ones.</p>
+<p><strong>(c)</strong> A <strong>singular fit</strong> occurs when the estimated random-effects covariance is on the boundary — typically <span class="math inline">\hat\tau_1 \approx 0</span> or <span class="math inline">|\hat\rho| \approx 1</span> — meaning the data cannot support a separate slope variance (too few regions or too few centers per region). The right conclusion is <em>not</em> that slopes are truly identical, but that this dataset cannot estimate their spread; you would simplify to the random-intercept model (or a model with uncorrelated random effects) and note the limitation, rather than report unstable boundary estimates.</p>
+</div>
+</details>
+</div>
+<div class="key-takeaways">
+<p><strong>Key takeaways</strong></p>
+<ul>
+<li>A mixed model splits each group’s line into a <strong>fixed part</strong> (the population-average intercept and slope <span class="math inline">\beta_0, \beta_1</span>) and a <strong>random part</strong> (group deviations <span class="math inline">b_{0j}, b_{1j}</span> drawn from a distribution) — describing the <em>average</em> relationship and how groups <em>differ</em> as two separate questions.</li>
+<li>The <strong>varying-intercept</strong> model gives a fan of parallel lines (spread set by <span class="math inline">\tau_0</span>); the <strong>varying-slope</strong> model lets the lines fan out and cross, governed by the <span class="math inline">2\times2</span> covariance matrix <span class="math inline">\boldsymbol\Sigma_b</span> with entries <span class="math inline">\tau_0^2</span>, <span class="math inline">\tau_1^2</span>, and <span class="math inline">\rho\,\tau_0\tau_1</span>.</li>
+<li>Group lines are <strong>partially pooled</strong> toward the population line by a shrinkage weight <span class="math inline">\lambda_j = \tau_0^2/(\tau_0^2 + \sigma^2/n_j)</span>: data-rich groups keep their own signal, data-poor groups are dragged toward the average — regularization for free.</li>
+<li>Add a <strong>random slope</strong> when the relationship itself varies across groups or when the grouping is the cluster of treatment; omitting a needed one makes the fixed-effect standard error too small. Drop it when the data are too thin and the fit goes singular.</li>
+<li>Fit with <code>lmer(y ~ x + (x | group))</code> in R or <code>MixedLM(..., re_formula="~x")</code> in Python; read the fixed effects for the population line and the random-effects covariance for the between-group spread.</li>
+</ul>
+</div>
+</section>
+<section id="what-comes-next" class="level2">
+<h2 class="anchored" data-anchor-id="what-comes-next">What Comes Next</h2>
+<p>We have built the mixed model end to end: the fixed part is the population-average line, the random part lets each region’s intercept and slope deviate, and the <span class="math inline">2\times2</span> covariance matrix <span class="math inline">\boldsymbol\Sigma_b</span> controls how widely the group lines fan out and how their levels and slopes co-move. We saw that the group lines are partially pooled — precision-weighted compromises between each region’s own fit and the national average.</p>
+<p>But we glossed over a deeper question: <em>how much</em> of the total variation in poor-control share lives <strong>between</strong> regions versus <strong>within</strong> them? That decomposition — <span class="math inline">\sigma^2</span> against <span class="math inline">\tau_0^2</span> — is the subject of the next page, <a href="../../content/15-multilevel/variance-components-icc.html">Variance Components and the ICC</a>, which turns the variance components we just estimated into the <strong>intraclass correlation coefficient</strong>, a single number summarizing how much a <em>vårdcentral</em>’s outcome is determined by which region it sits in. The ICC is the bridge from “letting relationships vary” to “quantifying how much they vary.”</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<div id="reading-progress"></div>
+<script>
+(function () {
+  function update() {
+    var el = document.getElementById('reading-progress');
+    if (!el) return;
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    var pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+    el.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  if (document.readyState !== 'loading') update();
+  else document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
+<script type="ojs-module-contents">
+eyJjb250ZW50cyI6W3sibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6IlxuLy8gQ29uY2lzZSBcIlN0YXJ0IGhlcmVcIiBwcm9tcHQgYWJvdmUgdGhlIGNvbnRyb2xzICh0aGUgZnVsbCB0b3VyIGlzIGJlbG93KS5cbmh0bWxgPHAgc3R5bGU9XCJcbiAgICBmb250LWZhbWlseTogSW50ZXIsIHNhbnMtc2VyaWY7XG4gICAgZm9udC1zaXplOiAwLjg1cmVtO1xuICAgIGNvbG9yOiAke21scmlzX3BhbC5heGlzfTtcbiAgICBiYWNrZ3JvdW5kOiAke21scmlzX3BhbC5maWxsfTtcbiAgICBib3JkZXItbGVmdDogM3B4IHNvbGlkICR7bWxyaXNfcGFsLmZpeGVkfTtcbiAgICBwYWRkaW5nOiAwLjVyZW0gMC43NXJlbTtcbiAgICBib3JkZXItcmFkaXVzOiAwIDAuMzVyZW0gMC4zNXJlbSAwO1xuICAgIG1hcmdpbjogMCAwIDAuNzVyZW07XCI+XG4gIDxzdHJvbmc+U3RhcnQgaGVyZTo8L3N0cm9uZz4gbGVhdmUgdGhlIG1vZGVsIG9uIDxlbT5SYW5kb20gaW50ZXJjZXB0cyBvbmx5PC9lbT5cbiAgYW5kIHdhdGNoIHRoZSBlaWdodCByZWdpb24gbGluZXMgcnVuIHBhcmFsbGVsLiBUaGVuIHN3aXRjaCB0b1xuICA8ZW0+KyByYW5kb20gc2xvcGVzPC9lbT4gYW5kIGRyYWcgPGVtPlNsb3BlIFNEPC9lbT4gdXAgdG8gbWFrZSB0aGUgZmFuIHNwcmVhZC5cbiAgVGhlIHRoaWNrIHJlZCBsaW5lIG5ldmVyIG1vdmVzICZtZGFzaDsgdGhhdCBpcyB0aGUgcG9wdWxhdGlvbi1hdmVyYWdlIGZpdC5cbjwvcD5gXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTIiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbnZpZXdvZiBtbHJpc19tb2RlbCA9IElucHV0cy5yYWRpbyhcbiAgW1wiUmFuZG9tIGludGVyY2VwdHMgb25seVwiLCBcIlJhbmRvbSBpbnRlcmNlcHRzICsgc2xvcGVzXCJdLFxuICB7IGxhYmVsOiBcIk1vZGVsXCIsIHZhbHVlOiBcIlJhbmRvbSBpbnRlcmNlcHRzIG9ubHlcIiB9XG4pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTMiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbnZpZXdvZiBtbHJpc190YXUwID0gSW5wdXRzLnJhbmdlKFswLCA2XSwge1xuICB2YWx1ZTogMyxcbiAgc3RlcDogMC4yNSxcbiAgbGFiZWw6IFwiSW50ZXJjZXB0IFNEICjPhOKCgCk6IGhvdyBmYXIgcmVnaW9uIGxldmVscyBzcHJlYWRcIlxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtNCIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ilxudmlld29mIG1scmlzX3RhdTEgPSBJbnB1dHMucmFuZ2UoWzAsIDVdLCB7XG4gIHZhbHVlOiAwLFxuICBzdGVwOiAwLjI1LFxuICBsYWJlbDogXCJTbG9wZSBTRCAoz4TigoEpOiBob3cgbXVjaCB0aGUgc3RhZmZpbmcgcmV0dXJuIHZhcmllc1wiXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC01IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG52aWV3b2YgbWxyaXNfcmhvID0gSW5wdXRzLnJhbmdlKFstMC45LCAwLjldLCB7XG4gIHZhbHVlOiAtMC40LFxuICBzdGVwOiAwLjEsXG4gIGxhYmVsOiBcIkludGVyY2VwdOKAk3Nsb3BlIGNvcnJlbGF0aW9uICjPgSlcIlxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtNiIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ilxudmlld29mIG1scmlzX3Nob3dQb3AgPSBJbnB1dHMudG9nZ2xlKHtcbiAgbGFiZWw6IFwiU2hvdyBwb3B1bGF0aW9uLWF2ZXJhZ2UgbGluZSAoZml4ZWQgcGFydClcIixcbiAgdmFsdWU6IHRydWVcbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTciLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbnZpZXdvZiBtbHJpc19kcmF3ID0gSW5wdXRzLmJ1dHRvbihcIkRyYXcgbmV3IHJlZ2lvbnNcIiwgeyB2YWx1ZTogMCwgcmVkdWNlOiB2ID0+IHYgKyAxIH0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTgiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIOKUgOKUgCBVcHBzYWxhLWFjYWRlbWljIHBhbGV0dGUgc2hhcmVkIGFjcm9zcyB0aGlzIHBhZ2UncyBpbnRlcmFjdGl2ZXMuIOKUgOKUgFxubWxyaXNfcGFsID0gKHtcbiAgZml4ZWQ6ICBcIiM5OTAwMDBcIiwgICAvLyBwb3B1bGF0aW9uLWF2ZXJhZ2UgLyBmaXhlZCBsaW5lIChVcHBzYWxhIHJlZClcbiAgZ3JvdXA6ICBcIiMzZDVhNmNcIiwgICAvLyBncm91cCAocmVnaW9uKSBsaW5lcyAoc2xhdGUpXG4gIGdvb2Q6ICAgIFwiIzJlNmY0MFwiLCAgLy8gc3VjY2VzcyAvIG9uLXRhcmdldCAoZ3JlZW4pXG4gIG9jaHJlOiAgIFwiIzljN2EzM1wiLCAgLy8gaGlnaGxpZ2h0IC8gdHJ1ZSB2YWx1ZSAvIHNocmlua2FnZSBwYXRoIChvY2hyZSlcbiAgaW5rOiAgICAgXCIjMWMxYzFhXCIsICAvLyBpbmsgLyByZWZlcmVuY2UgbGluZXNcbiAgYXhpczogICAgXCIjNTU1NTU1XCIsICAvLyBheGlzIHRleHRcbiAgaGFpcjogICAgXCIjZTZlM2RiXCIsICAvLyBncmlkbGluZXMgLyBoYWlybGluZXNcbiAgbXV0ZWQ6ICAgXCIjNzk3NjZlXCIsICAvLyBtdXRlZCBpbmsgLyBpbmFjdGl2ZVxuICBmaWxsOiAgICBcIiNmNmY1ZjFcIiAgIC8vIHN1YnRsZSB0aWxlIGZpbGxcbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTkiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIEZpeGVkIChwb3B1bGF0aW9uLWF2ZXJhZ2UpIHBhcmFtZXRlcnMgb2YgdGhlIHN0YWZmaW5nIOKGkiBwb29yLWNvbnRyb2wgbGluZS5cbi8vIHggaXMgbnVyc2Ugc3RhZmZpbmcgY2VudGVyZWQgYXQgdGhlIG5hdGlvbmFsIG1lYW4gKHVuaXRzOiBudXJzZXMvMTAwMCBwdHMpLlxuLy8gUG9zaXRpdmUgzrIxIHdvdWxkIG1lYW4gTU9SRSBzdGFmZmluZyDihpIgTU9SRSBwb29yIGNvbnRyb2wsIHdoaWNoIGlzIHdyb25nO1xuLy8gdGhlIHRydWUgcmV0dXJuIGlzIG5lZ2F0aXZlIChtb3JlIHN0YWZmaW5nIOKGkiBmZXdlciBwb29ybHkgY29udHJvbGxlZCkuXG5tbHJpc19iZXRhMCA9IDIyICAgICAgLy8gcG9vci1jb250cm9sIHNoYXJlICglKSBhdCBhdmVyYWdlIHN0YWZmaW5nXG5tbHJpc19iZXRhMSA9IC0zLjIgICAgLy8gZWFjaCArMSBudXJzZS8xMDAwIGxvd2VycyBwb29yLWNvbnRyb2wgc2hhcmUgYnkgMy4yIHB0c1xubWxyaXNfeERvbSA9IFstMywgM10gIC8vIGNlbnRlcmVkIHN0YWZmaW5nIHJhbmdlIHNob3duIG9uIHRoZSB4LWF4aXNcblxuLy8gTnVtYmVyIG9mIHJlZ2lvbnMgZHJhd24gYW5kIGNlbnRlcnMgcGVyIHJlZ2lvbiAoa2VwdCBzbWFsbCBzbyBsaW5lcyByZWFkKS5cbm1scmlzX0ogPSA4XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTEwIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBHZW5lcmF0ZSB0aGUgSiByZWdpb24tc3BlY2lmaWMgKGIwaiwgYjFqKSBkcmF3cyBmcm9tIHRoZSBiaXZhcmlhdGUgbm9ybWFsXG4vLyBpbXBsaWVkIGJ5IM+EMCwgz4QxLCDPgS4gVGhlIENob2xlc2t5IGZhY3RvciBvZiB0aGUgMngyIGNvdmFyaWFuY2UgdHVybnMgdHdvXG4vLyBpbmRlcGVuZGVudCBzdGFuZGFyZC1ub3JtYWwgZHJhd3MgaW50byBhIGNvcnJlbGF0ZWQgcGFpciAoc2VlIE1hdGggRGV0YWlscykuXG4vLyBtbHJpc19kcmF3IGlzIHJlZmVyZW5jZWQgc28gdGhlIFwiRHJhdyBuZXcgcmVnaW9uc1wiIGJ1dHRvbiByZXNhbXBsZXM7IHRoZVxuLy8gbW9kZWwgdG9nZ2xlIHplcm9lcyB0aGUgc2xvcGUgZGV2aWF0aW9ucyB3aGVuIHNsb3BlcyBhcmUgc3dpdGNoZWQgb2ZmLlxubWxyaXNfcmVnaW9ucyA9IHtcbiAgbWxyaXNfZHJhdzsgICAgICAgICAgICAgICAgICAgICAgICAgIC8vIGRlcGVuZGVuY3k6IGNsaWNrIOKGkiBmcmVzaCBkcmF3XG4gIGNvbnN0IHVzZVNsb3BlcyA9IG1scmlzX21vZGVsID09PSBcIlJhbmRvbSBpbnRlcmNlcHRzICsgc2xvcGVzXCI7XG4gIGNvbnN0IHQwID0gbWxyaXNfdGF1MDtcbiAgY29uc3QgdDEgPSB1c2VTbG9wZXMgPyBtbHJpc190YXUxIDogMDtcbiAgY29uc3QgcmhvID0gdXNlU2xvcGVzID8gbWxyaXNfcmhvIDogMDtcblxuICAvLyBDaG9sZXNreSBvZiDOoyA9IFtbdDDCsiwgz4EgdDAgdDFdLFvPgSB0MCB0MSwgdDHCsl1dOlxuICAvLyAgIEwgPSBbW3QwLCAwXSxbz4EgdDEsIHQx4oiaKDHiiJLPgcKyKV1dLCAgKGIwLGIxKSA9IEwgKHowLHoxKS5cbiAgY29uc3QgeiA9IGQzLnJhbmRvbU5vcm1hbCgwLCAxKTtcbiAgY29uc3Qgb3V0ID0gW107XG4gIGZvciAobGV0IGogPSAwOyBqIDwgbWxyaXNfSjsgaisrKSB7XG4gICAgY29uc3QgejAgPSB6KCksIHoxID0geigpO1xuICAgIGNvbnN0IGIwID0gdDAgKiB6MDtcbiAgICBjb25zdCBiMSA9IHJobyAqIHQxICogejAgKyB0MSAqIE1hdGguc3FydCgxIC0gcmhvICogcmhvKSAqIHoxO1xuICAgIG91dC5wdXNoKHsgcmVnaW9uOiBqICsgMSwgYjAsIGIxIH0pO1xuICB9XG4gIHJldHVybiBvdXQ7XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTExIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBFYWNoIHJlZ2lvbidzIHR3by1wb2ludCBsaW5lIGFjcm9zcyB0aGUgeC1kb21haW4gKGVub3VnaCB0byBkcmF3IGEgc2VnbWVudCksXG4vLyBwbHVzIHRoZSBmaXhlZCBwb3B1bGF0aW9uLWF2ZXJhZ2UgbGluZSBhcyBpdHMgb3duIHNlcmllcy5cbm1scmlzX2xpbmVEYXRhID0gbWxyaXNfcmVnaW9ucy5mbGF0TWFwKHIgPT4ge1xuICBjb25zdCBhID0gbWxyaXNfYmV0YTAgKyByLmIwO1xuICBjb25zdCBzID0gbWxyaXNfYmV0YTEgKyByLmIxO1xuICByZXR1cm4gW1xuICAgIHsgcmVnaW9uOiByLnJlZ2lvbiwga2luZDogXCJyZWdpb25cIiwgeDogbWxyaXNfeERvbVswXSwgeTogYSArIHMgKiBtbHJpc194RG9tWzBdIH0sXG4gICAgeyByZWdpb246IHIucmVnaW9uLCBraW5kOiBcInJlZ2lvblwiLCB4OiBtbHJpc194RG9tWzFdLCB5OiBhICsgcyAqIG1scmlzX3hEb21bMV0gfVxuICBdO1xufSlcblxubWxyaXNfcG9wRGF0YSA9IFtcbiAgeyB4OiBtbHJpc194RG9tWzBdLCB5OiBtbHJpc19iZXRhMCArIG1scmlzX2JldGExICogbWxyaXNfeERvbVswXSB9LFxuICB7IHg6IG1scmlzX3hEb21bMV0sIHk6IG1scmlzX2JldGEwICsgbWxyaXNfYmV0YTEgKiBtbHJpc194RG9tWzFdIH1cbl1cbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTIiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcblBsb3QucGxvdCh7XG4gIHdpZHRoOiBNYXRoLm1pbig2ODAsIHdpZHRoKSxcbiAgaGVpZ2h0OiAzNjAsXG4gIG1hcmdpbkxlZnQ6IDU4LFxuICBtYXJnaW5Cb3R0b206IDQ2LFxuICBtYXJnaW5SaWdodDogNDAsXG4gIG1hcmdpblRvcDogMTgsXG4gIGdyaWQ6IHRydWUsXG4gIHN0eWxlOiB7IGZvbnRGYW1pbHk6IFwiSW50ZXIsIHNhbnMtc2VyaWZcIiB9LFxuICB4OiB7XG4gICAgbGFiZWw6IFwiTnVyc2Ugc3RhZmZpbmcgKGNlbnRlcmVkOiBudXJzZXMgcGVyIDEsMDAwIHBhdGllbnRzKSDihpJcIixcbiAgICBkb21haW46IG1scmlzX3hEb21cbiAgfSxcbiAgeToge1xuICAgIGxhYmVsOiBcIuKGkSBQb29yIEhiQTFjIGNvbnRyb2wgKCUgb2YgcGF0aWVudHMpXCIsXG4gICAgZG9tYWluOiBbNCwgNDBdXG4gIH0sXG4gIG1hcmtzOiBbXG4gICAgLy8gVmVydGljYWwgcmVmZXJlbmNlIGF0IHggPSAwIChhdmVyYWdlIHN0YWZmaW5nKTogd2hlcmUgaW50ZXJjZXB0cyBsaXZlLlxuICAgIFBsb3QucnVsZVgoWzBdLCB7IHN0cm9rZTogbWxyaXNfcGFsLmhhaXIsIHN0cm9rZVdpZHRoOiAxIH0pLFxuXG4gICAgLy8gUmVnaW9uIGxpbmVzIChzbGF0ZSwgc2VtaS10cmFuc3BhcmVudCBzbyBvdmVybGFwIHJlYWRzKS5cbiAgICBQbG90LmxpbmUobWxyaXNfbGluZURhdGEsIHtcbiAgICAgIHg6IFwieFwiLCB5OiBcInlcIiwgejogXCJyZWdpb25cIixcbiAgICAgIHN0cm9rZTogbWxyaXNfcGFsLmdyb3VwLCBzdHJva2VXaWR0aDogMS42LCBzdHJva2VPcGFjaXR5OiAwLjdcbiAgICB9KSxcblxuICAgIC8vIFNtYWxsIHJlZ2lvbiBsYWJlbHMgYXQgdGhlIHJpZ2h0IGVuZCBvZiBlYWNoIGxpbmUuXG4gICAgUGxvdC50ZXh0KFxuICAgICAgbWxyaXNfbGluZURhdGEuZmlsdGVyKGQgPT4gZC54ID09PSBtbHJpc194RG9tWzFdKSxcbiAgICAgIHtcbiAgICAgICAgeDogXCJ4XCIsIHk6IFwieVwiLFxuICAgICAgICB0ZXh0OiBkID0+IGBSJHtkLnJlZ2lvbn1gLFxuICAgICAgICBkeDogOCwgdGV4dEFuY2hvcjogXCJzdGFydFwiLFxuICAgICAgICBmaWxsOiBtbHJpc19wYWwuZ3JvdXAsIGZvbnRTaXplOiA5XG4gICAgICB9XG4gICAgKSxcblxuICAgIC8vIFBvcHVsYXRpb24tYXZlcmFnZSAoZml4ZWQpIGxpbmUg4oCUIHRoaWNrIHJlZCwgZHJhd24gbGFzdCBzbyBpdCBzaXRzIG9uIHRvcC5cbiAgICBtbHJpc19zaG93UG9wID8gUGxvdC5saW5lKG1scmlzX3BvcERhdGEsIHtcbiAgICAgIHg6IFwieFwiLCB5OiBcInlcIixcbiAgICAgIHN0cm9rZTogbWxyaXNfcGFsLmZpeGVkLCBzdHJva2VXaWR0aDogMy41XG4gICAgfSkgOiBudWxsLFxuICAgIG1scmlzX3Nob3dQb3AgPyBQbG90LnRleHQoW21scmlzX3BvcERhdGFbMF1dLCB7XG4gICAgICB4OiBcInhcIiwgeTogXCJ5XCIsXG4gICAgICB0ZXh0OiBbXCJQb3B1bGF0aW9uIGF2ZXJhZ2VcIl0sXG4gICAgICBkeDogNiwgZHk6IC0xMCwgdGV4dEFuY2hvcjogXCJzdGFydFwiLFxuICAgICAgZmlsbDogbWxyaXNfcGFsLmZpeGVkLCBmb250U2l6ZTogMTEsIGZvbnRXZWlnaHQ6IFwiYm9sZFwiLFxuICAgICAgc3Ryb2tlOiBcIndoaXRlXCIsIHN0cm9rZVdpZHRoOiAzLCBwYWludE9yZGVyOiBcInN0cm9rZVwiXG4gICAgfSkgOiBudWxsXG4gIF1cbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTEzIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBMaXZlIHJlYWRvdXQgb2YgdGhlIHZhcmlhbmNlIGNvbXBvbmVudHMgY3VycmVudGx5IGluIGZvcmNlLCBwbHVzIHRoZSBzcHJlYWRcbi8vIG9mIHRoZSBlaWdodCByZWFsaXplZCByZWdpb24gc2xvcGVzIHNvIHRoZSByZWFkZXIgc2VlcyDPhDEgXCJiaXRlLlwiXG57XG4gIGNvbnN0IHVzZVNsb3BlcyA9IG1scmlzX21vZGVsID09PSBcIlJhbmRvbSBpbnRlcmNlcHRzICsgc2xvcGVzXCI7XG4gIGNvbnN0IHNsb3BlcyA9IG1scmlzX3JlZ2lvbnMubWFwKHIgPT4gbWxyaXNfYmV0YTEgKyAodXNlU2xvcGVzID8gci5iMSA6IDApKTtcbiAgY29uc3Qgc01pbiA9IGQzLm1pbihzbG9wZXMpLCBzTWF4ID0gZDMubWF4KHNsb3Blcyk7XG5cbiAgY29uc3QgaXRlbSA9IChsYWJlbCwgdmFsLCBjb2xvcikgPT4gaHRtbGA8ZGl2IHN0eWxlPVwiXG4gICAgICB0ZXh0LWFsaWduOmNlbnRlcjsgcGFkZGluZzowLjVyZW0gMC4yNXJlbTsgYm9yZGVyLXJhZGl1czowLjVyZW07XG4gICAgICBiYWNrZ3JvdW5kOiR7bWxyaXNfcGFsLmZpbGx9OyBtaW4taGVpZ2h0OjMuNnJlbTtcIj5cbiAgICA8ZGl2IHN0eWxlPVwiZm9udC1mYW1pbHk6SW50ZXIsc2Fucy1zZXJpZjsgZm9udC1zaXplOjAuNjhyZW07IGZvbnQtd2VpZ2h0OjcwMDtcbiAgICAgICAgdGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlOyBsZXR0ZXItc3BhY2luZzowLjA0ZW07IGNvbG9yOiR7bWxyaXNfcGFsLm11dGVkfTtcIj4ke2xhYmVsfTwvZGl2PlxuICAgIDxkaXYgc3R5bGU9XCJmb250LWZhbWlseTonSmV0QnJhaW5zIE1vbm8nLG1vbm9zcGFjZTsgZm9udC1zaXplOjEuMDVyZW07XG4gICAgICAgIGZvbnQtd2VpZ2h0OjcwMDsgY29sb3I6JHtjb2xvcn07XCI+JHt2YWx9PC9kaXY+XG4gIDwvZGl2PmA7XG5cbiAgcmV0dXJuIGh0bWxgPGRpdiBzdHlsZT1cIlxuICAgICAgZGlzcGxheTpncmlkOyBncmlkLXRlbXBsYXRlLWNvbHVtbnM6cmVwZWF0KGF1dG8tZml0LG1pbm1heCg4cmVtLDFmcikpO1xuICAgICAgZ2FwOjAuNXJlbTsgbWFyZ2luLXRvcDowLjc1cmVtO1wiPlxuICAgICR7aXRlbShcIlBvcC4gc2xvcGUgzrLigoFcIiwgbWxyaXNfYmV0YTEudG9GaXhlZCgxKSwgbWxyaXNfcGFsLmZpeGVkKX1cbiAgICAke2l0ZW0oXCLPhOKCgCAoaW50ZXJjZXB0cylcIiwgbWxyaXNfdGF1MC50b0ZpeGVkKDIpLCBtbHJpc19wYWwuZ3JvdXApfVxuICAgICR7aXRlbShcIs+E4oKBIChzbG9wZXMpXCIsICh1c2VTbG9wZXMgPyBtbHJpc190YXUxIDogMCkudG9GaXhlZCgyKSwgbWxyaXNfcGFsLmdyb3VwKX1cbiAgICAke2l0ZW0oXCJSZWdpb24gc2xvcGUgcmFuZ2VcIiwgYCR7c01pbi50b0ZpeGVkKDEpfSDigKYgJHtzTWF4LnRvRml4ZWQoMSl9YCwgbWxyaXNfcGFsLmluayl9XG4gIDwvZGl2PmA7XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTE0IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBNaWNyby1jYXB0aW9uIHR5aW5nIHRoZSB2aXN1YWwgdG8gdGhlIHBhcmFtZXRlcnMuXG5odG1sYDxwIHN0eWxlPVwiXG4gICAgZm9udC1mYW1pbHk6IEludGVyLCBzYW5zLXNlcmlmO1xuICAgIGZvbnQtc2l6ZTogMC43OHJlbTtcbiAgICBjb2xvcjogJHttbHJpc19wYWwuYXhpc307XG4gICAgbWFyZ2luOiAwLjM1cmVtIDAgMDtcbiAgICBsaW5lLWhlaWdodDogMS40NTtcIj5cbiAgPHNwYW4gc3R5bGU9XCJjb2xvcjoke21scmlzX3BhbC5maXhlZH07Zm9udC13ZWlnaHQ6NjAwO1wiPlJlZDwvc3Bhbj4gPSBmaXhlZFxuICAocG9wdWxhdGlvbi1hdmVyYWdlKSBsaW5lOyA8c3BhbiBzdHlsZT1cImNvbG9yOiR7bWxyaXNfcGFsLmdyb3VwfTtmb250LXdlaWdodDo2MDA7XCI+c2xhdGU8L3NwYW4+XG4gID0gdGhlIGVpZ2h0IHJlZ2lvbiBsaW5lcyAocGFydGlhbGx5IHBvb2xlZCB0b3dhcmQgcmVkKS4gV2l0aCDPhOKCgSA9IDAgdGhleSBhcmVcbiAgcGFyYWxsZWw7IHJhaXNlIM+E4oKBIGFuZCB0aGV5IGZhbiBvdXQgYW5kIGNyb3NzLlxuPC9wPmBcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldFF1aWV0Iiwic291cmNlIjoic2hpbnlJbnB1dCgnbWxyaXNfbW9kZWwnKSJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldFF1aWV0Iiwic291cmNlIjoic2hpbnlJbnB1dCgnbWxyaXNfdGF1MCcpIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0UXVpZXQiLCJzb3VyY2UiOiJzaGlueUlucHV0KCdtbHJpc190YXUxJykifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ21scmlzX3JobycpIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0UXVpZXQiLCJzb3VyY2UiOiJzaGlueUlucHV0KCdtbHJpc19zaG93UG9wJykifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ21scmlzX2RyYXcnKSJ9XX0=
+</script>
+<script type="module">
+if (window.location.protocol === "file:") { alert("The OJS runtime does not work with file:// URLs. Please use a web server to view this document."); }
+window._ojs.paths.runtimeToDoc = "../../content/15-multilevel";
+window._ojs.paths.runtimeToRoot = "../..";
+window._ojs.paths.docToRoot = "../..";
+window._ojs.selfContained = false;
+window._ojs.runtime.interpretFromScriptTags();
+</script>
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../content/15-multilevel/partial-pooling-shrinkage.html" class="pagination-link" aria-label="Partial Pooling and Shrinkage">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Partial Pooling and Shrinkage</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../content/15-multilevel/variance-components-icc.html" class="pagination-link" aria-label="Variance Components and the ICC">
+        <span class="nav-page-text">Variance Components and the ICC</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
