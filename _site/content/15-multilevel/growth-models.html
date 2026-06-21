@@ -1,0 +1,2344 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.27">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Growth Curve Models – Causal Inference – See It, Break It, Prove It</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../content/20-quantile/index.html" rel="next">
+<link href="../../content/15-multilevel/variance-components-icc.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-8b4baf804e461d9b72633f0de59a0cac.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-8177dda9a46fdb7befe495ea115a53e7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script type="module" src="../../site_libs/quarto-ojs/quarto-ojs-runtime.js"></script>
+<link href="../../site_libs/quarto-ojs/quarto-ojs.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../../index.html">
+    <span class="navbar-title">Causal Inference – See It, Break It, Prove It</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../../content/index.html" aria-current="page"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/00-intro/index.html"> 
+<span class="menu-text">Start Learning</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../../content/glossary.html"> 
+<span class="menu-text">Glossary</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/your-username/causal-inference-site"> <i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/15-multilevel/index.html">Multilevel &amp; Hierarchical Models</a></li><li class="breadcrumb-item"><a href="../../content/15-multilevel/growth-models.html">Growth Curve Models</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Home</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Causal Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">0. Introduction</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/00-intro/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Introduction</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">1. Fundamental Problem</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Fundamental Problem of Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/potential-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Potential Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/selection-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/01-fundamental-problem/randomization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">2. DAGs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Directed Acyclic Graphs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">DAG Basics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/d-separation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">d-Separation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/02-dags/good-bad-controls.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Good and Bad Controls</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">3. Statistical Foundations</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Statistical Foundations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/distributions-spread.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributions and Spread</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/hypothesis-testing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hypothesis Testing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/confidence-intervals.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Confidence Intervals</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/03-statistical-foundations/reading-output.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading Regression Output</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">4. Regression</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/ols-mechanics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLS Mechanics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/frisch-waugh-lovell.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Frisch-Waugh-Lovell</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/omitted-variable-bias.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Omitted Variable Bias</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/interactions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interactions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/functional-form.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Functional Form</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/04-regression/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">5. Panel Data</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/panel-structure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Panel Structure</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/fixed-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/05-panel/practical-issues.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Practical Issues</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">6. Diff-in-Differences</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/classic-2x2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classic 2x2 Difference-in-Differences</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/regression-did.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression DiD</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/parallel-trends.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel Trends</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/staggered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Staggered Adoption</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/modern-estimators.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Modern Estimators</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/06-did/diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">7. Instrumental Variables</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/endogeneity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Endogeneity Problem</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/two-stage-least-squares.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Two-Stage Least Squares</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/relevance-exclusion.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Relevance and Exclusion</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/weak-instruments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weak Instruments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/07-iv/late.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LATE and Compliers</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">8. Regression Discontinuity</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/sharp-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sharp Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/estimation-bandwidth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Estimation and Bandwidth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/fuzzy-rd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fuzzy Regression Discontinuity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/validity-tests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Validity and Falsification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/08-rdd/interpretation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpretation and External Validity</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true">
+ <span class="menu-text">9. Matching &amp; Propensity Scores</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching &amp; Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/selection-on-observables.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Selection on Observables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/matching-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Matching Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/propensity-scores.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Propensity Scores</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/weighting-ipw.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Weighting and Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/09-matching/overlap-diagnostics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overlap and Balance Diagnostics</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true">
+ <span class="menu-text">10. Synthetic Control</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Synthetic Control Method</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference for Synthetic Control</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and Practical Issues</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/10-synthetic-control/case-study.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Case Study: A Swedish Regional Reform</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true">
+ <span class="menu-text">Part II · The Econometrician’s Toolkit</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood &amp; GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Maximum Likelihood: The Likelihood Principle</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/properties-asymptotics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Properties and Asymptotics of MLE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/method-of-moments-gmm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Method of Moments and GMM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/11-mle-gmm/likelihood-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Classical Trinity: LR, Wald, and LM Tests</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bootstrap &amp; Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/the-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Bootstrap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/randomization-inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Randomization Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/12-bootstrap/cluster-bootstrap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Clustered and Wild Bootstrap</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-16" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-16" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity Analysis &amp; Partial Identification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/ovb-sensitivity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sensitivity to Omitted Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/rosenbaum-bounds.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rosenbaum Bounds</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/13-sensitivity/partial-identification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Identification and Bounds</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-17" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-17" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary &amp; Discrete Choice</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/binary-outcomes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary Outcomes: LPM, Logit, and Probit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/marginal-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Interpreting Nonlinear Models: Marginal Effects and Odds Ratios</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/16-discrete-choice/multinomial-ordered.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multinomial and Ordered Choice</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false">
+ <span class="menu-text">Count Data</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-18" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-18" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Count Data</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/poisson-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Poisson Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/overdispersion-negbin.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overdispersion and the Negative Binomial</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/17-count-data/zero-inflation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Excess Zeros: Hurdle and Zero-Inflated Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-19" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-19" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation &amp; Selection</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/censoring-truncation-tobit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Censoring, Truncation, and the Tobit Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/18-selection-models/heckman-selection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sample Selection: The Heckman Model</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-20" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-20" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival &amp; Duration Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/survival-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Survival Analysis: Hazards and the Kaplan-Meier Curve</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/cox-proportional-hazards.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Cox Proportional Hazards Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/19-survival/parametric-competing-risks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parametric Duration and Competing Risks</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false">
+ <span class="menu-text">Random Effects</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-21" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-21" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/random-effects-model.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Random Effects Model</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/fe-vs-re.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Fixed versus Random Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/14-random-effects/correlated-re-mundlak.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Correlated Random Effects: The Mundlak Device</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="true">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-22" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-22" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multilevel &amp; Hierarchical Models</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/partial-pooling-shrinkage.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partial Pooling and Shrinkage</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/random-intercepts-slopes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Random Intercepts and Random Slopes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/variance-components-icc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Variance Components and the ICC</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/15-multilevel/growth-models.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Growth Curve Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-23" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-23" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile &amp; Distributional Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/quantile-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantile Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/distributional-effects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Distributional Treatment Effects</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/20-quantile/decompositions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Decompositions: Oaxaca-Blinder and Beyond</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false">
+ <span class="menu-text">Time Series Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-24" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-24" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Time Series Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/stationarity-arima.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stationarity and ARIMA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/unit-roots-cointegration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unit Roots and Cointegration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/var-impulse-response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">VAR and Impulse Responses</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/21-time-series/volatility-garch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Volatility: ARCH and GARCH</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-25" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-25" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nonparametric &amp; Semiparametric Methods</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-density.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel Density Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/kernel-local-regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kernel and Local Polynomial Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/22-nonparametric/series-splines.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Series and Spline Methods</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-26" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-26" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Machine Learning for Economics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/regularization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regularization: Ridge, LASSO, and Elastic Net</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/trees-forests.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trees, Forests, and Boosting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/double-ml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Double and Debiased Machine Learning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/23-machine-learning/causal-forests-policy.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Heterogeneous Effects and Policy Learning</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-27" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-27" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Econometrics</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayes-basics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Inference: Priors and Posteriors</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/mcmc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCMC: Sampling the Posterior</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/24-bayesian/bayesian-regression-hierarchical.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Bayesian Regression and Hierarchical Models</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true">
+ <span class="menu-text">Reference</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-28" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-28" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../content/glossary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Glossary</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#many-measurements-one-patient" id="toc-many-measurements-one-patient" class="nav-link active" data-scroll-target="#many-measurements-one-patient">Many Measurements, One Patient</a></li>
+  <li><a href="#repeated-measures-are-a-two-level-structure" id="toc-repeated-measures-are-a-two-level-structure" class="nav-link" data-scroll-target="#repeated-measures-are-a-two-level-structure">Repeated Measures Are a Two-Level Structure</a></li>
+  <li><a href="#the-random-intercept-and-slope-growth-model" id="toc-the-random-intercept-and-slope-growth-model" class="nav-link" data-scroll-target="#the-random-intercept-and-slope-growth-model">The Random-Intercept-and-Slope Growth Model</a></li>
+  <li><a href="#see-it-a-population-of-trajectories" id="toc-see-it-a-population-of-trajectories" class="nav-link" data-scroll-target="#see-it-a-population-of-trajectories">See It: A Population of Trajectories</a>
+  <ul class="collapse">
+  <li><a href="#how-to-read-the-trajectory-plot" id="toc-how-to-read-the-trajectory-plot" class="nav-link" data-scroll-target="#how-to-read-the-trajectory-plot">How to Read the Trajectory Plot</a></li>
+  </ul></li>
+  <li><a href="#curved-growth-adding-a-quadratic-term" id="toc-curved-growth-adding-a-quadratic-term" class="nav-link" data-scroll-target="#curved-growth-adding-a-quadratic-term">Curved Growth: Adding a Quadratic Term</a></li>
+  <li><a href="#fitting-a-growth-curve" id="toc-fitting-a-growth-curve" class="nav-link" data-scroll-target="#fitting-a-growth-curve">Fitting a Growth Curve</a></li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  <li><a href="#what-comes-next" id="toc-what-comes-next" class="nav-link" data-scroll-target="#what-comes-next">What Comes Next</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Part II · The Econometrician’s Toolkit</li><li class="breadcrumb-item"><a href="../../content/15-multilevel/index.html">Multilevel &amp; Hierarchical Models</a></li><li class="breadcrumb-item"><a href="../../content/15-multilevel/growth-models.html">Growth Curve Models</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Growth Curve Models</h1>
+<p class="subtitle lead">Multilevel models for change over time</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="learning-objectives">
+<p><strong>In this section, you will learn to</strong></p>
+<ul>
+<li>Recognize repeated measurements as a two-level structure — visits (level 1) nested within patients (level 2) — with <em>time</em> entering as a level-1 predictor</li>
+<li>Write the two-level linear growth model with a random intercept and a random slope for time, and read each variance component aloud</li>
+<li>Distinguish the <em>fixed</em> time effect (the average population trajectory) from the <em>random</em> slope variance (heterogeneity in individual rates of change)</li>
+<li>Extend the model to curved (quadratic) growth and say precisely what a population-average curve does and does not claim about any one patient</li>
+<li>Fit a growth curve in R with <code>lmer(y ~ time + (time | id))</code> and in Python with <code>statsmodels</code> <code>MixedLM</code>, and interpret the estimated variance–covariance of the random effects</li>
+</ul>
+</div>
+<section id="many-measurements-one-patient" class="level2">
+<h2 class="anchored" data-anchor-id="many-measurements-one-patient">Many Measurements, One Patient</h2>
+<p>A <em>vårdcentral</em> (primary care center) in one of Sweden’s 21 <em>regioner</em> (regions) enrolls Type 2 diabetes patients in a 24-month coordination program. A dedicated <em>distriktssköterska</em> (district nurse) measures each patient’s <strong>HbA1c</strong> (a percentage that summarizes average blood sugar; lower is better) at enrollment and at roughly six-month intervals thereafter. After two years the <em>journalsystem</em> (medical records system) holds, for each patient, a little string of measurements: one at month 0, another at month 6, month 12, month 18, month 24.</p>
+<p>The question the region wants answered is not “what is the average HbA1c after the program?” — that throws away the timing. It is a question about <strong>change</strong>: <em>how fast, on average, does a patient’s HbA1c fall once they enroll, and does that rate of improvement differ from patient to patient?</em> One patient may start at 9.0% and glide down steadily; another may start at 7.5% and barely move; a third may start high and plummet. The data are not a cloud of independent points — they are a bundle of individual <strong>trajectories</strong>.</p>
+<p>This is <strong>longitudinal</strong> data, and it has a structure we have met before in this module. On the <a href="../../content/15-multilevel/variance-components-icc.html">Variance Components and the ICC</a> page we treated patients nested within clinics. Here the nesting is in <em>time</em>: each patient contributes several measurements, and those repeated measurements belong together. The natural model is again a two-level (multilevel, mixed) model — but now with a twist that makes it a <em>growth</em> model: <strong>time itself is a predictor at level 1</strong>, and each patient may have not only their own baseline level but their own <em>rate of change</em>.</p>
+<div class="glass-card glass-card--insight">
+<p>A growth curve model answers two different questions at once. The <strong>fixed part</strong> describes the <em>average</em> trajectory in the population — the typical patient’s path. The <strong>random part</strong> describes how individual patients <em>scatter around</em> that average path: how much they differ in where they start (random intercept) and in how fast they change (random slope). A program can have an excellent average effect and still help some patients enormously while doing little for others. Growth models let you see and quantify both.</p>
+</div>
+</section>
+<section id="repeated-measures-are-a-two-level-structure" class="level2">
+<h2 class="anchored" data-anchor-id="repeated-measures-are-a-two-level-structure">Repeated Measures Are a Two-Level Structure</h2>
+<p>Index a measurement by two subscripts: <span class="math inline">t</span> for the occasion (<span class="math inline">t = 1, \dots, n_i</span>) and <span class="math inline">i</span> for the patient (<span class="math inline">i = 1, \dots, N</span>). Let <span class="math inline">y_{ti}</span> be the HbA1c of patient <span class="math inline">i</span> at occasion <span class="math inline">t</span>, and let <span class="math inline">\text{time}_{ti}</span> be the time of that measurement, in months since enrollment.</p>
+<p>The defining feature of longitudinal data is that <strong>measurements within a patient are correlated</strong>. If a patient sits well above the population average at month 6, they are very likely to sit above it at month 12 too — they carry their own persistent level from one visit to the next. Treating the five visits of one patient as five independent observations would massively overstate how much information we have, exactly the redundancy the intraclass correlation warned us about on the previous page. A two-level model handles the correlation by giving each patient their own random deviations.</p>
+<div class="glass-card glass-card--definition">
+<p>The data have a <strong>two-level hierarchy</strong>:</p>
+<ul>
+<li><strong>Level 1 (the occasion / measurement).</strong> Each row is one HbA1c reading at one time. The level-1 predictor is <span class="math inline">\text{time}_{ti}</span>. The level-1 residual <span class="math inline">\varepsilon_{ti}</span> is the wobble of a single reading around that patient’s own smooth trajectory — measurement error, a bad week, a recent illness.</li>
+<li><strong>Level 2 (the patient).</strong> Each patient owns a <em>trajectory</em>: a personal starting level and a personal rate of change. The level-2 random effects describe how those personal trajectories vary across the patient population.</li>
+</ul>
+<p>Read the subscript <span class="math inline">y_{ti}</span> as “the outcome at occasion <span class="math inline">t</span> for patient <span class="math inline">i</span>.” Occasions are nested inside patients, just as patients were nested inside clinics on the previous page — only now the level-1 predictor, time, is the very thing we are modelling change in.</p>
+</div>
+<p>Crucially, time does <strong>not</strong> have to be measured at the same occasions for every patient, and patients need not have the same number of visits. A patient who missed their month-12 appointment simply contributes four rows instead of five. This <em>unbalanced</em> design is where multilevel growth models decisively beat the old “repeated-measures ANOVA” approach, which demanded a complete, equally spaced grid.</p>
+</section>
+<section id="the-random-intercept-and-slope-growth-model" class="level2">
+<h2 class="anchored" data-anchor-id="the-random-intercept-and-slope-growth-model">The Random-Intercept-and-Slope Growth Model</h2>
+<p>We build the model in two stages, which is the cleanest way to keep the two levels straight.</p>
+<p><strong>Level 1 — each patient’s own straight line.</strong> Within patient <span class="math inline">i</span>, suppose HbA1c falls (approximately) linearly with time:</p>
+<p><span class="math display">
+y_{ti} = \beta_{0i} + \beta_{1i}\,\text{time}_{ti} + \varepsilon_{ti}, \qquad \varepsilon_{ti} \sim \mathcal{N}(0, \sigma^2_\varepsilon).
+</span></p>
+<p><strong>Read this as</strong>: “Patient <span class="math inline">i</span>’s reading at occasion <span class="math inline">t</span> equals <em>their own</em> intercept <span class="math inline">\beta_{0i}</span> (their HbA1c at <span class="math inline">\text{time}=0</span>, i.e.&nbsp;at enrollment), plus <em>their own</em> slope <span class="math inline">\beta_{1i}</span> times how long they have been in the program, plus a small reading-level error.” The two coefficients carry the subscript <span class="math inline">i</span> because they belong to the patient — this is a separate line for every patient.</p>
+<p><strong>Level 2 — where do those personal lines come from?</strong> We do not estimate <span class="math inline">N</span> unrelated lines. Instead we say each patient’s intercept and slope are the population averages plus a personal departure:</p>
+<p><span class="math display">
+\beta_{0i} = \gamma_{00} + u_{0i}, \qquad \beta_{1i} = \gamma_{10} + u_{1i}.
+</span></p>
+<p><strong>Read this as</strong>: “Patient <span class="math inline">i</span>’s baseline is the <em>average</em> baseline <span class="math inline">\gamma_{00}</span> plus a patient-specific bump <span class="math inline">u_{0i}</span>; patient <span class="math inline">i</span>’s rate of change is the <em>average</em> rate <span class="math inline">\gamma_{10}</span> plus a patient-specific bump <span class="math inline">u_{1i}</span>.” The fixed effects <span class="math inline">\gamma_{00}</span> and <span class="math inline">\gamma_{10}</span> describe the average trajectory; the random effects <span class="math inline">u_{0i}</span> and <span class="math inline">u_{1i}</span> describe individual departures from it.</p>
+<p>Substituting level 2 into level 1 gives the <strong>combined (mixed) model</strong> that software actually fits:</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>two-level linear growth model</strong> is</p>
+<p><span class="math display">
+y_{ti} = \underbrace{\gamma_{00} + \gamma_{10}\,\text{time}_{ti}}_{\text{fixed: average trajectory}} \; + \; \underbrace{u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}}_{\text{random: individual departures}},
+</span></p>
+<p>with the random effects drawn jointly from a mean-zero bivariate normal,</p>
+<p><span class="math display">
+\begin{pmatrix} u_{0i} \\ u_{1i} \end{pmatrix}
+\sim \mathcal{N}\!\left(
+\begin{pmatrix} 0 \\ 0 \end{pmatrix},\;
+\mathbf{G} = \begin{pmatrix} \tau_{00} &amp; \tau_{01} \\ \tau_{01} &amp; \tau_{11} \end{pmatrix}
+\right),
+\qquad \varepsilon_{ti} \sim \mathcal{N}(0, \sigma^2_\varepsilon).
+</span></p>
+<ul>
+<li><span class="math inline">\gamma_{00}</span> — <strong>average intercept</strong>: the mean HbA1c at enrollment (<span class="math inline">\text{time}=0</span>).</li>
+<li><span class="math inline">\gamma_{10}</span> — <strong>average slope (the fixed time effect)</strong>: the mean change in HbA1c <em>per month</em> in the program. A negative <span class="math inline">\gamma_{10}</span> means the typical patient improves.</li>
+<li><span class="math inline">\tau_{00} = \operatorname{Var}(u_{0i})</span> — <strong>intercept variance</strong>: how much patients differ in <em>where they start</em>.</li>
+<li><span class="math inline">\tau_{11} = \operatorname{Var}(u_{1i})</span> — <strong>slope variance</strong>: how much patients differ in <em>how fast they change</em>. This is the heart of a growth model.</li>
+<li><span class="math inline">\tau_{01} = \operatorname{Cov}(u_{0i}, u_{1i})</span> — <strong>intercept–slope covariance</strong>: do patients who start higher also improve faster (or slower)?</li>
+<li><span class="math inline">\sigma^2_\varepsilon</span> — <strong>within-patient (occasion) variance</strong>: noise of a single reading around the patient’s own line.</li>
+</ul>
+</div>
+<p>Notice the new term that makes this a growth model and not just a random-intercept model: <span class="math inline">u_{1i}\,\text{time}_{ti}</span>. Because <span class="math inline">u_{1i}</span> multiplies time, its effect <em>grows with time</em> — two patients who look nearly identical at enrollment can be far apart by month 24. This is what produces the visual <strong>fan</strong> of trajectories we will explore in the interactive: the spread between patients widens as the program runs.</p>
+<div class="glass-card glass-card--insight">
+<p><strong>Fixed slope vs.&nbsp;slope variance — do not confuse them.</strong> The fixed time effect <span class="math inline">\gamma_{10}</span> tells you the <em>average</em> direction and speed of change. The slope variance <span class="math inline">\tau_{11}</span> tells you how <em>reliable</em> that average is at the individual level. You can have a strong average improvement (<span class="math inline">\gamma_{10}</span> large and negative) that is highly <em>consistent</em> across patients (<span class="math inline">\tau_{11} \approx 0</span>, everyone improves at nearly the same rate), or the same average improvement that is wildly <em>heterogeneous</em> (<span class="math inline">\tau_{11}</span> large — some patients plunge, others worsen). The policy reading is completely different. Reporting only <span class="math inline">\gamma_{10}</span> hides which world you are in.</p>
+</div>
+</section>
+<section id="see-it-a-population-of-trajectories" class="level2">
+<h2 class="anchored" data-anchor-id="see-it-a-population-of-trajectories">See It: A Population of Trajectories</h2>
+<p>The interactive below simulates a cohort of diabetes patients followed over 24 months. Every thin line is one patient’s HbA1c trajectory; the thick <strong>Uppsala-red</strong> line is the population-average trajectory <span class="math inline">\gamma_{00} + \gamma_{10}\,\text{time}</span> — the fixed part of the model.</p>
+<p>Start with the random slope <strong>off</strong>: every patient shares the <em>same</em> slope <span class="math inline">\gamma_{10}</span> and differs only in their starting level (random intercept). The thin lines are parallel — a sheaf of lines that never crosses. Then switch the random slope <strong>on</strong> and increase the <strong>slope variance</strong> <span class="math inline">\tau_{11}</span>: now each patient gets their own rate of change, and the trajectories <strong>fan out</strong>, diverging more and more as the program runs. That fanning <em>is</em> the slope variance, made visible.</p>
+<section id="individual-growth-trajectories-around-the-average-trend" class="level4 interactive-container">
+<h4 class="anchored" data-anchor-id="individual-growth-trajectories-around-the-average-trend">Individual growth trajectories around the average trend</h4>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb1" data-startfrom="113" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 112;"><span id="cb1-113"><a href="#cb1-113" aria-hidden="true" tabindex="-1"></a><span class="co">// Concise "Start here" prompt above the controls (the full tour is below).</span></span>
+<span id="cb1-114"><a href="#cb1-114" aria-hidden="true" tabindex="-1"></a><span class="fu">html</span><span class="vs">`&lt;p style="</span></span>
+<span id="cb1-115"><a href="#cb1-115" aria-hidden="true" tabindex="-1"></a><span class="vs">    font-family: Inter, sans-serif;</span></span>
+<span id="cb1-116"><a href="#cb1-116" aria-hidden="true" tabindex="-1"></a><span class="vs">    font-size: 0.85rem;</span></span>
+<span id="cb1-117"><a href="#cb1-117" aria-hidden="true" tabindex="-1"></a><span class="vs">    color: </span><span class="sc">${</span>mlgrow_pal<span class="op">.</span><span class="at">axis</span><span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb1-118"><a href="#cb1-118" aria-hidden="true" tabindex="-1"></a><span class="vs">    background: </span><span class="sc">${</span>mlgrow_pal<span class="op">.</span><span class="at">fill</span><span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb1-119"><a href="#cb1-119" aria-hidden="true" tabindex="-1"></a><span class="vs">    border-left: 3px solid </span><span class="sc">${</span>mlgrow_pal<span class="op">.</span><span class="at">focal</span><span class="sc">}</span><span class="vs">;</span></span>
+<span id="cb1-120"><a href="#cb1-120" aria-hidden="true" tabindex="-1"></a><span class="vs">    padding: 0.5rem 0.75rem;</span></span>
+<span id="cb1-121"><a href="#cb1-121" aria-hidden="true" tabindex="-1"></a><span class="vs">    border-radius: 0 0.35rem 0.35rem 0;</span></span>
+<span id="cb1-122"><a href="#cb1-122" aria-hidden="true" tabindex="-1"></a><span class="vs">    margin: 0 0 0.75rem;"&gt;</span></span>
+<span id="cb1-123"><a href="#cb1-123" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;strong&gt;Start here:&lt;/strong&gt; with the random slope &lt;em&gt;off&lt;/em&gt;, the thin patient</span></span>
+<span id="cb1-124"><a href="#cb1-124" aria-hidden="true" tabindex="-1"></a><span class="vs">  lines run parallel to the bold red average. Flip &lt;em&gt;Random slope for time&lt;/em&gt;</span></span>
+<span id="cb1-125"><a href="#cb1-125" aria-hidden="true" tabindex="-1"></a><span class="vs">  on and push &lt;em&gt;Slope variance&lt;/em&gt; up to watch the trajectories fan apart.</span></span>
+<span id="cb1-126"><a href="#cb1-126" aria-hidden="true" tabindex="-1"></a><span class="vs">  Full guided tour is below the chart.</span></span>
+<span id="cb1-127"><a href="#cb1-127" aria-hidden="true" tabindex="-1"></a><span class="vs">&lt;/p&gt;`</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-1" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb2" data-startfrom="133" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 132;"><span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>viewof mlgrow_randomSlope <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">toggle</span>({</span>
+<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Random slope for time"</span><span class="op">,</span></span>
+<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="kw">false</span></span>
+<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-2" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb3" data-startfrom="142" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 141;"><span id="cb3-142"><a href="#cb3-142" aria-hidden="true" tabindex="-1"></a>viewof mlgrow_slopeVar <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">0</span><span class="op">,</span> <span class="dv">1</span>]<span class="op">,</span> {</span>
+<span id="cb3-143"><a href="#cb3-143" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="fl">0.35</span><span class="op">,</span></span>
+<span id="cb3-144"><a href="#cb3-144" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.01</span><span class="op">,</span></span>
+<span id="cb3-145"><a href="#cb3-145" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Slope variance τ₁₁ (heterogeneity in rate of change)"</span></span>
+<span id="cb3-146"><a href="#cb3-146" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-3" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb4" data-startfrom="152" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 151;"><span id="cb4-152"><a href="#cb4-152" aria-hidden="true" tabindex="-1"></a>viewof mlgrow_interceptSD <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">0</span><span class="op">,</span> <span class="fl">1.2</span>]<span class="op">,</span> {</span>
+<span id="cb4-153"><a href="#cb4-153" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="fl">0.7</span><span class="op">,</span></span>
+<span id="cb4-154"><a href="#cb4-154" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="fl">0.05</span><span class="op">,</span></span>
+<span id="cb4-155"><a href="#cb4-155" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Intercept SD √τ₀₀ (spread of starting levels)"</span></span>
+<span id="cb4-156"><a href="#cb4-156" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-4" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb5" data-startfrom="162" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 161;"><span id="cb5-162"><a href="#cb5-162" aria-hidden="true" tabindex="-1"></a>viewof mlgrow_nPatients <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">range</span>([<span class="dv">6</span><span class="op">,</span> <span class="dv">40</span>]<span class="op">,</span> {</span>
+<span id="cb5-163"><a href="#cb5-163" aria-hidden="true" tabindex="-1"></a>  <span class="dt">value</span><span class="op">:</span> <span class="dv">18</span><span class="op">,</span></span>
+<span id="cb5-164"><a href="#cb5-164" aria-hidden="true" tabindex="-1"></a>  <span class="dt">step</span><span class="op">:</span> <span class="dv">1</span><span class="op">,</span></span>
+<span id="cb5-165"><a href="#cb5-165" aria-hidden="true" tabindex="-1"></a>  <span class="dt">label</span><span class="op">:</span> <span class="st">"Number of patients shown"</span></span>
+<span id="cb5-166"><a href="#cb5-166" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-5" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb6" data-startfrom="172" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 171;"><span id="cb6-172"><a href="#cb6-172" aria-hidden="true" tabindex="-1"></a>viewof mlgrow_draw <span class="op">=</span> Inputs<span class="op">.</span><span class="fu">button</span>(<span class="st">"Draw new sample"</span><span class="op">,</span> { <span class="dt">value</span><span class="op">:</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">reduce</span><span class="op">:</span> v <span class="kw">=&gt;</span> v <span class="op">+</span> <span class="dv">1</span> })</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-6" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb7" data-startfrom="179" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 178;"><span id="cb7-179"><a href="#cb7-179" aria-hidden="true" tabindex="-1"></a><span class="co">// ── Uppsala-academic palette shared across this page's interactives. ──</span></span>
+<span id="cb7-180"><a href="#cb7-180" aria-hidden="true" tabindex="-1"></a>mlgrow_pal <span class="op">=</span> ({</span>
+<span id="cb7-181"><a href="#cb7-181" aria-hidden="true" tabindex="-1"></a>  <span class="dt">focal</span><span class="op">:</span>   <span class="st">"#990000"</span><span class="op">,</span>   <span class="co">// the estimate / average trajectory (Uppsala red)</span></span>
+<span id="cb7-182"><a href="#cb7-182" aria-hidden="true" tabindex="-1"></a>  <span class="dt">compare</span><span class="op">:</span> <span class="st">"#3d5a6c"</span><span class="op">,</span>   <span class="co">// secondary / individual trajectories (slate)</span></span>
+<span id="cb7-183"><a href="#cb7-183" aria-hidden="true" tabindex="-1"></a>  <span class="dt">good</span><span class="op">:</span>    <span class="st">"#2e6f40"</span><span class="op">,</span>   <span class="co">// success / on-target (forest green)</span></span>
+<span id="cb7-184"><a href="#cb7-184" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ochre</span><span class="op">:</span>   <span class="st">"#9c7a33"</span><span class="op">,</span>   <span class="co">// highlight / "true value" annotation (ochre)</span></span>
+<span id="cb7-185"><a href="#cb7-185" aria-hidden="true" tabindex="-1"></a>  <span class="dt">ink</span><span class="op">:</span>     <span class="st">"#1c1c1a"</span><span class="op">,</span>   <span class="co">// reference lines &amp; ink text</span></span>
+<span id="cb7-186"><a href="#cb7-186" aria-hidden="true" tabindex="-1"></a>  <span class="dt">axis</span><span class="op">:</span>    <span class="st">"#79766e"</span><span class="op">,</span>   <span class="co">// axis / muted label text (Uppsala muted)</span></span>
+<span id="cb7-187"><a href="#cb7-187" aria-hidden="true" tabindex="-1"></a>  <span class="dt">hair</span><span class="op">:</span>    <span class="st">"#e6e3db"</span><span class="op">,</span>   <span class="co">// gridlines / hairlines</span></span>
+<span id="cb7-188"><a href="#cb7-188" aria-hidden="true" tabindex="-1"></a>  <span class="dt">muted</span><span class="op">:</span>   <span class="st">"#79766e"</span><span class="op">,</span>   <span class="co">// muted ink</span></span>
+<span id="cb7-189"><a href="#cb7-189" aria-hidden="true" tabindex="-1"></a>  <span class="dt">fill</span><span class="op">:</span>    <span class="st">"#f6f5f1"</span>    <span class="co">// subtle tile fill</span></span>
+<span id="cb7-190"><a href="#cb7-190" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-7" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb8" data-startfrom="197" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 196;"><span id="cb8-197"><a href="#cb8-197" aria-hidden="true" tabindex="-1"></a><span class="co">// Fixed (population-average) parameters of the simulated diabetes cohort.</span></span>
+<span id="cb8-198"><a href="#cb8-198" aria-hidden="true" tabindex="-1"></a><span class="co">// HbA1c (%), measured at months 0, 6, 12, 18, 24. Lower is better, so the</span></span>
+<span id="cb8-199"><a href="#cb8-199" aria-hidden="true" tabindex="-1"></a><span class="co">// average slope is NEGATIVE: the typical patient improves over the program.</span></span>
+<span id="cb8-200"><a href="#cb8-200" aria-hidden="true" tabindex="-1"></a>mlgrow_params <span class="op">=</span> ({</span>
+<span id="cb8-201"><a href="#cb8-201" aria-hidden="true" tabindex="-1"></a>  <span class="dt">gamma00</span><span class="op">:</span> <span class="fl">8.4</span><span class="op">,</span>     <span class="co">// average HbA1c at enrollment (time = 0)</span></span>
+<span id="cb8-202"><a href="#cb8-202" aria-hidden="true" tabindex="-1"></a>  <span class="dt">gamma10</span><span class="op">:</span> <span class="op">-</span><span class="fl">0.045</span><span class="op">,</span>  <span class="co">// average change per MONTH  (≈ -1.08 % over 24 months)</span></span>
+<span id="cb8-203"><a href="#cb8-203" aria-hidden="true" tabindex="-1"></a>  <span class="dt">times</span><span class="op">:</span>   [<span class="dv">0</span><span class="op">,</span> <span class="dv">6</span><span class="op">,</span> <span class="dv">12</span><span class="op">,</span> <span class="dv">18</span><span class="op">,</span> <span class="dv">24</span>]<span class="op">,</span></span>
+<span id="cb8-204"><a href="#cb8-204" aria-hidden="true" tabindex="-1"></a>  <span class="dt">sigmaEps</span><span class="op">:</span> <span class="fl">0.18</span>    <span class="co">// within-patient reading noise (SD, % points)</span></span>
+<span id="cb8-205"><a href="#cb8-205" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-8" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb9" data-startfrom="212" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 211;"><span id="cb9-212"><a href="#cb9-212" aria-hidden="true" tabindex="-1"></a><span class="co">// Generate the cohort. Each patient i gets:</span></span>
+<span id="cb9-213"><a href="#cb9-213" aria-hidden="true" tabindex="-1"></a><span class="co">//   intercept departure u0 ~ N(0, interceptSD^2)</span></span>
+<span id="cb9-214"><a href="#cb9-214" aria-hidden="true" tabindex="-1"></a><span class="co">//   slope departure     u1 ~ N(0, slopeVar)   [only if random slope is ON]</span></span>
+<span id="cb9-215"><a href="#cb9-215" aria-hidden="true" tabindex="-1"></a><span class="co">// The slope-variance slider is the VARIANCE τ₁₁, so its SD is sqrt(τ₁₁); we</span></span>
+<span id="cb9-216"><a href="#cb9-216" aria-hidden="true" tabindex="-1"></a><span class="co">// scale it to a per-month SD so the fan stays inside the plot at τ₁₁ = 1.</span></span>
+<span id="cb9-217"><a href="#cb9-217" aria-hidden="true" tabindex="-1"></a>mlgrow_cohort <span class="op">=</span> {</span>
+<span id="cb9-218"><a href="#cb9-218" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> bump <span class="op">=</span> mlgrow_draw<span class="op">;</span>                 <span class="co">// re-seed on each button press</span></span>
+<span id="cb9-219"><a href="#cb9-219" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> N <span class="op">=</span> mlgrow_nPatients<span class="op">;</span></span>
+<span id="cb9-220"><a href="#cb9-220" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> { gamma00<span class="op">,</span> gamma10<span class="op">,</span> times<span class="op">,</span> sigmaEps } <span class="op">=</span> mlgrow_params<span class="op">;</span></span>
+<span id="cb9-221"><a href="#cb9-221" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> interceptSD <span class="op">=</span> mlgrow_interceptSD<span class="op">;</span></span>
+<span id="cb9-222"><a href="#cb9-222" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Convert the displayed τ₁₁ to a per-month slope SD. The displayed scale runs</span></span>
+<span id="cb9-223"><a href="#cb9-223" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 0..1; we map it so τ₁₁ = 1 gives a clearly fanned but on-domain spread.</span></span>
+<span id="cb9-224"><a href="#cb9-224" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> slopeSD <span class="op">=</span> mlgrow_randomSlope <span class="op">?</span> <span class="fl">0.025</span> <span class="op">*</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">sqrt</span>(mlgrow_slopeVar) <span class="op">:</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-225"><a href="#cb9-225" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-226"><a href="#cb9-226" aria-hidden="true" tabindex="-1"></a>  <span class="co">// d3.randomLcg expects a seed in [0, 1); keep it in range no matter how many</span></span>
+<span id="cb9-227"><a href="#cb9-227" aria-hidden="true" tabindex="-1"></a>  <span class="co">// times the button is pressed by taking the fractional part.</span></span>
+<span id="cb9-228"><a href="#cb9-228" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> seed <span class="op">=</span> (<span class="fl">0.241</span> <span class="op">+</span> <span class="fl">0.733</span> <span class="op">*</span> bump) <span class="op">%</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb9-229"><a href="#cb9-229" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> rNorm <span class="op">=</span> d3<span class="op">.</span><span class="at">randomNormal</span><span class="op">.</span><span class="fu">source</span>(d3<span class="op">.</span><span class="fu">randomLcg</span>(seed))<span class="op">;</span></span>
+<span id="cb9-230"><a href="#cb9-230" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> drawIntercept <span class="op">=</span> <span class="fu">rNorm</span>(<span class="dv">0</span><span class="op">,</span> interceptSD)<span class="op">;</span></span>
+<span id="cb9-231"><a href="#cb9-231" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> drawSlope <span class="op">=</span> <span class="fu">rNorm</span>(<span class="dv">0</span><span class="op">,</span> slopeSD)<span class="op">;</span></span>
+<span id="cb9-232"><a href="#cb9-232" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> drawEps <span class="op">=</span> <span class="fu">rNorm</span>(<span class="dv">0</span><span class="op">,</span> sigmaEps)<span class="op">;</span></span>
+<span id="cb9-233"><a href="#cb9-233" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-234"><a href="#cb9-234" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> patients <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb9-235"><a href="#cb9-235" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (<span class="kw">let</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> N<span class="op">;</span> i<span class="op">++</span>) {</span>
+<span id="cb9-236"><a href="#cb9-236" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> u0 <span class="op">=</span> <span class="fu">drawIntercept</span>()<span class="op">;</span></span>
+<span id="cb9-237"><a href="#cb9-237" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> u1 <span class="op">=</span> <span class="fu">drawSlope</span>()<span class="op">;</span></span>
+<span id="cb9-238"><a href="#cb9-238" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> line <span class="op">=</span> times<span class="op">.</span><span class="fu">map</span>(tm <span class="kw">=&gt;</span> ({</span>
+<span id="cb9-239"><a href="#cb9-239" aria-hidden="true" tabindex="-1"></a>      <span class="dt">id</span><span class="op">:</span> i<span class="op">,</span></span>
+<span id="cb9-240"><a href="#cb9-240" aria-hidden="true" tabindex="-1"></a>      <span class="dt">time</span><span class="op">:</span> tm<span class="op">,</span></span>
+<span id="cb9-241"><a href="#cb9-241" aria-hidden="true" tabindex="-1"></a>      <span class="co">// observed reading = patient's own line + occasion noise</span></span>
+<span id="cb9-242"><a href="#cb9-242" aria-hidden="true" tabindex="-1"></a>      <span class="dt">y</span><span class="op">:</span> (gamma00 <span class="op">+</span> u0) <span class="op">+</span> (gamma10 <span class="op">+</span> u1) <span class="op">*</span> tm <span class="op">+</span> <span class="fu">drawEps</span>()<span class="op">,</span></span>
+<span id="cb9-243"><a href="#cb9-243" aria-hidden="true" tabindex="-1"></a>      <span class="co">// the patient's own smooth (noise-free) trajectory, for drawing the line</span></span>
+<span id="cb9-244"><a href="#cb9-244" aria-hidden="true" tabindex="-1"></a>      <span class="dt">yhat</span><span class="op">:</span> (gamma00 <span class="op">+</span> u0) <span class="op">+</span> (gamma10 <span class="op">+</span> u1) <span class="op">*</span> tm</span>
+<span id="cb9-245"><a href="#cb9-245" aria-hidden="true" tabindex="-1"></a>    }))<span class="op">;</span></span>
+<span id="cb9-246"><a href="#cb9-246" aria-hidden="true" tabindex="-1"></a>    patients<span class="op">.</span><span class="fu">push</span>({ <span class="dt">id</span><span class="op">:</span> i<span class="op">,</span> u0<span class="op">,</span> u1<span class="op">,</span> line })<span class="op">;</span></span>
+<span id="cb9-247"><a href="#cb9-247" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb9-248"><a href="#cb9-248" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> patients<span class="op">;</span></span>
+<span id="cb9-249"><a href="#cb9-249" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-9" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb10" data-startfrom="256" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 255;"><span id="cb10-256"><a href="#cb10-256" aria-hidden="true" tabindex="-1"></a><span class="co">// Flatten the per-patient smooth trajectories for the line mark, and keep the</span></span>
+<span id="cb10-257"><a href="#cb10-257" aria-hidden="true" tabindex="-1"></a><span class="co">// noisy readings for the dot mark.</span></span>
+<span id="cb10-258"><a href="#cb10-258" aria-hidden="true" tabindex="-1"></a>mlgrow_lineData <span class="op">=</span> mlgrow_cohort<span class="op">.</span><span class="fu">flatMap</span>(p <span class="kw">=&gt;</span> p<span class="op">.</span><span class="at">line</span><span class="op">.</span><span class="fu">map</span>(r <span class="kw">=&gt;</span> ({ <span class="op">...</span>r })))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-10" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell hidden">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb11" data-startfrom="265" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 264;"><span id="cb11-265"><a href="#cb11-265" aria-hidden="true" tabindex="-1"></a><span class="co">// The population-average trajectory (the fixed part): two endpoints suffice.</span></span>
+<span id="cb11-266"><a href="#cb11-266" aria-hidden="true" tabindex="-1"></a>mlgrow_avgLine <span class="op">=</span> {</span>
+<span id="cb11-267"><a href="#cb11-267" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> { gamma00<span class="op">,</span> gamma10<span class="op">,</span> times } <span class="op">=</span> mlgrow_params<span class="op">;</span></span>
+<span id="cb11-268"><a href="#cb11-268" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> t0 <span class="op">=</span> times[<span class="dv">0</span>]<span class="op">,</span> t1 <span class="op">=</span> times[times<span class="op">.</span><span class="at">length</span> <span class="op">-</span> <span class="dv">1</span>]<span class="op">;</span></span>
+<span id="cb11-269"><a href="#cb11-269" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> [</span>
+<span id="cb11-270"><a href="#cb11-270" aria-hidden="true" tabindex="-1"></a>    { <span class="dt">time</span><span class="op">:</span> t0<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> gamma00 <span class="op">+</span> gamma10 <span class="op">*</span> t0 }<span class="op">,</span></span>
+<span id="cb11-271"><a href="#cb11-271" aria-hidden="true" tabindex="-1"></a>    { <span class="dt">time</span><span class="op">:</span> t1<span class="op">,</span> <span class="dt">y</span><span class="op">:</span> gamma00 <span class="op">+</span> gamma10 <span class="op">*</span> t1 }</span>
+<span id="cb11-272"><a href="#cb11-272" aria-hidden="true" tabindex="-1"></a>  ]<span class="op">;</span></span>
+<span id="cb11-273"><a href="#cb11-273" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display hidden">
+<div id="ojs-cell-11" data-nodetype="declaration">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb12" data-startfrom="279" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 278;"><span id="cb12-279"><a href="#cb12-279" aria-hidden="true" tabindex="-1"></a>Plot<span class="op">.</span><span class="fu">plot</span>({</span>
+<span id="cb12-280"><a href="#cb12-280" aria-hidden="true" tabindex="-1"></a>  <span class="dt">width</span><span class="op">:</span> <span class="bu">Math</span><span class="op">.</span><span class="fu">min</span>(<span class="dv">680</span><span class="op">,</span> width)<span class="op">,</span></span>
+<span id="cb12-281"><a href="#cb12-281" aria-hidden="true" tabindex="-1"></a>  <span class="dt">height</span><span class="op">:</span> <span class="dv">360</span><span class="op">,</span></span>
+<span id="cb12-282"><a href="#cb12-282" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginLeft</span><span class="op">:</span> <span class="dv">58</span><span class="op">,</span></span>
+<span id="cb12-283"><a href="#cb12-283" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginBottom</span><span class="op">:</span> <span class="dv">46</span><span class="op">,</span></span>
+<span id="cb12-284"><a href="#cb12-284" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginTop</span><span class="op">:</span> <span class="dv">28</span><span class="op">,</span></span>
+<span id="cb12-285"><a href="#cb12-285" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marginRight</span><span class="op">:</span> <span class="dv">18</span><span class="op">,</span></span>
+<span id="cb12-286"><a href="#cb12-286" aria-hidden="true" tabindex="-1"></a>  <span class="dt">grid</span><span class="op">:</span> <span class="kw">true</span><span class="op">,</span></span>
+<span id="cb12-287"><a href="#cb12-287" aria-hidden="true" tabindex="-1"></a>  <span class="dt">style</span><span class="op">:</span> { <span class="dt">fontFamily</span><span class="op">:</span> <span class="st">"Inter, sans-serif"</span> }<span class="op">,</span></span>
+<span id="cb12-288"><a href="#cb12-288" aria-hidden="true" tabindex="-1"></a>  <span class="dt">x</span><span class="op">:</span> {</span>
+<span id="cb12-289"><a href="#cb12-289" aria-hidden="true" tabindex="-1"></a>    <span class="dt">label</span><span class="op">:</span> <span class="st">"Months since enrollment"</span><span class="op">,</span></span>
+<span id="cb12-290"><a href="#cb12-290" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> [<span class="dv">0</span><span class="op">,</span> <span class="dv">24</span>]<span class="op">,</span></span>
+<span id="cb12-291"><a href="#cb12-291" aria-hidden="true" tabindex="-1"></a>    <span class="dt">ticks</span><span class="op">:</span> [<span class="dv">0</span><span class="op">,</span> <span class="dv">6</span><span class="op">,</span> <span class="dv">12</span><span class="op">,</span> <span class="dv">18</span><span class="op">,</span> <span class="dv">24</span>]</span>
+<span id="cb12-292"><a href="#cb12-292" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb12-293"><a href="#cb12-293" aria-hidden="true" tabindex="-1"></a>  <span class="dt">y</span><span class="op">:</span> {</span>
+<span id="cb12-294"><a href="#cb12-294" aria-hidden="true" tabindex="-1"></a>    <span class="dt">label</span><span class="op">:</span> <span class="st">"HbA1c (%) — lower is better"</span><span class="op">,</span></span>
+<span id="cb12-295"><a href="#cb12-295" aria-hidden="true" tabindex="-1"></a>    <span class="dt">domain</span><span class="op">:</span> [<span class="dv">6</span><span class="op">,</span> <span class="dv">11</span>]</span>
+<span id="cb12-296"><a href="#cb12-296" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb12-297"><a href="#cb12-297" aria-hidden="true" tabindex="-1"></a>  <span class="dt">marks</span><span class="op">:</span> [</span>
+<span id="cb12-298"><a href="#cb12-298" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Thin individual trajectories (slate, semi-transparent).</span></span>
+<span id="cb12-299"><a href="#cb12-299" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(mlgrow_lineData<span class="op">,</span> {</span>
+<span id="cb12-300"><a href="#cb12-300" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"time"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"yhat"</span><span class="op">,</span> <span class="dt">z</span><span class="op">:</span> <span class="st">"id"</span><span class="op">,</span></span>
+<span id="cb12-301"><a href="#cb12-301" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> mlgrow_pal<span class="op">.</span><span class="at">compare</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">1</span><span class="op">,</span> <span class="dt">strokeOpacity</span><span class="op">:</span> <span class="fl">0.5</span></span>
+<span id="cb12-302"><a href="#cb12-302" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb12-303"><a href="#cb12-303" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The noisy readings as small dots.</span></span>
+<span id="cb12-304"><a href="#cb12-304" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">dot</span>(mlgrow_lineData<span class="op">,</span> {</span>
+<span id="cb12-305"><a href="#cb12-305" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"time"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span></span>
+<span id="cb12-306"><a href="#cb12-306" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fill</span><span class="op">:</span> mlgrow_pal<span class="op">.</span><span class="at">compare</span><span class="op">,</span> <span class="dt">fillOpacity</span><span class="op">:</span> <span class="fl">0.35</span><span class="op">,</span> <span class="dt">r</span><span class="op">:</span> <span class="fl">1.8</span></span>
+<span id="cb12-307"><a href="#cb12-307" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb12-308"><a href="#cb12-308" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The population-average trajectory (the fixed part) in Uppsala red.</span></span>
+<span id="cb12-309"><a href="#cb12-309" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">line</span>(mlgrow_avgLine<span class="op">,</span> {</span>
+<span id="cb12-310"><a href="#cb12-310" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"time"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span></span>
+<span id="cb12-311"><a href="#cb12-311" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> mlgrow_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="fl">3.5</span></span>
+<span id="cb12-312"><a href="#cb12-312" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb12-313"><a href="#cb12-313" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Label for the average line, anchored at its right endpoint.</span></span>
+<span id="cb12-314"><a href="#cb12-314" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">text</span>([mlgrow_avgLine[<span class="dv">1</span>]]<span class="op">,</span> {</span>
+<span id="cb12-315"><a href="#cb12-315" aria-hidden="true" tabindex="-1"></a>      <span class="dt">x</span><span class="op">:</span> <span class="st">"time"</span><span class="op">,</span> <span class="dt">y</span><span class="op">:</span> <span class="st">"y"</span><span class="op">,</span></span>
+<span id="cb12-316"><a href="#cb12-316" aria-hidden="true" tabindex="-1"></a>      <span class="dt">text</span><span class="op">:</span> [<span class="st">"population average"</span>]<span class="op">,</span></span>
+<span id="cb12-317"><a href="#cb12-317" aria-hidden="true" tabindex="-1"></a>      <span class="dt">dx</span><span class="op">:</span> <span class="op">-</span><span class="dv">6</span><span class="op">,</span> <span class="dt">dy</span><span class="op">:</span> <span class="op">-</span><span class="dv">12</span><span class="op">,</span> <span class="dt">textAnchor</span><span class="op">:</span> <span class="st">"end"</span><span class="op">,</span></span>
+<span id="cb12-318"><a href="#cb12-318" aria-hidden="true" tabindex="-1"></a>      <span class="dt">fill</span><span class="op">:</span> mlgrow_pal<span class="op">.</span><span class="at">focal</span><span class="op">,</span> <span class="dt">fontSize</span><span class="op">:</span> <span class="dv">11</span><span class="op">,</span> <span class="dt">fontWeight</span><span class="op">:</span> <span class="st">"bold"</span><span class="op">,</span></span>
+<span id="cb12-319"><a href="#cb12-319" aria-hidden="true" tabindex="-1"></a>      <span class="dt">stroke</span><span class="op">:</span> <span class="st">"white"</span><span class="op">,</span> <span class="dt">strokeWidth</span><span class="op">:</span> <span class="dv">3</span><span class="op">,</span> <span class="dt">paintOrder</span><span class="op">:</span> <span class="st">"stroke"</span></span>
+<span id="cb12-320"><a href="#cb12-320" aria-hidden="true" tabindex="-1"></a>    })<span class="op">,</span></span>
+<span id="cb12-321"><a href="#cb12-321" aria-hidden="true" tabindex="-1"></a>    Plot<span class="op">.</span><span class="fu">ruleY</span>([<span class="dv">6</span>])</span>
+<span id="cb12-322"><a href="#cb12-322" aria-hidden="true" tabindex="-1"></a>  ]</span>
+<span id="cb12-323"><a href="#cb12-323" aria-hidden="true" tabindex="-1"></a>})</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-12" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code hidden" id="cb13" data-startfrom="329" data-source-offset="0"><pre class="sourceCode js code-with-copy"><code class="sourceCode javascript" style="counter-reset: source-line 328;"><span id="cb13-329"><a href="#cb13-329" aria-hidden="true" tabindex="-1"></a><span class="co">// Live readout: the realized SD of individual slopes in the drawn sample,</span></span>
+<span id="cb13-330"><a href="#cb13-330" aria-hidden="true" tabindex="-1"></a><span class="co">// alongside the fixed slope, so the reader links the slider to a number.</span></span>
+<span id="cb13-331"><a href="#cb13-331" aria-hidden="true" tabindex="-1"></a>{</span>
+<span id="cb13-332"><a href="#cb13-332" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> fixedPerYear <span class="op">=</span> mlgrow_params<span class="op">.</span><span class="at">gamma10</span> <span class="op">*</span> <span class="dv">12</span><span class="op">;</span>     <span class="co">// %/year</span></span>
+<span id="cb13-333"><a href="#cb13-333" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> slopes <span class="op">=</span> mlgrow_cohort<span class="op">.</span><span class="fu">map</span>(p <span class="kw">=&gt;</span> mlgrow_params<span class="op">.</span><span class="at">gamma10</span> <span class="op">+</span> p<span class="op">.</span><span class="at">u1</span>)<span class="op">;</span></span>
+<span id="cb13-334"><a href="#cb13-334" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> sdSlopeYr <span class="op">=</span> d3<span class="op">.</span><span class="fu">deviation</span>(slopes<span class="op">.</span><span class="fu">map</span>(s <span class="kw">=&gt;</span> s <span class="op">*</span> <span class="dv">12</span>)) <span class="op">||</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb13-335"><a href="#cb13-335" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> item <span class="op">=</span> (label<span class="op">,</span> val<span class="op">,</span> unit<span class="op">,</span> color) <span class="kw">=&gt;</span> <span class="fu">html</span><span class="vs">`&lt;div style="</span></span>
+<span id="cb13-336"><a href="#cb13-336" aria-hidden="true" tabindex="-1"></a><span class="vs">      text-align:center; padding:0.5rem 0.25rem; border-radius:0.5rem;</span></span>
+<span id="cb13-337"><a href="#cb13-337" aria-hidden="true" tabindex="-1"></a><span class="vs">      background:</span><span class="sc">${</span>mlgrow_pal<span class="op">.</span><span class="at">fill</span><span class="sc">}</span><span class="vs">;"&gt;</span></span>
+<span id="cb13-338"><a href="#cb13-338" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:Inter,sans-serif; font-size:0.7rem; font-weight:700;</span></span>
+<span id="cb13-339"><a href="#cb13-339" aria-hidden="true" tabindex="-1"></a><span class="vs">        text-transform:uppercase; letter-spacing:0.04em; color:</span><span class="sc">${</span>mlgrow_pal<span class="op">.</span><span class="at">muted</span><span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>label<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb13-340"><a href="#cb13-340" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:'JetBrains Mono',monospace; font-size:1.15rem;</span></span>
+<span id="cb13-341"><a href="#cb13-341" aria-hidden="true" tabindex="-1"></a><span class="vs">        font-weight:700; color:</span><span class="sc">${</span>color<span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>val<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb13-342"><a href="#cb13-342" aria-hidden="true" tabindex="-1"></a><span class="vs">    &lt;div style="font-family:Inter,sans-serif; font-size:0.66rem; color:</span><span class="sc">${</span>mlgrow_pal<span class="op">.</span><span class="at">muted</span><span class="sc">}</span><span class="vs">;"&gt;</span><span class="sc">${</span>unit<span class="sc">}</span><span class="vs">&lt;/div&gt;</span></span>
+<span id="cb13-343"><a href="#cb13-343" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb13-344"><a href="#cb13-344" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">html</span><span class="vs">`&lt;div style="display:grid;</span></span>
+<span id="cb13-345"><a href="#cb13-345" aria-hidden="true" tabindex="-1"></a><span class="vs">      grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));</span></span>
+<span id="cb13-346"><a href="#cb13-346" aria-hidden="true" tabindex="-1"></a><span class="vs">      gap:0.5rem; margin-top:0.75rem;"&gt;</span></span>
+<span id="cb13-347"><a href="#cb13-347" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">item</span>(<span class="st">"Fixed slope γ₁₀"</span><span class="op">,</span> fixedPerYear<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">2</span>)<span class="op">,</span> <span class="st">"% HbA1c per year"</span><span class="op">,</span> mlgrow_pal<span class="op">.</span><span class="at">focal</span>)<span class="sc">}</span></span>
+<span id="cb13-348"><a href="#cb13-348" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">item</span>(<span class="st">"SD of slopes"</span><span class="op">,</span> (mlgrow_randomSlope <span class="op">?</span> sdSlopeYr<span class="op">.</span><span class="fu">toFixed</span>(<span class="dv">2</span>) <span class="op">:</span> <span class="st">"0.00"</span>)<span class="op">,</span></span>
+<span id="cb13-349"><a href="#cb13-349" aria-hidden="true" tabindex="-1"></a>        <span class="st">"across patients (%/yr)"</span><span class="op">,</span> mlgrow_randomSlope <span class="op">?</span> mlgrow_pal<span class="op">.</span><span class="at">ochre</span> <span class="op">:</span> mlgrow_pal<span class="op">.</span><span class="at">muted</span>)<span class="sc">}</span></span>
+<span id="cb13-350"><a href="#cb13-350" aria-hidden="true" tabindex="-1"></a><span class="vs">    </span><span class="sc">${</span><span class="fu">item</span>(<span class="st">"Random slope"</span><span class="op">,</span> mlgrow_randomSlope <span class="op">?</span> <span class="st">"ON"</span> <span class="op">:</span> <span class="st">"OFF"</span><span class="op">,</span></span>
+<span id="cb13-351"><a href="#cb13-351" aria-hidden="true" tabindex="-1"></a>        <span class="st">"u₁ᵢ in the model"</span><span class="op">,</span> mlgrow_randomSlope <span class="op">?</span> mlgrow_pal<span class="op">.</span><span class="at">good</span> <span class="op">:</span> mlgrow_pal<span class="op">.</span><span class="at">muted</span>)<span class="sc">}</span></span>
+<span id="cb13-352"><a href="#cb13-352" aria-hidden="true" tabindex="-1"></a><span class="vs">  &lt;/div&gt;`</span><span class="op">;</span></span>
+<span id="cb13-353"><a href="#cb13-353" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<div id="ojs-cell-13" data-nodetype="expression">
+
+</div>
+</div>
+</div>
+</section>
+<section id="how-to-read-the-trajectory-plot" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-trajectory-plot">How to Read the Trajectory Plot</h3>
+<p>Work through these steps in order; each isolates one idea in the model.</p>
+<p><strong>Step 1: Read one patient.</strong> Pick any thin slate line. It is one patient’s HbA1c over 24 months; the faint dots scattered just off the line are that patient’s actual noisy <em>readings</em> (<span class="math inline">\varepsilon_{ti}</span> wobble). The line itself is the patient’s underlying trajectory <span class="math inline">\beta_{0i} + \beta_{1i}\,\text{time}</span>.</p>
+<p><strong>Step 2: Read the average.</strong> The bold <strong>red</strong> line is the population-average trajectory <span class="math inline">\gamma_{00} + \gamma_{10}\,\text{time}</span> — the <em>fixed</em> part. Its starting height is <span class="math inline">\gamma_{00} \approx 8.4\%</span> and its downward tilt is the fixed slope <span class="math inline">\gamma_{10}</span>, about <span class="math inline">-0.54</span> percentage points per year (the readout shows it per year). No individual patient <em>is</em> this line; it is the center of the bundle.</p>
+<p><strong>Step 3: Random intercepts only.</strong> With <strong>Random slope</strong> <em>off</em>, drag <strong>Intercept SD</strong> <span class="math inline">\sqrt{\tau_{00}}</span> up and down. The thin lines spread <em>vertically</em> but stay <strong>parallel</strong> — everyone shares the average slope and differs only in starting level. The gap between any two patients is the same at month 0 as at month 24. This is the random-<em>intercept</em> model.</p>
+<p><strong>Step 4: Switch on random slopes.</strong> Flip <strong>Random slope for time</strong> <em>on</em>. Now each patient also draws a personal slope <span class="math inline">u_{1i}</span>. The lines are no longer parallel: some fall steeply, some barely move, a few may even drift up. Watch the “SD of slopes” readout jump from 0.00 to a positive number.</p>
+<p><strong>Step 5: Watch the fan.</strong> Drag <strong>Slope variance</strong> <span class="math inline">\tau_{11}</span> from 0 toward 1. The trajectories <strong>fan out</strong> — nearly together at enrollment, then splaying apart as months pass. This is the signature of slope heterogeneity: because <span class="math inline">u_{1i}</span> multiplies time, its effect compounds, so between-patient spread <em>grows over time</em>. The bold red average barely moves — the fixed slope is unchanged; what changes is the scatter <em>around</em> it.</p>
+<p><strong>Step 6: Resample.</strong> Press <strong>Draw new sample</strong> a few times. The exact lines change, but the qualitative picture — parallel vs.&nbsp;fanning — is stable, because it is a property of the variance components, not of one random draw.</p>
+</section>
+</section>
+<section id="curved-growth-adding-a-quadratic-term" class="level2">
+<h2 class="anchored" data-anchor-id="curved-growth-adding-a-quadratic-term">Curved Growth: Adding a Quadratic Term</h2>
+<p>A straight line is often too rigid. Diabetes patients frequently improve <em>fast</em> in the first months of a program — new medication, fresh motivation, intensive nurse contact — and then <strong>plateau</strong> as the easy gains are exhausted. A straight line cannot bend; it would average the steep early drop and the flat later phase into a single misleading slope. We let the trajectory curve by adding a <strong>quadratic</strong> term in time.</p>
+<div class="glass-card glass-card--definition">
+<p>The <strong>two-level quadratic growth model</strong> adds a squared-time predictor:</p>
+<p><span class="math display">
+y_{ti} = \gamma_{00} + \gamma_{10}\,\text{time}_{ti} + \gamma_{20}\,\text{time}_{ti}^2 \; + \; u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}.
+</span></p>
+<ul>
+<li><span class="math inline">\gamma_{10}</span> is now the <strong>instantaneous rate of change at <span class="math inline">\text{time}=0</span></strong> — the slope of the curve at enrollment, not over the whole program.</li>
+<li><span class="math inline">\gamma_{20}</span> is the <strong>curvature</strong>. With <span class="math inline">\gamma_{10} &lt; 0</span> (initial improvement) and <span class="math inline">\gamma_{20} &gt; 0</span> (the curve bends back up), the trajectory falls quickly at first and then flattens — the classic plateau.</li>
+</ul>
+<p>The instantaneous slope at any time is the derivative <span class="math inline">\gamma_{10} + 2\gamma_{20}\,\text{time}</span>: it starts at <span class="math inline">\gamma_{10}</span> and changes by <span class="math inline">2\gamma_{20}</span> for each additional month.</p>
+</div>
+<p><strong>Read the curvature aloud</strong>: “Each extra month, the rate of change shifts by <span class="math inline">2\gamma_{20}</span>.” A positive <span class="math inline">\gamma_{20}</span> means the (negative) improvement slope is <em>softening</em> over time — the patient is decelerating toward a floor. One can also make the <em>curvature</em> random (<span class="math inline">u_{2i}\,\text{time}^2</span>), letting patients differ in how strongly they plateau, but each extra random term costs another variance and two covariances, so quadratic random slopes are added only when the data and the science demand them.</p>
+<div class="glass-card glass-card--warning">
+<p><strong>Center your time variable, and beware extrapolation.</strong> Because <span class="math inline">\gamma_{00}</span> is the value at <span class="math inline">\text{time}=0</span>, <em>where you put the zero matters</em>. If time runs 0–24 months, <span class="math inline">\gamma_{00}</span> is the enrollment level and the random intercept variance <span class="math inline">\tau_{00}</span> is the spread <em>at enrollment</em>. Center time at the midpoint instead (so <span class="math inline">\text{time}=0</span> is month 12) and <span class="math inline">\gamma_{00}</span>, <span class="math inline">\tau_{00}</span>, and the intercept–slope covariance <span class="math inline">\tau_{01}</span> all change meaning. Neither is wrong — but you must report which zero you used. And never read a quadratic curve <em>beyond</em> the observed window: a fitted plateau can turn into an absurd upswing a few months past your last visit.</p>
+</div>
+<details>
+<summary>
+Math Details: The variance structure of the linear growth model
+</summary>
+<div class="details-content">
+<section id="the-implied-mean-and-variance-of-a-single-reading" class="level3">
+<h3 class="anchored" data-anchor-id="the-implied-mean-and-variance-of-a-single-reading">The implied mean and variance of a single reading</h3>
+<p>Take the combined linear model <span class="math inline">y_{ti} = \gamma_{00} + \gamma_{10}\,\text{time}_{ti} + u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}</span>, with <span class="math inline">u_{0i}, u_{1i}, \varepsilon_{ti}</span> mutually independent of the (treated-as-fixed) times. The <strong>mean</strong> is the fixed part, since every random term has expectation zero:</p>
+<p><span class="math display">
+E[y_{ti}] = \gamma_{00} + \gamma_{10}\,\text{time}_{ti}.
+</span></p>
+<p>The <strong>variance</strong> of a single reading is where time enters non-trivially. Writing <span class="math inline">\operatorname{Var}(u_{0i})=\tau_{00}</span>, <span class="math inline">\operatorname{Var}(u_{1i})=\tau_{11}</span>, <span class="math inline">\operatorname{Cov}(u_{0i},u_{1i})=\tau_{01}</span>, and <span class="math inline">\operatorname{Var}(\varepsilon_{ti})=\sigma^2_\varepsilon</span>:</p>
+<p><span class="math display">
+\operatorname{Var}(y_{ti}) = \operatorname{Var}\!\big(u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}\big)
+= \tau_{00} + 2\,\tau_{01}\,\text{time}_{ti} + \tau_{11}\,\text{time}_{ti}^2 + \sigma^2_\varepsilon.
+</span></p>
+<p><strong>Read this aloud</strong>: “The variance of a reading is a <em>quadratic in time</em>.” This is the algebra behind the fan. At <span class="math inline">\text{time}=0</span> the variance is <span class="math inline">\tau_{00}+\sigma^2_\varepsilon</span> (the spread of starting levels plus reading noise). As time grows, the <span class="math inline">\tau_{11}\,\text{time}^2</span> term dominates, so the between-patient spread widens — exactly the diverging trajectories in the interactive. With a random intercept <em>only</em> (<span class="math inline">\tau_{11}=\tau_{01}=0</span>), the variance is the flat <span class="math inline">\tau_{00}+\sigma^2_\varepsilon</span> for all time: parallel lines, constant spread.</p>
+</section>
+<section id="the-covariance-between-two-readings-on-the-same-patient" class="level3">
+<h3 class="anchored" data-anchor-id="the-covariance-between-two-readings-on-the-same-patient">The covariance between two readings on the same patient</h3>
+<p>The reason these data are not independent is that two readings from the <em>same</em> patient share <span class="math inline">u_{0i}</span> and <span class="math inline">u_{1i}</span>. For occasions <span class="math inline">t \neq s</span> on patient <span class="math inline">i</span> (with <span class="math inline">\varepsilon_{ti} \perp \varepsilon_{si}</span>):</p>
+<p><span class="math display">
+\operatorname{Cov}(y_{ti}, y_{si}) = \tau_{00} + \tau_{01}\big(\text{time}_{ti} + \text{time}_{si}\big) + \tau_{11}\,\text{time}_{ti}\,\text{time}_{si}.
+</span></p>
+<p>Two readings on the same patient covary because they ride on the same intercept and slope draw; readings on <em>different</em> patients are independent, so their covariance is zero. This patterned within-patient covariance — not a single number but a function of <em>when</em> the two readings were taken — is precisely what a growth model captures and what ignoring the nesting would get wrong.</p>
+</section>
+<section id="why-this-beats-five-independent-observations" class="level3">
+<h3 class="anchored" data-anchor-id="why-this-beats-five-independent-observations">Why this beats “five independent observations”</h3>
+<p>If we (wrongly) treated all <span class="math inline">\sum_i n_i</span> readings as independent, the effective sample size for the slope would be inflated and the standard error of <span class="math inline">\hat\gamma_{10}</span> would be far too small. The mixed model instead uses the <strong>effective</strong> information, deflated by the within-patient correlation. As on the previous page, the larger the intraclass correlation of the <em>intercept</em>, <span class="math inline">\rho = \tau_{00}/(\tau_{00}+\sigma^2_\varepsilon)</span> at <span class="math inline">\text{time}=0</span>, the more redundant repeated readings are, and the more the naive standard error overstates precision.</p>
+</section>
+</div>
+</details>
+</section>
+<section id="fitting-a-growth-curve" class="level2">
+<h2 class="anchored" data-anchor-id="fitting-a-growth-curve">Fitting a Growth Curve</h2>
+<p>Both implementations below simulate the same 24-month diabetes cohort — patients with their own intercepts and slopes — then fit the random-intercept-and-slope model and read off the fixed time effect <em>and</em> the random-slope variance. In R the workhorse is <code>lme4::lmer</code>; in Python it is <code>statsmodels</code> <code>MixedLM</code>.</p>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">R</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">Python</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lme4)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Simulate a longitudinal diabetes cohort -------------------------------</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="co"># 120 patients, measured at months 0, 6, 12, 18, 24 (HbA1c %, lower is better).</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Each patient has a random intercept AND a random slope for time.</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">15</span>)</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>N      <span class="ot">&lt;-</span> <span class="dv">120</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>times  <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">6</span>, <span class="dv">12</span>, <span class="dv">18</span>, <span class="dv">24</span>)</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>g00    <span class="ot">&lt;-</span> <span class="fl">8.4</span>      <span class="co"># average HbA1c at enrollment</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>g10    <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">0.045</span>   <span class="co"># average change per month  (~ -1.08 over 24 months)</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>tau00  <span class="ot">&lt;-</span> <span class="fl">0.49</span>     <span class="co"># intercept variance  (SD 0.70)</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>tau11  <span class="ot">&lt;-</span> <span class="fl">0.0006</span>   <span class="co"># slope variance      (SD 0.0245 per month)</span></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>tau01  <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">0.004</span>   <span class="co"># intercept-slope covariance (higher starters improve faster)</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>G      <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">c</span>(tau00, tau01, tau01, tau11), <span class="dv">2</span>, <span class="dv">2</span>)</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>sigma  <span class="ot">&lt;-</span> <span class="fl">0.18</span>     <span class="co"># within-patient reading noise (SD)</span></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>ranef  <span class="ot">&lt;-</span> MASS<span class="sc">::</span><span class="fu">mvrnorm</span>(N, <span class="at">mu =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="at">Sigma =</span> G)   <span class="co"># one (u0, u1) per patient</span></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>cohort <span class="ot">&lt;-</span> <span class="fu">expand_grid</span>(<span class="at">id =</span> <span class="dv">1</span><span class="sc">:</span>N, <span class="at">time =</span> times) <span class="sc">|&gt;</span></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">u0    =</span> ranef[id, <span class="dv">1</span>],</span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">u1    =</span> ranef[id, <span class="dv">2</span>],</span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a>    <span class="at">hba1c =</span> (g00 <span class="sc">+</span> u0) <span class="sc">+</span> (g10 <span class="sc">+</span> u1) <span class="sc">*</span> time <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="fu">n</span>(), <span class="dv">0</span>, sigma)</span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Fit the random-intercept-and-slope growth model -----------------------</span></span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a><span class="co"># (time | id)  ==  random intercept + random slope for time, with their</span></span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a><span class="co"># covariance freely estimated.</span></span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="fu">lmer</span>(hba1c <span class="sc">~</span> time <span class="sc">+</span> (time <span class="sc">|</span> id), <span class="at">data =</span> cohort)</span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(m)</span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Fixed effects: the AVERAGE trajectory</span></span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a><span class="fu">fixef</span>(m)              <span class="co"># (Intercept) = gamma00,  time = gamma10 (per month)</span></span>
+<span id="cb14-37"><a href="#cb14-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-38"><a href="#cb14-38" aria-hidden="true" tabindex="-1"></a><span class="co"># Random effects: the HETEROGENEITY in trajectories</span></span>
+<span id="cb14-39"><a href="#cb14-39" aria-hidden="true" tabindex="-1"></a><span class="fu">VarCorr</span>(m)            <span class="co"># SD of intercepts, SD of slopes, their correlation</span></span>
+<span id="cb14-40"><a href="#cb14-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-41"><a href="#cb14-41" aria-hidden="true" tabindex="-1"></a><span class="co"># Per-year fixed slope, easier to communicate to clinicians</span></span>
+<span id="cb14-42"><a href="#cb14-42" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"Average change per YEAR:"</span>, <span class="fu">round</span>(<span class="fu">fixef</span>(m)[<span class="st">"time"</span>] <span class="sc">*</span> <span class="dv">12</span>, <span class="dv">3</span>), <span class="st">"% HbA1c</span><span class="sc">\n</span><span class="st">"</span>)</span>
+<span id="cb14-43"><a href="#cb14-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-44"><a href="#cb14-44" aria-hidden="true" tabindex="-1"></a><span class="co"># --- A curved (quadratic) average trajectory -------------------------------</span></span>
+<span id="cb14-45"><a href="#cb14-45" aria-hidden="true" tabindex="-1"></a><span class="co"># To LIKELIHOOD-RATIO test two models that differ in their FIXED effects, both</span></span>
+<span id="cb14-46"><a href="#cb14-46" aria-hidden="true" tabindex="-1"></a><span class="co"># must be fit by ML, not REML: REML log-likelihoods are not comparable across</span></span>
+<span id="cb14-47"><a href="#cb14-47" aria-hidden="true" tabindex="-1"></a><span class="co"># different fixed-effect designs. (anova() on REML fits silently refits with ML</span></span>
+<span id="cb14-48"><a href="#cb14-48" aria-hidden="true" tabindex="-1"></a><span class="co"># and warns; we set REML = FALSE up front to make the valid comparison explicit.)</span></span>
+<span id="cb14-49"><a href="#cb14-49" aria-hidden="true" tabindex="-1"></a>m_ml      <span class="ot">&lt;-</span> <span class="fu">lmer</span>(hba1c <span class="sc">~</span> time <span class="sc">+</span> (time <span class="sc">|</span> id),            <span class="at">data =</span> cohort, <span class="at">REML =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb14-50"><a href="#cb14-50" aria-hidden="true" tabindex="-1"></a>m_quad_ml <span class="ot">&lt;-</span> <span class="fu">lmer</span>(hba1c <span class="sc">~</span> time <span class="sc">+</span> <span class="fu">I</span>(time<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> (time <span class="sc">|</span> id), <span class="at">data =</span> cohort, <span class="at">REML =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb14-51"><a href="#cb14-51" aria-hidden="true" tabindex="-1"></a><span class="fu">anova</span>(m_ml, m_quad_ml)   <span class="co"># does curvature improve fit? (LR test, valid under ML)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> statsmodels.formula.api <span class="im">as</span> smf</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Simulate a longitudinal diabetes cohort -------------------------------</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co"># 120 patients, measured at months 0, 6, 12, 18, 24 (HbA1c %, lower is better).</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">15</span>)</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>N     <span class="op">=</span> <span class="dv">120</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>times <span class="op">=</span> np.array([<span class="dv">0</span>, <span class="dv">6</span>, <span class="dv">12</span>, <span class="dv">18</span>, <span class="dv">24</span>])</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>g00, g10 <span class="op">=</span> <span class="fl">8.4</span>, <span class="op">-</span><span class="fl">0.045</span>          <span class="co"># average intercept; average slope (per month)</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>tau00, tau11, tau01 <span class="op">=</span> <span class="fl">0.49</span>, <span class="fl">0.0006</span>, <span class="op">-</span><span class="fl">0.004</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>G     <span class="op">=</span> np.array([[tau00, tau01], [tau01, tau11]])</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>sigma <span class="op">=</span> <span class="fl">0.18</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>ranef <span class="op">=</span> rng.multivariate_normal([<span class="dv">0</span>, <span class="dv">0</span>], G, size<span class="op">=</span>N)    <span class="co"># (u0, u1) per patient</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>rows <span class="op">=</span> []</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(N):</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>    u0, u1 <span class="op">=</span> ranef[i]</span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> t <span class="kw">in</span> times:</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>        y <span class="op">=</span> (g00 <span class="op">+</span> u0) <span class="op">+</span> (g10 <span class="op">+</span> u1) <span class="op">*</span> t <span class="op">+</span> rng.normal(<span class="dv">0</span>, sigma)</span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>        rows.append({<span class="st">"id"</span>: i, <span class="st">"time"</span>: t, <span class="st">"hba1c"</span>: y})</span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>cohort <span class="op">=</span> pd.DataFrame(rows)</span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Fit the random-intercept-and-slope growth model -----------------------</span></span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a><span class="co"># re_formula="~time" adds a random slope for time; statsmodels estimates the</span></span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a><span class="co"># full 2x2 random-effects covariance G alongside the residual variance.</span></span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a>m <span class="op">=</span> smf.mixedlm(<span class="st">"hba1c ~ time"</span>, data<span class="op">=</span>cohort, groups<span class="op">=</span><span class="st">"id"</span>,</span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a>                re_formula<span class="op">=</span><span class="st">"~time"</span>).fit(reml<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m.summary())</span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a><span class="co"># Fixed effects: the AVERAGE trajectory</span></span>
+<span id="cb15-35"><a href="#cb15-35" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"gamma00 (enrollment level):"</span>, <span class="bu">round</span>(m.fe_params[<span class="st">"Intercept"</span>], <span class="dv">3</span>))</span>
+<span id="cb15-36"><a href="#cb15-36" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"gamma10 (per month):       "</span>, <span class="bu">round</span>(m.fe_params[<span class="st">"time"</span>], <span class="dv">4</span>))</span>
+<span id="cb15-37"><a href="#cb15-37" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Average change per YEAR:   "</span>, <span class="bu">round</span>(m.fe_params[<span class="st">"time"</span>] <span class="op">*</span> <span class="dv">12</span>, <span class="dv">3</span>), <span class="st">"% HbA1c"</span>)</span>
+<span id="cb15-38"><a href="#cb15-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-39"><a href="#cb15-39" aria-hidden="true" tabindex="-1"></a><span class="co"># Random effects: the HETEROGENEITY in trajectories.</span></span>
+<span id="cb15-40"><a href="#cb15-40" aria-hidden="true" tabindex="-1"></a><span class="co"># m.cov_re holds the estimated G (in variance units); take sqrt for SDs.</span></span>
+<span id="cb15-41"><a href="#cb15-41" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"</span><span class="ch">\n</span><span class="st">Random-effects covariance G:</span><span class="ch">\n</span><span class="st">"</span>, m.cov_re)</span>
+<span id="cb15-42"><a href="#cb15-42" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"SD of intercepts:"</span>, <span class="bu">round</span>(np.sqrt(m.cov_re.iloc[<span class="dv">0</span>, <span class="dv">0</span>]), <span class="dv">3</span>))</span>
+<span id="cb15-43"><a href="#cb15-43" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"SD of slopes:    "</span>, <span class="bu">round</span>(np.sqrt(m.cov_re.iloc[<span class="dv">1</span>, <span class="dv">1</span>]), <span class="dv">4</span>))</span>
+<span id="cb15-44"><a href="#cb15-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-45"><a href="#cb15-45" aria-hidden="true" tabindex="-1"></a><span class="co"># --- A curved (quadratic) average trajectory -------------------------------</span></span>
+<span id="cb15-46"><a href="#cb15-46" aria-hidden="true" tabindex="-1"></a>cohort[<span class="st">"time2"</span>] <span class="op">=</span> cohort[<span class="st">"time"</span>] <span class="op">**</span> <span class="dv">2</span></span>
+<span id="cb15-47"><a href="#cb15-47" aria-hidden="true" tabindex="-1"></a>m_quad <span class="op">=</span> smf.mixedlm(<span class="st">"hba1c ~ time + time2"</span>, data<span class="op">=</span>cohort, groups<span class="op">=</span><span class="st">"id"</span>,</span>
+<span id="cb15-48"><a href="#cb15-48" aria-hidden="true" tabindex="-1"></a>                     re_formula<span class="op">=</span><span class="st">"~time"</span>).fit(reml<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb15-49"><a href="#cb15-49" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(m_quad.summary())</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+<p>Both fits should recover a fixed time effect near <span class="math inline">\gamma_{10} = -0.045</span> per month (about <span class="math inline">-0.54\%</span> HbA1c per year) and a <em>nonzero</em> slope SD — the estimated heterogeneity in rates of change. The fixed effect answers “how fast does the typical patient improve?”; the slope variance answers “how much do patients differ in that improvement?” A growth model reports both, and a one-number summary that reported only the average would be hiding the second, policy-relevant story.</p>
+</section>
+<section id="exercises" class="level2 exercises">
+<h2 class="exercises anchored" data-anchor-id="exercises">Exercises</h2>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 1</span></p>
+<p>A region fits the linear growth model <span class="math inline">y_{ti} = \gamma_{00} + \gamma_{10}\,\text{time}_{ti} + u_{0i} + u_{1i}\,\text{time}_{ti} + \varepsilon_{ti}</span> to monthly HbA1c, with <span class="math inline">\text{time}</span> in months. It reports <span class="math inline">\hat\gamma_{00} = 8.40</span>, <span class="math inline">\hat\gamma_{10} = -0.045</span>, <span class="math inline">\hat\tau_{00} = 0.49</span>, <span class="math inline">\hat\tau_{11} = 0.0006</span>, and <span class="math inline">\hat\sigma^2_\varepsilon = 0.032</span>.</p>
+<ol type="a">
+<li>State the average change in HbA1c over a full year, in percentage points.</li>
+<li>Using <span class="math inline">\operatorname{Var}(y_{ti}) = \tau_{00} + 2\tau_{01}\,\text{time} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon</span> with <span class="math inline">\tau_{01}=0</span>, compute the variance of a reading at month 0 and at month 24. Which is larger, and why?</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> Per month the average change is <span class="math inline">-0.045</span>. Over 12 months: <span class="math inline">-0.045 \times 12 = -0.54</span> percentage points of HbA1c per year. The typical patient’s HbA1c falls by about half a point a year.</p>
+<p><strong>(b)</strong> With <span class="math inline">\tau_{01}=0</span> the variance is <span class="math inline">\tau_{00} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon</span>.</p>
+<ul>
+<li>At month 0: <span class="math inline">0.49 + 0.0006\times 0^2 + 0.032 = 0.522</span>.</li>
+<li>At month 24: <span class="math inline">0.49 + 0.0006\times 24^2 + 0.032 = 0.49 + 0.0006\times 576 + 0.032 = 0.49 + 0.3456 + 0.032 = 0.8676</span>.</li>
+</ul>
+<p>The month-24 variance (<span class="math inline">\approx 0.87</span>) is larger than the month-0 variance (<span class="math inline">\approx 0.52</span>). The reason is the slope variance term <span class="math inline">\tau_{11}\,\text{time}^2</span>: because each patient’s personal slope multiplies time, individual trajectories fan apart, so the between-patient spread <em>grows</em> with time. This is the algebra behind the visual fan in the interactive.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 2</span></p>
+<p>Two analysts study the same diabetes cohort. Analyst A fits a <strong>random-intercept-only</strong> model, <code>lmer(hba1c ~ time + (1 | id))</code>. Analyst B fits a <strong>random-intercept-and-slope</strong> model, <code>lmer(hba1c ~ time + (time | id))</code>. Both report essentially the same fixed slope <span class="math inline">\hat\gamma_{10} \approx -0.045</span>. Analyst A concludes “the program works the same for everyone.” Is that conclusion justified? What can Analyst B see that Analyst A cannot?</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p>Analyst A’s conclusion is <strong>not</strong> justified. A random-intercept-only model <em>forces</em> every patient to share the single fixed slope <span class="math inline">\gamma_{10}</span> — it has no parameter for between-patient differences in rate of change. So “everyone changes at the same rate” is an <em>assumption built into the model</em>, not a finding from the data. The model cannot distinguish “everyone truly improves at <span class="math inline">-0.045</span>/month” from “some plunge, some worsen, and <span class="math inline">-0.045</span> is merely the average.”</p>
+<p>Analyst B’s model adds the random slope <span class="math inline">u_{1i}</span> and therefore estimates the <strong>slope variance</strong> <span class="math inline">\tau_{11}</span>. If <span class="math inline">\hat\tau_{11}</span> is large (or a likelihood-ratio test of model B against model A is significant), there is real heterogeneity in rates of change: the program helps some patients far more than others, even though the <em>average</em> effect matches Analyst A’s. The fixed slope being equal across the two models is expected — adding a random slope changes the <em>uncertainty</em> and <em>heterogeneity</em> story, not usually the average. Only Analyst B can quantify how much patients differ, which is exactly the information a region needs to decide whether to target the program at non-responders.</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 3</span></p>
+<p>A fall-prevention program for elderly patients is evaluated with a <strong>quadratic</strong> growth model for the number of balance-test errors (lower is better), with <span class="math inline">\text{time}</span> in months: <span class="math inline">\hat\gamma_{00} = 6.0</span>, <span class="math inline">\hat\gamma_{10} = -0.50</span>, <span class="math inline">\hat\gamma_{20} = +0.015</span>.</p>
+<ol type="a">
+<li>Write the fitted average trajectory and compute the predicted error count at months 0, 6, and 12.</li>
+<li>Find the instantaneous rate of change at month 0 and at month 12. What does the sign change (or softening) tell you clinically?</li>
+</ol>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>(a)</strong> The fitted average trajectory is <span class="math inline">\hat{y} = 6.0 - 0.50\,\text{time} + 0.015\,\text{time}^2</span>.</p>
+<ul>
+<li>Month 0: <span class="math inline">6.0 - 0.50(0) + 0.015(0) = 6.00</span> errors.</li>
+<li>Month 6: <span class="math inline">6.0 - 0.50(6) + 0.015(36) = 6.0 - 3.0 + 0.54 = 3.54</span> errors.</li>
+<li>Month 12: <span class="math inline">6.0 - 0.50(12) + 0.015(144) = 6.0 - 6.0 + 2.16 = 2.16</span> errors.</li>
+</ul>
+<p><strong>(b)</strong> The instantaneous slope is the derivative <span class="math inline">\gamma_{10} + 2\gamma_{20}\,\text{time} = -0.50 + 0.03\,\text{time}</span>.</p>
+<ul>
+<li>Month 0: <span class="math inline">-0.50 + 0.03(0) = -0.50</span> errors/month (improving fast).</li>
+<li>Month 12: <span class="math inline">-0.50 + 0.03(12) = -0.50 + 0.36 = -0.14</span> errors/month (still improving, but much more slowly).</li>
+</ul>
+<p>Clinically: patients improve rapidly at first and then <strong>plateau</strong>. The improvement slope softens from <span class="math inline">-0.50</span> to <span class="math inline">-0.14</span> over the year — the easy gains come early, after which the curve flattens toward a floor. (Note the curve would eventually turn <em>upward</em> if extrapolated — a reminder from the caution box not to read a quadratic beyond the observed window: the model has no knowledge that error counts cannot rise again.)</p>
+</div>
+</details>
+</div>
+<div class="exercise">
+<p><span class="exercise-label">Exercise 4</span></p>
+<p>In the interactive, set the <strong>random slope</strong> off and the <strong>intercept SD</strong> to a large value. Describe the picture. Then turn the random slope on and raise the <strong>slope variance</strong>. Explain, using the variance formula <span class="math inline">\operatorname{Var}(y_{ti}) = \tau_{00} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon</span> (taking <span class="math inline">\tau_{01}=0</span>), why the two pictures differ in how the spread behaves <em>over time</em>.</p>
+<details>
+<summary>
+Show answer
+</summary>
+<div class="details-content">
+<p><strong>Random slope off, large intercept SD:</strong> the thin patient lines are widely spread <em>vertically</em> but run <strong>parallel</strong> to one another and to the red average. The vertical gap between any two patients is the same at month 0 as at month 24 — the spread is constant over time. In the formula, <span class="math inline">\tau_{11}=0</span>, so <span class="math inline">\operatorname{Var}(y_{ti}) = \tau_{00} + \sigma^2_\varepsilon</span>, which does <strong>not</strong> depend on time. Big <span class="math inline">\tau_{00}</span> just makes that constant large.</p>
+<p><strong>Random slope on, large slope variance:</strong> the lines start close together near enrollment and <strong>fan apart</strong> as months pass. Now <span class="math inline">\tau_{11} &gt; 0</span>, so <span class="math inline">\operatorname{Var}(y_{ti}) = \tau_{00} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon</span> <em>increases with time</em> — and increases as the <em>square</em> of time, so the widening accelerates. At month 0 the time-dependent term is zero and the spread is just <span class="math inline">\tau_{00}+\sigma^2_\varepsilon</span>; by month 24 the <span class="math inline">\tau_{11}\,(24)^2</span> term dominates. The difference between the two pictures is exactly the presence of the <span class="math inline">\tau_{11}\,\text{time}^2</span> term: random intercepts shift whole lines up or down (constant spread), while random slopes tilt them (growing spread).</p>
+</div>
+</details>
+</div>
+<div class="key-takeaways">
+<p><strong>Key takeaways</strong></p>
+<ul>
+<li>Longitudinal data are a two-level structure: repeated measurements (level 1) nested within individuals (level 2), with <em>time</em> as the level-1 predictor — repeated readings on one person are correlated and must not be treated as independent.</li>
+<li>A growth model gives each individual a random <em>intercept</em> (their own baseline) and a random <em>slope</em> for time (their own rate of change), so it describes a whole population of trajectories rather than a single line.</li>
+<li>The fixed time effect <span class="math inline">\gamma_{10}</span> is the <em>average</em> trajectory; the slope variance <span class="math inline">\tau_{11}</span> is the <em>heterogeneity</em> in change. The same average can hide near-uniform response (<span class="math inline">\tau_{11}\approx 0</span>) or wildly different responders (<span class="math inline">\tau_{11}</span> large) — always report both.</li>
+<li>Random slopes make the between-individual variance grow with time, <span class="math inline">\operatorname{Var}(y_{ti}) = \tau_{00} + 2\tau_{01}\,\text{time} + \tau_{11}\,\text{time}^2 + \sigma^2_\varepsilon</span> — the algebra behind the fanning trajectories.</li>
+<li>A quadratic term in time captures curved growth (fast early improvement, then a plateau); center your time variable so the intercept is interpretable, and never extrapolate a fitted curve past the observed window.</li>
+</ul>
+</div>
+</section>
+<section id="what-comes-next" class="level2">
+<h2 class="anchored" data-anchor-id="what-comes-next">What Comes Next</h2>
+<p>You can now read repeated measurements as nested data, write a growth model with a random intercept and a random slope for time, and separate the <em>average</em> trajectory from the <em>heterogeneity</em> around it — the two questions a longitudinal program evaluation must answer at once. That completes the multilevel arc of the <a href="../../content/index.html">Econometrician’s Toolkit</a>: from variance components and the intraclass correlation, through random effects, to change over time. Return to the <a href="../../content/index.html">book home</a> to continue with the Toolkit’s remaining modules, where these mixed-model foundations connect back to the causal-inference designs — difference-in-differences, instrumental variables, and beyond — that opened the book.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<div id="reading-progress"></div>
+<script>
+(function () {
+  function update() {
+    var el = document.getElementById('reading-progress');
+    if (!el) return;
+    var doc = document.documentElement;
+    var max = doc.scrollHeight - doc.clientHeight;
+    var pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+    el.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  if (document.readyState !== 'loading') update();
+  else document.addEventListener('DOMContentLoaded', update);
+})();
+</script>
+<script type="ojs-module-contents">
+eyJjb250ZW50cyI6W3sibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6IlxuLy8gQ29uY2lzZSBcIlN0YXJ0IGhlcmVcIiBwcm9tcHQgYWJvdmUgdGhlIGNvbnRyb2xzICh0aGUgZnVsbCB0b3VyIGlzIGJlbG93KS5cbmh0bWxgPHAgc3R5bGU9XCJcbiAgICBmb250LWZhbWlseTogSW50ZXIsIHNhbnMtc2VyaWY7XG4gICAgZm9udC1zaXplOiAwLjg1cmVtO1xuICAgIGNvbG9yOiAke21sZ3Jvd19wYWwuYXhpc307XG4gICAgYmFja2dyb3VuZDogJHttbGdyb3dfcGFsLmZpbGx9O1xuICAgIGJvcmRlci1sZWZ0OiAzcHggc29saWQgJHttbGdyb3dfcGFsLmZvY2FsfTtcbiAgICBwYWRkaW5nOiAwLjVyZW0gMC43NXJlbTtcbiAgICBib3JkZXItcmFkaXVzOiAwIDAuMzVyZW0gMC4zNXJlbSAwO1xuICAgIG1hcmdpbjogMCAwIDAuNzVyZW07XCI+XG4gIDxzdHJvbmc+U3RhcnQgaGVyZTo8L3N0cm9uZz4gd2l0aCB0aGUgcmFuZG9tIHNsb3BlIDxlbT5vZmY8L2VtPiwgdGhlIHRoaW4gcGF0aWVudFxuICBsaW5lcyBydW4gcGFyYWxsZWwgdG8gdGhlIGJvbGQgcmVkIGF2ZXJhZ2UuIEZsaXAgPGVtPlJhbmRvbSBzbG9wZSBmb3IgdGltZTwvZW0+XG4gIG9uIGFuZCBwdXNoIDxlbT5TbG9wZSB2YXJpYW5jZTwvZW0+IHVwIHRvIHdhdGNoIHRoZSB0cmFqZWN0b3JpZXMgZmFuIGFwYXJ0LlxuICBGdWxsIGd1aWRlZCB0b3VyIGlzIGJlbG93IHRoZSBjaGFydC5cbjwvcD5gXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTIiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbnZpZXdvZiBtbGdyb3dfcmFuZG9tU2xvcGUgPSBJbnB1dHMudG9nZ2xlKHtcbiAgbGFiZWw6IFwiUmFuZG9tIHNsb3BlIGZvciB0aW1lXCIsXG4gIHZhbHVlOiBmYWxzZVxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMyIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ilxudmlld29mIG1sZ3Jvd19zbG9wZVZhciA9IElucHV0cy5yYW5nZShbMCwgMV0sIHtcbiAgdmFsdWU6IDAuMzUsXG4gIHN0ZXA6IDAuMDEsXG4gIGxhYmVsOiBcIlNsb3BlIHZhcmlhbmNlIM+E4oKB4oKBIChoZXRlcm9nZW5laXR5IGluIHJhdGUgb2YgY2hhbmdlKVwiXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC00IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG52aWV3b2YgbWxncm93X2ludGVyY2VwdFNEID0gSW5wdXRzLnJhbmdlKFswLCAxLjJdLCB7XG4gIHZhbHVlOiAwLjcsXG4gIHN0ZXA6IDAuMDUsXG4gIGxhYmVsOiBcIkludGVyY2VwdCBTRCDiiJrPhOKCgOKCgCAoc3ByZWFkIG9mIHN0YXJ0aW5nIGxldmVscylcIlxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtNSIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6Ilxudmlld29mIG1sZ3Jvd19uUGF0aWVudHMgPSBJbnB1dHMucmFuZ2UoWzYsIDQwXSwge1xuICB2YWx1ZTogMTgsXG4gIHN0ZXA6IDEsXG4gIGxhYmVsOiBcIk51bWJlciBvZiBwYXRpZW50cyBzaG93blwiXG59KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC02IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG52aWV3b2YgbWxncm93X2RyYXcgPSBJbnB1dHMuYnV0dG9uKFwiRHJhdyBuZXcgc2FtcGxlXCIsIHsgdmFsdWU6IDAsIHJlZHVjZTogdiA9PiB2ICsgMSB9KVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC03IiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyDilIDilIAgVXBwc2FsYS1hY2FkZW1pYyBwYWxldHRlIHNoYXJlZCBhY3Jvc3MgdGhpcyBwYWdlJ3MgaW50ZXJhY3RpdmVzLiDilIDilIBcbm1sZ3Jvd19wYWwgPSAoe1xuICBmb2NhbDogICBcIiM5OTAwMDBcIiwgICAvLyB0aGUgZXN0aW1hdGUgLyBhdmVyYWdlIHRyYWplY3RvcnkgKFVwcHNhbGEgcmVkKVxuICBjb21wYXJlOiBcIiMzZDVhNmNcIiwgICAvLyBzZWNvbmRhcnkgLyBpbmRpdmlkdWFsIHRyYWplY3RvcmllcyAoc2xhdGUpXG4gIGdvb2Q6ICAgIFwiIzJlNmY0MFwiLCAgIC8vIHN1Y2Nlc3MgLyBvbi10YXJnZXQgKGZvcmVzdCBncmVlbilcbiAgb2NocmU6ICAgXCIjOWM3YTMzXCIsICAgLy8gaGlnaGxpZ2h0IC8gXCJ0cnVlIHZhbHVlXCIgYW5ub3RhdGlvbiAob2NocmUpXG4gIGluazogICAgIFwiIzFjMWMxYVwiLCAgIC8vIHJlZmVyZW5jZSBsaW5lcyAmIGluayB0ZXh0XG4gIGF4aXM6ICAgIFwiIzc5NzY2ZVwiLCAgIC8vIGF4aXMgLyBtdXRlZCBsYWJlbCB0ZXh0IChVcHBzYWxhIG11dGVkKVxuICBoYWlyOiAgICBcIiNlNmUzZGJcIiwgICAvLyBncmlkbGluZXMgLyBoYWlybGluZXNcbiAgbXV0ZWQ6ICAgXCIjNzk3NjZlXCIsICAgLy8gbXV0ZWQgaW5rXG4gIGZpbGw6ICAgIFwiI2Y2ZjVmMVwiICAgIC8vIHN1YnRsZSB0aWxlIGZpbGxcbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTgiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIEZpeGVkIChwb3B1bGF0aW9uLWF2ZXJhZ2UpIHBhcmFtZXRlcnMgb2YgdGhlIHNpbXVsYXRlZCBkaWFiZXRlcyBjb2hvcnQuXG4vLyBIYkExYyAoJSksIG1lYXN1cmVkIGF0IG1vbnRocyAwLCA2LCAxMiwgMTgsIDI0LiBMb3dlciBpcyBiZXR0ZXIsIHNvIHRoZVxuLy8gYXZlcmFnZSBzbG9wZSBpcyBORUdBVElWRTogdGhlIHR5cGljYWwgcGF0aWVudCBpbXByb3ZlcyBvdmVyIHRoZSBwcm9ncmFtLlxubWxncm93X3BhcmFtcyA9ICh7XG4gIGdhbW1hMDA6IDguNCwgICAgIC8vIGF2ZXJhZ2UgSGJBMWMgYXQgZW5yb2xsbWVudCAodGltZSA9IDApXG4gIGdhbW1hMTA6IC0wLjA0NSwgIC8vIGF2ZXJhZ2UgY2hhbmdlIHBlciBNT05USCAgKOKJiCAtMS4wOCAlIG92ZXIgMjQgbW9udGhzKVxuICB0aW1lczogICBbMCwgNiwgMTIsIDE4LCAyNF0sXG4gIHNpZ21hRXBzOiAwLjE4ICAgIC8vIHdpdGhpbi1wYXRpZW50IHJlYWRpbmcgbm9pc2UgKFNELCAlIHBvaW50cylcbn0pXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTkiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIEdlbmVyYXRlIHRoZSBjb2hvcnQuIEVhY2ggcGF0aWVudCBpIGdldHM6XG4vLyAgIGludGVyY2VwdCBkZXBhcnR1cmUgdTAgfiBOKDAsIGludGVyY2VwdFNEXjIpXG4vLyAgIHNsb3BlIGRlcGFydHVyZSAgICAgdTEgfiBOKDAsIHNsb3BlVmFyKSAgIFtvbmx5IGlmIHJhbmRvbSBzbG9wZSBpcyBPTl1cbi8vIFRoZSBzbG9wZS12YXJpYW5jZSBzbGlkZXIgaXMgdGhlIFZBUklBTkNFIM+E4oKB4oKBLCBzbyBpdHMgU0QgaXMgc3FydCjPhOKCgeKCgSk7IHdlXG4vLyBzY2FsZSBpdCB0byBhIHBlci1tb250aCBTRCBzbyB0aGUgZmFuIHN0YXlzIGluc2lkZSB0aGUgcGxvdCBhdCDPhOKCgeKCgSA9IDEuXG5tbGdyb3dfY29ob3J0ID0ge1xuICBjb25zdCBidW1wID0gbWxncm93X2RyYXc7ICAgICAgICAgICAgICAgICAvLyByZS1zZWVkIG9uIGVhY2ggYnV0dG9uIHByZXNzXG4gIGNvbnN0IE4gPSBtbGdyb3dfblBhdGllbnRzO1xuICBjb25zdCB7IGdhbW1hMDAsIGdhbW1hMTAsIHRpbWVzLCBzaWdtYUVwcyB9ID0gbWxncm93X3BhcmFtcztcbiAgY29uc3QgaW50ZXJjZXB0U0QgPSBtbGdyb3dfaW50ZXJjZXB0U0Q7XG4gIC8vIENvbnZlcnQgdGhlIGRpc3BsYXllZCDPhOKCgeKCgSB0byBhIHBlci1tb250aCBzbG9wZSBTRC4gVGhlIGRpc3BsYXllZCBzY2FsZSBydW5zXG4gIC8vIDAuLjE7IHdlIG1hcCBpdCBzbyDPhOKCgeKCgSA9IDEgZ2l2ZXMgYSBjbGVhcmx5IGZhbm5lZCBidXQgb24tZG9tYWluIHNwcmVhZC5cbiAgY29uc3Qgc2xvcGVTRCA9IG1sZ3Jvd19yYW5kb21TbG9wZSA/IDAuMDI1ICogTWF0aC5zcXJ0KG1sZ3Jvd19zbG9wZVZhcikgOiAwO1xuXG4gIC8vIGQzLnJhbmRvbUxjZyBleHBlY3RzIGEgc2VlZCBpbiBbMCwgMSk7IGtlZXAgaXQgaW4gcmFuZ2Ugbm8gbWF0dGVyIGhvdyBtYW55XG4gIC8vIHRpbWVzIHRoZSBidXR0b24gaXMgcHJlc3NlZCBieSB0YWtpbmcgdGhlIGZyYWN0aW9uYWwgcGFydC5cbiAgY29uc3Qgc2VlZCA9ICgwLjI0MSArIDAuNzMzICogYnVtcCkgJSAxO1xuICBjb25zdCByTm9ybSA9IGQzLnJhbmRvbU5vcm1hbC5zb3VyY2UoZDMucmFuZG9tTGNnKHNlZWQpKTtcbiAgY29uc3QgZHJhd0ludGVyY2VwdCA9IHJOb3JtKDAsIGludGVyY2VwdFNEKTtcbiAgY29uc3QgZHJhd1Nsb3BlID0gck5vcm0oMCwgc2xvcGVTRCk7XG4gIGNvbnN0IGRyYXdFcHMgPSByTm9ybSgwLCBzaWdtYUVwcyk7XG5cbiAgY29uc3QgcGF0aWVudHMgPSBbXTtcbiAgZm9yIChsZXQgaSA9IDA7IGkgPCBOOyBpKyspIHtcbiAgICBjb25zdCB1MCA9IGRyYXdJbnRlcmNlcHQoKTtcbiAgICBjb25zdCB1MSA9IGRyYXdTbG9wZSgpO1xuICAgIGNvbnN0IGxpbmUgPSB0aW1lcy5tYXAodG0gPT4gKHtcbiAgICAgIGlkOiBpLFxuICAgICAgdGltZTogdG0sXG4gICAgICAvLyBvYnNlcnZlZCByZWFkaW5nID0gcGF0aWVudCdzIG93biBsaW5lICsgb2NjYXNpb24gbm9pc2VcbiAgICAgIHk6IChnYW1tYTAwICsgdTApICsgKGdhbW1hMTAgKyB1MSkgKiB0bSArIGRyYXdFcHMoKSxcbiAgICAgIC8vIHRoZSBwYXRpZW50J3Mgb3duIHNtb290aCAobm9pc2UtZnJlZSkgdHJhamVjdG9yeSwgZm9yIGRyYXdpbmcgdGhlIGxpbmVcbiAgICAgIHloYXQ6IChnYW1tYTAwICsgdTApICsgKGdhbW1hMTAgKyB1MSkgKiB0bVxuICAgIH0pKTtcbiAgICBwYXRpZW50cy5wdXNoKHsgaWQ6IGksIHUwLCB1MSwgbGluZSB9KTtcbiAgfVxuICByZXR1cm4gcGF0aWVudHM7XG59XG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTEwIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBGbGF0dGVuIHRoZSBwZXItcGF0aWVudCBzbW9vdGggdHJhamVjdG9yaWVzIGZvciB0aGUgbGluZSBtYXJrLCBhbmQga2VlcCB0aGVcbi8vIG5vaXN5IHJlYWRpbmdzIGZvciB0aGUgZG90IG1hcmsuXG5tbGdyb3dfbGluZURhdGEgPSBtbGdyb3dfY29ob3J0LmZsYXRNYXAocCA9PiBwLmxpbmUubWFwKHIgPT4gKHsgLi4uciB9KSkpXG4ifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXQiLCJjZWxsTmFtZSI6Im9qcy1jZWxsLTExIiwiaW5saW5lIjpmYWxzZSwic291cmNlIjoiXG4vLyBUaGUgcG9wdWxhdGlvbi1hdmVyYWdlIHRyYWplY3RvcnkgKHRoZSBmaXhlZCBwYXJ0KTogdHdvIGVuZHBvaW50cyBzdWZmaWNlLlxubWxncm93X2F2Z0xpbmUgPSB7XG4gIGNvbnN0IHsgZ2FtbWEwMCwgZ2FtbWExMCwgdGltZXMgfSA9IG1sZ3Jvd19wYXJhbXM7XG4gIGNvbnN0IHQwID0gdGltZXNbMF0sIHQxID0gdGltZXNbdGltZXMubGVuZ3RoIC0gMV07XG4gIHJldHVybiBbXG4gICAgeyB0aW1lOiB0MCwgeTogZ2FtbWEwMCArIGdhbW1hMTAgKiB0MCB9LFxuICAgIHsgdGltZTogdDEsIHk6IGdhbW1hMDAgKyBnYW1tYTEwICogdDEgfVxuICBdO1xufVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0IiwiY2VsbE5hbWUiOiJvanMtY2VsbC0xMiIsImlubGluZSI6ZmFsc2UsInNvdXJjZSI6IlxuUGxvdC5wbG90KHtcbiAgd2lkdGg6IE1hdGgubWluKDY4MCwgd2lkdGgpLFxuICBoZWlnaHQ6IDM2MCxcbiAgbWFyZ2luTGVmdDogNTgsXG4gIG1hcmdpbkJvdHRvbTogNDYsXG4gIG1hcmdpblRvcDogMjgsXG4gIG1hcmdpblJpZ2h0OiAxOCxcbiAgZ3JpZDogdHJ1ZSxcbiAgc3R5bGU6IHsgZm9udEZhbWlseTogXCJJbnRlciwgc2Fucy1zZXJpZlwiIH0sXG4gIHg6IHtcbiAgICBsYWJlbDogXCJNb250aHMgc2luY2UgZW5yb2xsbWVudFwiLFxuICAgIGRvbWFpbjogWzAsIDI0XSxcbiAgICB0aWNrczogWzAsIDYsIDEyLCAxOCwgMjRdXG4gIH0sXG4gIHk6IHtcbiAgICBsYWJlbDogXCJIYkExYyAoJSkg4oCUIGxvd2VyIGlzIGJldHRlclwiLFxuICAgIGRvbWFpbjogWzYsIDExXVxuICB9LFxuICBtYXJrczogW1xuICAgIC8vIFRoaW4gaW5kaXZpZHVhbCB0cmFqZWN0b3JpZXMgKHNsYXRlLCBzZW1pLXRyYW5zcGFyZW50KS5cbiAgICBQbG90LmxpbmUobWxncm93X2xpbmVEYXRhLCB7XG4gICAgICB4OiBcInRpbWVcIiwgeTogXCJ5aGF0XCIsIHo6IFwiaWRcIixcbiAgICAgIHN0cm9rZTogbWxncm93X3BhbC5jb21wYXJlLCBzdHJva2VXaWR0aDogMSwgc3Ryb2tlT3BhY2l0eTogMC41XG4gICAgfSksXG4gICAgLy8gVGhlIG5vaXN5IHJlYWRpbmdzIGFzIHNtYWxsIGRvdHMuXG4gICAgUGxvdC5kb3QobWxncm93X2xpbmVEYXRhLCB7XG4gICAgICB4OiBcInRpbWVcIiwgeTogXCJ5XCIsXG4gICAgICBmaWxsOiBtbGdyb3dfcGFsLmNvbXBhcmUsIGZpbGxPcGFjaXR5OiAwLjM1LCByOiAxLjhcbiAgICB9KSxcbiAgICAvLyBUaGUgcG9wdWxhdGlvbi1hdmVyYWdlIHRyYWplY3RvcnkgKHRoZSBmaXhlZCBwYXJ0KSBpbiBVcHBzYWxhIHJlZC5cbiAgICBQbG90LmxpbmUobWxncm93X2F2Z0xpbmUsIHtcbiAgICAgIHg6IFwidGltZVwiLCB5OiBcInlcIixcbiAgICAgIHN0cm9rZTogbWxncm93X3BhbC5mb2NhbCwgc3Ryb2tlV2lkdGg6IDMuNVxuICAgIH0pLFxuICAgIC8vIExhYmVsIGZvciB0aGUgYXZlcmFnZSBsaW5lLCBhbmNob3JlZCBhdCBpdHMgcmlnaHQgZW5kcG9pbnQuXG4gICAgUGxvdC50ZXh0KFttbGdyb3dfYXZnTGluZVsxXV0sIHtcbiAgICAgIHg6IFwidGltZVwiLCB5OiBcInlcIixcbiAgICAgIHRleHQ6IFtcInBvcHVsYXRpb24gYXZlcmFnZVwiXSxcbiAgICAgIGR4OiAtNiwgZHk6IC0xMiwgdGV4dEFuY2hvcjogXCJlbmRcIixcbiAgICAgIGZpbGw6IG1sZ3Jvd19wYWwuZm9jYWwsIGZvbnRTaXplOiAxMSwgZm9udFdlaWdodDogXCJib2xkXCIsXG4gICAgICBzdHJva2U6IFwid2hpdGVcIiwgc3Ryb2tlV2lkdGg6IDMsIHBhaW50T3JkZXI6IFwic3Ryb2tlXCJcbiAgICB9KSxcbiAgICBQbG90LnJ1bGVZKFs2XSlcbiAgXVxufSlcbiJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldCIsImNlbGxOYW1lIjoib2pzLWNlbGwtMTMiLCJpbmxpbmUiOmZhbHNlLCJzb3VyY2UiOiJcbi8vIExpdmUgcmVhZG91dDogdGhlIHJlYWxpemVkIFNEIG9mIGluZGl2aWR1YWwgc2xvcGVzIGluIHRoZSBkcmF3biBzYW1wbGUsXG4vLyBhbG9uZ3NpZGUgdGhlIGZpeGVkIHNsb3BlLCBzbyB0aGUgcmVhZGVyIGxpbmtzIHRoZSBzbGlkZXIgdG8gYSBudW1iZXIuXG57XG4gIGNvbnN0IGZpeGVkUGVyWWVhciA9IG1sZ3Jvd19wYXJhbXMuZ2FtbWExMCAqIDEyOyAgICAgLy8gJS95ZWFyXG4gIGNvbnN0IHNsb3BlcyA9IG1sZ3Jvd19jb2hvcnQubWFwKHAgPT4gbWxncm93X3BhcmFtcy5nYW1tYTEwICsgcC51MSk7XG4gIGNvbnN0IHNkU2xvcGVZciA9IGQzLmRldmlhdGlvbihzbG9wZXMubWFwKHMgPT4gcyAqIDEyKSkgfHwgMDtcbiAgY29uc3QgaXRlbSA9IChsYWJlbCwgdmFsLCB1bml0LCBjb2xvcikgPT4gaHRtbGA8ZGl2IHN0eWxlPVwiXG4gICAgICB0ZXh0LWFsaWduOmNlbnRlcjsgcGFkZGluZzowLjVyZW0gMC4yNXJlbTsgYm9yZGVyLXJhZGl1czowLjVyZW07XG4gICAgICBiYWNrZ3JvdW5kOiR7bWxncm93X3BhbC5maWxsfTtcIj5cbiAgICA8ZGl2IHN0eWxlPVwiZm9udC1mYW1pbHk6SW50ZXIsc2Fucy1zZXJpZjsgZm9udC1zaXplOjAuN3JlbTsgZm9udC13ZWlnaHQ6NzAwO1xuICAgICAgICB0ZXh0LXRyYW5zZm9ybTp1cHBlcmNhc2U7IGxldHRlci1zcGFjaW5nOjAuMDRlbTsgY29sb3I6JHttbGdyb3dfcGFsLm11dGVkfTtcIj4ke2xhYmVsfTwvZGl2PlxuICAgIDxkaXYgc3R5bGU9XCJmb250LWZhbWlseTonSmV0QnJhaW5zIE1vbm8nLG1vbm9zcGFjZTsgZm9udC1zaXplOjEuMTVyZW07XG4gICAgICAgIGZvbnQtd2VpZ2h0OjcwMDsgY29sb3I6JHtjb2xvcn07XCI+JHt2YWx9PC9kaXY+XG4gICAgPGRpdiBzdHlsZT1cImZvbnQtZmFtaWx5OkludGVyLHNhbnMtc2VyaWY7IGZvbnQtc2l6ZTowLjY2cmVtOyBjb2xvcjoke21sZ3Jvd19wYWwubXV0ZWR9O1wiPiR7dW5pdH08L2Rpdj5cbiAgPC9kaXY+YDtcbiAgcmV0dXJuIGh0bWxgPGRpdiBzdHlsZT1cImRpc3BsYXk6Z3JpZDtcbiAgICAgIGdyaWQtdGVtcGxhdGUtY29sdW1uczpyZXBlYXQoYXV0by1maXQsbWlubWF4KDlyZW0sMWZyKSk7XG4gICAgICBnYXA6MC41cmVtOyBtYXJnaW4tdG9wOjAuNzVyZW07XCI+XG4gICAgJHtpdGVtKFwiRml4ZWQgc2xvcGUgzrPigoHigoBcIiwgZml4ZWRQZXJZZWFyLnRvRml4ZWQoMiksIFwiJSBIYkExYyBwZXIgeWVhclwiLCBtbGdyb3dfcGFsLmZvY2FsKX1cbiAgICAke2l0ZW0oXCJTRCBvZiBzbG9wZXNcIiwgKG1sZ3Jvd19yYW5kb21TbG9wZSA/IHNkU2xvcGVZci50b0ZpeGVkKDIpIDogXCIwLjAwXCIpLFxuICAgICAgICBcImFjcm9zcyBwYXRpZW50cyAoJS95cilcIiwgbWxncm93X3JhbmRvbVNsb3BlID8gbWxncm93X3BhbC5vY2hyZSA6IG1sZ3Jvd19wYWwubXV0ZWQpfVxuICAgICR7aXRlbShcIlJhbmRvbSBzbG9wZVwiLCBtbGdyb3dfcmFuZG9tU2xvcGUgPyBcIk9OXCIgOiBcIk9GRlwiLFxuICAgICAgICBcInXigoHhtaIgaW4gdGhlIG1vZGVsXCIsIG1sZ3Jvd19yYW5kb21TbG9wZSA/IG1sZ3Jvd19wYWwuZ29vZCA6IG1sZ3Jvd19wYWwubXV0ZWQpfVxuICA8L2Rpdj5gO1xufVxuIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0UXVpZXQiLCJzb3VyY2UiOiJzaGlueUlucHV0KCdtbGdyb3dfcmFuZG9tU2xvcGUnKSJ9LHsibWV0aG9kTmFtZSI6ImludGVycHJldFF1aWV0Iiwic291cmNlIjoic2hpbnlJbnB1dCgnbWxncm93X3Nsb3BlVmFyJykifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ21sZ3Jvd19pbnRlcmNlcHRTRCcpIn0seyJtZXRob2ROYW1lIjoiaW50ZXJwcmV0UXVpZXQiLCJzb3VyY2UiOiJzaGlueUlucHV0KCdtbGdyb3dfblBhdGllbnRzJykifSx7Im1ldGhvZE5hbWUiOiJpbnRlcnByZXRRdWlldCIsInNvdXJjZSI6InNoaW55SW5wdXQoJ21sZ3Jvd19kcmF3JykifV19
+</script>
+<script type="module">
+if (window.location.protocol === "file:") { alert("The OJS runtime does not work with file:// URLs. Please use a web server to view this document."); }
+window._ojs.paths.runtimeToDoc = "../../content/15-multilevel";
+window._ojs.paths.runtimeToRoot = "../..";
+window._ojs.paths.docToRoot = "../..";
+window._ojs.selfContained = false;
+window._ojs.runtime.interpretFromScriptTags();
+</script>
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../content/15-multilevel/variance-components-icc.html" class="pagination-link" aria-label="Variance Components and the ICC">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Variance Components and the ICC</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../content/20-quantile/index.html" class="pagination-link" aria-label="Quantile &amp; Distributional Methods">
+        <span class="nav-page-text">Quantile &amp; Distributional Methods</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
